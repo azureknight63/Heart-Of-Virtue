@@ -1,8 +1,9 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import HeroPanel from './HeroPanel';
-import { makePlayer, makeCombatant, makeStatusEffect } from '../test/payloads';
+import HeroPanel, { inRadialSlots } from './HeroPanel';
+import { makePassive, makePlayer, makeCombatant, makeStatusEffect } from '../test/payloads';
 import { accessibility } from '../styles/theme';
+import { CATEGORY_NAV_SELECTOR } from '../utils/categories';
 
 describe('HeroPanel', () => {
   // Out of combat the `player` prop is usePlayer()'s merged status+stats object;
@@ -77,6 +78,46 @@ describe('HeroPanel', () => {
     ]);
     expect(screen.queryByText('ATTRIBUTES')).toBeNull();
     expect(screen.queryByText('INTERACT')).toBeNull();
+  });
+
+  it('draws both rings in the same six places', () => {
+    // The two tables carry labels and handlers; the geometry comes from one
+    // RADIAL_SLOTS ring. Before that, they were two hand-kept rows of six
+    // with nothing asserting they matched, so a slot edited on one side
+    // silently moved that ring's button alone.
+    //
+    // Found through the nav's own exported selector, the way every other
+    // consumer finds it (utils/categories.js lists them), rather than by
+    // sweeping every <button> the component happens to render.
+    const positionsOf = (container) =>
+      [...container.querySelectorAll(CATEGORY_NAV_SELECTOR)].map(
+        (button) => `${button.style.top}|${button.style.left}|${button.style.transform}`
+      );
+
+    const exploration = render(<HeroPanel {...makeProps()} />);
+    const explorationSlots = positionsOf(exploration.container);
+    exploration.unmount();
+    const combat = render(<HeroPanel {...makeProps(allCombatMoves)} />);
+
+    expect(explorationSlots).toHaveLength(6);
+    expect(positionsOf(combat.container)).toEqual(explorationSlots);
+  });
+
+  it('lets a row override its slot, which is what makes the ring load-bearing', () => {
+    // The assertion above holds whether the geometry comes from RADIAL_SLOTS
+    // or from two hand-kept tables that happen to agree -- it compares the
+    // two rings with each other, not with the ring constant. This one asks
+    // `inRadialSlots` directly: each row takes the slot at its own index, and
+    // a row that states its own position keeps it. Nothing in production
+    // overrides a slot; the export exists for exactly this.
+    const [first, second] = inRadialSlots([
+      { key: 'a' },
+      { key: 'b', top: '99px' },
+    ]);
+
+    expect(first).toMatchObject({ key: 'a', top: '0px', left: '20%' });
+    // Slot two's geometry, except the one field the row claimed.
+    expect(second).toMatchObject({ key: 'b', top: '99px', left: 'calc(50% + 60px)' });
   });
 
   it('hides move category buttons in combat if not available', () => {
@@ -328,13 +369,14 @@ describe('HeroPanel', () => {
       max_hp: 100,
       fatigue: 120,
       max_fatigue: 150,
-      passives: [makeStatusEffect({ name: 'Iron Fist', type: 'passive' })],
+      passives: [makePassive({ name: 'Iron Fist' })],
       status_effects: [makeStatusEffect({ name: 'Burning', type: 'ailment', beats_left: 3 })],
     });
 
     it('renders the mobile inline row with both icon groups', () => {
       render(<HeroPanel {...makeProps({ isMobile: true, player: withEffects })} />);
 
+      expect(screen.getByTestId('mobile-effect-row')).toBeInTheDocument();
       expect(screen.getByText('PASSIVES')).toBeInTheDocument();
       expect(screen.getByText('STATUS')).toBeInTheDocument();
       // StatusEffectsIconPanel derives the glyph from the effect NAME, so an
@@ -344,18 +386,13 @@ describe('HeroPanel', () => {
     });
 
     it('renders the desktop side columns rather than the mobile row', () => {
-      const { container } = render(
-        <HeroPanel {...makeProps({ isMobile: false, player: withEffects })} />
-      );
+      render(<HeroPanel {...makeProps({ isMobile: false, player: withEffects })} />);
 
       expect(screen.getByText('PASSIVES')).toBeInTheDocument();
       expect(screen.getByText('🔥')).toBeInTheDocument();
-      // Desktop side columns are absolutely positioned; the mobile row is a
-      // centered wrapping flex row.
-      const mobileRow = Array.from(
-        container.querySelectorAll('div[style*="flex-direction: row"]')
-      ).find((d) => d.style.justifyContent === 'center' && d.style.flexWrap === 'wrap');
-      expect(mobileRow).toBeUndefined();
+      // The mobile row carries its own testid, so this asks the component
+      // which layout it drew instead of pattern-matching inline styles.
+      expect(screen.queryByTestId('mobile-effect-row')).toBeNull();
     });
 
     it('renders no icon row at all when the player has neither passives nor effects', () => {

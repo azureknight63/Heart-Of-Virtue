@@ -333,6 +333,13 @@ class Ch01ChestRumblerBattle(Event):
     Initiates the battle with rock rumblers when the chest at (7,1) is looted
     """
 
+    #: Deliberately not ``GATE_KEY``: that one names the gate a beat writes
+    #: when it *finishes*, and the default ``check_conditions`` retires the
+    #: event once it is set. This gate is written the moment the chest is
+    #: found, before the fight is narrated, and this event overrides
+    #: ``check_conditions`` to re-read it itself.
+    TRIGGERED_GATE = "ch01_chest_battle_triggered"
+
     def __init__(
         self,
         player,
@@ -350,8 +357,7 @@ class Ch01ChestRumblerBattle(Event):
         # Don't fire again if already triggered (persisted in story state)
         if self.triggered:
             return
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("ch01_chest_battle_triggered", "0") == "1":
+        if self.gate_is_set(self.TRIGGERED_GATE):
             return
 
         for thing in self.tile.objects_here:
@@ -362,7 +368,7 @@ class Ch01ChestRumblerBattle(Event):
                 )
                 if chest_opened:
                     self.triggered = True  # Mark as triggered before processing
-                    story["ch01_chest_battle_triggered"] = "1"
+                    self.set_story_gate(self.TRIGGERED_GATE)
                     self.pass_conditions_to_process()
                     break
 
@@ -441,8 +447,7 @@ class RumblerChainEvent(Event):
         * the chain flag has not been explicitly cleared, and
         * the player is in the room the event was armed in.
         """
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if isinstance(story, dict) and story.get(RUMBLER_FIGHT_FLAG) == "0":
+        if self.story_gates().get(RUMBLER_FIGHT_FLAG) == "0":
             return False
 
         origin = getattr(self, "origin_tile_key", None)
@@ -453,9 +458,7 @@ class RumblerChainEvent(Event):
 
     def set_chain_flag(self, value: str) -> None:
         """Mark the chain live ("1") or resolved ("0"), if a story dict exists."""
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if isinstance(story, dict):
-            story[RUMBLER_FIGHT_FLAG] = value
+        self.set_story_gate(RUMBLER_FIGHT_FLAG, value)
 
 
 class Ch01PostRumbler(
@@ -1094,7 +1097,7 @@ class Ch01GorranDarkChamber(Event):
         )
         time.sleep(1)
         # Record that the warning happened — used by Ch01GorranFirstWord as context.
-        self.player.universe.story["gorran_dark_chamber_seen"] = "1"
+        self.set_story_gate("gorran_dark_chamber_seen")
 
 
 class Ch01GorranFirstWord(Event):
@@ -1129,16 +1132,15 @@ class Ch01GorranFirstWord(Event):
         )
 
     def check_conditions(self):
-        story = getattr(self.player.universe, "story", {})
         if (
-            story.get("gorran_first", "0") == "1"
-            and story.get("gorran_language_stage", "0") == "0"
+            self.gate_is_set("gorran_first")
+            and self.story_gates().get("gorran_language_stage", "0") == "0"
         ):
             self.pass_conditions_to_process()
 
     def process(self):
         if self.player.skip_dialog:
-            self.player.universe.story["gorran_language_stage"] = "1"
+            self.set_story_gate("gorran_language_stage", "1")
             self.tile.remove_event(self.name)
             return
 
@@ -1190,5 +1192,5 @@ class Ch01GorranFirstWord(Event):
         time.sleep(2)
         await_input()
 
-        self.player.universe.story["gorran_language_stage"] = "1"
+        self.set_story_gate("gorran_language_stage", "1")
         self.tile.remove_event(self.name)

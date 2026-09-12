@@ -46,7 +46,7 @@ vi.mock('./DefeatDialog', () => ({
   default: (props) => (
     <div data-testid="defeat-dialog">
       {echo('defeat-props', props)}
-      <button onClick={() => props.onLoadedSave()}>Retry</button>
+      <button onClick={() => props.onRunChanged()}>Retry</button>
     </div>
   ),
 }))

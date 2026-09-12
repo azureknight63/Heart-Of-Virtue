@@ -1,7 +1,13 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import CombatInputDialog from './CombatInputDialog';
-import { makeTargetOption } from '../test/payloads';
+import {
+  allyId,
+  enemyId,
+  makeTargetOption,
+  DEFAULT_MOVE_REACH_FT,
+  TURN_DIRECTIONS,
+} from '../test/payloads';
 import { useAudio } from '../context/AudioContext';
 
 // Mock useAudio
@@ -25,9 +31,12 @@ describe('CombatInputDialog', () => {
     // fixture that agrees with whatever the component happens to read.
     // `hit_chance` is an INTEGER PERCENTAGE in [2, 100], never a 0-1 fraction —
     // rescaling it client-side collapsed every real value to 0%-1% (drift #5).
+    // Both stand within the default weapon's (0, 5) reach: this list is
+    // `viable_targets`, which _get_available_targets range-filters, so a card
+    // out there carries no hit chance at all and could not exercise the read.
     const options = [
-      makeTargetOption({ id: 'target1', name: 'Goblin', distance: 10, health: { current: 50, max: 100 }, hit_chance: 85 }),
-      makeTargetOption({ id: 'target2', name: 'Orc', distance: 20, health: { current: 120, max: 150 }, hit_chance: 60 }),
+      makeTargetOption({ id: enemyId(1), name: 'Goblin', distance: 3, health: { current: 50, max: 100 }, hit_chance: 85 }),
+      makeTargetOption({ id: allyId(2), name: 'Orc', distance: DEFAULT_MOVE_REACH_FT, health: { current: 120, max: 150 }, hit_chance: 60 }),
     ];
 
     render(
@@ -41,24 +50,29 @@ describe('CombatInputDialog', () => {
 
     expect(screen.getByText((content) => content.includes('SELECT TARGET'))).toBeDefined();
     expect(screen.getByText('Goblin')).toBeDefined();
-    expect(screen.getAllByText(/10 ft/i)).toBeDefined();
+    expect(screen.getAllByText(/3 ft/i)).toBeDefined();
     expect(screen.getByText(/50\/100/)).toBeDefined();
     expect(screen.getAllByText(/Accuracy:/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/85%/)).toBeDefined();
 
     expect(screen.getByText('Orc')).toBeDefined();
-    expect(screen.getAllByText(/20 ft/i)).toBeDefined();
+    expect(screen.getAllByText(/5 ft/i)).toBeDefined();
     expect(screen.getByText(/120\/150/)).toBeDefined();
     expect(screen.getByText(/60%/)).toBeDefined();
 
     // Click a target (the card containing 'Goblin')
     fireEvent.click(screen.getByText('Goblin').closest('div').parentElement);
-    expect(mockOnSelect).toHaveBeenCalledWith('target1');
+    expect(mockOnSelect).toHaveBeenCalledWith(enemyId(1));
     expect(mockPlaySFX).toHaveBeenCalledWith('attack');
   });
 
   it('renders direction selection correctly', () => {
-    const options = ['North', 'South', 'East', 'West'];
+    // The adapter offers `TURN_DIRECTIONS` -- lowercase -- and
+    // `_handle_direction_selection` rejects anything not in that list with a
+    // case-SENSITIVE `not in`, so a capitalised fixture describes a payload
+    // the server answers "Invalid direction" to. The component uppercases for
+    // display, which is why the labels below are unchanged.
+    const options = TURN_DIRECTIONS;
 
     render(
       <CombatInputDialog
@@ -74,8 +88,8 @@ describe('CombatInputDialog', () => {
       expect(screen.getByText(dir.toUpperCase())).toBeDefined();
     });
 
-    fireEvent.click(screen.getByText('NORTH'));
-    expect(mockOnSelect).toHaveBeenCalledWith('North');
+    fireEvent.click(screen.getByText(TURN_DIRECTIONS[0].toUpperCase()));
+    expect(mockOnSelect).toHaveBeenCalledWith(TURN_DIRECTIONS[0]);
   });
 
   it('renders number input correctly and handles increment/decrement', () => {

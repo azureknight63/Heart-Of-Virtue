@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { saveSortValue, compareSavesByRecency, formatSaveTimestamp } from './localSave'
+import {
+  saveSortValue,
+  compareSavesByRecency,
+  fetchSavesNewestFirst,
+  formatSaveTimestamp,
+  saveDisplayName,
+  saveSummaryParts,
+} from './localSave'
 
 describe('sorting helpers', () => {
   it('orders newer saves first', () => {
@@ -83,5 +90,42 @@ describe('formatSaveTimestamp', () => {
     expect(formatSaveTimestamp(null)).toBe('')
     // A non-finite epoch must fall through rather than render "Invalid Date".
     expect(formatSaveTimestamp({ timestamp_ms: NaN })).toBe('')
+  })
+})
+
+describe('saveDisplayName', () => {
+  it("is the row's name", () => {
+    expect(saveDisplayName({ name: 'Before the Pools' })).toBe('Before the Pools')
+  })
+
+  it('is "Untitled Save" for a row with no name', () => {
+    for (const row of [{}, { name: '' }, { name: null }, null]) {
+      expect(saveDisplayName(row)).toBe('Untitled Save')
+    }
+  })
+})
+
+describe('saveSummaryParts', () => {
+  it('lists the level, the map and the room', () => {
+    expect(saveSummaryParts({ level: 5, map_name: 'Dark Grotto', room_title: 'Entry Hall' }))
+      .toEqual(['Lv 5', 'Dark Grotto', 'Entry Hall'])
+  })
+
+  it('leaves out a non-numeric level and any empty place field', () => {
+    expect(saveSummaryParts({ level: '?', map_name: 'Dark Grotto', room_title: '' }))
+      .toEqual(['Dark Grotto'])
+  })
+})
+
+describe('fetchSavesNewestFirst', () => {
+  it('returns the rows newest first, whatever order the server sent', async () => {
+    const older = { id: 'older', timestamp_ms: Date.UTC(2026, 0, 1) }
+    const newer = { id: 'newer', timestamp_ms: Date.UTC(2026, 0, 2) }
+    const rows = await fetchSavesNewestFirst(async () => ({ data: { saves: [older, newer] } }))
+    expect(rows.map((row) => row.id)).toEqual(['newer', 'older'])
+  })
+
+  it('treats a response without saves as an empty list', async () => {
+    expect(await fetchSavesNewestFirst(async () => ({}))).toEqual([])
   })
 })

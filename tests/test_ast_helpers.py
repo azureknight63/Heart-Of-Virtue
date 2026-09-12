@@ -13,10 +13,12 @@ to cover the whole class.
 
 import ast
 import textwrap
+from collections import Counter
 
 from src.api.combat_adapter import ApiCombatAdapter
 from src.api.services.game_service import GameService
 from tests._ast_helpers import (
+    call_target,
     called_names,
     calls_of,
     class_functions,
@@ -103,3 +105,21 @@ class TestSourceCalls:
     def test_the_adapter_still_owns_the_method_the_scan_looks_for(self):
         # Keeps the control above honest if settle_victory is ever renamed.
         assert hasattr(ApiCombatAdapter, "settle_victory")
+
+
+class TestCallTarget:
+    """``call_target`` is the name rule ``called_names`` and ``calls_of`` share."""
+
+    @staticmethod
+    def _calls(source):
+        return [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Call)]
+
+    def test_names_bare_and_attribute_calls(self):
+        calls = self._calls("f(1)\nself.g(2)\nobj.attr.h(3)")
+        assert [call_target(call) for call in calls] == ["f", "g", "h"]
+
+    def test_answers_none_for_calls_with_no_name_and_for_non_calls(self):
+        calls = self._calls("fns[0](1)\nmake()(2)")
+        # `make()(2)` is two calls: the outer has no name, the inner is `make`.
+        assert Counter(call_target(call) for call in calls) == {None: 2, "make": 1}
+        assert call_target(ast.parse("x = 1").body[0]) is None

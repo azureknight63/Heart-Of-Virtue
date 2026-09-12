@@ -80,10 +80,12 @@ and is counted by ``TestCitationProvenance`` below. If a test here fails:
 
 import ast
 import io
+import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import src.api.combat_adapter as combat_adapter
 from src.api.combat_adapter import ApiCombatAdapter
 from src.api.serializers.combat import (
     CombatantSerializer,
@@ -94,14 +96,17 @@ from src.api.serializers.shop_serializer import ShopSerializer
 from src.api.services.game_service import GameService
 from src.items import IronArrow, Mace, Restorative, Shortbow
 import src.journal as journal
-from src.moves import Attack, PowerStrike, ShootBow, Wait
+from src.api.constants import ITEM_USE_RANGE
+from src.moves import Attack, Check, PowerStrike, ShadowStep, ShootBow, Turn, Wait
 from src.moves._mastery import BloodOfMartyrs
+from ai.combat_strategist import CombatStrategist
 from src.npc._enemies import Slime
 from src.npc._merchants import Merchant
 from src.player import Player
 from src.universe import Universe
 import src.states as states
 from tests._cite import Read, unverifiable, verify
+from tests._js_scan import FRONTEND_SRC, js_literal
 from tests._gs_fixtures import GRID_3X3
 from src.narration import capture_narration
 from src.combatant import wire_handle
@@ -150,24 +155,37 @@ def _assert_contract(payload: dict, contract: dict, label: str):
 # ============================================================================
 # Combat payload
 # ============================================================================
-# useApi.js's transformCombatData(data) becomes the client-side `combat`
-# object: `{...data.battle_state, log, beat_states, end_state, combat_active,
-# suggested_moves, suggestions_loading, events_triggered, last_move_outcome,
-# last_move_name, last_move_target_id}`. Fields NOT in that explicit whitelist
-# and NOT inside battle_state are silently dropped by the spread — that is
-# exactly how `combat_id` disappeared in bug #1 (frontend/src/hooks/useApi.js).
+# transformCombatData(data) (frontend/src/utils/combatTransform.js) becomes the
+# client-side `combat` object: `{...data.battle_state, log, beat_states,
+# end_state, combat_active, suggested_moves, suggestions_loading,
+# events_triggered, last_move_outcome, last_move_name, last_move_target_id}`.
+# Fields NOT in that explicit whitelist and NOT inside battle_state are
+# silently dropped by the spread — that is exactly how `combat_id` disappeared
+# in bug #1 (when the transform still lived in frontend/src/hooks/useApi.js).
 
-# Fields useApi.js pulls off the top-level get_combat_state() result, outside
-# battle_state (frontend/src/hooks/useApi.js transformCombatData).
+# Fields transformCombatData pulls off the top-level get_combat_state()
+# result, outside battle_state (frontend/src/utils/combatTransform.js).
+#
+# Seven of the ten the transform copies, plus `battle_state`, which it
+# SPREADS rather than copies. The other three -- `beat_states`, `end_state`,
+# `events_triggered` -- are CONDITIONAL on the wire: the adapter adds them
+# only for a finished or streaming fight, so a contract that required them in
+# every payload would fail on the ordinary one this guard builds. The
+# transform defaults each of them, which is why their absence is not a bug.
+# Their SPELLING is pinned by
+# ``test_the_conditional_top_level_fields_spell_what_the_client_reads`` below,
+# which arranges each condition on a real adapter -- not by the whitelist test
+# in frontend/src/hooks/useApi.test.js, which compares the transform against
+# the client's own list and says so itself ("It cannot see the server").
 COMBAT_TOP_LEVEL_CONTRACT = {
-    "battle_state": Read("useApi.js", "data.battle_state"),
-    "log": Read("useApi.js", "data.log"),
-    "combat_active": Read("useApi.js", "data.combat_active"),
-    "suggested_moves": Read("useApi.js", "data.suggested_moves"),
-    "suggestions_loading": Read("useApi.js", "data.suggestions_loading"),
-    "last_move_outcome": Read("useApi.js", "data.last_move_outcome"),
-    "last_move_name": Read("useApi.js", "data.last_move_name"),
-    "last_move_target_id": Read("useApi.js", "data.last_move_target_id"),
+    "battle_state": Read("combatTransform.js", "data.battle_state"),
+    "log": Read("combatTransform.js", "data.log"),
+    "combat_active": Read("combatTransform.js", "data.combat_active"),
+    "suggested_moves": Read("combatTransform.js", "data.suggested_moves"),
+    "suggestions_loading": Read("combatTransform.js", "data.suggestions_loading"),
+    "last_move_outcome": Read("combatTransform.js", "data.last_move_outcome"),
+    "last_move_name": Read("combatTransform.js", "data.last_move_name"),
+    "last_move_target_id": Read("combatTransform.js", "data.last_move_target_id"),
 }
 
 # Fields LeftPanel.jsx/CombatManager read off `combat.*`, i.e. off
@@ -239,6 +257,41 @@ class TestCombatWireContract:
         result = real_adapter.get_combat_state()
 
         _assert_contract(result, COMBAT_TOP_LEVEL_CONTRACT, "get_combat_state() top level")
+
+    def test_the_conditional_top_level_fields_spell_what_the_client_reads(
+        self, real_adapter, real_combat_player
+    ):
+        """The three top-level keys ``COMBAT_TOP_LEVEL_CONTRACT`` cannot hold.
+
+        ``transformCombatData`` reads ``data.beat_states``,
+        ``data.end_state`` and ``data.events_triggered``
+        (frontend/src/utils/combatTransform.js), each behind a default -- so a
+        rename on the adapter would leave the client reading an empty list, a
+        null and an empty list forever, with nothing failing. That is the
+        ``combat_id`` bug exactly. Each condition is arranged here and the
+        name read off a real payload.
+        """
+        real_adapter.awaiting_input = True
+        real_adapter.input_type = "move_selection"
+        real_adapter.available_options = []
+        # `events_triggered` rides on the adapter's own state until a payload
+        # is built, which moves it across and clears it.
+        real_adapter._adapter_state()["events_triggered"] = [{"type": "tile"}]
+        # `end_state` is the summary a finished fight leaves on the player.
+        real_combat_player.in_combat = False
+        real_combat_player.combat_end_summary = {"status": "victory"}
+
+        result = real_adapter.get_combat_state()
+
+        assert result["events_triggered"] == [{"type": "tile"}]
+        assert result["end_state"]["status"] == "victory"
+
+        # `beat_states` is the per-beat snapshot list. Read off the
+        # terminal snapshot, which is one of its two producers; the streaming
+        # one (`_execute_move_inner`) sets the same key and is not exercised
+        # here.
+        beats = [{"beat_index": 0}]
+        assert real_adapter._terminal_state_snapshot(beats)["beat_states"] == beats
 
     def test_battle_state_fields(self, real_adapter, real_combat_player):
         enemy = Slime()
@@ -574,8 +627,10 @@ COMBATANT_CONTRACT = {
     "max_hp": Read("HeroPanel.jsx", "player?.max_hp"),
     "fatigue": Read("HeroPanel.jsx", "player?.fatigue"),
     "max_fatigue": Read("HeroPanel.jsx", "player?.max_fatigue"),
-    "status_effects": Read("HeroPanel.jsx", "player?.status_effects"),
-    "passives": Read("HeroPanel.jsx", "player?.passives"),
+    # Both lists are read through EFFECT_GROUPS, which names the field once for
+    # the desktop columns and the mobile row alike; the anchor is that name.
+    "status_effects": Read("HeroPanel.jsx", "key: 'status_effects'"),
+    "passives": Read("HeroPanel.jsx", "key: 'passives'"),
     # e.distance — the canFlee check on combat.enemies.
     "distance": Read("LeftPanel.jsx", "e.distance"),
     # The battlefield map is the other consumer of a serialized combatant. It
@@ -1470,22 +1525,35 @@ class TestShopWireContract:
 SAVES_ROW_CONTRACT = {
     # row key, load/delete target
     "id": Read("MainMenuPage.jsx", "save.id"),
-    # save.name || 'Untitled Save'
-    "name": Read("MainMenuPage.jsx", "save.name"),
     "is_autosave": Read("MainMenuPage.jsx", "save.is_autosave"),
-    "level": Read("MainMenuPage.jsx", "save.level"),
-    "map_name": Read("MainMenuPage.jsx", "save.map_name"),
-    "room_title": Read("MainMenuPage.jsx", "save.room_title"),
-    # The row is rendered by the page but the field is read one level down, in
-    # the formatter — cite both, or a rename in localSave.js goes unnoticed
-    # here while MainMenuPage still "reads" a save it never dereferences.
+    # Each two-consumer entry below is rendered by the page but the field is
+    # read one level down, in a localSave.js formatter — cite both, formatter
+    # first, or a rename in localSave.js goes unnoticed here while
+    # MainMenuPage still "reads" a save field it never dereferences.
+    "name": (
+        Read("localSave.js", "row?.name"),
+        Read("MainMenuPage.jsx", "saveDisplayName(save)"),
+    ),
+    "level": (
+        Read("localSave.js", "row?.level"),
+        Read("MainMenuPage.jsx", "saveSummaryParts(save)"),
+    ),
+    "map_name": (
+        Read("localSave.js", "row?.map_name"),
+        Read("MainMenuPage.jsx", "saveSummaryParts(save)"),
+    ),
+    "room_title": (
+        Read("localSave.js", "row?.room_title"),
+        Read("MainMenuPage.jsx", "saveSummaryParts(save)"),
+    ),
     "timestamp": (
-        Read("MainMenuPage.jsx", "formatSaveTimestamp(save)"),
         Read("localSave.js", "row.timestamp"),
+        Read("MainMenuPage.jsx", "formatSaveTimestamp(save)"),
     ),
     # This is the field the "Continue" button's recency sort now keys on
     # (localSave.js saveRowClockValue: row?.timestamp_ms ?? row?.timestamp,
-    # consumed by compareSavesByRecency in MainMenuPage.jsx). It was
+    # consumed by compareSavesByRecency, which fetchSavesNewestFirst sorts
+    # MainMenuPage's list with). It was
     # added alongside the display `timestamp`
     # specifically because `timestamp`'s embedded timezone abbreviation (e.g.
     # "CET") is unparseable by Date.parse for most non-US zones — losing this
@@ -2374,3 +2442,295 @@ class TestCitationProvenance:
             "one, say so in `note=` and raise EXPECTED_UNVERIFIABLE in the "
             "same commit. If you removed one, lower it."
         )
+
+
+# ----------------------------------------------------------------------------
+# The payloads.js builders and exported constants held to the wire
+# ----------------------------------------------------------------------------
+_PAYLOADS_JS = FRONTEND_SRC / "test" / "payloads.js"
+
+
+def _js_builder_keys(path, name):
+    """The top-level keys of the object literal a ``payloads.js`` builder
+    passes to ``merge(`` -- ``key: value`` and shorthand ``key,`` alike.
+    Nested objects and arrays are stripped first, so only the builder's own
+    keys remain.
+
+    What this reader assumes of the builder, each checked rather than hoped:
+
+    * its FIRST ``merge(`` is the object literal -- the search is bounded at
+      the next ``export function``, so a builder that stops calling ``merge(``
+      raises here instead of silently reading the NEXT builder's object;
+    * that literal's braces balance inside the builder -- a ``{`` in a default
+      string value would break the depth walk, so an unbalanced walk raises;
+    * it names at least one key -- an empty read would otherwise be reported
+      as "the wire sent keys the fixture is missing", blaming the fixture for
+      a parser miss.
+
+    What it cannot see: a spread (``...base``) contributes no key here, and a
+    multi-line call inside the literal can yield phantom shorthand keys from
+    its argument lines. Both would show up as a mismatch, not as a false pass.
+
+    ``//`` comments are stripped before the walk. Prose is not JS, and these
+    literals are heavily commented: a comment line ending in ``, never`` read
+    as a key named ``never`` and failed the guard. No string value in this
+    file contains ``//``, which is what makes the blunt strip safe -- if one
+    ever does, this drops the rest of that line and the key count changes,
+    which fails here rather than passing quietly.
+    """
+    source = path.read_text(encoding="utf-8")
+    start = source.index(f"export function {name}(")
+    next_builder = source.find("export function ", start + 1)
+    limit = len(source) if next_builder == -1 else next_builder
+    merge_at = source.index("merge(", start)
+    assert merge_at < limit, f"{name} has no merge( call of its own"
+    open_brace = source.index("{", merge_at)
+    depth = 0
+    for end in range(open_brace, limit):
+        depth += {"{": 1, "}": -1}.get(source[end], 0)
+        if depth == 0:
+            break
+    else:
+        raise AssertionError(f"{name}: the braces after merge( never balance")
+    body = re.sub(r"(?m)//.*$", "", source[open_brace + 1:end])
+    previous = None
+    while previous != body:
+        previous, body = body, re.sub(r"\{[^{}]*\}|\[[^\[\]]*\]", "", body)
+    # ``(?:^|,)`` and not just ``^``: two keys on one line are legal JS, and
+    # anchoring to the line start would hide the second -- the direction an
+    # invented field would travel.
+    keys = set(re.findall(r"(?m)(?:^|,)\s*(\w+)\s*(?::|,|$)", body))
+    assert keys, f"{name}: no keys read out of the object literal"
+    return keys
+
+
+def _assert_builder_matches_the_wire(builder, wire_entry, emitter):
+    """``builder``'s keys in ``payloads.js`` are exactly ``wire_entry``'s."""
+    fixture_keys = _js_builder_keys(_PAYLOADS_JS, builder)
+    wire_keys = set(wire_entry)
+    assert fixture_keys == wire_keys, (
+        f"missing from {builder}: {sorted(wire_keys - fixture_keys)}; "
+        f"not sent by {emitter}: {sorted(fixture_keys - wire_keys)}"
+    )
+
+
+class TestThePayloadBuildersMatchTheWire:
+    """The ``payloads.js`` fixtures the frontend's combat tests are built from.
+
+    A key the adapter always sends and a builder omits sends every test built
+    on it down a fallback no real payload takes: a fixture agreeing with
+    itself, which this module exists to stop. So each builder's KEYS -- the
+    move card, its ``viable_targets`` entry, a passive icon, a check row --
+    are held to the real emitter's own output, in both directions: a field the
+    fixture invents fails here too.
+
+    Where the fixture is a constant rather than a builder, it is held by
+    VALUE: the two input prompts and the two unavailability reasons land on
+    the wire verbatim and the client renders them, and the default enemy's
+    distance carries a claim about reach that its key set cannot see. Those
+    also pin the emitter's own side, so the constants stay the thing the
+    adapter actually sends.
+    """
+
+    def test_the_move_fixture_carries_exactly_the_keys_the_adapter_emits(
+        self, real_adapter, real_combat_player
+    ):
+        real_combat_player.known_moves = [Attack(real_combat_player)]
+        [move] = real_adapter._get_available_moves()
+
+        _assert_builder_matches_the_wire("makeAvailableOption", move, "_get_available_moves")
+
+    def test_the_target_fixture_carries_exactly_the_keys_of_a_target_in_reach(
+        self, real_adapter, real_combat_player
+    ):
+        # In reach, as a viable target always is: an out-of-reach entry
+        # omits hit_chance, which the fixture carries.
+        attack = Attack(real_combat_player)
+        enemy = Slime()
+        _range_min, range_max = real_adapter._move_range(attack)
+        real_combat_player.known_moves = [attack]
+        real_combat_player.combat_list = [enemy]
+        real_combat_player.combat_proximity = {enemy: range_max}
+
+        [target] = real_adapter._get_available_moves()[0]["viable_targets"]
+
+        _assert_builder_matches_the_wire("makeTargetOption", target, "_build_target_entry")
+
+    def test_the_check_fixture_carries_exactly_the_keys_the_move_emits(
+        self, real_combat_player
+    ):
+        """A combatant with no coordinate position and no move in progress --
+        the row ``makeCheckEntry`` describes. One mid-move carries three more
+        keys, which a test that wants them adds."""
+        enemy = Slime()
+        real_combat_player.combat_list = [enemy]
+        real_combat_player.combat_proximity = {enemy: 5}
+        real_combat_player.combat_adapter_state = {}
+
+        Check(real_combat_player)._generate_api_check_data(real_combat_player)
+        [row] = real_combat_player.combat_adapter_state["check_data"]
+
+        _assert_builder_matches_the_wire(
+            "makeCheckEntry", row, "Check._generate_api_check_data"
+        )
+
+    def test_the_suggestion_fixture_carries_exactly_the_keys_the_strategist_emits(
+        self, real_adapter, real_combat_player
+    ):
+        """``combat.suggested_moves``, scored off a real move card.
+
+        The heuristic path, not the LLM one: ``get_suggestions`` either
+        returns the model's rows or falls back here, and both go through the
+        same four keys -- but only this one runs without a network call. A
+        client is passed so the constructor does not reach for
+        ``CombatLLMAdapter``; ``_get_fallback_suggestions`` never touches it.
+
+        The enemy is load-bearing, not scenery: with an empty ``combat_list``
+        Attack is not viable, its card arrives ``available: False``,
+        ``_offerable_moves`` drops it and the strategist returns its hardcoded
+        "no moves available" row instead -- the same four keys, so the guard
+        would pass while the SCORED branch it means to pin never ran.
+        """
+        enemy = Slime()
+        real_combat_player.known_moves = [Attack(real_combat_player)]
+        real_combat_player.combat_list = [enemy]
+        real_combat_player.combat_proximity = {enemy: 5}
+        [card] = real_adapter._get_available_moves()
+        assert card["available"], card["reason"]
+        context = {"available_moves": [card]}
+
+        [suggestion] = CombatStrategist(client=object())._get_fallback_suggestions(
+            context, max_suggestions=1
+        )
+
+        _assert_builder_matches_the_wire(
+            "makeSuggestedMove", suggestion, "_get_fallback_suggestions"
+        )
+
+    def test_the_combatant_fixture_carries_exactly_the_keys_the_serializer_emits(
+        self, real_combat_player
+    ):
+        """``makeCombatant`` -- the builder this branch changed most, and the
+        one every combat fixture is built on. A `reference` is passed because
+        that is what a real payload has: without one the serializer short-
+        circuits ``in_range`` to True and never reads a distance."""
+        enemy = Slime()
+        real_combat_player.combat_proximity = {enemy: 5}
+        enemy.combat_proximity = {real_combat_player: 5}
+
+        combatant = CombatantSerializer.serialize_combatant(enemy, real_combat_player)
+
+        _assert_builder_matches_the_wire(
+            "makeCombatant", combatant, "serialize_combatant"
+        )
+
+    @pytest.mark.parametrize(
+        "name, read",
+        [
+            # The card `_get_available_moves` builds, off a move Jean holds now.
+            ("ATTACK_CARD_FATIGUE_COST", lambda player: Attack(player).fatigue_cost),
+            # The row `get_player_skills` builds, off the move `Player.__init__`
+            # constructed before endurance and carry weight settled. Nothing
+            # re-evaluates it until Jean swings, which is why the two differ.
+            (
+                "ATTACK_DECLARED_FATIGUE_COST",
+                lambda player: next(
+                    m.fatigue_cost for m in player.known_moves if m.name == "Attack"
+                ),
+            ),
+        ],
+    )
+    def test_the_fixture_fatigue_costs_are_what_the_engine_computes(self, name, read):
+        """Two numbers a key-set guard cannot see.
+
+        ``payloads.js`` carries a fatigue cost in two builders, and both are
+        the kind of invented-looking literal this module exists to stop: a
+        wrong one describes a card no adapter can send, and every test built
+        on it agrees with the fixture rather than the engine. Held to a real
+        ``Player`` -- a fresh one, because both readings depend on the state
+        Jean starts with.
+        """
+        assert js_literal(_PAYLOADS_JS, name) == read(Player())
+
+    def test_the_passive_fixture_carries_exactly_the_keys_the_serializer_emits(self):
+        player = Player()
+        player.known_moves = [ShadowStep(player)]
+
+        [passive] = CombatantSerializer._serialize_passives(player)
+
+        _assert_builder_matches_the_wire("makePassive", passive, "_serialize_passives")
+
+    @pytest.mark.parametrize(
+        "name, emitted",
+        [
+            ("TURN_DIRECTIONS", combat_adapter.TURN_DIRECTIONS),
+            ("WAIT_DURATION_PROMPT", combat_adapter.WAIT_DURATION_PROMPT),
+            ("TOO_FAR_REASON", combat_adapter.TOO_FAR_REASON),
+            ("NOT_ENOUGH_FATIGUE_REASON", combat_adapter.NOT_ENOUGH_FATIGUE_REASON),
+        ],
+    )
+    def test_the_wire_string_fixtures_are_what_the_adapter_sends(self, name, emitted):
+        """The adapter puts these on the wire verbatim -- the two input
+        prompts in ``available_options``, the two reasons in a move card's
+        ``reason`` -- and the client renders them. A fixture that merely
+        looked like them let a renamed key, a moved bound or a reworded
+        sentence pass on both sides."""
+        assert emitted, name
+        assert js_literal(_PAYLOADS_JS, name) == emitted
+
+    @pytest.mark.parametrize(
+        "move_class, expected",
+        [
+            (Wait, combat_adapter.WAIT_DURATION_PROMPT),
+            (Turn, combat_adapter.TURN_DIRECTIONS),
+        ],
+    )
+    def test_the_adapter_really_offers_the_constants_it_names(
+        self, real_adapter, real_combat_player, move_class, expected
+    ):
+        """The other half of the pin above: the constants are only worth
+        holding the fixtures to if ``_handle_move_selection`` is what puts
+        them on the wire. Re-inlining either literal fails here."""
+        # A placed fight: Turn is viable only in coordinate-based combat, so
+        # the adapter has to have positioned the combatants.
+        real_adapter.initialize_combat([Slime()])
+        move = move_class(real_combat_player)
+        assert move.viable(), f"{move.name} is not selectable in this fixture"
+        real_combat_player.known_moves = [move]
+        real_adapter.input_type = "move_selection"
+
+        assert "error" not in real_adapter._handle_move_selection(0)
+
+        # Off the WIRE, not off the attribute: what the client renders is
+        # what `get_combat_state` put in the response.
+        offered = real_adapter.get_combat_state()["battle_state"]["available_options"]
+        assert offered == expected
+        # A copy, not the module constant: a client-driven mutation of the
+        # offered options must not edit the next fight's prompt.
+        assert real_adapter.available_options is not expected
+
+    def test_the_default_enemy_stands_where_its_target_card_is_viable(
+        self, real_adapter, real_combat_player
+    ):
+        """``DEFAULT_ENEMY_DISTANCE`` carries a claim the key-only tests
+        cannot see: the fixture enemy is in reach of the default move, which
+        is what makes its card carry a hit chance and a damage preview, and
+        makes ``in_range`` true on the combatant. Held to the two reaches the
+        engine actually applies -- and since ``makeCombatant`` now DERIVES
+        ``in_range`` from the item-use range rather than defaulting it, that
+        threshold is held to the engine's constant here too."""
+        assert js_literal(_PAYLOADS_JS, "ITEM_USE_RANGE") == ITEM_USE_RANGE
+        distance = js_literal(_PAYLOADS_JS, "DEFAULT_ENEMY_DISTANCE")
+        reach_min, reach_max = real_adapter._move_range(Attack(real_combat_player))
+
+        # The REACH, which makeTargetOption derives `in_range` and
+        # `shortfall_ft` from. Held separately from the distance above: the
+        # two are equal today, and deriving one from the other would make this
+        # a tautology that could not see the reach move.
+        assert js_literal(_PAYLOADS_JS, "DEFAULT_MOVE_REACH_FT") == reach_max
+
+        # Both ends: `_build_target_entry` reads the band as
+        # ``range_min <= distance <= range_max``, and several weapons in
+        # src/items.py open at 1, 2 or 3 feet rather than 0.
+        assert reach_min <= distance <= reach_max, (reach_min, distance, reach_max)
+        assert distance <= ITEM_USE_RANGE, (distance, ITEM_USE_RANGE)

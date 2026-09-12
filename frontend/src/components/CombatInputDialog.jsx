@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAudio } from '../context/AudioContext';
 import BaseDialog from './BaseDialog';
 import GameButton from './GameButton';
-import { colors } from '../styles/theme';
+import { colors, zIndex } from '../styles/theme';
 import { hostilityTokenFor } from '../utils/combatEntities';
 import HostilityChip from './HostilityChip';
 
@@ -233,7 +233,7 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
             title={getTitle()}
             onClose={onCancel}
             maxWidth="600px"
-            zIndex={2500}
+            zIndex={zIndex.raisedDialog}
             variant={inputType === 'target_selection' ? 'no-blur' : undefined}
             containerCentered={true}
         >

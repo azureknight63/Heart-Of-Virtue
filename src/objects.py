@@ -7,7 +7,7 @@ from src.narration import colored, cprint, narrate
 import src.functions as functions
 from src.player import Player
 from src.tiles import MapTile
-from src.events import Event  # noqa; This is used in type hints
+from src.events import Event, gate_is_set, set_story_gate  # noqa: F401 (Event: type hints only)
 from src.items import Item  # noqa; This is used in type hints
 
 #####
@@ -883,17 +883,39 @@ class Passageway(Object):
     different map entirely.
     """
 
-    # Issue #463: the cleanest class in the file -- every field is already a
-    # real, directly-stored constructor kwarg, no override bucket needed.
+    # Issue #463: nearly the cleanest class in the file -- every field but one
+    # is a real, directly-stored constructor kwarg, and no override bucket is
+    # needed. The exception is ``demo_end_ready_flag``, a property over
+    # ``_authored_ready_flag``, which is what the alias below exists for.
     MAP_AUTHORED_PARAMS = {
         "events_before", "events_after", "teleport_map", "teleport_tile",
         "persist", "hidden", "hide_factor", "passthrough", "name",
         "description", "idle_message", "discovery_message", "demo_end",
+        "demo_end_ready_flag",
     }
+    #: The export reads the gate key as authored, not through the property's
+    #: validated fallback, so a passageway with no key of its own round-trips
+    #: with none instead of coming back declaring the ferry's gate.
+    MAP_AUTHORED_ATTR_ALIASES = {"demo_end_ready_flag": "_authored_ready_flag"}
 
     #: Class-level default so a passageway restored from an older save still
     #: resolves the attribute (and crosses normally).
     demo_end = False
+
+    #: The story key the shipped demo edge (the nomad-camp Ferry Landing) is
+    #: gated on, written by chapter 3's ``MaraObservationEvent`` once Mara's
+    #: conversation chain completes (issue #579); ``ch03.py`` imports it
+    #: rather than keeping a copy. A chapter-3 key on a generic class only
+    #: because it is the fallback in ``demo_end_ready_flag`` below.
+    DEMO_END_READY_FLAG = "nomad_ferry_ready"
+
+    #: Story-state key ``end_demo`` SETS once the demo actually closes here,
+    #: as distinct from ``DEMO_END_READY_FLAG`` above, which gates whether it
+    #: may. Chapter 3's ``FerryLandingObjectiveEvent`` reads it to close the
+    #: ferry objective. The API deliberately does not: this key stays set
+    #: forever and says only that the demo ended at some point, so the wire's
+    #: ``beta_end`` comes from ``end_demo``'s return value instead.
+    DEMO_ENDED_FLAG = "demo_ended"
 
     #: The verbs that DELEGATE to ``enter`` rather than aliasing it. Declared
     #: once because ``__init__`` registers them as aliases and
@@ -930,6 +952,7 @@ class Passageway(Object):
         idle_message: str = "There is a passageway here.",
         discovery_message: str = " a passageway!",
         demo_end: bool = False,
+        demo_end_ready_flag: str = None,
     ):
         aliases = [name.lower(), "passage"]
         super().__init__(
@@ -961,10 +984,36 @@ class Passageway(Object):
         # If True, the frontend skips the Interactions panel and directly executes
         # the first action (enter) when the player clicks this object.
         self.passthrough = passthrough
-        # If True, this passageway is where the demo stops: using it narrates
-        # the moment and sets the 'demo_ended' story gate instead of crossing.
-        # See end_demo() and issue #552.
+        # If True, this passageway is where the demo stops: using it never
+        # crosses. Once the story key in ``demo_end_ready_flag`` is set it
+        # narrates the closing beat and sets ``DEMO_ENDED_FLAG``; before that
+        # it declines in fiction. See end_demo(), #552 and #579.
         self.demo_end = demo_end
+        # Stored as authored; the property validates it where it is read.
+        self.demo_end_ready_flag = demo_end_ready_flag
+
+    @property
+    def demo_end_ready_flag(self):
+        """The story key ``end_demo`` gates on, validated where it is read.
+
+        Authored per placement so a demo edge elsewhere can name its own
+        prerequisite. Validated here, not in ``__init__``, because neither
+        load path runs ``__init__`` on the value the game keeps: the legacy
+        map loader re-applies every authored prop with a bare ``setattr``, and
+        a pickled save skips ``__init__`` entirely. Anything but a non-empty
+        string -- no value at all included, as on a passageway saved before
+        the key was authorable -- falls back to ``DEMO_END_READY_FLAG``, the
+        only demo edge ever shipped. Map JSON and saves are
+        attacker-influenceable, and this value becomes a dict key; the
+        fallback is read off the class so that no instance attribute a map or
+        save sets can move it.
+        """
+        flag = getattr(self, "_authored_ready_flag", None)
+        return flag if isinstance(flag, str) and flag else type(self).DEMO_END_READY_FLAG
+
+    @demo_end_ready_flag.setter
+    def demo_end_ready_flag(self, value):
+        self._authored_ready_flag = value
 
     def is_crossing_handler(self, handler):
         """True when ``handler`` is one of this passageway's crossing methods.
@@ -986,32 +1035,65 @@ class Passageway(Object):
             for name in self.CROSSING_METHOD_NAMES
         )
 
-    def end_demo(self, player):
-        """Close out the demo at this passageway instead of crossing it.
+    def is_demo_edge(self, ready_flag=None):
+        """True when this passageway is where the demo stops -- and, given
+        ``ready_flag``, when it is the edge gated on that particular key.
 
-        Jean stays where he is; the story gate ``demo_ended`` is set so any
-        later content can read it. The player-facing end-of-beta message (with
-        its Send Feedback button) is the client's ``BetaEndDialog``, which the
-        API triggers off this — so the prose here is only the in-fiction beat
-        that belongs in the interaction panel, not the meta-text.
-
-        The line names the passageway and claims nothing about its
-        surroundings, so it stays true wherever the demo's edge is moved to.
+        The one place "is this the demo's edge" is answered: the API's
+        dispatch and chapter 3's runtime wiring both ask here rather than
+        reading ``demo_end`` themselves.
         """
-        story = getattr(getattr(player, "universe", None), "story", None)
-        if story is not None:
-            story["demo_ended"] = "1"
+        if not self.demo_end:
+            return False
+        return ready_flag is None or self.demo_end_ready_flag == ready_flag
+
+    def end_demo(self, player):
+        """End the demo here instead of crossing -- once the story gate in
+        ``demo_end_ready_flag`` is set (issue #579).
+
+        Returns True when THIS call closed the demo and False when it
+        declined, so a caller learns what happened here rather than
+        re-reading the sticky ``DEMO_ENDED_FLAG``, which says only that the
+        demo ended at some point.
+
+        Ready: Jean stays where he is, ``DEMO_ENDED_FLAG`` is set, and the
+        in-fiction closing beat is narrated; the end-of-beta meta-text is the
+        client's ``BetaEndDialog``, which the API raises off the return value.
+        Not ready: Jean still does not cross -- this is the edge of the
+        playable slice either way -- and declines with a hint that something
+        is unfinished, so the closed passage explains itself without naming
+        the gate. Both lines name only the passageway, so they stay true
+        wherever the demo's edge is moved to.
+        """
+        stops_at = f"Jean stops at {self.build_article_phrase(self.name)}"
+        if not gate_is_set(player, self.demo_end_ready_flag):
+            narrate(
+                f"{stops_at} but doesn't go through — not yet. Something else "
+                "still needs finishing first."
+            )
+            return False
+        # Off the class, like the ready flag's fallback and for the same
+        # reason: no instance attribute a map or save sets can move it.
+        set_story_gate(player, type(self).DEMO_ENDED_FLAG)
         narrate(
-            f"Jean stops at {self.build_article_phrase(self.name)} and looks "
-            "at what lies beyond. The way is plain enough — but not today."
+            f"{stops_at} and looks at what lies beyond. The way is plain "
+            "enough — but not today."
         )
+        return True
 
     def enter(self, player):
-        if self.demo_end:
+        """Cross this passageway -- or, on the demo's edge, end the demo here.
+
+        Returns ``end_demo``'s verdict on a demo-end passageway (True when
+        this call closed the demo, False when it declined) and None otherwise
+        -- a crossing, or a passageway with nowhere configured to go -- so a
+        caller dispatching the resolved handler can tell a demo end from a
+        decline. The API's ``beta_end`` is that verdict.
+        """
+        if self.is_demo_edge():
             # Before the merchandise drop and events_before: neither belongs to
             # a crossing that does not happen.
-            self.end_demo(player)
-            return
+            return self.end_demo(player)
         # Drop any merchandise items immediately upon attempting to enter/teleport
         if hasattr(player, "drop_merchandise_items"):
             player.drop_merchandise_items()
@@ -1030,18 +1112,19 @@ class Passageway(Object):
         functions.await_input()
 
     def _commit_teleport(self, player):
-        """Perform the actual teleport.  Called directly by CLI enter()
-        or via PassagewayTransitionEvent.process() in API mode.
+        """Perform the actual teleport. Called by ``enter``, and by
+        ``PassagewayTransitionEvent.process`` once a crossing is confirmed.
 
         The demo-end refusal is repeated here, not just in ``enter``, because
         this is the crossing PRIMITIVE and ``PassagewayTransitionEvent.process``
         reaches it without passing through ``enter`` at all (src/events.py).
         Guarding only the polite entry point left the demo's edge crossable by
-        whichever route skipped it (#552).
+        whichever route skipped it (#552). Returns ``end_demo``'s verdict
+        there, as ``enter`` does; ``PassagewayTransitionEvent.process``
+        discards it because the API never arms that event for a demo edge.
         """
-        if self.demo_end:
-            self.end_demo(player)
-            return
+        if self.is_demo_edge():
+            return self.end_demo(player)
         player.teleport(self.teleport_map, self.teleport_tile)
         if self.events_after:
             for event in self.events_after:
@@ -1063,14 +1146,17 @@ class Passageway(Object):
             return f"the {name[4:]}"
         return f"the {name.lower()}"
 
+    # Each hands back enter's verdict: on a demo-end passageway that is
+    # whether THIS call closed the demo, and a delegator that dropped it
+    # would read as "declined" to anyone dispatching the resolved handler.
     def go(self, player):
-        self.enter(player)
+        return self.enter(player)
 
     def leave(self, player):
-        self.enter(player)
+        return self.enter(player)
 
     def exit(self, player):
-        self.enter(player)
+        return self.enter(player)
 
 
 class MarketBell(Object):

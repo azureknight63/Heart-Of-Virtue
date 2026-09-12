@@ -113,6 +113,9 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
       variant="warning"
       maxWidth="500px"
       padding="16px"
+      // The shared 2000 panel tier; see zIndex in styles/theme.js. The picker
+      // and result overlays further down render inside this dialog, so their
+      // own ranks order them only against its content.
       zIndex={2000}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -278,7 +281,10 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 2500,
+          // A local rank inside this dialog's own stacking context (see the
+          // comment on BaseDialog above), not the global `raisedDialog` tier,
+          // which is for a dialog opening OVER another dialog.
+          zIndex: 1,
         }}>
           <div style={{
             backgroundColor: 'rgba(0, 20, 40, 0.98)',
@@ -356,7 +362,10 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 2501,
+          // One above the picker's local rank. Defensive: every path through
+          // handleUseItem that sets actionResult clears useItemTarget in the
+          // same batch, so the two are never mounted together today.
+          zIndex: 2,
         }}>
           <div style={{
             backgroundColor: 'rgba(10,20,10,0.98)',

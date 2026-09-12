@@ -8,10 +8,6 @@ path the API uses, so a renamed objective key or a story edit that drops a
 """
 
 import ast
-import inspect
-import io
-import re
-import textwrap
 
 import pytest
 
@@ -21,6 +17,17 @@ from src.narration import capture_narration
 from src.player import Player
 from src.story import ch01, ch02, ch03
 from src.universe import Universe
+from tests._ast_helpers import call_target
+from tests._story_scan import (
+    COMPLETE_OBJECTIVE,
+    OBJECTIVE_CALLS,
+    SET_OBJECTIVE,
+    declared_objectives,
+    is_objective_name,
+    objective_key_name,
+    objective_key_node,
+    story_modules,
+)
 
 
 @pytest.fixture
@@ -62,17 +69,14 @@ def gs():
     return GameService()
 
 
-def _intro_gates_of(event_cls):
-    """The `<name>_intro_done` story gates an event's check_conditions reads.
+def _prerequisite_names(event_cls):
+    """Who an event waits on: the first word of each prerequisite beat's gate.
 
-    Read out of the source so the roster an objective must name comes from the
-    event that actually enforces it, not from a copy in this file.
+    Read off the event's own ``PREREQUISITE_BEATS`` so the roster an objective
+    must name comes from the event that actually enforces it, not from a copy
+    in this file.
     """
-    source = textwrap.dedent(inspect.getsource(event_cls.check_conditions))
-    return {
-        match.group(1)
-        for match in re.finditer(r'"(\w+)_intro_done"', source)
-    }
+    return {beat.GATE_KEY.split("_", 1)[0] for beat in event_cls.PREREQUISITE_BEATS}
 
 
 def objective_keys(player, status="active"):
@@ -115,12 +119,12 @@ class TestChapterThreeObjectiveChain:
     def test_the_objective_names_exactly_the_gates_the_game_waits_on(self, gs, player):
         """An objective must not send the player after optional work.
 
-        The roster is derived from `MaraObservationEvent.check_conditions`'s own
-        `<name>_intro_done` gates rather than restated here, so adding a fourth
-        gate fails this instead of leaving the objective quietly stale.
+        The roster is derived from `MaraObservationEvent.PREREQUISITE_BEATS`
+        rather than restated here, so adding a fourth beat fails this instead
+        of leaving the objective quietly stale.
         """
-        gates = _intro_gates_of(ch03.MaraObservationEvent)
-        assert gates, "found no *_intro_done gates to derive the roster from"
+        names = _prerequisite_names(ch03.MaraObservationEvent)
+        assert names, "MaraObservationEvent waits on no beats to derive the roster from"
 
         self._camp_entry(gs, player)
         tile = _Tile("River's Edge")
@@ -129,7 +133,7 @@ class TestChapterThreeObjectiveChain:
 
         text = player.universe.journal.objectives["ch03_walk_the_camp"]["text"].lower()
         # Mara is the scene that just ran; the rest must be named.
-        for name in gates - {"mara"}:
+        for name in names - {"mara"}:
             assert name in text, f"the objective never names {name}, which gates the ferry"
         # ...and nothing the game does not wait on.
         for optional in ("forge", "smith"):
@@ -158,11 +162,26 @@ class TestChapterThreeObjectiveChain:
         assert "ch03_walk_the_camp" in objective_keys(player, "done")
         assert "ch03_ferry_landing" in objective_keys(player)
 
-    def test_the_demo_end_closes_the_last_objective(self, gs, player):
+    def test_the_ferry_landing_completer_closes_the_last_objective(self, gs, player):
+        """The closer is ``FerryLandingObjectiveEvent``, and it needs the gate.
+
+        This used to run ``DemoEndEvent``, which closed the objective when
+        called -- but nothing ever called it, so the objective was in fact
+        uncloseable in play.
+
+        ``run_event`` calls ``process()`` directly, bypassing the gate, so
+        this only shows the class closes the objective once it runs. The two
+        facts it cannot see -- that the completer waits for the demo to end,
+        and that the shipped Ferry Landing tile carries it at all (the
+        missing placement WAS the bug) -- are pinned in
+        ``test_ferry_landing_objective.py``.
+        """
         tile = _Tile("Ferry Landing")
         player.current_room = tile
         run_event(gs, player, ch03.MaraObservationEvent(player=player, tile=tile))
-        run_event(gs, player, ch03.DemoEndEvent(player=player, tile=tile))
+        run_event(
+            gs, player, ch03.FerryLandingObjectiveEvent(player=player, tile=tile)
+        )
 
         assert "ch03_ferry_landing" in objective_keys(player, "done")
 
@@ -313,37 +332,25 @@ class TestObjectiveKeyRegistry:
     the guard checking a stale roster.
     """
 
-    #: Story modules whose objective calls are in scope.
-    MODULES = (ch01, ch02, ch03)
+    @staticmethod
+    def _trees():
+        """``(dotted name, tree)`` for every chapter.
 
-    @classmethod
-    def _trees(cls):
-        return [
-            (m.__name__, ast.parse(io.open(m.__file__, encoding="utf-8").read()))
-            for m in cls.MODULES
-        ]
+        The roster is derived in ``tests/_story_scan.py`` and shared with the
+        reachability guard in ``test_ferry_landing_objective.py``, so neither
+        can under-scan the other's chapters.
+        """
+        return [(module.dotted, module.tree) for module in story_modules()]
 
     @classmethod
     def _objective_calls(cls):
-        """Every `set_objective`/`complete_objective` call, as
-        ``(module, func_name, key_arg_node)``."""
+        """Every objective call that passes a key, as ``(module, func_name, call)``."""
         calls = []
         for module_name, tree in cls._trees():
             for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
-                name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
-                if name not in ("set_objective", "complete_objective"):
-                    continue
-                if len(node.args) >= 2:  # (player, key, ...)
-                    calls.append((module_name, name, node.args[1]))
-                    continue
-                # ...or key= as a keyword, which would otherwise be invisible
-                # to every guard below -- including the bare-string check that
-                # is the whole point of the class.
-                for keyword in node.keywords:
-                    if keyword.arg == "key":
-                        calls.append((module_name, name, keyword.value))
+                name = call_target(node)
+                if name in OBJECTIVE_CALLS and objective_key_node(node) is not None:
+                    calls.append((module_name, name, node))
         return calls
 
     @classmethod
@@ -360,35 +367,29 @@ class TestObjectiveKeyRegistry:
         are skipped here and covered by the table scan; a bare string literal is
         caught by `test_no_objective_key_is_written_as_a_bare_string`.
         """
-        names = {
-            arg.id
-            for _mod, fn, arg in cls._objective_calls()
-            if fn == "set_objective"
-            and isinstance(arg, ast.Name)
-            and arg.id.startswith("OBJ_")
-        }
+        names = cls._keys_passed_to(SET_OBJECTIVE)
         for _module_name, tree in cls._trees():
             for node in tree.body:
                 if not isinstance(node, ast.Assign):
                     continue
-                for inner in ast.walk(node.value):
-                    if isinstance(inner, ast.Name) and inner.id.startswith("OBJ_"):
-                        names.add(inner.id)
+                names.update(
+                    inner.id for inner in ast.walk(node.value) if is_objective_name(inner)
+                )
         return names
 
     @classmethod
-    def _keys_completed(cls):
+    def _keys_passed_to(cls, fn_name):
+        """OBJ_* names passed as the key of every ``fn_name`` call."""
         return {
-            arg.id
-            for _mod, fn, arg in cls._objective_calls()
-            if fn == "complete_objective"
-            and isinstance(arg, ast.Name)
-            and arg.id.startswith("OBJ_")
-        }
+            objective_key_name(call)
+            for _mod, fn, call in cls._objective_calls()
+            if fn == fn_name
+        } - {None}
 
-    @staticmethod
-    def _declared():
-        return {name for name in vars(journal) if name.startswith("OBJ_")}
+    @classmethod
+    def _keys_completed(cls):
+        """OBJ_* names the story COMPLETES."""
+        return cls._keys_passed_to(COMPLETE_OBJECTIVE)
 
     def test_the_scan_finds_the_calls_it_is_meant_to_guard(self):
         """A scan that matches nothing approves of everything.
@@ -398,23 +399,22 @@ class TestObjectiveKeyRegistry:
         fails for the wrong reason the day an objective is legitimately
         retired.
         """
-        declared = self._declared()
+        declared = declared_objectives()
         assert declared, "src.journal declares no OBJ_* constants"
 
         calls = self._objective_calls()
         assert len(calls) >= len(declared), calls
-        assert {fn for _mod, fn, _arg in calls} == {
-            "set_objective",
-            "complete_objective",
-        }
+        assert {fn for _mod, fn, _call in calls} == set(OBJECTIVE_CALLS)
         assert self._keys_set() == declared
         assert self._keys_completed() == declared
 
     def test_no_objective_key_is_written_as_a_bare_string(self):
+        keys = [
+            (mod, fn, objective_key_node(call))
+            for mod, fn, call in self._objective_calls()
+        ]
         literals = [
-            (mod, fn, arg.value)
-            for mod, fn, arg in self._objective_calls()
-            if isinstance(arg, ast.Constant)
+            (mod, fn, key.value) for mod, fn, key in keys if isinstance(key, ast.Constant)
         ]
         assert not literals, (
             "objective keys must come from src.journal's OBJ_* constants so a "
@@ -444,7 +444,7 @@ class TestObjectiveKeyRegistry:
     def test_no_journal_objective_constant_is_dead(self):
         """A constant the story never uses is either a rename that missed a
         call site or an objective that was dropped."""
-        declared = self._declared()
+        declared = declared_objectives()
         assert declared
         unused = declared - (self._keys_set() | self._keys_completed())
         assert not unused, f"declared but never used by the story: {sorted(unused)}"

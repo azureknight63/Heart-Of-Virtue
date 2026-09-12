@@ -4,7 +4,7 @@ import GameButton from './GameButton'
 import GameText from './GameText'
 import AttributePointAllocator from './AttributePointAllocator'
 import { useAttributeAllocation } from '../hooks/useAttributeAllocation'
-import { colors, spacing, shadows } from '../styles/theme'
+import { colors, spacing, shadows, zIndex } from '../styles/theme'
 
 /**
  * VictoryDialog - Shown after combat victory
@@ -66,7 +66,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
         borderBottom: 'none',
         borderRadius: '12px 12px 0 0',
         padding: `${spacing.md} ${spacing.lg}`,
-        zIndex: 2500,
+        zIndex: zIndex.raisedDialog,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -107,7 +107,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
       onClose={canClose ? handleAdvance : () => setIsMinimized(true)}
       maxWidth="720px"
       padding="16px"
-      zIndex={2500}
+      zIndex={zIndex.raisedDialog}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {/* Header Actions */}

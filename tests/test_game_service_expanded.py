@@ -37,7 +37,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.secure_pickle import HEADER_MAGIC, HEADER_SIZE, HEADER_VERSION
 from src.states import State
-from tests._gs_fixtures import GRID_3X3, live_world
+from src.story import ch02
+from tests._ch02_fixtures import (
+    CORRUPTED_AUTHORED_TEXT,
+    arena_coord,
+    make_pools_map,
+    mark_king_slime_defeated,
+    plant_legacy_cleansed_object,
+    pre_572_cleansed_prose,
+)
+from tests._gs_fixtures import GRID_3X3, live_world, make_tile
 
 
 @pytest.fixture
@@ -286,6 +295,46 @@ class TestLoadGame:
         sql, params = db.execute.call_args.args
         assert "WHERE id = ? AND user_id = ?" in sql
         assert params == ["save-id", "user123"]
+
+    async def test_repairs_the_nameless_object_a_pre_572_save_left_on_a_pools_tile(
+        self, game_service, player, db
+    ):
+        """The repair is ``src.story.ch02``'s and is tested there
+        (``test_ch02_pool_description_replacement.py``); this pins that a
+        loaded save goes through it, carrying the arena prose the pre-#572
+        code actually spawned."""
+        arena_xy = arena_coord()
+        pools_map = make_pools_map()
+        arena_tile = make_tile(
+            player.universe, pools_map, *arena_xy, description=CORRUPTED_AUTHORED_TEXT
+        )
+        plant_legacy_cleansed_object(player, arena_tile, pre_572_cleansed_prose()[arena_xy])
+        player.universe.maps.append(pools_map)
+        mark_king_slime_defeated(player)
+
+        loaded = await self._round_trip(game_service, player, db)
+
+        loaded_arena = ch02.find_pools_map(loaded)[arena_xy]
+        assert loaded_arena.description == ch02.CLEANSED_ARENA_DESCRIPTION
+        assert loaded_arena.objects_here == []
+
+    async def test_a_save_repair_that_raises_does_not_cost_the_load(
+        self, game_service, player, db
+    ):
+        """Save repairs only tidy what an older build left behind; one that
+        fails is skipped, and the save still loads.
+
+        The repair is asserted to have RUN: without that, a load path that
+        stopped calling ``repair_loaded_save`` at all would pass this too.
+        """
+        failing_repair = MagicMock(side_effect=RuntimeError("repair failed"))
+
+        with patch("src.story.ch02.fold_legacy_cleansed_descriptions", failing_repair):
+            loaded = await self._round_trip(game_service, player, db)
+
+        failing_repair.assert_called_once()
+        assert loaded is not None
+        assert loaded.name == player.name
 
     async def test_a_missing_save_returns_none(self, game_service, db):
         db.execute.return_value = _result(rows=[])

@@ -199,6 +199,49 @@ export const fonts = {
     serif: "Georgia, 'Times New Roman', serif",
 }
 
+/**
+ * Stacking ranks that must agree across components.
+ *
+ * Issue #575: CombatMovePanel and the box LeftPanel wraps HeroPanel in share
+ * a parent stacking context, so their order is decided by these numbers
+ * alone. They live here, in one place, rather than one component
+ * importing a layout number from another: a component that imports a rank
+ * from a sibling forces every test that mocks that sibling to re-export it,
+ * or that test throws, because vitest raises on any read of an export its
+ * mock does not define (LeftPanel.test.jsx mocks CombatMovePanel, for one).
+ * `heroStackingLayer` is an offset from `combatMovePanel` so the two cannot
+ * drift back out of order; the size of the offset is arbitrary (only the
+ * ordering matters) and leaves headroom for a layer between them. `dialog` is
+ * BaseDialog's default overlay rank, and the HUD ranks here stay below it so
+ * a live control cannot paint over a blocking modal. `raisedDialog` is for a
+ * dialog that must open over another dialog.
+ *
+ * Not every dialog reads this scale. Two literal tiers are shared widely
+ * enough to name, and are not tokens: 1500 (the inventory-style dialogs) and
+ * 2000 (the panel dialogs). Both sit between `dialog` and `raisedDialog`;
+ * `grep -rn zIndex src/components` lists who uses them, and the remaining
+ * per-dialog literals. Neighbouring literals all over the tree are ranked
+ * against these tiers and cannot follow a retune, so the numbers are not
+ * freely changeable even though the tokens' own ordering is what matters
+ * here. Grep before retuning; the ones whose ORDER is load-bearing are
+ * MobileTabBar at 1000 (the same rank as `dialog`, with DOM order deciding
+ * between them), CombatManager's resolving indicator at 2400 (must stay
+ * under `raisedDialog`) and LevelUpModal at 2600 (must stay over it).
+ *
+ * A rank set INSIDE a BaseDialog is not on this scale at all: that
+ * overlay forms a stacking context, so such a number only orders the
+ * dialog's own content, and each one says so where it is set. A new one
+ * should be a small ordinal (1, 2, ...); the four-digit local ranks still in
+ * the tree are historical.
+ */
+const COMBAT_MOVE_PANEL_RANK = 100
+export const zIndex = {
+    combatMovePanel: COMBAT_MOVE_PANEL_RANK,
+    heroStackingLayer: COMBAT_MOVE_PANEL_RANK + 50,
+    dialog: 1000,
+    raisedDialog: 2500,
+}
+
 export const accessibility = {
     touchTarget: '44px', // Apple/Google HIG minimum touch target size
 }
@@ -279,6 +322,7 @@ export default {
     shadows,
     spacing,
     fonts,
+    zIndex,
     accessibility,
     commonStyles,
     STAGE_PORTRAIT_WIDTH_VAR

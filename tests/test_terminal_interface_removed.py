@@ -15,14 +15,12 @@ helpers that callers and tests still import from it.
 import ast
 import functools
 import importlib
-import pathlib
 
 import pytest
 
 from src.items import Gold, Item
 from src.player import Player
-
-SRC_ROOT = pathlib.Path(__file__).resolve().parent.parent / "src"
+from tests._source_scan import SRC_ROOT, src_trees
 
 # The only surviving literal `input()` in the engine lives in
 # src/animations.py's `main()`, the developer CLI entry point that is reached
@@ -64,12 +62,13 @@ def _enclosing_function(tree):
 
 @functools.lru_cache(maxsize=1)
 def _input_call_sites():
-    """Every literal ``input(...)`` call in src/, as (relpath, lineno, func)."""
+    """Every literal ``input(...)`` call in src/, as (path relative to src/,
+    lineno, func), from the shared once-per-worker parse."""
     sites = []
-    for path in sorted(SRC_ROOT.rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for source in src_trees():
+        tree = source.tree
         owner = _enclosing_function(tree)
-        rel = str(path.relative_to(SRC_ROOT))
+        rel = source.path.relative_to(SRC_ROOT).as_posix()
         for node in ast.walk(tree):
             if (
                 isinstance(node, ast.Call)

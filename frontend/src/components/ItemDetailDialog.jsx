@@ -94,17 +94,33 @@ function describeEffect(effect) {
   }
 }
 
+// This view renders inside InventoryDialog's BaseDialog, whose overlay forms
+// its own stacking context, so these are LOCAL ranks, not tiers on the theme's
+// zIndex scale (styles/theme.js). The only comparison they make is between
+// themselves: the action-result and ally-picker overlays must paint over the
+// drop confirm.
+//
+// The action-result overlay and the ally picker share OVERLAY_RANK; if both
+// ever mount at once, DOM order decides.
+//
+// A NEW rank here should be a small ordinal (1, 2, ...), per the note on
+// `zIndex` in styles/theme.js -- PartyPanel's in-dialog ranks are already
+// spelled that way. These four-digit values are historical, and renumbering
+// them is a real DOM change that would need its own verification.
+const DROP_CONFIRM_RANK = 1600
+const OVERLAY_RANK = DROP_CONFIRM_RANK + 100
+
 /**
  * KNOWN SIZE, deliberately not split here.
  *
  * This is one ~1050-line component holding seven data sections, a five-button
- * action row and four inline `position: fixed` overlays (action result, drop
- * confirm, ally picker, book reader), each with its own z-index ladder; the
- * ally picker nests two maps around ~20 derived locals. The shape a reviewer
- * proposes every round is the right one -- lift the three inline overlays to
- * sibling components in this file (`ActionResultOverlay`,
- * `DropConfirmOverlay`, `AllyPickerOverlay`), which read only props and state
- * already in scope and change no DOM.
+ * action row and three inline `position: fixed` overlays (action result, drop
+ * confirm, ally picker) sharing the two local ranks above, plus a child
+ * `BookReaderDialog`; the ally picker nests two maps around ~20 derived
+ * locals. The shape a reviewer proposes every round is the right one -- lift
+ * the three inline overlays to sibling components in this file
+ * (`ActionResultOverlay`, `DropConfirmOverlay`, `AllyPickerOverlay`), which
+ * read only props and state already in scope and change no DOM.
  *
  * It was NOT done on the 2026-09-08 QA-triage branch, and the reason is scope
  * rather than disagreement: that branch touched this file only to route stack
@@ -746,7 +762,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 1700, // Higher than BaseDialog (1500) and drop confirm (1600)
+          zIndex: OVERLAY_RANK,
         }}>
           <div style={{
             backgroundColor: 'rgba(30, 20, 5, 0.98)',
@@ -830,7 +846,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 1600, // Higher than BaseDialog (1500)
+          zIndex: DROP_CONFIRM_RANK,
         }}>
           <div style={{
             backgroundColor: 'rgba(50, 20, 0, 0.95)',
@@ -940,7 +956,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 1700,
+          zIndex: OVERLAY_RANK,
         }}>
           <div style={{
             backgroundColor: 'rgba(0, 20, 40, 0.98)',

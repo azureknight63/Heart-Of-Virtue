@@ -1,3 +1,5 @@
+import { transformCombatData } from '../utils/combatTransform'
+
 /**
  * Shared realistic API payload fixtures.
  *
@@ -39,7 +41,7 @@
  *   e = Slime()
  *   with patch('src.api.combat_adapter.CombatStrategist'):
  *       a = ApiCombatAdapter(p); a.initialize_combat([e])
- *   p.combat_list=[e]; p.combat_proximity={e:10}
+ *   p.combat_list=[e]; p.combat_proximity={e:5}  # == DEFAULT_ENEMY_DISTANCE
  *   print(json.dumps(a.get_combat_state(), indent=1, default=str))"
  *
  * The Python-side guard that these names still exist is
@@ -47,6 +49,16 @@
  * asserts the frontend's declared field list is a subset of what actually
  * comes back. This module is its client-side counterpart: the contract test
  * proves the *server* emits the names, this module makes the *tests* use them.
+ *
+ * That guard PARSES this file (`_js_builder_keys`, and `js_literal` in
+ * tests/_js_scan.py), which puts two constraints on what may be written here:
+ * a builder's object literal must stay brace-balanced with its braces inside
+ * the builder; no string value may contain `//` (comment stripping is a blunt
+ * line-wise strip); and no comment between a builder's signature and its
+ * `merge(` call may itself contain `merge(`, because the literal is located
+ * on the raw source before comments are stripped. Breaking any of them fails
+ * the contract test rather than passing quietly, but the failure will blame
+ * the fixture, not the prose.
  *
  * === Usage ===
  *
@@ -62,6 +74,34 @@
 
 /** Shallow merge that keeps the factory call sites terse. */
 const merge = (base, overrides) => ({ ...base, ...overrides })
+
+/**
+ * The value of `key` a builder should emit: what the caller passed, or
+ * `fallback` when the caller named no such key at all. `in` rather than `??`
+ * or a default parameter, so a test that passes `key: undefined` gets exactly
+ * that, an explicitly absent field, instead of silently getting the default
+ * back. Every default another field is derived from goes through this, so the
+ * rule is mechanical rather than retyped at each site.
+ */
+const provided = (overrides, key, fallback) => (key in overrides ? overrides[key] : fallback)
+
+/**
+ * The `name` a builder emits, which its `display_name` then follows: the
+ * server derives both from one move, so a fixture whose display name belongs
+ * to a different move describes no payload it can send.
+ *
+ * Following is the common case, not a rule of the wire: `display_name_of`
+ * (src/moves/_base.py) prefers the class's own `display_name` and falls back
+ * to `name`. No move Jean can cast diverges -- every one of them passes its
+ * player-facing string as `name` ("Use Item", "Crusader's Oath"), and the
+ * class-level `display_name` is what the NPC family uses instead: `NpcAttack`
+ * declares `display_name = 'Attack'` (src/moves/_npc.py:126) over
+ * `name="NPC_Attack"` (:164). That pair does reach the client, through
+ * `_serialize_active_move` (src/api/serializers/combat.py:453), which emits
+ * both keys for whatever an enemy is mid-swing on -- so a fixture for an
+ * enemy's active move is the one that sets the two by hand.
+ */
+const nameFrom = (overrides, fallback) => provided(overrides, 'name', fallback)
 
 // ---------------------------------------------------------------------------
 // Status effects — CombatantSerializer._serialize_status_effects
@@ -84,6 +124,30 @@ export function makeStatusEffect(overrides = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Passives — CombatantSerializer._serialize_passives
+// ---------------------------------------------------------------------------
+// NOT a status effect: {name, display_name, type, description, category},
+// with no severity and no beats_left. The default is a real PassiveMove,
+// ShadowStep (src/moves/_dagger.py), which keeps PassiveMove's default
+// category. tests/test_wire_field_contract.py holds these keys to the
+// serializer's.
+export function makePassive(overrides = {}) {
+  const name = nameFrom(overrides, 'Shadow Step')
+  return merge(
+    {
+      name,
+      display_name: name,
+      type: 'passive',
+      description:
+        'Deliberate, silent footwork lets you approach without alerting targets. ' +
+        'Your steps give nothing away.',
+      category: 'Passive',
+    },
+    overrides
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Combatant — CombatantSerializer.serialize_combatant
 // ---------------------------------------------------------------------------
 const RESISTANCES = Object.freeze({
@@ -91,21 +155,43 @@ const RESISTANCES = Object.freeze({
   piercing: 1.0, slashing: 1.0, crushing: 1.0, spiritual: 1.0, pure: 1.0,
 })
 
+/**
+ * How far a combatant can be and still be targetable with an item, and the
+ * threshold `serialize_combatant` derives `in_range` from
+ * (src/api/constants.py -> src/api/serializers/combat.py). Exported so
+ * tests/test_wire_field_contract.py can hold this copy to the engine's.
+ */
+export const ITEM_USE_RANGE = 5
+
 export function makeCombatant(overrides = {}) {
+  // Three pairs the serializer builds from ONE engine value each, so no real
+  // payload can carry them disagreeing (src/api/serializers/combat.py):
+  // `health` is `{hp, maxhp}` restated, and `in_range` is
+  // `distance <= ITEM_USE_RANGE`. Derived here rather than defaulted, because
+  // a default only fixes the un-overridden case -- `makeCombatant({ hp: 20 })`
+  // used to leave `health.current` at 100, and `{ distance: 25 }` used to
+  // leave `in_range` true.
+  const hp = provided(overrides, 'hp', 100)
+  const maxHp = provided(overrides, 'max_hp', 100)
+  const distance = provided(overrides, 'distance', 0)
+  // `max_fatigue` and `maxfatigue` are the same engine attribute emitted
+  // twice (`combatant.maxfatigue`), so they cannot disagree on the wire
+  // either; a caller who sets one gets both.
+  const maxFatigue = provided(overrides, 'maxfatigue', provided(overrides, 'max_fatigue', 190))
   return merge(
     {
       id: 'player',
-      in_range: true,
+      in_range: distance === undefined ? undefined : distance <= ITEM_USE_RANGE,
       name: 'Jean',
       battle_symbol: null,
       type: 'player',
       level: 1,
-      health: { current: 100, max: 100 },
-      hp: 100,
-      max_hp: 100,
+      health: { current: hp, max: maxHp },
+      hp,
+      max_hp: maxHp,
       fatigue: 190,
-      max_fatigue: 190,
-      maxfatigue: 190,
+      max_fatigue: maxFatigue,
+      maxfatigue: maxFatigue,
       heat: 1.0,
       stats: { damage: 1, speed: 10, accuracy: 108, evasion: 11, defense: 4, attack_power: 22 },
       attributes: {
@@ -119,7 +205,7 @@ export function makeCombatant(overrides = {}) {
         armor: { name: 'Tattered Cloth', protection: 1 },
         resistances: { ...RESISTANCES },
       },
-      distance: 0,
+      distance,
       position: { x: 0, y: 3, facing: 'N' },
       current_move: null,
       move_in_process: null,
@@ -128,19 +214,92 @@ export function makeCombatant(overrides = {}) {
   )
 }
 
+/**
+ * A combatant id in the shape `CombatantSerializer.stream_id` emits. The
+ * scheme is three-way -- `player`, `ally_<handle>`, `enemy_<handle>` -- and
+ * the PREFIX is the load-bearing half: the client keys the two sides apart by
+ * it, and a combatant that changes sides changes id. The handle itself is an
+ * opaque wire token, so a readable stand-in serves. New fixtures take ids
+ * from here rather than spelling `enemy_2` by hand; a handful of older files
+ * (Battlefield, BattlefieldGrid, GamePage) still spell theirs and are
+ * unmigrated.
+ */
+export const enemyId = (n) => `enemy_${n}`
+export const allyId = (n) => `ally_${n}`
+
+// The one enemy every combat fixture defaults to: a Slime, as the provenance
+// capture above spawns. makeEnemy (the battle-state combatant) and
+// makeTargetOption (a target card naming it) both read these, so a default
+// card cannot name a different enemy from the default fight's.
+const DEFAULT_ENEMY_ID = enemyId(1)
+const DEFAULT_ENEMY_NAME = 'Slime Ernerouchu'
+const DEFAULT_ENEMY_HP = 20
+
+// Where it stands. One value for both builders because one payload cannot
+// carry two: the combatant card and the target card read the two reciprocal
+// `combat_proximity` entries for the same pair, which the engine keeps in
+// step. It sits at the far edge of the (0, 5) reach a weapon has by default
+// (src/items.py), which is what lets the target card below carry
+// `in_range: true`, a hit chance and a damage preview. Exported because
+// tests/test_wire_field_contract.py reads it and holds it to the engine's
+// real reaches.
+// How far the default move reaches: Attack's `range_max`, the top of the
+// (0, 5) band a weapon has by default (src/items.py). This is the threshold
+// `_build_target_entry` compares a target's distance against, and
+// tests/test_wire_field_contract.py holds it to the engine's own
+// `_move_range`. Kept apart from DEFAULT_ENEMY_DISTANCE below even though the
+// two are equal today: one is a reach, the other a position, and deriving
+// "in range" from the position would make the test a tautology.
+export const DEFAULT_MOVE_REACH_FT = 5
+
+// A literal, not `= DEFAULT_MOVE_REACH_FT`: tests/_js_scan.py reads these
+// with ast.literal_eval and cannot resolve a name. Both are pinned to the
+// engine's own `_move_range` separately, which is the point -- the two facts
+// are equal today and a test would have to notice if they stopped being.
+export const DEFAULT_ENEMY_DISTANCE = 5
+
+// The arena's width in tiles. Two builders carry it (the battle state and the
+// whole response), and makeCombat routes an override into exactly one of
+// them, so the two copies must start equal or a fixture is incoherent before
+// any test touches it.
+const DEFAULT_MAP_SIZE = 9
+
+// Attack's fatigue cost, at the two readings that genuinely differ. Both are
+// `move.fatigue_cost` off a real move -- the difference is WHICH move.
+//
+//   * 49 is what `Attack.evaluate` computes for the Jean captured above:
+//     `max(10, ceil(70 + weight*wt_mult - 2*endurance))` is 48 at endurance
+//     11 with weightless fists, and `_apply_carry_fatigue` rounds it up for
+//     the 1.15 lb he carries. A move card is built from a move Jean is
+//     holding now, so `_get_available_moves` ships this.
+//   * 50 is what the moves in `Player().known_moves` carry: they were built
+//     DURING `Player.__init__`, before endurance and carry weight settled,
+//     and nothing re-evaluates them until Jean swings. `get_player_skills`
+//     reads them as they stand, so a freshly loaded player's skills list
+//     shows this.
+//
+// Both are exported and held to the engine by
+// tests/test_wire_field_contract.py, because a key-set guard cannot see a
+// wrong number and two review rounds proposed a wrong one from arithmetic.
+export const ATTACK_CARD_FATIGUE_COST = 49
+export const ATTACK_DECLARED_FATIGUE_COST = 50
+
+// Jean's damage against that Slime. `lethal` is derived from the enemy's HP
+// rather than typed, so raising DEFAULT_ENEMY_HP cannot leave a preview
+// claiming a kill it could not land.
+const DEFAULT_DAMAGE_PREVIEW = { min: 17, max: 26 }
+
 /** An enemy combatant (same serializer, `type: 'npc'` and an `enemy_<id>` id). */
 export function makeEnemy(overrides = {}) {
   return makeCombatant(
     merge(
       {
-        id: 'enemy_1',
-        name: 'Slime Ernerouchu',
+        id: DEFAULT_ENEMY_ID,
+        name: DEFAULT_ENEMY_NAME,
         type: 'npc',
-        health: { current: 20, max: 20 },
-        hp: 20,
-        max_hp: 20,
+        hp: DEFAULT_ENEMY_HP,
+        max_hp: DEFAULT_ENEMY_HP,
         fatigue: 100,
-        max_fatigue: 100,
         maxfatigue: 100,
         stats: { damage: 26, speed: 10, accuracy: 108, evasion: 10, defense: 0, attack_power: 26 },
         attributes: {
@@ -148,7 +307,7 @@ export function makeEnemy(overrides = {}) {
           endurance: 10, intelligence: 10, charisma: 10,
         },
         equipment: { weapon: null, armor: null, resistances: { ...RESISTANCES } },
-        distance: 10,
+        distance: DEFAULT_ENEMY_DISTANCE,
         position: { x: 6, y: 3, facing: 'S' },
       },
       overrides
@@ -163,8 +322,8 @@ export function makeEnemy(overrides = {}) {
 // battle_state. That is why new per-poll combat fields belong in here rather
 // than at the top level (see COMBAT_TOP_LEVEL_WHITELIST below).
 export function makeBattleState(overrides = {}) {
-  const player = overrides.player ?? makeCombatant()
-  const enemies = overrides.enemies ?? [makeEnemy()]
+  const player = provided(overrides, 'player', makeCombatant())
+  const enemies = provided(overrides, 'enemies', [makeEnemy()])
   return merge(
     {
       status: 'active',
@@ -187,7 +346,7 @@ export function makeBattleState(overrides = {}) {
       combat_id: 'fight-0001',
       // `map_size` rides inside battle_state precisely because the top-level
       // whitelist would have dropped it (drift bug #6).
-      map_size: 9,
+      map_size: DEFAULT_MAP_SIZE,
       player_consumables: [],
       suggested_moves: [],
       suggestions_loading: false,
@@ -200,10 +359,11 @@ export function makeBattleState(overrides = {}) {
 }
 
 /**
- * The exact set of TOP-LEVEL keys `transformCombatData` (useApi.js) copies
- * through. Anything emitted at the top level of the combat payload and absent
- * from this list never reaches the client — the trap that caused two of the
- * six drift bugs. Kept here so a test can assert it rather than prose alone.
+ * The exact set of TOP-LEVEL keys `transformCombatData`
+ * (utils/combatTransform.js) copies through. Anything emitted at the top level
+ * of the combat payload and absent from this list never reaches the client —
+ * the trap that caused two of the six drift bugs. Kept here so a test can
+ * assert it rather than prose alone.
  */
 export const COMBAT_TOP_LEVEL_WHITELIST = Object.freeze([
   'log',
@@ -217,6 +377,36 @@ export const COMBAT_TOP_LEVEL_WHITELIST = Object.freeze([
   'last_move_name',
   'last_move_target_id',
 ])
+
+/**
+ * The client-side `combat` object useCombat hands the panels. Built by running
+ * the real `transformCombatData` over `makeCombatResponse`, so it is exactly
+ * what the client makes of a response, `battle_state` spread flat plus the
+ * whitelisted top-level keys, and cannot drift from it. Components read THIS
+ * shape, never the response body.
+ *
+ * Each override goes where the server would put it: a whitelisted top-level
+ * key into the response body, everything else into `battle_state`. They used
+ * to go into both, which let a fixture set `log` inside `battle_state` (a
+ * place the adapter never sends it) and, worse, kept the fixture's value even
+ * when the transform dropped the key -- the exact blindness this module
+ * exists to remove.
+ */
+export function makeCombat(overrides = {}) {
+  if ('battle_state' in overrides) {
+    throw new Error(
+      'makeCombat takes battle_state fields directly; passing `battle_state` ' +
+      'nests it as battle_state.battle_state, a shape no response carries.'
+    )
+  }
+  const topLevel = {}
+  const battleState = {}
+  for (const [key, value] of Object.entries(overrides)) {
+    const target = COMBAT_TOP_LEVEL_WHITELIST.includes(key) ? topLevel : battleState
+    target[key] = value
+  }
+  return transformCombatData(makeCombatResponse({ battle_state: battleState, ...topLevel }))
+}
 
 /** The full get_combat_status() response body, i.e. what axios resolves with. */
 export function makeCombatResponse(overrides = {}) {
@@ -232,25 +422,235 @@ export function makeCombatResponse(overrides = {}) {
       last_move_outcome: '',
       last_move_name: null,
       last_move_target_id: null,
-      map_size: 9,
+      map_size: DEFAULT_MAP_SIZE,
     },
     rest
   )
 }
 
 // ---------------------------------------------------------------------------
-// Target-selection cards — ApiCombatAdapter._get_available_targets
+// Backend-driven input prompts -- ApiCombatAdapter._handle_move_selection
+// ---------------------------------------------------------------------------
+// These two land VERBATIM in `combat.available_options` when a move asks the
+// player something instead of executing: the compass a Turn offers, and the
+// duration a Wait offers. They are the adapter's own module constants
+// (TURN_DIRECTIONS / WAIT_DURATION_PROMPT in src/api/combat_adapter.py), and
+// tests/test_wire_field_contract.py holds these to them, so a renamed key or
+// a changed bound cannot leave a green fixture behind. That guard reads the
+// literal with `ast.literal_eval`, which is why the prompt's keys are quoted
+// and both stay flat.
+export const TURN_DIRECTIONS = ['north', 'south', 'east', 'west']
+
+export const WAIT_DURATION_PROMPT = {
+  'prompt': 'How many beats do you want to wait?',
+  'min': 3,
+  'max': 10,
+  'default': 5,
+}
+
+// ---------------------------------------------------------------------------
+// Unavailability reasons -- ApiCombatAdapter._get_available_moves
+// ---------------------------------------------------------------------------
+// Two of the sentences a move card's `reason` carries, which the panel renders
+// verbatim. The adapter owns them as TOO_FAR_REASON and
+// NOT_ENOUGH_FATIGUE_REASON, and tests/test_wire_field_contract.py holds these
+// to those.
+export const TOO_FAR_REASON = 'Enemy out of range (too far)'
+
+export const NOT_ENOUGH_FATIGUE_REASON = 'Not enough fatigue'
+
+// ---------------------------------------------------------------------------
+// Target-selection cards — ApiCombatAdapter._build_target_entry, the one
+// builder behind both _get_available_targets and _get_target_previews
 // ---------------------------------------------------------------------------
 // `hit_chance` is an INTEGER PERCENTAGE, not a 0-1 fraction. Rescaling it
-// client-side collapsed every real value to 0%-1% (drift bug #5).
+// client-side collapsed every real value to 0%-1% (drift bug #5). The default
+// is makeEnemy's Slime, at the same DEFAULT_ENEMY_DISTANCE and so within the
+// default move's (Attack's) reach, so it carries what an in-reach entry
+// carries: a hit chance, a damage preview, no shortfall.
+// tests/test_wire_field_contract.py holds these keys to the builder's.
 export function makeTargetOption(overrides = {}) {
+  // Pulled through `provided` before the merge, the way makeCombatant and
+  // makeAvailableOption do it, so the emitted shape reads off one expression.
+  const health = provided(overrides, 'health', { current: DEFAULT_ENEMY_HP, max: DEFAULT_ENEMY_HP })
+  const distance = provided(overrides, 'distance', DEFAULT_ENEMY_DISTANCE)
+  // Reach, not taste: `_build_target_entry` sets `in_range` by comparing the
+  // distance against the MOVE's band, so a card put past DEFAULT_MOVE_REACH_FT
+  // is out of reach. An explicit `distance: undefined` stays absent, the rule
+  // `index` and `display_name` follow, and leaves everything derived from it
+  // absent too rather than inventing a NaN shortfall.
+  const inRange = provided(
+    overrides, 'in_range',
+    distance === undefined ? undefined : distance <= DEFAULT_MOVE_REACH_FT
+  )
+  // Everything the adapter gates on `in_range`, gated here too, so a test that
+  // moves a target out of reach gets the payload the server would send rather
+  // than four overrides and a discarded destructure:
+  //   * `shortfall_ft` is `int(distance - range_max)`, and None in reach;
+  //   * `damage_preview` is the key present as null (never omitted);
+  //   * `hit_chance` is the one field omitted OUTRIGHT -- including when the
+  //     caller asked for one, because no out-of-reach entry carries it.
+  // `lethal` inside the preview is the engine's own test, `high >= target.hp`
+  // (Move.preview_payload in src/moves/_base.py), so a caller who raises the
+  // target's health gets a preview that no longer claims a kill instead of
+  // one contradicting its own health field.
+  //
+  // `damage_preview` is taken out of `overrides` before the merge on purpose:
+  // it is already folded in through `provided` above, and leaving it in let
+  // `merge` put the caller's raw object back over the derived one -- so
+  // `makeTargetOption({ damage_preview: { min: 1, max: 2 } })` came back with
+  // no `lethal` key at all, and kept its preview even out of reach.
+  const { damage_preview: _derivedAbove, ...rest } = overrides
+  const preview = inRange
+    ? provided(overrides, 'damage_preview', { ...DEFAULT_DAMAGE_PREVIEW })
+    : null
+  const card = merge(
+    {
+      id: DEFAULT_ENEMY_ID,
+      name: DEFAULT_ENEMY_NAME,
+      distance,
+      is_ally: false,
+      health,
+      in_range: inRange,
+      // Truncated, as the adapter's `int()` truncates it: a fractional
+      // distance would otherwise carry a fractional shortfall to the client.
+      shortfall_ft: inRange || distance === undefined
+        ? null
+        : Math.trunc(distance - DEFAULT_MOVE_REACH_FT),
+      damage_preview: preview && { ...preview, lethal: preview.max >= health?.current },
+      hit_chance: 87,
+    },
+    rest
+  )
+  if (inRange !== false) return card
+  // Omitted, not nulled, and dropped AFTER the merge rather than spread in
+  // conditionally: `hit_chance` has to stay a literal key of the object above
+  // or tests/test_wire_field_contract.py's reader cannot see it, and that
+  // guard is what holds this builder to `_build_target_entry` at all.
+  const { hit_chance: _omittedOutOfReach, ...outOfReach } = card
+  return outOfReach
+}
+
+// ---------------------------------------------------------------------------
+// Check-move rows -- one entry of `combat.check_data`, as
+// Check._generate_api_check_data builds it (src/moves/_utility.py); the
+// adapter passes it through battle_state.
+// ---------------------------------------------------------------------------
+// `facing` and `direction_from_player` are null for a combatant with no
+// coordinate position, and `current_move` is null when nothing is in progress
+// -- all three keys are always present. A combatant mid-move also carries
+// `current_move_display_name` and `current_move_stage`; a test that needs
+// those adds them. tests/test_wire_field_contract.py holds these keys to the
+// move's own output.
+export function makeCheckEntry(overrides = {}) {
   return merge(
     {
-      id: 'enemy_1',
-      name: 'Slime Ernerouchu',
-      distance: 10,
-      health: { current: 20, max: 20 },
-      hit_chance: 87,
+      name: DEFAULT_ENEMY_NAME,
+      is_ally: false,
+      distance: DEFAULT_ENEMY_DISTANCE,
+      facing: null,
+      direction_from_player: null,
+      current_move: null,
+    },
+    overrides
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Suggested moves -- one entry of `combat.suggested_moves`, as
+// CombatStrategist emits it (ai/combat_strategist.py)
+// ---------------------------------------------------------------------------
+// Every suggestion carries a `score` and a `reasoning` -- the LLM path forces
+// the score in too -- so a fixture with only the name and target describes a
+// suggestion no strategist can send.
+export function makeSuggestedMove(overrides = {}) {
+  return merge(
+    {
+      move_name: 'Attack',
+      target_id: null,
+      score: 10,
+      reasoning: 'Closest target, clean line.',
+    },
+    overrides
+  )
+}
+
+/**
+ * Two target cards, the smallest list the adapter will ask the player to
+ * choose from (`requires_target_selection` is `is_targeted and
+ * len(viable_targets) > 1`). Exported because a fixture that needs a real
+ * choice needs exactly this, and three copies of it had already appeared.
+ */
+export function twoTargets() {
+  return [
+    makeTargetOption({ id: enemyId(1) }),
+    makeTargetOption({ id: enemyId(2) }),
+  ]
+}
+
+// ---------------------------------------------------------------------------
+// Move cards — one entry of `combat.available_options`, exactly as
+// ApiCombatAdapter._get_available_moves emits it (src/api/combat_adapter.py).
+// ---------------------------------------------------------------------------
+/**
+ * Two details hand-written literals used to get wrong, which is the
+ * fixture-agreeing-with-itself failure CLAUDE.md warns about:
+ *   * `id` is a STRING (`str(i)`), never an int, and `index` is the same `i`
+ *     as a number — so `index` is derived from `id` here rather than given
+ *     a default of its own.
+ *   * every gating field is always present — `available`, `targeted`,
+ *     `viable_targets`, `requires_target_selection`, `cooldown_remaining` —
+ *     so a fixture that omits one describes a payload the adapter cannot send.
+ *
+ * The default is the engine's Attack with one enemy in reach. Attack is a
+ * targeted move (src/moves/_utility.py), so the card carries that enemy as
+ * its one viable target and, with only one, needs no target selection. The
+ * target lists follow `targeted`: the adapter fills `viable_targets` only for
+ * a targeted move, and _get_target_previews returns [] for any other.
+ */
+export function makeAvailableOption(overrides = {}) {
+  // Through `provided`, not `??`, for every default a later field derives
+  // from: `index`, the target lists and the selection flag follow what the
+  // card actually carries, an explicit undefined included.
+  const id = provided(overrides, 'id', '0')
+  const name = nameFrom(overrides, 'Attack')
+  const targeted = provided(overrides, 'targeted', true)
+  // Read once, as a boolean: `targeted: undefined` is a card the fixture may
+  // deliberately build, and every field derived from it must then say `false`
+  // rather than passing the undefined along.
+  const isTargeted = Boolean(targeted)
+  const viableTargets = provided(overrides, 'viable_targets', isTargeted ? [makeTargetOption()] : [])
+  return merge(
+    {
+      id,
+      index: id === undefined ? undefined : Number(id),
+      name,
+      display_name: name,
+      description: 'A basic attack.',
+      category: 'Offensive',
+      fatigue_cost: ATTACK_CARD_FATIGUE_COST,
+      available: true,
+      reason: null,
+      targeted,
+      viable_targets: viableTargets,
+      // Derived, as the adapter derives it (`is_targeted and
+      // len(viable_targets) > 1`): a card listing two targets and claiming
+      // it needs no selection is a payload _get_available_moves cannot send.
+      requires_target_selection: isTargeted && viableTargets?.length > 1,
+      cooldown_remaining: 0,
+      cooldown_max: 0,
+      // Display-only. _get_target_previews lists every living candidate of a
+      // targeted move, in reach or not; by default that is exactly the viable
+      // targets, i.e. every candidate is in reach. A test that wants one out
+      // of reach sets this. _get_affected_previews fills only for an area
+      // swing, and _range_ring is null for a move that does not outreach a
+      // sword.
+      target_previews: isTargeted && viableTargets ? [...viableTargets] : [],
+      affected_preview: [],
+      range_ring: null,
+      // Attack's real stage timing (Move.stage_beat), the same values
+      // tests/test_wire_field_contract.py pins against the engine.
+      stage_beats: { prep: 4, execute: 1, recoil: 1, cooldown: 4 },
     },
     overrides
   )
@@ -449,13 +849,14 @@ export function makeSaveRow(overrides = {}) {
 // (utils/categories.js) routes moves to radial buttons by it, and a category
 // no group claims leaves the move with no button at all.
 export function makeMove(overrides = {}) {
+  const name = nameFrom(overrides, 'Attack')
   return merge(
     {
-      name: 'Attack',
-      display_name: 'Attack',
+      name,
+      display_name: name,
       category: 'Offensive',
       description: 'A basic attack.',
-      fatigue_cost: 5,
+      fatigue_cost: ATTACK_DECLARED_FATIGUE_COST,
       beats_left: 0,
       xp_gain: 1,
     },

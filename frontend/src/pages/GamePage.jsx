@@ -520,10 +520,12 @@ export default function GamePage() {
   }, [mode, location?.bgm, playBGM, currentEvent])
 
   /**
-   * Check combat status and pending events on initial load only.
-   * checkPendingEvents runs here (in addition to on-mount in useEventManager)
-   * to handle the race where the mount-time poll fires before GET /world
-   * triggers starting-tile events into the session.
+   * Check combat status and pending events whenever player and world data
+   * finish loading: on mount, and again after every player or world refetch,
+   * since each toggles its loading flag. checkPendingEvents runs here (in
+   * addition to on-mount in useEventManager) to handle the race where the
+   * mount-time poll fires before GET /world triggers starting-tile events
+   * into the session.
    */
   useEffect(() => {
     if (!playerLoading && !worldLoading) {
@@ -583,22 +585,39 @@ export default function GamePage() {
   }
 
   /**
-   * Handle victory dialog close (only reached when no loot drops exist).
-   * When drops exist, VictoryDialog routes to loot phase via onContinueToLoot instead.
+   * The reset every combat-outcome closer ends with: out of the end state,
+   * back to exploration, refetch, then flush pending events — the
+   * combat-triggered ones stored during the battle (e.g. Ch01PostRumbler's
+   * memory flash), and a restarted run's starting-tile events, which
+   * `GET /world` re-arms into the session. One helper, because issue #587
+   * was a closer that lacked the flush the others had.
    */
-  const handleVictoryClose = async () => {
-    const isBetaEnd = endState?.beta_end
-    setShowVictoryDialog(false)
+  const returnToExploration = async () => {
     setEndState(null)
     setMode('exploration')
     await handleRefetch()
     await fetchCombatStatus()
-    // Flush any combat-triggered events (e.g. Ch01PostRumbler memory flash)
-    // that were stored in session pending_events during the battle.
     await checkPendingEvents()
-    if (isBetaEnd) {
-      setShowBetaEndDialog(true)
-    }
+  }
+
+  /**
+   * The end of every victory path, whether or not it went through the loot
+   * dialog: back to exploration, then the demo-end screen if this kill ended
+   * the beta.
+   */
+  const returnFromVictory = async () => {
+    const isBetaEnd = endState?.beta_end
+    await returnToExploration()
+    if (isBetaEnd) setShowBetaEndDialog(true)
+  }
+
+  /**
+   * Handle victory dialog close (only reached when no loot drops exist).
+   * When drops exist, VictoryDialog routes to loot phase via onContinueToLoot instead.
+   */
+  const handleVictoryClose = async () => {
+    setShowVictoryDialog(false)
+    await returnFromVictory()
   }
 
   /**
@@ -610,54 +629,38 @@ export default function GamePage() {
   }
 
   /**
-   * Player confirmed loot selection — call backend to collect chosen items.
+   * Close the loot dialog after collecting `itemNames` (none, to skip: the
+   * items stay on the tile), then return to the world. A failed collect is
+   * logged, labelled by whether anything was being collected, and still
+   * closes the dialog.
    */
-  const handleCollectLoot = async (itemNames) => {
-    const isBetaEnd = endState?.beta_end
+  const finishLoot = async (itemNames) => {
     try {
       await combatApi.collectLoot(itemNames)
     } catch (err) {
-      console.error('collect-loot failed:', err)
+      const failureLabel = itemNames?.length > 0 ? 'collect-loot failed:' : 'collect-loot (skip) failed:'
+      console.error(failureLabel, err)
     } finally {
       setShowLootDialog(false)
-      setEndState(null)
-      setMode('exploration')
     }
-    await handleRefetch()
-    await fetchCombatStatus()
-    await checkPendingEvents()
-    if (isBetaEnd) setShowBetaEndDialog(true)
+    await returnFromVictory()
   }
 
-  /**
-   * Player skipped loot — items remain on tile, close dialog and return to world.
-   */
-  const handleSkipLoot = async () => {
-    const isBetaEnd = endState?.beta_end
-    try {
-      await combatApi.collectLoot([])
-    } catch (err) {
-      console.error('collect-loot (skip) failed:', err)
-    } finally {
-      setShowLootDialog(false)
-      setEndState(null)
-      setMode('exploration')
-    }
-    await handleRefetch()
-    await fetchCombatStatus()
-    await checkPendingEvents()
-    if (isBetaEnd) setShowBetaEndDialog(true)
-  }
+  // LootDialog wires onSkip straight to a button's onClick, so it arrives
+  // with the click event rather than a list of names.
+  const handleSkipLoot = () => finishLoot([])
 
   /**
-   * Handle defeat dialog close
+   * Reset out of defeat after DefeatDialog loads a save or starts a new run
+   * (its `onRunChanged`, which CombatManager wires to `onDefeatClose`).
+   * START OVER restarts the run in place instead of remounting GamePage, so
+   * this flushes pending events explicitly, through `returnToExploration`,
+   * rather than leaning on the loading-keyed effect above, which re-fires only
+   * because each refetch toggles its hook's loading flag (issue #587).
    */
   const handleDefeatClose = async () => {
     setShowDefeatDialog(false)
-    setEndState(null)
-    setMode('exploration')
-    await handleRefetch()
-    await fetchCombatStatus()
+    await returnToExploration()
   }
 
   /**
@@ -799,7 +802,7 @@ export default function GamePage() {
         onVictoryClose={handleVictoryClose}
         onDefeatClose={handleDefeatClose}
         onContinueToLoot={handleContinueToLoot}
-        onCollectLoot={handleCollectLoot}
+        onCollectLoot={finishLoot}
         onSkipLoot={handleSkipLoot}
         onPreVictoryNarrativeClose={handlePreVictoryNarrativeClose}
       />

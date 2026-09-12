@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { colors, spacing, accessibility } from '../styles/theme'
+import { colors, spacing, accessibility, zIndex } from '../styles/theme'
 import PartyPanel from './PartyPanel'
 import InventoryDialog from './InventoryDialog'
 import AccountDialog from './AccountDialog'
@@ -170,6 +170,12 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   // abort it (the server refuses a switch — see _handle_move_selection).
   const abortableMove = combat?.abortable_move || null
   const isMyTurn = (combat?.awaiting_input || false) && !isBusyProcessing && !combat?.end_state && !isEventDialogActive && !abortableMove
+
+  // Named rather than re-inlined at each site: the stacking layer's
+  // opacity/filter below AND HeroPanel's `interactive` prop (issue #575)
+  // must agree on exactly this condition, or the dimming and the inert
+  // state could disagree — a hero dimmed but live, or bright but dead.
+  const isHeroInert = mode === 'combat' && !isMyTurn
 
   // Flee is viable only when it's the player's turn and every enemy is at
   // least the engine's break-away distance away. The threshold is the
@@ -527,23 +533,36 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             position: 'relative',
           }}
         >
-          <div style={{
+          <div data-testid="hero-panel-stacking-layer" style={{
             transform: `scale(${heroScale})`,
             transformOrigin: 'center center',
             transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
             overflow: 'visible',
-            zIndex: 50,
+            // Issue #575: HeroPanel's own <nav> is display:contents (no box, so
+            // no z-index of its own) and its buttons' z-index only ranks them
+            // against HeroPanel's local siblings. THIS div — a flex item with
+            // a z-index and a transform — is the nearest ancestor that forms a
+            // stacking context, so it is the one place a rank against
+            // CombatMovePanel can be set; a button-level z-index would compile
+            // and change nothing. The theme's scale keeps the two in order.
+            zIndex: zIndex.heroStackingLayer,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            opacity: (mode === 'combat' && !isMyTurn) ? 0.6 : 1,
-            filter: (mode === 'combat' && !isMyTurn) ? 'grayscale(0.5)' : 'none',
-            pointerEvents: (mode === 'combat' && !isMyTurn) ? 'none' : 'auto',
+            opacity: isHeroInert ? 0.6 : 1,
+            filter: isHeroInert ? 'grayscale(0.5)' : 'none',
+            // Always click-through, or this raised box would swallow clicks
+            // meant for a move card beneath it (#575, see HeroPanel's root div
+            // comment). The enemy-turn gate is `interactive` below.
+            pointerEvents: 'none',
           }}>
             <HeroPanel
               player={activePlayer}
               isMobile={isMobile}
               inCombat={mode === 'combat'}
+              // The controls' opt-in to pointer events and their `disabled`
+              // both key off this — see HeroPanel's root div comment (#575).
+              interactive={!isHeroInert}
               heroScale={heroScale}
               hasSpecialMoves={hasSpecialMoves}
               hasDefensiveMoves={hasDefensiveMoves}

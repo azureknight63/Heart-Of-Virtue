@@ -46,11 +46,11 @@ from typing import Dict, FrozenSet, List, NamedTuple, Optional, Set
 
 import pytest
 
+from tests._source_scan import SRC_ROOT, src_trees
+
 # --------------------------------------------------------------------------
 # Paths
 # --------------------------------------------------------------------------
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-SRC_ROOT = _REPO_ROOT / "src"
 SERIALIZER_DIR = SRC_ROOT / "api" / "serializers"
 
 
@@ -190,12 +190,9 @@ def _assigned_combatant_attrs() -> Set[str]:
     combatant_dirs = _combatant_source_dirs()
     found: Set[str] = set()
 
-    for path in sorted(SRC_ROOT.rglob("*.py")):
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (SyntaxError, UnicodeDecodeError):  # pragma: no cover - defensive
-            continue
-        self_is_combatant = path.parent in combatant_dirs
+    for source in src_trees():
+        tree = source.tree
+        self_is_combatant = source.path.parent in combatant_dirs
         for node in ast.walk(tree):
             targets: List[ast.expr] = []
             if isinstance(node, ast.Assign):
