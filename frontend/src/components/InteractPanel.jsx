@@ -433,6 +433,18 @@ function InteractPanel({
             onClose={onClose}
             maxWidth="500px"
             zIndex={2000}
+            // Hidden (not merely disabled) while an interaction is in flight.
+            // A 'read' keyword only opens BookReaderDialog (z-index 2100, see
+            // BookReaderDialog.jsx) once useWorldInteract's `interact()` has
+            // ALSO awaited its onRefetch/pollBackgroundEvents follow-up calls
+            // — well after this dialog's own controls already look live. A
+            // click timed anywhere in that window could land exactly as the
+            // overlay mounted on top and be swallowed by it, recoverable only
+            // via Escape (issue #585). Removing the button outright, rather
+            // than just disabling it, leaves nothing there for a later-mounting
+            // overlay to race a click against. Escape itself is untouched —
+            // BaseDialog's own keydown handler doesn't read showCloseButton.
+            showCloseButton={!loading}
         >
             <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg }}>
                 {/* Error State */}
@@ -621,7 +633,9 @@ function InteractPanel({
                     // Interaction View
                     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg }}>
                         <div style={{ display: 'flex', gap: spacing.sm }}>
-                            <GameButton onClick={handleBack} variant="secondary" size="small">
+                            {/* Gated on `loading` for the same reason the dismiss button
+                                (BaseDialog above) is hidden during it: see issue #585. */}
+                            <GameButton onClick={handleBack} variant="secondary" size="small" disabled={loading}>
                                 ← Back
                             </GameButton>
                         </div>
