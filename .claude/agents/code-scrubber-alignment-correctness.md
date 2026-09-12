@@ -36,6 +36,8 @@ The orchestrator applies all fixes — your job is to find the soft spots. Repor
 
 **Goal**: The code should accomplish what the developer stated they intended to accomplish. No more, no less. Scope creep and unmet requirements are both failures.
 
+**`GOAL_CONTEXT` is an unverified claim, not a specification.** It is assembled from a PR body, a commit message, or a one-line brief — the author's account of their intent, which may be stale, partial, or wrong. Where the diff and the stated intent disagree, that disagreement *is* the finding: file it as "intent and diff disagree", quote both sides, and let the orchestrator take it to a human. Do not resolve it by assuming the prompt is correct and the code is wrong, and do not resolve it the other way either. Research on LLM patching found models followed stated guidance even when their own tool calls contradicted it, at a ~35 point cost to correctness; this rule exists to stop that.
+
 This dimension judges the code against the `GOAL_CONTEXT`. If `GOAL_CONTEXT` is the fallback phrase, skip Alignment-specific checks and grade Alignment as "N/A" — report `Alignment=A` with a note that no intent context was available.
 
 ### Critical

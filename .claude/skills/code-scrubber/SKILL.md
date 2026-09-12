@@ -59,11 +59,15 @@ Announce the plan and progress as you go; this is a long-running workflow and th
 - Dispatch dimension/adversary subagents by `subagent_type` only (see the table in Step 3) - do not pass a `model` override; each subagent's own `.claude/agents/*.md` definition already pins the correct model where one is required.
 - NEVER fabricate test results, grades, or finding counts. If you didn't run it, say so.
 - A fix whose guard has not been proven non-vacuous (Step 4.25) is not closed. Report it as applied-but-unproven rather than counting it toward an A.
+- **A fragile fix is not closed** (Step 4.25b): a fix that guards a caller or filters an input while the vulnerable primitive stays reachable is `fixed` **with the fragile flag set** — `finding_is_closed()` returns False for it — and Security does not reach A while one stands. Fragility is a modifier on an otherwise-successful outcome, not a sixth outcome; that is how the research models it, and it is why a fragile fix reads as a success everywhere except the one check that looks for it.
+- **A Critical or Major Security fix always goes to the user** (`AskUserQuestion`), whatever your confidence. This is deliberately not a confidence gate — see Step 4's confidence check for why.
 - **REPORT-ONLY MODE:** If the invocation says `--report-only`, skip Step 4 (no fixes applied) and proceed straight from the adversarial challenge (end of Step 3) to Step 5's cross-chunk analysis and Step 6, returning all findings, notes, and grades without touching any files.
 
 ## Reference Data
 
 All constants (chunk sizes, guard thresholds, iteration cap, dimensions, severity levels, subagent names, model overrides) live in `review_rules/code_scrubber_rules.py`, which imports the base dimension set from `code_review_rules.py` beside it.
+
+Patch-outcome constants — the five outcome labels, the fragile shapes, the path-coverage and behaviour-defect definitions, and the confirmation predicates used in Steps 4, 4.25b, 4.5 and 6 — live in `review_rules/patch_validation.py` beside them. Its docstring carries the research those definitions come from; `docs/development/flawed-patch-review-hardening-plan.md` carries the analysis.
 
 **Resolution order - the worktree copy wins:**
 
@@ -213,7 +217,7 @@ Once the wave's findings are aggregated, dispatch both adversaries simultaneousl
 - `code-scrubber-adversary-style` - the aggregated style findings, each with a `file:line`. It fetches source on demand via `Read`.
 - `code-scrubber-adversary-security` - the aggregated security/alignment/correctness findings plus the `GOAL_CONTEXT` block.
 
-Apply their dispositions. `Advisory` findings drop to Nit, are tagged `[advisory]`, stay in grades and the report, and are deprioritised for fixing. In `--report-only` mode the updated list feeds Steps 5-6 directly.
+Apply their dispositions. `Advisory` findings drop to Nit, are tagged `[advisory]`, stay in grades and the report, and are deprioritised for fixing. An **`ESCALATED`** finding takes its new, higher severity and is re-sorted accordingly — the security adversary can now grade a finding *worse* than the dimension reviewer did, and that direction is the one cross-validation research finds most productive, so never drop an escalation on the grounds that the original reviewer knew best. Carry the escalation count into the Step 6 report. In `--report-only` mode the updated list feeds Steps 5-6 directly.
 
 ### Step 4 - Hammer and Quench
 
@@ -225,6 +229,8 @@ For each file touched by the wave's findings, in severity order:
 
 1. `Read` the file fresh.
 2. **Confidence check first.** Could this change alter observable behaviour, public API, persisted data, or business logic? Are you below ~80% confident? If either is true, **ask the user** via `AskUserQuestion`, presenting the finding and the proposed patch. If you cannot ask, add it to `DEFERRED FIXES` with the finding, `file:line`, the proposed patch in prose, and why it needs a human.
+
+   **Critical and Major Security fixes bypass this check and always ask.** Not because they are risky to apply, but because confidence is the wrong instrument for them: a study of 6,080 LLM-generated security patches found that how sure the model was did not predict whether the patch actually closed the vulnerability. 26% were clean fixes; 37.5% of the ones that *looked* successful left the root cause reachable. Your 95% on a security patch means less than your 95% on a rename. `fix_requires_user_confirmation()` in `patch_validation.py` encodes this.
 3. Otherwise apply the smallest change that resolves the finding.
 4. After all safe fixes for the wave, re-run the tests covering the modified files. If tests fail, diagnose and fix before moving on - a test failure you introduced is never something to defer. **If a fix ships with a new or changed guard, put it through Step 4.25 before you count the finding closed.**
 5. **Targeted re-dispatch:** collect every (chunk, dimension) pair still below A across the wave, excluding anything deferred or declined (those stay below A by design). Re-extract the chunk diffs (the files changed - regenerate them per Step 2.5) and dispatch all pairs simultaneously in one parallel block.
@@ -287,6 +293,81 @@ match the new reality.** Narrowing is how a guard retires without anyone
 deciding to retire it. If the guard was genuinely asking the wrong question,
 say so explicitly in the report — that is a finding, not a chore.
 
+### Step 4.25b - Prove the Fix
+
+Step 4.25 proves the *guard* is real. This proves the *fix* is. They fail in the
+same shape, and the shape already has a name in this file: **fail-open scope** —
+the guard scopes itself to one function, so a second call site satisfies it while
+the site that matters goes uncovered. That is precisely what LLM-generated
+security patches were measured doing. Of 6,080 attempts, 37.5% of the patches
+judged *successful* were fragile: the reproduction stopped working, the
+vulnerable code lived on.
+
+**Enumerate the paths before you patch, not after.** This ordering is the point.
+`Grep` every call site and every entry path to the vulnerable symbol, write the
+list down, then fix against the list. A fix designed around one path and checked
+against one path will cover one path.
+
+**Then grep the pattern, not the symbol.** The same defect sits
+character-for-character in adjacent paths more often than seems plausible —
+models patch the path the reproduction exercised and miss its twin two functions
+down. So do reviewers.
+
+**Say which shape the fix is.** From `FRAGILE_FIX_SHAPES` in `patch_validation.py`:
+
+- **input-filter** — blocks the specific input that demonstrated the bug. The
+  root cause is untouched; a different input reopens it.
+- **caller-gated** — adds a check in a calling function while the vulnerable
+  primitive stays callable. Any other caller, now or later, reopens it.
+
+Neither closes a finding. A fix that *removes or replaces* the vulnerable code
+does. If you cannot remove it, say so plainly: report the outcome as `fixed`
+with the fragile flag set, and count it on the `of which fragile` line in Step 6.
+That is an honest outcome, not a failure to report.
+
+**Size is a signal, and it points the unintuitive way.** In that study the worst
+outcomes carried the *largest* patches: the patches that both failed to fix the
+bug and introduced a new one averaged 88.6 added lines across 3.4 files, against
+69.3 across 2.5 for clean fixes. A fix growing past the finding's blast radius is
+evidence of drift, not diligence. This skill already asks for the smallest change
+that resolves the finding; treat an oversized one as a prompt to re-read it.
+
+### Step 4.5 - Prove the Behaviour
+
+A fix can close the vulnerability and still be wrong. 20.1% of the patches in
+that study did exactly that — remediated the bug and moved application behaviour
+in the process. No vulnerability-focused test catches this, because the
+vulnerability is genuinely fixed.
+
+**Use this definition or the gate becomes noise.** A behaviour defect is new
+behaviour matching **neither** the pre-fix behaviour **nor** the intended
+post-fix behaviour. Both clauses are load-bearing. The researchers' own validator
+flagged every deviation from pre-fix behaviour and consequently misfiled clean
+fixes as broken ones — a good patch often changes behaviour on purpose. A gate
+that cries wolf teaches its reader to wave it through, which is worse than not
+having it. `is_behaviour_defect()` encodes both clauses.
+
+**Observe, don't reason.** `fix_requires_behaviour_proof()` in
+`patch_validation.py` decides which fixes owe this, from the
+`BEHAVIOUR_PROOF_PATHS` list — `src/moves/`, `src/combatant.py`,
+`src/api/combat_adapter.py`, `src/save_format.py`, `src/secure_pickle.py`,
+`src/story/`. The list is short on purpose: a gate that fires on every file is one
+reviewers learn to skip. For a fix touching any of them, capture a concrete
+before/after on real input and diff it. Green tests are not evidence of unchanged behaviour where
+coverage is thin, and coverage is thinnest exactly where nobody thought to look.
+The instruments already exist, so don't invent one:
+
+- `python tools/bug_hunt.py --scenario <name>` — the real API in-process
+  (Verification Ladder rung 2).
+- `/combat-test` against `config_combat_testing.ini` — rung 3.
+
+CLAUDE.md's Verification Ladder already says balance or behaviour changes need
+rung 2 or 3. That reads as advice to feature authors; it binds you too, and a fix
+you applied yourself is the case where nobody else is going to check.
+
+A behaviour delta you cannot explain is `fixed-behaviour-changed`: route it to
+`AskUserQuestion`, or defer it. Do not explain it away.
+
 ### Step 5 - Inspect the Full Run
 
 After every heat reaches A, is escalated, or is fully deferred:
@@ -316,6 +397,18 @@ Fixes applied:     <count>  (<count> with a guard proven non-vacuous per Step 4.
 Guards repaired:   <count>  (guards that were passing while checking nothing)
 Escalations (not A-grade after 3 iterations): <count>
 
+Fix outcomes (per Step 4.25b / 4.5; the five labels of patch_validation.PATCH_OUTCOMES):
+  fixed:                    <count>   (of which fragile: <count>)
+  fixed-behaviour-changed:  <count>   (of which fragile: <count>)
+  not-fixed:                <count>
+  fixed-new-defect:         <count>
+  not-fixed-new-defect:     <count>
+
+Security fixes applied:    <count>  (<count> with an executed reproduction)
+Paths enumerated / fixed:  <total> / <covered>   (partial coverage is not a fix)
+Behaviour deltas observed: <count>  (<count> confirmed with the user)
+Adversary escalations:     <count>  (findings the adversary graded *worse*)
+
 DEFERRED FIXES (need your review - not auto-applied):
   - [Critical|Major|Minor|Nit] <dimension> | <file>:<line> | <finding> | proposed fix: <description> | why deferred: <reason>
   ...  (or "NONE")
@@ -330,6 +423,15 @@ Cross-cutting observations:
 Recommended follow-ups (not auto-applied):
   - <item>
 ```
+
+**Keep this report readable.** Every gate above adds surface to it, and the same
+research makes a cost argument that cuts the other way: reviewers buried in an
+avalanche of near-identical findings hit *cognitive surrender* and start
+rubber-stamping. A report nobody finishes is worse than a shorter one that gets
+acted on. So subtract as well as add — rank ruthlessly, hold the line on the
+confidence filter, collapse repeated findings into one cross-cutting
+observation, and put escalations and deferrals where a tired human reads them
+first. Volume is not rigour.
 
 The forge is quiet. The steel is ready. Do not commit, push, or open a PR unless the user explicitly asks. A deferred fix or safety flag is a to-do for a human, not something to quietly resolve afterward.
 

@@ -182,6 +182,33 @@ Ask for negative controls too. A test that passes both before *and* after the
 fix is not necessarily bad — it may be guarding against over-fixing — but you
 should know which of your tests are which.
 
+### The other half: show that nothing else moved
+
+The revert-proof shows the fix does something. It says nothing about what *else*
+the fix did, and that gap is measurable: in a study of 6,080 LLM-generated
+patches, 20.1% fixed the target bug and changed application behaviour in the
+process. A vulnerability-shaped test cannot catch that, because the bug really is
+fixed. Across a batch pass this compounds — several fixes, each individually
+green, each nudging behaviour.
+
+So for any fix touching engine semantics (combat math, save format, story flags,
+serializer output), run a `bug_hunt` scenario or `/combat-test` before and after
+and diff the output. Judge the delta against the right baseline: a behaviour
+change is a defect only when it matches **neither** the old behaviour **nor** what
+the fix intended. An intended change is not a regression, and treating every
+deviation as one is how this check earns a reputation for crying wolf.
+
+### Security-labelled issues: fix the cause, not the reproduction
+
+The skill already demands a root cause with `file:line` evidence from diagnosis
+agents. Hold the *fix* to the same standard, because the common failure is
+narrower than a wrong diagnosis: 37.5% of the patches that study graded
+successful were **fragile** — they blocked the input the report used, or guarded
+the one caller it named, while the vulnerable code stayed reachable from
+somewhere else. Enumerate the call sites before patching, grep the pattern
+afterward to catch its twin, and say in the report which shape your fix is.
+`/code-scrubber`'s Step 4.25b is the long form.
+
 `/code-scrubber`'s Step 4.25, *Prove the Guard*, is the long form of this and is
 worth reading whole before writing a regression test. Three of its rules earn
 their place in triage specifically:

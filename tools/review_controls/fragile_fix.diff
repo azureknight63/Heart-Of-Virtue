@@ -1,0 +1,15 @@
+diff --git a/tools/review_controls/vulnerable_baseline.py b/tools/review_controls/vulnerable_baseline.py
+--- a/tools/review_controls/vulnerable_baseline.py
++++ b/tools/review_controls/vulnerable_baseline.py
+@@ -16,7 +16,10 @@ def read_save_blob(save_name):
+ 
+ def handle_load_request(request):
+     """GET /api/saves/load?name=... — load a save for the current player."""
+-    return read_save_blob(request.args["name"])
++    name = request.args["name"]
++    if ".." in name:
++        raise ValueError("invalid save name")
++    return read_save_blob(name)
+ 
+ 
+ def handle_import_request(request):
