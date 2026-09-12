@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import BaseDialog from './BaseDialog'
 import { useShop } from '../hooks/useShop'
+import { useToast } from '../context/ToastContext'
 import { colors, spacing, accessibility } from '../styles/theme'
 import { getItemIcon, formatWeight, WEIGHT_UNIT } from '../utils/itemUtils'
 import { stackDisplayName, stackCountLabel, stackSize, isStackedCount } from '../utils/stackName'
@@ -269,7 +270,11 @@ function QtyPicker({ value, max, onChange, isMobile }) {
  *                         in `shop_state.npc_id` (not a heap address)
  *   npcName    {string}   Display name of the merchant
  *   initialTab {string}   'buy' | 'sell'
- *   player     {object}   Current player state (gold, weight)
+ *   player     {object}   Current player state (gold, weight). Also read for
+ *                         `inventory[].is_merchandise` -- see `handleClose`
+ *                         below (issue #597); this dialog never drops those
+ *                         items itself, only warns that closing does not pay
+ *                         for them.
  *   onClose    {function}
  *   onRefetch  {function} Called after each successful transaction to sync parent
  *   isMobile   {boolean}
@@ -287,6 +292,7 @@ function QtyPicker({ value, max, onChange, isMobile }) {
  */
 export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player, onClose, onRefetch, isMobile }) {
   const { shopState, sellInventory, isLoading, error, txnMessage, welcomeMessage, buy, sell, buyback } = useShop(npcId)
+  const { warning: warnToast } = useToast()
 
   const [activeTab, setActiveTab] = useState(initialTab)
   const [selectedId, setSelectedId] = useState(null)
@@ -399,6 +405,29 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
     return Math.max(1, available)
   }, [selectedItem, activeTab, playerGold, merchantGold])
 
+  // ── Close handling ─────────────────────────────────────────────────────────
+
+  // Closing this dialog never drops merchandise itself -- that already
+  // happens server-side, either the next time this shop opens
+  // (_collect_player_merchandise, src/npc/_shop.py) or when the player
+  // crosses a map boundary: Player.teleport() (src/player/_movement.py)
+  // calls drop_merchandise_items() (src/player/_inventory.py). Until then,
+  // closing was pure client state with zero feedback (issue #597): the
+  // player could walk the same map holding unpaid goods with nothing
+  // telling them so. This only warns; it must not itself mutate inventory
+  // or call the API.
+  const hasUnpurchasedMerchandise = useMemo(
+    () => (player?.inventory || []).some((item) => item?.is_merchandise),
+    [player]
+  )
+
+  const handleClose = () => {
+    if (hasUnpurchasedMerchandise) {
+      warnToast("You're still holding unpaid goods -- they'll be returned to the shop before you leave the area.")
+    }
+    onClose()
+  }
+
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const handleSelectItem = (id) => {
@@ -453,7 +482,7 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
   return (
     <BaseDialog
       title={`🏪 ${shopName.toUpperCase()}`}
-      onClose={onClose}
+      onClose={handleClose}
       maxWidth="640px"
       width="95%"
       padding={isMobile ? '12px' : '16px'}
