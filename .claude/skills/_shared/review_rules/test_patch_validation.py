@@ -192,3 +192,74 @@ def test_summarise_outcomes_counts_every_outcome():
     assert counts["not-fixed"] == 1
     assert counts["unclassified"] == 1
     assert all(k in counts for k in pv.PATCH_OUTCOMES)
+
+
+# --- Behaviour-proof scope -------------------------------------------------
+
+def test_hot_paths_require_behaviour_proof():
+    assert pv.fix_requires_behaviour_proof(["src/moves/_base.py"]) is True
+    assert pv.fix_requires_behaviour_proof(["src/combatant.py"]) is True
+    assert pv.fix_requires_behaviour_proof(["src/secure_pickle.py"]) is True
+    assert pv.fix_requires_behaviour_proof(["src/story/ch01.py"]) is True
+
+
+def test_ordinary_paths_do_not():
+    assert pv.fix_requires_behaviour_proof(["src/api/routes/shop.py"]) is False
+    assert pv.fix_requires_behaviour_proof(["frontend/src/hooks/useApi.js"]) is False
+    assert pv.fix_requires_behaviour_proof([]) is False
+
+
+def test_one_hot_path_in_a_mixed_changeset_is_enough():
+    assert pv.fix_requires_behaviour_proof(
+        ["README.md", "tests/test_x.py", "src/moves/_base.py"]
+    ) is True
+
+
+def test_absolute_and_windows_paths_match():
+    """The orchestrator may hand over absolute or Windows-style paths; a scope
+    gate that silently misses them fails open on exactly the files it guards."""
+    assert pv.fix_requires_behaviour_proof(
+        ["/home/user/Heart-Of-Virtue/src/combatant.py"]
+    ) is True
+    assert pv.fix_requires_behaviour_proof(["src\\moves\\_base.py"]) is True
+
+
+def test_scope_list_is_not_empty_and_stays_short():
+    """Non-vacuity, plus a ceiling: this gate's value is that it is selective.
+    If it grows past a handful of paths it has become 'everything', and a gate
+    that fires on everything is one reviewers learn to skip."""
+    assert len(pv.BEHAVIOUR_PROOF_PATHS) > 0
+    assert len(pv.BEHAVIOUR_PROOF_PATHS) <= 8
+
+
+def test_frontend_src_is_never_the_engine_tree():
+    """`frontend/src/` shares the `src/` segment with the engine but is the SPA.
+
+    No collision exists today, but the moment someone adds a `story/` or `moves/`
+    component under frontend/src, a substring match would demand an *engine*
+    behaviour proof for a React change. This gate's whole value is selectivity, so
+    a false positive costs exactly what a false negative does: the next reader
+    stops believing it.
+    """
+    assert pv.fix_requires_behaviour_proof(["frontend/src/story/StoryPanel.jsx"]) is False
+    assert pv.fix_requires_behaviour_proof(["frontend/src/moves/MoveCard.jsx"]) is False
+    assert pv.fix_requires_behaviour_proof(
+        ["/home/user/Heart-Of-Virtue/frontend/src/story/StoryPanel.jsx"]
+    ) is False
+
+
+def test_engine_paths_still_match_when_absolute():
+    """The absolute-path case the exclusion must not break."""
+    assert pv.fix_requires_behaviour_proof(
+        ["/home/user/Heart-Of-Virtue/src/story/ch01.py"]
+    ) is True
+    assert pv.fix_requires_behaviour_proof(
+        ["/home/user/Heart-Of-Virtue/src/moves/_base.py"]
+    ) is True
+
+
+def test_a_frontend_and_an_engine_path_together_still_require_proof():
+    """The exclusion must skip the frontend path, not abort the whole scan."""
+    assert pv.fix_requires_behaviour_proof(
+        ["frontend/src/story/StoryPanel.jsx", "src/combatant.py"]
+    ) is True

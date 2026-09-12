@@ -1,0 +1,18 @@
+diff --git a/tools/review_controls/vulnerable_baseline.py b/tools/review_controls/vulnerable_baseline.py
+--- a/tools/review_controls/vulnerable_baseline.py
++++ b/tools/review_controls/vulnerable_baseline.py
+@@ -9,9 +9,15 @@ SAVE_DIR = "/var/hov/saves"
+ 
+ def read_save_blob(save_name):
+     """Return the raw bytes of a save file by name."""
+-    path = os.path.join(SAVE_DIR, save_name)
+-    with open(path, "rb") as handle:
++    # Confine the resolved path to SAVE_DIR. Resolving first and then checking
++    # containment covers traversal, absolute paths and symlinks alike, and it
++    # does so here -- in the primitive -- so every caller inherits it.
++    root = os.path.realpath(SAVE_DIR)
++    resolved = os.path.realpath(os.path.join(root, save_name))
++    if not resolved.startswith(root + os.sep):
++        raise ValueError("save name escapes the save directory")
++    with open(resolved, "rb") as handle:
+         return handle.read()

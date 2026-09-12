@@ -534,10 +534,24 @@ Meta-level, but the plan should hold itself to its own standard:
 - **Dogfood:** run `/code-review` over the Phase 1–2 diff. If the updated
   Security section does not change how the review of its own diff reads, the
   wording is decorative.
-- **Negative control:** construct a deliberately fragile patch (guard the
-  caller, leave the vulnerable function public) and confirm the updated
-  `code-scrubber-security` agent flags it fragile rather than closed. A rubric that
-  passes a known-bad patch has the same problem as a guard that matches nothing.
+- **Negative control — RAN 2026-09-12, passed.** Fixtures and the full observed
+  baseline live in `tools/review_controls/`; re-run it after any edit to the
+  security agent definitions or the Security Fix Validation checklist.
+
+  Two patches for the same synthetic path traversal — one caller-gated, one
+  fixing the primitive — graded **F** and **A** respectively. The split is the
+  result: both F would mean the rubric flags everything, both A that it is blind.
+  On the fragile one the agent named the unguarded second caller, enumerated all
+  paths by grep before grading, separated provenance, routed the Criticals to a
+  human, and found an absolute-path bypass the fixture's author had not designed
+  in. The adversary then returned 3 CONFIRMED, **1 ESCALATED** (Major→Critical),
+  0 DOWNGRADED — exercising the verb Phase 1b added, for the reason the research
+  predicts: grading the primitive below the caller "invites the orchestrator to
+  patch the caller and close a still-open root cause."
+
+  What this does and does not establish: the prose is load-bearing rather than
+  decorative, on one vulnerability class, once. It is not a measured success rate
+  — that is the §7.1 follow-up below, and this control is not a substitute for it.
 
 ## Sequencing and effort
 
@@ -555,10 +569,12 @@ Meta-level, but the plan should hold itself to its own standard:
 ## Follow-ups outside this plan
 
 - ~~**Turn strict unpickling on.**~~ **Done 2026-09-12** — see the resolved
-  defect above. What remains is narrower: `LEGACY_ALLOWED_MISSING` is still
-  empty, so retiring any engine class is now a save-breaking change until it is
-  curated in. Acceptable in beta, but it should be a checklist item on class
-  removal rather than a surprise.
+  defect above, and the narrower remainder is handled: `LEGACY_ALLOWED_MISSING` is
+  still empty, so retiring any engine class is a save-breaking change until it is
+  curated in — now a five-step checklist in `.claude/rules/saves-persistence.md`
+  (decide deliberately; add the entry in the *same* commit; a rename is a removal
+  plus an addition; regenerate the manifest and fuzz; a placeholder is a tombstone,
+  not a migration) rather than a surprise.
 - **Measure our own rate (§7.1).** The paper's headline recommendation is to run
   a FLAWED-style harness over your *own* previously-fixed bugs before trusting
   automated patching. Heart of Virtue has a closed-issue history and

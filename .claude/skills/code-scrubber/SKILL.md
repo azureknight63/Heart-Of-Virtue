@@ -347,9 +347,13 @@ fixes as broken ones — a good patch often changes behaviour on purpose. A gate
 that cries wolf teaches its reader to wave it through, which is worse than not
 having it. `is_behaviour_defect()` encodes both clauses.
 
-**Observe, don't reason.** For a fix touching engine semantics — combat math,
-save format, story flags, serializer output — capture a concrete before/after on
-real input and diff it. Green tests are not evidence of unchanged behaviour where
+**Observe, don't reason.** `fix_requires_behaviour_proof()` in
+`patch_validation.py` decides which fixes owe this, from the
+`BEHAVIOUR_PROOF_PATHS` list — `src/moves/`, `src/combatant.py`,
+`src/api/combat_adapter.py`, `src/save_format.py`, `src/secure_pickle.py`,
+`src/story/`. The list is short on purpose: a gate that fires on every file is one
+reviewers learn to skip. For a fix touching any of them, capture a concrete
+before/after on real input and diff it. Green tests are not evidence of unchanged behaviour where
 coverage is thin, and coverage is thinnest exactly where nobody thought to look.
 The instruments already exist, so don't invent one:
 

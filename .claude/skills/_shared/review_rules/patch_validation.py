@@ -120,6 +120,50 @@ def is_clean_fix_eligible(paths_total: int, paths_fixed: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Behaviour-Proof Scope
+# ---------------------------------------------------------------------------
+# Which paths are semantically load-bearing enough that a fix touching them owes
+# an observed before/after, not just a green suite. Deliberately a short list: a
+# gate that fires on every file is one reviewers learn to skip. It mirrors the
+# hot-path set /code-review already uses to weight Optimization, plus the two
+# persistence paths where a silent behaviour change is least recoverable.
+
+BEHAVIOUR_PROOF_PATHS: tuple = (
+    "src/moves/",
+    "src/combatant.py",
+    "src/api/combat_adapter.py",
+    "src/save_format.py",
+    "src/secure_pickle.py",
+    "src/story/",
+)
+
+
+# Roots that contain a `src/` segment but are not the Python engine. The SPA lives
+# at frontend/src/, so a `story/` or `moves/` component added there must not be
+# mistaken for src/story/ or src/moves/ and demand an engine behaviour proof. A
+# gate that fires on the wrong files loses its authority as surely as one that
+# misses the right ones.
+NON_ENGINE_ROOTS: tuple = ("frontend/",)
+
+
+def fix_requires_behaviour_proof(changed_paths) -> bool:
+    """Return True if any changed path is semantically load-bearing.
+
+    Accepts repo-relative, absolute and Windows-style paths. Paths under a
+    NON_ENGINE_ROOTS tree are skipped rather than aborting the scan, so a
+    changeset mixing frontend and engine files still requires the proof.
+    """
+    for raw in changed_paths:
+        path = str(raw).replace("\\", "/")
+        if any(root in path for root in NON_ENGINE_ROOTS):
+            continue
+        if any(path.startswith(prefix) or f"/{prefix}" in path
+               for prefix in BEHAVIOUR_PROOF_PATHS):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Behaviour Defects — the corrected definition
 # ---------------------------------------------------------------------------
 # The other correction worth copying exactly. Flagging *any* deviation from
