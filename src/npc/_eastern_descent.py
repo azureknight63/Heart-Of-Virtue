@@ -14,6 +14,7 @@ import random
 
 from ._base import Friend, NonCombatantMixin
 from ._chat_llm import ConversationalNPCMixin
+from src.events import gate_is_set, set_story_gate
 from src.narration import narrate
 import src.moves as moves
 
@@ -77,6 +78,13 @@ class Anvil(NonCombatantMixin, Friend):
         "deciding whether something is worth reacting to. He decides it isn't.",
     ]
 
+    #: Set by the first talk()/pet() call. ``AnvilIntroEvent``
+    #: (src/story/ch03.py) reads it as ``Anvil.CONVERSATION_READY_FLAG`` via
+    #: the normal post-action tile-event check and runs the staged
+    #: first-meeting conversation instead of the ambient flavor line. Public
+    #: because that reader lives outside this class.
+    CONVERSATION_READY_FLAG = "anvil_conversation_ready"
+
     def __init__(self):
         description = (
             "A low, heavy-bodied Shell-back, his shell banded grey and "
@@ -118,22 +126,16 @@ class Anvil(NonCombatantMixin, Friend):
         # Cargo infrastructure, not a combatant — never enters combat, see NonCombatantMixin.
         self.in_combat = False
 
-    # Set by the first talk()/pet() call; AnvilIntroEvent (src/story/ch03.py)
-    # picks this up via the normal post-action tile-event check and runs the
-    # staged first-meeting conversation instead of the ambient flavor line.
-    _CONVERSATION_READY_FLAG = "anvil_conversation_ready"
-
     def _first_encounter(self, player):
         """Mark this interaction as having happened; return True the first time.
 
         Subsequent calls (including after AnvilIntroEvent has already run)
         return False, so the ambient flavor lines take over as normal.
         """
-        story = getattr(getattr(player, "universe", None), "story", None)
-        if story is None:
+        already = gate_is_set(player, self.CONVERSATION_READY_FLAG)
+        recorded = set_story_gate(player, self.CONVERSATION_READY_FLAG)
+        if not recorded:
             return False
-        already = story.get(self._CONVERSATION_READY_FLAG) == "1"
-        story[self._CONVERSATION_READY_FLAG] = "1"
         return not already
 
     def talk(self, player):

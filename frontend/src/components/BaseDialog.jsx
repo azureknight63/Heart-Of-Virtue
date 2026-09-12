@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useId, useRef, useState } from 'react'
-import { colors, spacing, accessibility } from '../styles/theme'
+import { colors, spacing, accessibility, zIndex as themeZIndex } from '../styles/theme'
 import { useMobile } from '../hooks/useMobile'
 import logger from '../utils/logger'
 
@@ -394,7 +394,7 @@ export default function BaseDialog({
     maxWidth = '400px',
     width,
     minWidth = '0',
-    zIndex = 1000,
+    zIndex = themeZIndex.dialog,
     showCloseButton = true,
     padding = spacing.xl,
     className = '',

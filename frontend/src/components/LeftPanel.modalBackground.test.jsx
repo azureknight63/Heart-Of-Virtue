@@ -42,8 +42,8 @@ const baseProps = {
 };
 
 // `combat` is a battle_state, not a response body: transformCombatData
-// (useApi.js) SPREADS battle_state flat onto the object components receive, so
-// makeBattleState is the shape this prop actually takes.
+// (utils/combatTransform.js) SPREADS battle_state flat onto the object
+// components receive, so makeBattleState is the shape this prop takes.
 //
 // The dialog opens off an effect, not a prop: the effect that sets
 // showInputDialog wants input_type present and not 'move_selection',
@@ -52,16 +52,7 @@ const baseProps = {
 const combat = makeBattleState({
   input_type: 'target_selection',
   awaiting_input: true,
-  available_options: [
-    // `is_ally` is hand-supplied rather than a factory default because
-    // makeTargetOption does not carry it yet, even though
-    // _build_target_entry (src/api/combat_adapter.py) emits it on every card.
-    // Promoting it to the factory is not free: hostilityTokenFor treats
-    // `false` and absent differently (HOSTILE badge vs no badge), so a
-    // default would change the 13 existing makeTargetOption fixtures in
-    // CombatInputDialog.test.jsx. Left for its own change.
-    makeTargetOption({ id: 'enemy_1', name: 'Rock Rumbler', is_ally: false }),
-  ],
+  available_options: [makeTargetOption({ id: 'enemy_1', name: 'Rock Rumbler' })],
   // `distance` is the only field of an enemy row LeftPanel itself reads (the
   // flee gate, against FLEE_BREAK_AWAY_DISTANCE_FT). Kept under the 20 ft
   // threshold, as it was before the migration, so this refactor does not move

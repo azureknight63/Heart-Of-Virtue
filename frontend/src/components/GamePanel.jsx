@@ -27,16 +27,13 @@ function CloseButton({ onClose, style = {} }) {
 }
 
 /**
- * The class the panel root carries, exported because it is a CONTRACT.
+ * The class the panel root carries, exported so the stacking-order test can
+ * find the panel root.
  *
- * `useOccludedNavHandoff` resolves the occluding panel with
- * `closest(\`.${GAME_PANEL_CLASS}\`)` and falls back to the header row if it
- * misses, so a rename here would silently SHRINK the handoff region rather
- * than break it. `CombatMovePanel.targetGating.test.jsx` would catch a rename
- * loudly (it clicks the resolved panel, and `fireEvent` throws on null) --
- * which is why that file imports this constant too, rather than being the
- * thing that has to be remembered. Same reasoning as `CATEGORY_NAV_LABEL` in
- * utils/categories.js.
+ * That test (LeftPanel.categoryNavStacking.test.jsx) finds CombatMovePanel's
+ * root with `querySelectorAll(\`.${GAME_PANEL_CLASS}\`)` rather than restating the
+ * literal, so a rename here moves the lookup with it (issue #575). Same
+ * reasoning as `CATEGORY_NAV_LABEL` in utils/categories.js.
  */
 export const GAME_PANEL_CLASS = 'game-panel'
 

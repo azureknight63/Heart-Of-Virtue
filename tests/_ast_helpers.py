@@ -31,12 +31,45 @@ def class_functions(cls):
     names. ``ast.walk`` on the parsed class source, not ``vars(cls)``: the point
     is to inspect what the source *says*, decorators and all.
     """
-    tree = ast.parse(textwrap.dedent(inspect.getsource(cls)))
+    tree = _tree_of(cls)
     return {
         node.name: node
         for node in ast.walk(tree)
         if isinstance(node, FUNCTION_NODES)
     }
+
+
+def call_target(node):
+    """The name an :class:`ast.Call` invokes, or None.
+
+    A bare call or any attribute call answers its final name —
+    ``f(...)`` is ``f``, and ``self.g(...)`` and ``obj.attr.h(...)`` are
+    ``g`` and ``h`` — while a call on a subscript or on another call answers
+    None, as does a node that is not a call. Shared by :func:`called_names`
+    and :func:`calls_of` here, by the objective-call scan in
+    ``test_journal_story_integration.py``, and by the completer and wiring
+    scans in ``test_ferry_landing_objective.py``, so those cannot disagree
+    about what a call names. Several older guards still spell the rule
+    themselves -- ``test_rate_limiter.py``, ``test_multi_target_outcome_contract.py``
+    and ``test_end_combat_cleanup.py`` among them -- so treat that list as
+    open; point a new guard here instead.
+    """
+    if not isinstance(node, ast.Call):
+        return None
+    target = node.func
+    if isinstance(target, ast.Attribute):
+        return target.attr
+    if isinstance(target, ast.Name):
+        return target.id
+    return None
+
+
+def _tree_of(source_object):
+    """``source_object`` as a syntax tree: an AST node as given, a class or
+    function parsed from its source."""
+    if isinstance(source_object, ast.AST):
+        return source_object
+    return ast.parse(textwrap.dedent(inspect.getsource(source_object)))
 
 
 def called_names(func):
@@ -49,18 +82,11 @@ def called_names(func):
     Accepts a function or an already-parsed AST node, so a caller that already
     has a node from :func:`class_functions` need not re-parse.
     """
-    tree = func if isinstance(func, ast.AST) else ast.parse(
-        textwrap.dedent(inspect.getsource(func))
-    )
-    names = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            target = node.func
-            if isinstance(target, ast.Attribute):
-                names.add(target.attr)
-            elif isinstance(target, ast.Name):
-                names.add(target.id)
-    return names
+    return {
+        target
+        for target in map(call_target, ast.walk(_tree_of(func)))
+        if target is not None
+    }
 
 
 def calls_of(func, name):
@@ -69,18 +95,7 @@ def calls_of(func, name):
     :func:`called_names` answers "was it called at all"; this one hands back the
     call nodes so a test can inspect the arguments.
     """
-    tree = func if isinstance(func, ast.AST) else ast.parse(
-        textwrap.dedent(inspect.getsource(func))
-    )
-    return [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and (
-            (isinstance(node.func, ast.Attribute) and node.func.attr == name)
-            or (isinstance(node.func, ast.Name) and node.func.id == name)
-        )
-    ]
+    return [node for node in ast.walk(_tree_of(func)) if call_target(node) == name]
 
 
 def source_calls(module_path, name):

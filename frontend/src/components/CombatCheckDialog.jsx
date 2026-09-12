@@ -4,6 +4,25 @@ import GameButton from './GameButton';
 import GameText from './GameText';
 import { colors, spacing } from '../styles/theme';
 import { formatCombatMoveStatus } from '../utils/combatMoveStatus';
+import { lookupOr } from '../utils/lookup';
+
+/**
+ * The long cardinal for a `facing`, which arrives as the Direction enum's
+ * member name ('N', 'NE', ...) while `direction_from_player` arrives already
+ * spelled out ("North", "Northeast") -- both from Check._generate_api_check_data
+ * (src/moves/_utility.py). The card shows the two side by side, so it reads
+ * them into one vocabulary rather than making the player translate half of it.
+ * An unrecognised value renders as itself: a new enum member should show up
+ * abbreviated, not blank.
+ *
+ * BattlefieldGrid's `FACING_MAP` decodes the same eight enum members to
+ * DEGREES for a CSS rotate. Different codomain, same keys -- a new
+ * `Direction` member needs adding to both.
+ */
+const CARDINAL_BY_FACING = {
+    N: 'North', NE: 'Northeast', E: 'East', SE: 'Southeast',
+    S: 'South', SW: 'Southwest', W: 'West', NW: 'Northwest',
+};
 
 const CombatCheckDialog = ({ checkData, onClose }) => {
     if (!checkData || checkData.length === 0) {
@@ -16,7 +35,6 @@ const CombatCheckDialog = ({ checkData, onClose }) => {
             onClose={onClose}
             variant="warning"
             maxWidth="600px"
-            zIndex={1000}
         >
             <GameText variant="muted" size="sm" style={{ marginBottom: spacing.md }}>
                 {checkData.length} combatant{checkData.length !== 1 ? 's' : ''} detected (sorted by distance)
@@ -78,7 +96,9 @@ const CombatCheckDialog = ({ checkData, onClose }) => {
                             {combatant.facing && (
                                 <div>
                                     <GameText variant="muted" size="xs" style={{ display: 'inline' }}>Facing: </GameText>
-                                    <GameText variant="bright" size="xs" style={{ display: 'inline' }}>{combatant.facing}</GameText>
+                                    <GameText variant="bright" size="xs" style={{ display: 'inline' }}>
+                                        {lookupOr(CARDINAL_BY_FACING, combatant.facing, combatant.facing)}
+                                    </GameText>
                                 </div>
                             )}
 

@@ -1,12 +1,14 @@
 /**
- * Sort/format helpers for the cloud saves list rendered in MainMenuPage.
+ * Ordering and label helpers for the cloud save rows every save list shows.
  *
- * A client-side `hov_local_autosave` blob used to be merged into this list
- * (write-only, never restorable — see issue #487) and these helpers also
- * handled a synthetic local-autosave row. Issue #489 retired that blob
- * entirely in favor of closing the exposure window server-side (a lower
- * cloud-autosave trigger threshold, see useApi.js's useAutosave). What
- * remains here is purely about ordering/displaying the real cloud rows.
+ * A client-side `hov_local_autosave` blob used to be merged into
+ * MainMenuPage's list (write-only, never restorable — see issue #487) and
+ * these helpers also handled a synthetic local-autosave row. Issue #489
+ * retired that blob entirely in favor of closing the exposure window
+ * server-side (a lower cloud-autosave trigger threshold, see useApi.js's
+ * useAutosave). What remains here orders and labels the real cloud rows, and
+ * fetches them in that order through an endpoint call passed in; nothing in
+ * this module touches storage.
  */
 
 // Cloud saves are formatted server-side as "YYYY-MM-DD HH:MM:SS <TZ abbrev>"
@@ -14,6 +16,9 @@
 // NaN for most others (CEST, JST, ...), which would make the comparator return
 // NaN and silently randomise which save "Continue" targets.
 const TZ_ABBREV_SUFFIX = /\s+[A-Za-z]{2,5}$/
+
+/** What separates the parts of a save row's label. */
+export const SAVE_LABEL_SEPARATOR = ' • '
 
 /**
  * @returns milliseconds since epoch, or -Infinity for anything unparseable so
@@ -83,4 +88,36 @@ export function compareSavesByRecency(a, b) {
   const right = saveSortValue(saveRowClockValue(b))
   if (left === right) return 0
   return right > left ? 1 : -1
+}
+
+/**
+ * The level-and-place half of a save row's label: `Lv N`, the map, the room.
+ *
+ * One builder for every save list (MainMenuPage, DefeatDialog), so they
+ * cannot drift apart the way they had drifted ("Lvl" beside "Lv", and
+ * "Lvl ?" for a row whose level list_saves reports as the string "?"). A
+ * level that is not a number, and an empty place field, are left out rather
+ * than shown blank.
+ */
+export function saveSummaryParts(row) {
+  return [
+    typeof row?.level === 'number' ? `Lv ${row.level}` : null,
+    row?.map_name,
+    row?.room_title,
+  ].filter(Boolean)
+}
+
+/** What every save list calls a row: its name, or 'Untitled Save' when it has none. */
+export function saveDisplayName(row) {
+  return row?.name || 'Untitled Save'
+}
+
+/**
+ * The cloud saves, newest first — the order every save list shows and the
+ * order Continue picks from. `listSaves` is the endpoint call, passed in so
+ * this module stays free of the API client.
+ */
+export async function fetchSavesNewestFirst(listSaves) {
+  const response = await listSaves()
+  return [...(response?.data?.saves || [])].sort(compareSavesByRecency)
 }

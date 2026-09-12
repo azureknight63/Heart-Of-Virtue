@@ -10,13 +10,7 @@ import {
   makeEnemy,
   makeRoomResponse,
 } from '../test/payloads';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
-// Read once: the whitelist assertion below inspects transformCombatData's own
-// source because the helper is module-private and there is no other way to
-// prove the copied key set without re-implementing it in the test.
-const useApiSource = readFileSync(resolve(process.cwd(), 'src/hooks/useApi.js'), 'utf8');
+import { transformCombatData } from '../utils/combatTransform';
 
 vi.mock('../api/endpoints', () => ({
   default: {
@@ -298,24 +292,34 @@ describe('useCombat', () => {
   });
 
   it('drops top-level combat fields outside transformCombatData\'s whitelist', () => {
-    // Documented trap (CLAUDE.md): transformCombatData spreads
+    // Documented trap (.claude/rules/frontend.md): transformCombatData spreads
     // data.battle_state and then copies a FIXED set of top-level keys.
     // Anything emitted at the top level and absent from that set never reaches
     // the client — this silently caused two of the six wire-drift bugs
-    // (combat_id and map_size, both since moved into battle_state).
+    // (combat_id and map_size, whose client copies now ride in battle_state).
     //
-    // Pinning it here means a future author who adds a top-level field and
-    // forgets the whitelist sees a failing test naming the rule, instead of a
-    // feature that quietly does nothing.
-    const source = useApiSource;
-    const transform = source.slice(
-      source.indexOf('const transformCombatData'),
-      source.indexOf('// Helper to transform location data')
-    );
-    const whitelisted = [...transform.matchAll(/^\s{2}(\w+):\s*data\./gm)].map((m) => m[1]);
-    expect(new Set(whitelisted)).toEqual(new Set(COMBAT_TOP_LEVEL_WHITELIST));
-    // battle_state is carried by the spread, not by a whitelist entry.
-    expect(transform).toContain('...data.battle_state');
+    // What this pins is the transform against COMBAT_TOP_LEVEL_WHITELIST: a
+    // key the transform copies and the list omits, or the reverse, fails here.
+    // It cannot see the server. The server side is COMBAT_TOP_LEVEL_CONTRACT
+    // in tests/test_wire_field_contract.py, which checks top-level keys the
+    // transform reads against a real get_combat_state().
+    const combat = transformCombatData({
+      battle_state: { round: 3 },
+      combat_active: true,
+      map_size: 9,
+      not_whitelisted: 'dropped',
+    });
+
+    // With battle_state down to one key, every other key on the result is one
+    // the transform copied from the top level: exactly the whitelist.
+    const { round, ...copied } = combat;
+    expect(round).toBe(3);
+    expect(new Set(Object.keys(copied))).toEqual(new Set(COMBAT_TOP_LEVEL_WHITELIST));
+    // A top-level key off the whitelist never reaches the client — map_size
+    // included, which the adapter still emits at the top level for raw
+    // consumers; the client's copy rides in battle_state (drift bug #6).
+    expect(combat).not.toHaveProperty('map_size');
+    expect(combat).not.toHaveProperty('not_whitelisted');
   });
 
   it('keeps combat_id stable across polls of one fight and changes it for a new fight', async () => {

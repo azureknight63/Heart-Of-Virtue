@@ -16,7 +16,7 @@ import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds';
 
 // This file mocks every hook and heavy child component so it can drive
 // GamePage's *own* local handler functions (handleMove, handleEventInputWrapper,
-// handleVictoryClose, handleCollectLoot, handleSkipLoot, handleDefeatClose,
+// handleVictoryClose, finishLoot, handleSkipLoot, handleDefeatClose,
 // handleAllocatePoints, handleAdvisorPause/RequestSuggestions) directly via
 // simple button clicks, rather than through the real EventManager/CombatManager
 // UI. GamePage.test.jsx / GamePage.integration.test.jsx already exercise real
@@ -463,17 +463,25 @@ describe('GamePage handler wiring', () => {
         expect(setShowLootDialog).toHaveBeenCalledWith(false);
     });
 
-    it('closes the defeat dialog and refetches game state', async () => {
+    it('closes the defeat dialog, refetches game state and flushes the new run\'s events', async () => {
         const setShowDefeatDialog = vi.fn();
         const setEndState = vi.fn();
+        const checkPendingEvents = vi.fn().mockResolvedValue();
         useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
             showDefeatDialog: true,
             endState: { status: 'defeat' },
             setShowDefeatDialog,
             setEndState,
         }));
+        useEventManager.mockReturnValue(makeEventManagerReturn({ checkPendingEvents }));
 
         renderGamePage();
+        // The mount-time effects poll first; the close must poll again on its
+        // own. START OVER (#587) restarts the run in place, and the flush must
+        // not lean on the loading-keyed effect, which re-fires only because the
+        // real refetch hooks toggle their loading flags — the refetch mocks here
+        // never toggle one, so only an explicit flush can raise the count.
+        const pollsBeforeClose = checkPendingEvents.mock.calls.length;
         await act(async () => {
             fireEvent.click(screen.getByText('Close Defeat'));
         });
@@ -482,6 +490,7 @@ describe('GamePage handler wiring', () => {
         expect(setEndState).toHaveBeenCalledWith(null);
         expect(refetchPlayer).toHaveBeenCalledTimes(1);
         expect(refetchWorld).toHaveBeenCalledTimes(1);
+        expect(checkPendingEvents.mock.calls.length).toBeGreaterThan(pollsBeforeClose);
     });
 
     it('allocates points from the victory dialog via the dynamically-imported endpoint', async () => {

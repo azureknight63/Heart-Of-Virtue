@@ -8,8 +8,9 @@ import { colors } from '../styles/theme'
  * The number this module formats is `combat.player.heat`, emitted by
  * `CombatantSerializer.serialize_combatant` (src/api/serializers/combat.py)
  * and carried to the client inside `battle_state`, which
- * `transformCombatData` spreads (frontend/src/hooks/useApi.js). It is a raw
- * FLOAT multiplier (1.62 == +62% damage), rounded to 2dp on the wire.
+ * `transformCombatData` spreads (frontend/src/utils/combatTransform.js).
+ * It is a raw FLOAT multiplier (1.62 == +62% damage), rounded to 2dp on
+ * the wire.
  *
  * Do NOT read `battle_state.heat`: that key is a different representation of
  * the same quantity — `round(player.heat * 100)`, set by

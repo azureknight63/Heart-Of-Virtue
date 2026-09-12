@@ -1,22 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import apiEndpoints from '../api/endpoints'
 import { useAuthContext } from '../context/AuthContext'
-
-// Helper to transform combat data
-const transformCombatData = (data) => ({
-  ...data.battle_state,
-  log: data.log || [],
-  beat_states: data.beat_states || [],
-  end_state: data.end_state || null,
-  combat_active: data.combat_active,
-  suggested_moves: data.suggested_moves || [],
-  suggestions_loading: data.suggestions_loading || false,
-  events_triggered: data.events_triggered || [],
-  last_move_outcome: data.last_move_outcome || "",
-  last_move_name: data.last_move_name || null,
-
-  last_move_target_id: data.last_move_target_id || null
-})
+import { transformCombatData } from '../utils/combatTransform'
 
 // Helper to transform location data
 const transformLocationData = (room) => {

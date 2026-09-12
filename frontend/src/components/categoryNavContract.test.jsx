@@ -5,26 +5,29 @@ import { CATEGORY_NAV_SELECTOR, CATEGORY_NAV_LABEL } from '../utils/categories';
 import { makePlayer } from '../test/payloads';
 
 /**
- * The one guard that can actually fail on a HeroPanel rename.
+ * The direct guard on HeroPanel's nav identity.
  *
- * CombatMovePanel hands back clicks its flyout occludes by hit-testing
- * `CATEGORY_NAV_SELECTOR` against the live DOM (#557). Every other test of that
- * behaviour renders its OWN <nav> with the same label, so all of them would
- * stay green while the real nav drifted out from under the selector — a mock
- * agreeing with a mock, which CLAUDE.md names as this codebase's dominant bug
- * class. This one renders the REAL HeroPanel and asserts the real selector
- * finds real buttons.
+ * LeftPanel.modalBackground.test.jsx mocks HeroPanel with a stand-in nav
+ * carrying this label, so it would stay green while the real nav drifted out
+ * from under the selector — a mock agreeing with a mock, which CLAUDE.md
+ * names as this codebase's dominant bug class. This one renders the REAL
+ * HeroPanel in combat and asserts the real selector finds the real category
+ * buttons; the stacking-order tests
+ * (`LeftPanel.categoryNavStacking.test.jsx`) are the selector's other
+ * consumer.
+ *
+ * It lives in its own file rather than inside HeroPanel.test.jsx because the
+ * claim is about a contract BETWEEN modules — the selector in
+ * utils/categories.js and the markup in HeroPanel.jsx — and a reader chasing
+ * the selector should find its guard by name, not by reading a component
+ * suite that covers thirty other things.
  */
-vi.mock('../hooks/useMobile', () => ({ default: () => false, useMobile: () => false }));
-
-const player = makePlayer();
-
 describe('the combat category nav contract', () => {
-  it('is found in the real HeroPanel by the selector CombatMovePanel uses', () => {
-    render(<HeroPanel player={player} mode="combat" onCombatMoveClick={vi.fn()} />);
+  it('is found in the real HeroPanel by the exported selector', () => {
+    render(<HeroPanel player={makePlayer()} inCombat hasOffensiveMoves onOffensiveClick={vi.fn()} />);
 
-    const buttons = document.querySelectorAll(CATEGORY_NAV_SELECTOR);
-    expect(buttons.length).toBeGreaterThan(0);
+    const labels = [...document.querySelectorAll(CATEGORY_NAV_SELECTOR)].map((b) => b.textContent);
+    expect(labels).toContain('OFFENSIVE');
   });
 
   it('derives both halves from one exported constant', () => {
@@ -34,7 +37,7 @@ describe('the combat category nav contract', () => {
   });
 
   /**
-   * The guard that makes the fixture above load-bearing.
+   * The guard that makes this file's player fixture load-bearing.
    *
    * Until this existed the file rendered the real HeroPanel and then asserted
    * nothing about what it rendered, so the player fixture could name any field
@@ -52,11 +55,7 @@ describe('the combat category nav contract', () => {
    */
   it('reads the vitals off the wire field names, not the fallback defaults', () => {
     const { getByRole } = render(
-      <HeroPanel
-        player={makePlayer({ hp: 73, max_hp: 91, fatigue: 44, max_fatigue: 88 })}
-        mode="combat"
-        onCombatMoveClick={vi.fn()}
-      />
+      <HeroPanel player={makePlayer({ hp: 73, max_hp: 91, fatigue: 44, max_fatigue: 88 })} />
     );
 
     expect(getByRole('progressbar', { name: /^HP/ })).toHaveAttribute('aria-label', 'HP: 73 / 91');

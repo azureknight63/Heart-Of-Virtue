@@ -23,6 +23,18 @@ if "tkinter" not in sys.modules:
     sys.modules["tkinter.font"] = MagicMock()
 
 from src.narration import capture_narration  # noqa: E402
+from src.story.ch02 import ATRIUM_COORDS  # noqa: E402
+from tests._ch02_fixtures import (  # noqa: E402
+    CHANNEL_COORD,
+    CORRUPTED_AUTHORED_TEXT,
+    Gorran,
+    KingSlime,
+    Lurker,
+    MineralFragment,
+    assert_description_overwritten,
+    holds_mineral_fragment,
+    make_pools_map,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -48,8 +60,6 @@ def _make_player(**kwargs):
     player.skip_dialog = False
     player.universe = Mock()
     player.universe.story = {}
-    player.universe.current_map = Mock()
-    player.universe.current_map.tiles = {}
     player.universe.game_tick = 0
     player.map = {}
     player.previous_tile = None
@@ -775,9 +785,7 @@ class TestAfterDefeatingLurker:
         player = _make_player()
         tile = _make_tile()
         if lurker_present:
-            lurker = Mock()
-            lurker.__class__.__name__ = "Lurker"
-            tile.npcs_here = [lurker]
+            tile.npcs_here = [Lurker()]
         return self.cls(player=player, tile=tile), player, tile
 
     def test_instantiate(self):
@@ -1051,9 +1059,7 @@ class TestCh02ArenaEntrance:
         tile = _make_tile()
         tile.remove_event = Mock()
         if king_slime_present:
-            ks = Mock()
-            ks.__class__.__name__ = "KingSlime"
-            tile.npcs_here = [ks]
+            tile.npcs_here = [KingSlime()]
         return self.cls(player=player, tile=tile), player, tile
 
     def test_instantiate(self):
@@ -1072,10 +1078,13 @@ class TestCh02ArenaEntrance:
             ev.check_conditions()
             mock_pass.assert_not_called()
 
-    def test_conditions_remove_event_when_already_entered(self):
+    def test_conditions_retire_the_event_when_already_entered(self):
         ev, player, tile = self._make(already_entered=True)
-        ev.check_conditions()
-        tile.remove_event.assert_called_with(ev.name)
+        tile.events_here = [ev]
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+        assert ev not in tile.events_here
+        mock_pass.assert_not_called()
 
     def test_process_skip_dialog_sets_flag(self):
         ev, player, tile = self._make()
@@ -1108,19 +1117,14 @@ class TestAfterDefeatingKingSlime:
     def _make(self, king_alive=False):
         player = _make_player()
         player.universe.story = {}
-        player.universe.current_map = Mock()
-        player.universe.current_map.tiles = {}
-        # _cleanse_pool_tiles iterates maps looking for "grondelith-mineral-pools" dict
-        pool_map = {"name": "grondelith-mineral-pools"}
-        player.universe.maps = [pool_map]
+        # _cleanse_pool_tiles looks the pools map up in the universe's maps
+        player.universe.maps = [make_pools_map()]
         tile = _make_tile()
         tile.remove_event = Mock()
         tile.spawn_object = Mock()
         tile.spawn_item = Mock()
         if king_alive:
-            ks = Mock()
-            ks.__class__.__name__ = "KingSlime"
-            tile.npcs_here = [ks]
+            tile.npcs_here = [KingSlime()]
         return self.cls(player=player, tile=tile), player, tile
 
     def test_instantiate(self):
@@ -1159,26 +1163,26 @@ class TestAfterDefeatingKingSlime:
             ev.process()
         player.add_items_to_inventory.assert_called_once()
         granted = player.add_items_to_inventory.call_args[0][0]
-        assert any(
-            i.__class__.__name__ == "MineralFragment" for i in granted
-        )
+        assert holds_mineral_fragment(granted)
 
-    def test_process_spawns_tile_description(self):
+    def test_process_replaces_tile_description(self):
+        """Issue #573/#572: description is overwritten directly rather than
+        appended via a spawned (nameless) TileDescription object."""
         ev, player, tile = self._make()
+        tile.description = CORRUPTED_AUTHORED_TEXT
         with (
             patch("src.story.ch02.print_slow"),
             patch("src.story.ch02.time.sleep"),
         ):
             ev.process()
-        tile.spawn_object.assert_called()
+        assert_description_overwritten(tile, authored_text=CORRUPTED_AUTHORED_TEXT)
 
     def test_process_teleports_gorran_from_atrium(self):
         ev, player, tile = self._make()
-        gorran = Mock()
-        gorran.__class__.__name__ = "Gorran"
+        gorran = Gorran()
         atrium_tile = Mock()
         atrium_tile.npcs_here = [gorran]
-        player.map = {(2, 1): atrium_tile}  # process() uses player.map, not universe.current_map
+        player.map = {ATRIUM_COORDS: atrium_tile}
         with (
             patch("src.story.ch02.print_slow"),
             patch("src.story.ch02.time.sleep"),
@@ -1189,18 +1193,19 @@ class TestAfterDefeatingKingSlime:
 
     def test_process_finds_gorran_in_ally_list(self):
         ev, player, tile = self._make()
-        gorran = Mock()
-        gorran.__class__.__name__ = "Gorran"
-        gorran.tile = Mock()
-        gorran.tile.npcs_here = [gorran]
+        gorran = Gorran()
+        old_tile = Mock()
+        old_tile.npcs_here = [gorran]
+        gorran.tile = old_tile
         player.combat_list_allies = [gorran]
-        player.universe.current_map.tiles = {}  # no atrium tile
         with (
             patch("src.story.ch02.print_slow"),
             patch("src.story.ch02.time.sleep"),
         ):
             ev.process()
         assert gorran in tile.npcs_here
+        # And he LEAVES the tile he was on, rather than standing on two.
+        assert gorran not in old_tile.npcs_here
 
 
 class TestAfterDefeatingKingSlime_CleanseTiles:
@@ -1214,7 +1219,6 @@ class TestAfterDefeatingKingSlime_CleanseTiles:
     def test_cleanse_updates_existing_tiles(self):
         player = _make_player()
         player.universe.story = {}
-        player.universe.current_map = Mock()
         tile = _make_tile()
         tile.remove_event = Mock()
         tile.spawn_object = Mock()
@@ -1222,10 +1226,8 @@ class TestAfterDefeatingKingSlime_CleanseTiles:
 
         # Provide a mineral pools map so _cleanse_pool_tiles can find coords
         pool_tile = Mock()
-        pool_tile.spawn_object = Mock()
-        pool_map = {"name": "grondelith-mineral-pools", (2, 2): pool_tile, (3, 2): Mock()}
-        player.universe.maps = [pool_map]
-        player.universe.current_map.tiles = {}
+        pool_tile.description = CORRUPTED_AUTHORED_TEXT
+        player.universe.maps = [make_pools_map({CHANNEL_COORD: pool_tile})]
 
         ev = self.cls(player=player, tile=tile)
         with (
@@ -1234,8 +1236,7 @@ class TestAfterDefeatingKingSlime_CleanseTiles:
         ):
             ev.process()
 
-        # spawn_object should have been called on pool tiles that exist in the map
-        pool_tile.spawn_object.assert_called()
+        assert_description_overwritten(pool_tile, authored_text=CORRUPTED_AUTHORED_TEXT)
 
 
 class TestCh02FragmentReminder:
@@ -1254,9 +1255,7 @@ class TestCh02FragmentReminder:
         tile = _make_tile()
         tile.remove_event = Mock()
         # MineralFragment on tile
-        frag = Mock()
-        frag.__class__.__name__ = "MineralFragment"
-        tile.items_here = [frag]
+        tile.items_here = [MineralFragment()]
         # Player is NOT in the arena
         player.current_room = Mock()
         player.map = {}
@@ -1284,9 +1283,7 @@ class TestCh02FragmentReminder:
 
     def test_no_fire_when_fragment_in_inventory(self):
         ev, player, tile = self._make()
-        frag = Mock()
-        frag.__class__.__name__ = "MineralFragment"
-        player.inventory = [frag]
+        player.inventory = [MineralFragment()]
         ev._remind = Mock()
         ev.evaluate_for_map_entry(player)
         ev._remind.assert_not_called()
@@ -1354,9 +1351,7 @@ class TestCh02KingSlimeMemoryFlash:
         if flash_fired:
             player.universe.story["king_slime_flash_fired"] = "1"
         if has_fragment:
-            frag = Mock()
-            frag.__class__.__name__ = "MineralFragment"
-            player.inventory = [frag]
+            player.inventory = [MineralFragment()]
         tile = _make_tile()
         tile.events_here = []
         return self.cls(player=player, tile=tile), player, tile
@@ -1418,9 +1413,7 @@ class TestAfterKingSlimeReturn:
         if votha_given:
             player.universe.story["votha_krr_response_given"] = "1"
         if has_fragment:
-            frag = Mock()
-            frag.__class__.__name__ = "MineralFragment"
-            player.inventory = [frag]
+            player.inventory = [MineralFragment()]
         tile = _make_tile()
         tile.remove_event = Mock()
         return self.cls(player=player, tile=tile), player, tile
@@ -1504,8 +1497,7 @@ class TestAfterKingSlimeReturn:
 
     def test_process_removes_fragment_from_inventory(self):
         ev, player, tile = self._make(has_fragment=True)
-        frag = Mock()
-        frag.__class__.__name__ = "MineralFragment"
+        frag = MineralFragment()
         player.inventory = [frag]
         with patch("src.story.ch02.print_slow"):
             self._drive_to_completion(ev, choice="a")

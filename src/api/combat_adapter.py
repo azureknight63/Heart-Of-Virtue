@@ -285,6 +285,31 @@ TOO_FAR_REASON = "Enemy out of range (too far)"
 #: it is named: the two had to agree and nothing said so.
 NOT_ENOUGH_FATIGUE_REASON = "Not enough fatigue"
 
+#: The compass the Turn move offers, and the facing each answer resolves to.
+#: ONE table, offered from and accepted against the same place: a direction
+#: offered but unmapped would be accepted and then silently resolve to the
+#: fallback in `_handle_direction_selection` -- a wrong facing, with no error.
+TURN_DIRECTION_FACINGS = {
+    "north": positions.Direction.N,
+    "south": positions.Direction.S,
+    "east": positions.Direction.E,
+    "west": positions.Direction.W,
+}
+
+#: The two prompts `_handle_move_selection` answers with instead of executing:
+#: that compass in wire form, and the duration a move with `needs_duration`
+#: (Wait) offers. Named because they ARE the wire -- they land verbatim in
+#: `available_options` and the client renders them -- so the frontend fixtures
+#: are held to these by `tests/test_wire_field_contract.py` rather than to a
+#: hand-copied list.
+TURN_DIRECTIONS = list(TURN_DIRECTION_FACINGS)
+WAIT_DURATION_PROMPT = {
+    "prompt": "How many beats do you want to wait?",
+    "min": 3,
+    "max": 10,
+    "default": 5,
+}
+
 #: Weapon subtypes whose engine name is not the noun a player would use. Every
 #: other subtype reads fine lowercased ("crossbow", "scythe", "polearm"), so
 #: only the exceptions are listed — and the phrases here are COMPLETE, article
@@ -2072,12 +2097,7 @@ class ApiCombatAdapter:
         # Check if move needs duration input (e.g., Wait move)
         if hasattr(selected_move, "needs_duration") and selected_move.needs_duration:
             self.input_type = "number_input"
-            self.available_options = {
-                "prompt": "How many beats do you want to wait?",
-                "min": 3,
-                "max": 10,
-                "default": 5,
-            }
+            self.available_options = dict(WAIT_DURATION_PROMPT)
             self.pending_move_index = move_index
             # Keep awaiting_input True so frontend knows to send number
             return self.get_combat_state()
@@ -2085,7 +2105,7 @@ class ApiCombatAdapter:
         # Check if move needs direction (Turn move)
         if selected_move.name == "Turn":
             self.input_type = "direction_selection"
-            self.available_options = ["north", "south", "east", "west"]
+            self.available_options = list(TURN_DIRECTIONS)
             self.pending_move_index = move_index
             # Keep awaiting_input True so frontend knows to send direction
             return self.get_combat_state()
@@ -2170,16 +2190,12 @@ class ApiCombatAdapter:
 
         # Set direction on the move
         if hasattr(pending_move, "target_direction"):
-            # Convert string to Direction enum
-            direction_map = {
-                "north": positions.Direction.N,
-                "south": positions.Direction.S,
-                "east": positions.Direction.E,
-                "west": positions.Direction.W,
-            }
-            # Fallback to N if mapping fails (though validation above catches it)
-            enum_dir = direction_map.get(direction.lower(), positions.Direction.N)
-            pending_move.target_direction = enum_dir
+            # Indexed, not `.get(..., N)`: the membership check above
+            # rejects anything not in ``available_options``, which IS this
+            # table's keys, so a default here could only ever hide a table
+            # that had stopped being the offer's source -- by silently
+            # turning every direction north.
+            pending_move.target_direction = TURN_DIRECTION_FACINGS[direction]
 
         # Clear pending move index
         self.pending_move_index = None

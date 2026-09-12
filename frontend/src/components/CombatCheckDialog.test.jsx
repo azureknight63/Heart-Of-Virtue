@@ -1,29 +1,35 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import CombatCheckDialog from './CombatCheckDialog';
+import { makeCheckEntry } from '../test/payloads';
 
 describe('CombatCheckDialog', () => {
+  // Through the builder, which is held to Check._generate_api_check_data by
+  // tests/test_wire_field_contract.py. Written by hand, this fixture had
+  // drifted twice: `facing` is the Direction enum's member NAME ('N', 'S',
+  // src/positions.py) while `direction_from_player` is the long cardinal, and
+  // the player is never a row at all (the move skips `ally == user`), so the
+  // 'Self' row described a payload no check can produce.
   const mockCheckData = [
-    {
-      name: 'Hero',
+    makeCheckEntry({
+      name: 'Gorran',
       is_ally: true,
       distance: 0,
-      direction_from_player: 'Self',
-      facing: 'North',
+      direction_from_player: 'North',
+      facing: 'N',
       current_move: 'Rest',
       current_move_display_name: 'Rest',
-      current_move_stage: 0
-    },
-    {
+      current_move_stage: 0,
+    }),
+    makeCheckEntry({
       name: 'Goblin',
-      is_ally: false,
       distance: 5,
       direction_from_player: 'North',
-      facing: 'South',
+      facing: 'S',
       current_move: 'NPC_Attack',
       current_move_display_name: 'Attack',
-      current_move_stage: 1
-    }
+      current_move_stage: 1,
+    }),
   ];
 
   const mockOnClose = vi.fn();
@@ -49,17 +55,20 @@ describe('CombatCheckDialog', () => {
 
     // The header claims "sorted by distance", but the sorting happens server
     // side — the dialog must render the array as given, not re-sort it.
-    const heroCard = cardFor('Hero');
+    const allyCard = cardFor('Gorran');
     const goblinCard = cardFor('Goblin');
-    expect(Array.from(heroCard.parentElement.children)).toEqual([heroCard, goblinCard]);
+    expect(Array.from(allyCard.parentElement.children)).toEqual([allyCard, goblinCard]);
   });
 
   it('labels allies and enemies distinctly and shows each combatant\'s stats', () => {
     render(<CombatCheckDialog checkData={mockCheckData} onClose={mockOnClose} />);
-    const heroCard = cardFor('Hero');
+    const allyCard = cardFor('Gorran');
     const goblinCard = cardFor('Goblin');
 
-    expect(heroCard.textContent).toBe('HeroALLYDistance: 0 ftDirection: SelfFacing: NorthPreparing: Rest');
+    // `facing` arrives abbreviated and `direction_from_player` spelled out;
+    // the card renders both in the long form, so the two compass readings on
+    // one row share a vocabulary.
+    expect(allyCard.textContent).toBe('GorranALLYDistance: 0 ftDirection: NorthFacing: NorthPreparing: Rest');
     expect(goblinCard.textContent).toBe('GoblinENEMYDistance: 5 ftDirection: NorthFacing: SouthUsing: Attack');
   });
 
