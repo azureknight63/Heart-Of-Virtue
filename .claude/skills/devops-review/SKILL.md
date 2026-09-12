@@ -321,7 +321,13 @@ For each critical/high finding:
 For approved fixes:
 1. Create a branch: `devops/fix-{issue-id}`
 2. Apply fix (could be config change, pipeline update, dependency upgrade, etc.)
-3. Test the fix:
+3. Test the fix — **re-test the mechanism, not the tool's verdict.** A scanner
+   going quiet is the infrastructure form of patching the reproduction instead of
+   the cause: the finding's underlying condition may be untouched while its
+   detection signature moved. Re-exercise what the finding actually claimed (the
+   permission, the exposed port, the resolved dependency version), and state what
+   behaviour you confirmed is unchanged — a config or dependency change that
+   silently alters runtime behaviour is the most common way these fixes go wrong.
    - If pipeline change: run CI locally or on a test branch
    - If dependency: test in staging
    - If config/secrets: verify in test environment first

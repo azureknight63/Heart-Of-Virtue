@@ -70,7 +70,10 @@ You MUST adopt **maximum grumpiness**. Assume the author is clever, well-intenti
 
 Before grading, score each potential issue 0–100. Only count issues with confidence ≥ 80 toward a dimension's grade — don't let unverified nitpicks drag a dimension down.
 
-- **0–24**: False positive or pre-existing. Ignore.
+**The score measures confidence that a *finding* is real. It is not confidence that a *fix* is correct, and must never be reused as such** — see Security Fix Validation below.
+
+- **0–24**: False positive. Ignore.
+- **Pre-existing is a provenance, not a score.** A real defect the diff did not introduce is not a false positive — score it on its merits and label it `pre-existing`. Collapsing the two loses the distinction in both directions: it buries live defects *and* it lets a defect the diff genuinely introduced be waved off as "already there". Only findings labelled `introduced-by-this-diff` count against this diff's grades; pre-existing ones are reported separately so they can be filed.
 - **25–49**: Possible issue but unverified. Flag for awareness only; does not affect grade.
 - **50–74**: Real but minor. Mention; does not fail a dimension alone.
 - **75–100**: Verified, impactful, or explicitly required by this file. Counts toward grade.
@@ -107,7 +110,7 @@ The first six dimensions below are generic and language-agnostic. **Architecture
 
 **Evaluate:** Input validation/sanitization at boundaries, secrets handling, authn/authz consistency, safe deserialization, dependency hygiene.
 
-**Red flags:** Secrets or credentials committed to VCS; SQL/query strings built via string concatenation from user input; skipped authorization checks; plaintext/weak-hash password storage; `verify=False` on HTTP clients; any new deserialization path that bypasses `src/secure_pickle.py`'s `SafeUnpickler`; a new `/api/debug/*`-style route not gated behind `app.config["TESTING"]`.
+**Red flags:** Secrets or credentials committed to VCS; SQL/query strings built via string concatenation from user input; skipped authorization checks; plaintext/weak-hash password storage; `verify=False` on HTTP clients; any new deserialization path that bypasses `src/secure_pickle.py`'s `SafeUnpickler`, **or that only holds with strict mode off** (strict allow-list enforcement is gated on `HOV_STRICT_UNPICKLE`, which nothing sets, but it is the intended production posture — review as though it is on); a new `/api/debug/*`-style route not gated behind `app.config["TESTING"]`.
 
 ### 6. AI-Friendliness
 
@@ -163,6 +166,7 @@ This dimension is graded and reported like the others, but — matching the `cod
 - [ ] **Explain assertion magic numbers**
 - [ ] **Audit stale comments**
 - [ ] Ensure no test interdependencies
+- [ ] **For a fix: is there a test that fails if behaviour *moves*, not only one that fails without the fix?** The revert-proof shows the fix does something; it says nothing about what else the fix changed. Thin coverage plus a green suite is not evidence of unchanged behaviour.
 
 ### Security Review
 - [ ] No secrets, tokens, or credentials in source code or logs
@@ -170,6 +174,17 @@ This dimension is graded and reported like the others, but — matching the `cod
 - [ ] Authentication and authorization enforced on all protected endpoints
 - [ ] TLS/SSL verification not disabled in HTTP clients
 - [ ] New dependencies checked for known vulnerabilities
+
+### Security Fix Validation (when the diff *is* a fix)
+
+Finding a vulnerability and validating a remediation are different jobs. Research on 6,080 LLM-generated security patches found 26% fully fixed the bug without side effects, 20.1% fixed it but moved application behaviour, 51.5% left at least one path exploitable, and 37.5% of the *successful* patches were fragile. Apply this list to any fix, including one you propose yourself:
+
+- [ ] **Root cause, not reproduction input.** Does the fix address the vulnerable code, or only block the specific input that demonstrated it? An input filter leaves the bug live behind a different input.
+- [ ] **Every path enumerated before patching.** `Grep` all call sites and entry paths to the vulnerable symbol and list them; then check the fix against the list. A fix covering the one path a reproduction exercised is a partial fix, and a partial fix is not a fix.
+- [ ] **The identical twin.** Grep the *pattern*, not just the symbol — the same defect frequently sits character-for-character in an adjacent path that no test touches.
+- [ ] **Fragility judged explicitly.** A fix that guards one caller while the vulnerable primitive stays callable is fragile; one that removes or replaces the vulnerable code is not. Say which this is.
+- [ ] **Behaviour movement.** Does the fix change behaviour that matches *neither* the pre-fix behaviour nor the intended post-fix behaviour? (Both clauses matter — an intended change is not a defect, and judging against the pre-fix state alone makes this check fire on every good patch.)
+- [ ] **Critical/Major Security fixes go to the user.** Do not close one on your own judgement. Model confidence does not track patch correctness on security work, so the ≥80 filter is not the right instrument here — ask.
 
 ### Architecture Review (project-specific)
 - [ ] Engine/API separation respected
@@ -198,6 +213,7 @@ This dimension is graded and reported like the others, but — matching the `cod
 - Report issues grouped by severity: **Critical** (must fix) then **Major**, **Minor**, **Nit**.
 - Do not suggest `/commit` until all of dimensions 1–7 are at A or above (Correctness is graded and reported, and any Critical/Major Correctness finding blocks the same way — see dimension 8 above).
 - If a dimension can't reach A without a decision from the user, stop and ask — don't invent a resolution.
+- A **Critical or Major Security** finding is never resolved on your own judgement: present the finding and the proposed patch and ask. A fragile fix (root cause still reachable) does not close a finding, and Security does not reach A while one stands.
 - For trivial changes (config edits, comment fixes), briefly confirm all dimensions are N/A or A and move on without a full table.
 - Never fabricate grades or finding counts. If you didn't check something, say so.
 
@@ -274,6 +290,8 @@ if not API_KEY:
 ## References
 
 - `.claude/skills/_shared/review_rules/code_review_rules.py` — dimension keys, grading scale, diff-size thresholds (tested, single source of truth)
+- `.claude/skills/_shared/review_rules/patch_validation.py` — patch outcome vocabulary, fragility shapes, path-coverage and behaviour-defect definitions, confirmation gates (tested)
+- `docs/development/flawed-patch-review-hardening-plan.md` — why the fix-validation rules exist, with the underlying research
 - `CLAUDE.md` — project architecture rules, coding conventions, coverage targets
 - [OWASP Top Ten](https://owasp.org/www-project-top-ten/)
 - [PEP 8 Style Guide](https://www.python.org/dev/peps/pep-0008/)

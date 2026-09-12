@@ -35,6 +35,18 @@ jobs:
           MYNX_LLM_ENABLED: "0"
           MYNX_LLM_PROVIDER: "none"
 
+      # pytest.ini sets `testpaths = tests` and `norecursedirs = ... .claude`, so the
+      # default suite never walks the skill rules modules. They are tested code
+      # (code_review_rules, code_scrubber_rules, patch_validation) and without this
+      # step their tests pass only when someone runs them by hand -- a guard that
+      # has already gone quiet. Explicit path beats norecursedirs. Use -n0 rather
+      # than -p no:xdist: pytest.ini's addopts still passes `-n auto --dist
+      # loadfile`, and disabling the plugin leaves those unparsed, which fails the
+      # step. -n0 keeps xdist loaded and simply runs serially (CLAUDE.md's own
+      # recommendation) for what is a sub-second suite.
+      - name: Run skill rules tests
+        run: python -m pytest .claude/skills/_shared/review_rules/ -q -n0
+
       - name: Lint (flake8)
         run: flake8 --extend-ignore=E501 src/
 
