@@ -2,6 +2,7 @@ import { render } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import HeroPanel from './HeroPanel';
 import { CATEGORY_NAV_SELECTOR, CATEGORY_NAV_LABEL } from '../utils/categories';
+import { makePlayer } from '../test/payloads';
 
 /**
  * The one guard that can actually fail on a HeroPanel rename.
@@ -16,7 +17,7 @@ import { CATEGORY_NAV_SELECTOR, CATEGORY_NAV_LABEL } from '../utils/categories';
  */
 vi.mock('../hooks/useMobile', () => ({ default: () => false, useMobile: () => false }));
 
-const player = { name: 'Jean', hp: 100, maxhp: 100, fatigue: 50, maxfatigue: 50, level: 1 };
+const player = makePlayer();
 
 describe('the combat category nav contract', () => {
   it('is found in the real HeroPanel by the selector CombatMovePanel uses', () => {
@@ -30,5 +31,35 @@ describe('the combat category nav contract', () => {
     // Not a restatement of the literal: this asserts the selector is BUILT
     // from the label, so the two cannot drift even if the label is retuned.
     expect(CATEGORY_NAV_SELECTOR).toContain(CATEGORY_NAV_LABEL);
+  });
+
+  /**
+   * The guard that makes the fixture above load-bearing.
+   *
+   * Until this existed the file rendered the real HeroPanel and then asserted
+   * nothing about what it rendered, so the player fixture could name any field
+   * it liked. It did: the literal this replaced carried `maxhp`/`maxfatigue`,
+   * which no serializer emits and HeroPanel never reads (it reads `max_hp` and
+   * `max_fatigue`). The bars fell through to the `?? 100` / `?? 150` defaults
+   * HeroPanel applies when a vital is absent, so the fatigue bar silently
+   * rendered 50 / 150 -- a payload the server cannot produce -- while every
+   * assertion in this file stayed green.
+   *
+   * Every value below is deliberately off BOTH defaults, which is the only
+   * thing that makes this non-vacuous: assert `max_hp: 100` and the test still
+   * passes when the read is broken, because the fallback is also 100. That
+   * coincidence is exactly what hid the drift on the HP bar.
+   */
+  it('reads the vitals off the wire field names, not the fallback defaults', () => {
+    const { getByRole } = render(
+      <HeroPanel
+        player={makePlayer({ hp: 73, max_hp: 91, fatigue: 44, max_fatigue: 88 })}
+        mode="combat"
+        onCombatMoveClick={vi.fn()}
+      />
+    );
+
+    expect(getByRole('progressbar', { name: /^HP/ })).toHaveAttribute('aria-label', 'HP: 73 / 91');
+    expect(getByRole('progressbar', { name: /^Fatigue/ })).toHaveAttribute('aria-label', 'Fatigue: 44 / 88');
   });
 });
