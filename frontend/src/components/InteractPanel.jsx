@@ -8,6 +8,8 @@ import GameButton from './GameButton'
 import GameText from './GameText'
 import GamePanel from './GamePanel'
 import TypewriterOutput from './TypewriterOutput'
+import ScrollFadeIndicator from './ScrollFadeIndicator'
+import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, commonStyles, fonts, shadows } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
 import { stackDisplayName, stackSize, isStacked, stackLabel } from '../utils/stackName'
@@ -193,6 +195,19 @@ function InteractPanel({
         },
     })
 
+    // Scroll-fade affordance for the target list (issue #595). Its own hook
+    // instance because the history panel below is a second, independent
+    // scrollable region — the two never render at the same time (the list is
+    // replaced by the Interaction View the moment a target is selected), but
+    // sharing one instance would tie their measurements together for no
+    // reason. Same pattern as CombatLog/EventDialog/CollapsibleRoomDescription.
+    const { showTop: showTargetListTop, showBottom: showTargetListBottom, check: checkTargetListScroll, ref: targetListScrollRef } = useScrollIndicators()
+
+    // Scroll-fade affordance for the interaction-history panel (issue #595) —
+    // InteractPanel's other bare `overflowY: 'auto'` container, and the closest
+    // thing this panel has to a long-description/detail view that scrolls.
+    const { showTop: showHistoryTop, showBottom: showHistoryBottom, check: checkHistoryScroll, ref: historyScrollRef } = useScrollIndicators()
+
     // Tracks whether the panel was ever opened with targets present.
     // Distinguishes "opened on an already-empty tile" (no auto-close) from
     // "opened with targets that later all disappeared" (auto-close allowed).
@@ -256,6 +271,25 @@ function InteractPanel({
             hasHadTargetsRef.current = true
         }
     }, [targets.length])
+
+    // Re-measure the target list's scroll geometry whenever its row count
+    // changes (a search reveals a target, Take All empties the ground, etc.).
+    // The container's own box stays clamped at maxHeight while the content
+    // inside it grows or shrinks, so the ResizeObserver on the scroll element
+    // itself (see useScrollGeometry) never fires for that — only an explicit
+    // check does. Same reasoning as CombatLog's log-keyed effect.
+    useEffect(() => {
+        checkTargetListScroll()
+    }, [targets, checkTargetListScroll])
+
+    // Same, for the interaction-history panel: re-measure whenever the log
+    // grows, but only while it's actually the visible view — checking against
+    // a detached/hidden element would just no-op anyway (useScrollGeometry
+    // guards on `el`), but gating here keeps the dependency honest about what
+    // this check is for.
+    useEffect(() => {
+        if (showHistory) checkHistoryScroll()
+    }, [interactionHistory, showHistory, checkHistoryScroll])
 
     // Automatically close the panel if there is nothing left to interact with,
     // but ONLY if the user has actually performed an action OR if targets were
@@ -415,14 +449,25 @@ function InteractPanel({
 
                 {!selectedTarget ? (
                     // Target Selection List
-                    <div style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: spacing.sm,
-                        maxHeight: '60vh',
-                        overflowY: 'auto',
-                        padding: spacing.xs,
-                    }}>
+                    <div style={{ position: 'relative' }}>
+                        <div
+                            ref={targetListScrollRef}
+                            data-testid="interact-target-list"
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: spacing.sm,
+                                maxHeight: '60vh',
+                                overflowY: 'auto',
+                                padding: spacing.xs,
+                                // Reserve room for ScrollFadeIndicator's fade/label so it
+                                // paints over blank space instead of the first/last row
+                                // (same overlap issue #537 already fixed for CombatLog
+                                // and CollapsibleRoomDescription).
+                                paddingTop: showTargetListTop ? '44px' : spacing.xs,
+                                paddingBottom: showTargetListBottom ? '44px' : spacing.xs,
+                            }}
+                        >
                         {/* Search Area Button — room-level action, always visible */}
                         <div style={{ marginBottom: spacing.xs }}>
                             <button
@@ -563,6 +608,13 @@ function InteractPanel({
                                     </div>
                                 </GameButton>
                             ))
+                        )}
+                        </div>
+                        {showTargetListTop && (
+                            <ScrollFadeIndicator position="top" color={colors.secondary} bgColor={colors.bg.main} />
+                        )}
+                        {showTargetListBottom && (
+                            <ScrollFadeIndicator position="bottom" color={colors.secondary} bgColor={colors.bg.main} />
                         )}
                     </div>
                 ) : (
@@ -795,37 +847,62 @@ function InteractPanel({
                         )}
 
                         {showHistory ? (
-                            <div
-                                ref={(el) => {
-                                    if (el) el.scrollTop = el.scrollHeight;
-                                }}
-                                style={{
-                                    padding: spacing.lg,
-                                    backgroundColor: colors.bg.panelHeavy,
-                                    border: `1px solid ${colors.border.main}`,
-                                    borderRadius: '8px',
-                                    maxHeight: '300px',
-                                    overflowY: 'auto',
-                                    boxShadow: shadows.inset,
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: spacing.md,
-                                    scrollbarWidth: 'thin',
-                                    scrollbarColor: `${colors.secondary} rgba(0,0,0,0.2)`
-                                }}
-                            >
-                                {interactionHistory.map((msg, idx) => (
-                                    <div key={idx} style={{
-                                        paddingBottom: idx === interactionHistory.length - 1 ? '0' : spacing.md,
-                                        borderBottom: idx === interactionHistory.length - 1 ? 'none' : `1px solid ${colors.border.light}`,
-                                        whiteSpace: 'pre-wrap',
-                                        opacity: idx === interactionHistory.length - 1 ? 1 : 0.7
-                                    }}>
-                                        <GameText variant="warning" size="md">
-                                            {renderTextWithLinks(msg, targets, handleTargetClick)}
-                                        </GameText>
-                                    </div>
-                                ))}
+                            <div style={{ position: 'relative' }}>
+                                {/* Deliberately NOT wrapped in useCallback, unlike CombatLog's/
+                                    CollapsibleRoomDescription's equivalent merged ref. This inline
+                                    function is recreated every render, so React detaches and
+                                    reattaches it on EVERY re-render of this view (not just mount) —
+                                    that is what keeps `el.scrollTop = el.scrollHeight` re-firing as
+                                    interactionHistory grows while the panel stays open, scrolling to
+                                    the newest entry each time. Memoizing this ref would stop it from
+                                    running again after the initial mount and silently turn off that
+                                    auto-scroll-to-latest behavior — a bug fix would need a scrollTop
+                                    effect keyed on `interactionHistory`, not "just memoize the ref
+                                    like the siblings do". */}
+                                <div
+                                    ref={(el) => {
+                                        if (el) el.scrollTop = el.scrollHeight;
+                                        historyScrollRef(el);
+                                    }}
+                                    data-testid="interact-history-list"
+                                    style={{
+                                        padding: spacing.lg,
+                                        backgroundColor: colors.bg.panelHeavy,
+                                        border: `1px solid ${colors.border.main}`,
+                                        borderRadius: '8px',
+                                        maxHeight: '300px',
+                                        overflowY: 'auto',
+                                        boxShadow: shadows.inset,
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: spacing.md,
+                                        scrollbarWidth: 'thin',
+                                        scrollbarColor: `${colors.secondary} rgba(0,0,0,0.2)`,
+                                        // Reserve room for ScrollFadeIndicator's fade/label,
+                                        // same overlap fix as the target list above.
+                                        paddingTop: showHistoryTop ? '44px' : spacing.lg,
+                                        paddingBottom: showHistoryBottom ? '44px' : spacing.lg,
+                                    }}
+                                >
+                                    {interactionHistory.map((msg, idx) => (
+                                        <div key={idx} style={{
+                                            paddingBottom: idx === interactionHistory.length - 1 ? '0' : spacing.md,
+                                            borderBottom: idx === interactionHistory.length - 1 ? 'none' : `1px solid ${colors.border.light}`,
+                                            whiteSpace: 'pre-wrap',
+                                            opacity: idx === interactionHistory.length - 1 ? 1 : 0.7
+                                        }}>
+                                            <GameText variant="warning" size="md">
+                                                {renderTextWithLinks(msg, targets, handleTargetClick)}
+                                            </GameText>
+                                        </div>
+                                    ))}
+                                </div>
+                                {showHistoryTop && (
+                                    <ScrollFadeIndicator position="top" color={colors.secondary} bgColor={colors.bg.panelHeavy} />
+                                )}
+                                {showHistoryBottom && (
+                                    <ScrollFadeIndicator position="bottom" color={colors.secondary} bgColor={colors.bg.panelHeavy} />
+                                )}
                             </div>
                         ) : (
                             interactionOutput && (
