@@ -234,7 +234,8 @@ export default function GamePage() {
   }, [location, setExploredTiles])
 
   /**
-   * Did this page load land in the middle of a fight?
+   * Did this page load land in the middle of a fight -- or after one had
+   * already ended?
    *
    * Combat progress lives on the server; the client's view of what it has
    * already shown the player does not survive a refresh. LeftPanel has always
@@ -245,11 +246,34 @@ export default function GamePage() {
    * load, from the first combat payload we see: any non-`system` log entry means
    * blows have already been traded. Cleared when the fight ends so the next
    * fight in the same session mounts the battlefield with a clean slate.
+   *
+   * A reload after the fight had ALREADY ended is the same situation -- the
+   * whole log is history -- but `inCombat` is false on every render of that
+   * case, so it never reached the decision below at all: isCombatReloadRecovery
+   * stayed permanently false, the battlefield replayed the finished fight's
+   * animations at full speed, and the resulting isBattlefieldAnimating=true
+   * held for as long as that took, blocking useCombatCoordinator's
+   * victory/defeat dialog gate for the same duration (issue #570).
+   * everInCombatRef distinguishes the two: it only becomes true once this
+   * mount has actually observed the fight live, which a reload after the
+   * fight ended in a PREVIOUS page life never does.
    */
   const [isCombatReloadRecovery, setIsCombatReloadRecovery] = useState(false)
   const reloadRecoveryDecidedRef = useRef(false)
+  const everInCombatRef = useRef(false)
   useEffect(() => {
+    if (inCombat) everInCombatRef.current = true
+
     if (!inCombat) {
+      // A fight that just ended live resets the flag for the next one. But
+      // if this mount never saw it live -- decided once, below, exactly like
+      // the mid-fight branch -- the log is entirely history and gets the
+      // same recovery treatment instead of being left false forever.
+      if (!reloadRecoveryDecidedRef.current && !everInCombatRef.current && combat?.end_state) {
+        reloadRecoveryDecidedRef.current = true
+        setIsCombatReloadRecovery((combat.log || []).some(entry => entry.type !== 'system'))
+        return
+      }
       setIsCombatReloadRecovery(false)
       return
     }
