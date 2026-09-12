@@ -1149,7 +1149,7 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
             ("Being thrown. The sensation of the ground disappearing.", 1.5),
             ("", 0.5),
             (
-                "And where something warm should have been, in Jean's arms —",
+                "And where something warm should have been, there in my arms —",
                 2.0,
                 {"speaker": "Jean", "emotion": "concerned", "thought": True},
             ),
