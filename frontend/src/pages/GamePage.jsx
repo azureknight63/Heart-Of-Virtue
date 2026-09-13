@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import { useEventManager } from '../hooks/useEventManager'
-import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
+import { COMBAT_INIT_EVENT_ID, PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
 import { useCombatSocket } from '../hooks/useCombatSocket'
 
@@ -38,7 +38,7 @@ export default function GamePage() {
   const { combatSocketStreaming } = useCapabilities()
   const { playBGM, playSFX, playSting } = useAudio()
   const { combatSpeed } = usePreferences()
-  const { error: showError } = useToast()
+  const { error: showError, warning: warnToast } = useToast()
 
   // The server answers an in-game refusal (not enough fatigue, move on
   // cooldown, an event still open) with HTTP 200 + `success:false` and no
@@ -406,6 +406,23 @@ export default function GamePage() {
         fetchCombatStatus()
       }
       return
+    }
+
+    // A player who picks up merchandise directly (no shop dialog ever
+    // opened) and then leaves via a Passageway gets zero prominent feedback
+    // today: the engine already drops that merchandise on every teleport
+    // (Player.teleport() -> drop_merchandise_items()) and narrates it, but
+    // that narration is buried in the confirmation event's own text and easy
+    // to miss during the map transition (issue #597 follow-up). This warns
+    // with one summary toast the moment the player confirms "Step through",
+    // before the confirmation is even submitted to the server -- the
+    // PassagewayTransitionEvent has exactly one input option, so submitting
+    // it at all means confirming the crossing.
+    if (
+      currentEvent?.type === PASSAGEWAY_TRANSITION_EVENT_TYPE &&
+      (player?.inventory || []).some((item) => item?.is_merchandise)
+    ) {
+      warnToast('Jean returns the merchandise he is holding.')
     }
 
     // Use the hook's handler for backend events

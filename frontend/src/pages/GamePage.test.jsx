@@ -6,6 +6,7 @@ import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave }
 import { useAudio } from '../context/AudioContext';
 import { useToast } from '../context/ToastContext';
 import { MemoryRouter } from 'react-router-dom';
+import apiClient from '../api/client';
 
 // `useEventManager` fires `checkPendingEvents` on mount and is not mocked here,
 // so without this the real axios client issues a live XHR for
@@ -169,8 +170,16 @@ describe('GamePage', () => {
         useToast.mockReturnValue({
             error: vi.fn(),
             success: vi.fn(),
-            info: vi.fn()
+            info: vi.fn(),
+            warning: vi.fn()
         });
+
+        // Default: no pending event on load. Individual tests below override
+        // this to queue a specific confirmation event.
+        apiClient.get.mockImplementation(() =>
+            Promise.resolve({ data: { success: true, events: [] } })
+        );
+        apiClient.post.mockResolvedValue({ data: { success: true } });
     });
 
     const renderGamePage = () => {
@@ -662,6 +671,99 @@ describe('GamePage', () => {
 
             const leftWrapper = screen.getByTestId('left-panel').parentElement;
             expect(leftWrapper.hasAttribute('data-modal-background')).toBe(false);
+        });
+    });
+
+    /**
+     * Issue #597 follow-up: the shop-dialog-close toast (ShopDialog.jsx)
+     * doesn't cover a player who picks up merchandise directly (no shop
+     * dialog ever opened) and then leaves via a Passageway. The engine
+     * already drops that merchandise on every teleport (`Player.teleport()`
+     * -> `drop_merchandise_items()`) and narrates it line-by-line, but that
+     * narration is easy to miss during a map transition. This warns with one
+     * summary toast the moment the player confirms "Step through", before
+     * the confirmation is even submitted to the server.
+     */
+    describe('merchandise-return toast on passageway confirmation (#597 follow-up)', () => {
+        const passagewayEvent = {
+            id: 'ev-passageway-1',
+            event_id: 'ev-passageway-1',
+            name: 'Passage_EasternGate',
+            type: 'PassagewayTransitionEvent',
+            description: 'Jean steps through the Eastern Gate...',
+            needs_input: true,
+            input_type: 'choice',
+            input_prompt: 'Step through?',
+            input_options: [{ value: 'continue', label: 'Step through' }]
+        };
+
+        const queuePendingEvent = (event) => {
+            apiClient.get.mockImplementation((url) => {
+                if (url === '/world/events/pending') {
+                    return Promise.resolve({ data: { success: true, events: [event] } });
+                }
+                return Promise.resolve({ data: { success: true, events: [] } });
+            });
+        };
+
+        it('warns before submitting a passageway confirmation while holding merchandise', async () => {
+            const warning = vi.fn();
+            useToast.mockReturnValue({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning });
+            usePlayer.mockReturnValue({
+                player: { ...mockPlayer, inventory: [{ id: 'i1', name: 'Rusted Iron Mace', is_merchandise: true }] },
+                loading: false,
+                refetch: vi.fn()
+            });
+            queuePendingEvent(passagewayEvent);
+
+            renderGamePage();
+
+            const stepThroughBtn = await screen.findByText('Step through');
+            fireEvent.click(stepThroughBtn);
+
+            expect(warning).toHaveBeenCalledWith('Jean returns the merchandise he is holding.');
+        });
+
+        it('does not warn when the player holds no merchandise', async () => {
+            const warning = vi.fn();
+            useToast.mockReturnValue({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning });
+            // mockPlayer.inventory is [] by default.
+            queuePendingEvent(passagewayEvent);
+
+            renderGamePage();
+
+            const stepThroughBtn = await screen.findByText('Step through');
+            fireEvent.click(stepThroughBtn);
+
+            expect(warning).not.toHaveBeenCalled();
+        });
+
+        it('does not warn for a non-passageway confirmation even while holding merchandise', async () => {
+            const warning = vi.fn();
+            useToast.mockReturnValue({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning });
+            usePlayer.mockReturnValue({
+                player: { ...mockPlayer, inventory: [{ id: 'i1', name: 'Rusted Iron Mace', is_merchandise: true }] },
+                loading: false,
+                refetch: vi.fn()
+            });
+            queuePendingEvent({
+                id: 'ev-other-1',
+                event_id: 'ev-other-1',
+                name: 'SomeChoiceEvent',
+                type: 'SomeOtherEvent',
+                description: 'Do a thing?',
+                needs_input: true,
+                input_type: 'choice',
+                input_prompt: 'Step through?',
+                input_options: [{ value: 'continue', label: 'Step through' }]
+            });
+
+            renderGamePage();
+
+            const stepThroughBtn = await screen.findByText('Step through');
+            fireEvent.click(stepThroughBtn);
+
+            expect(warning).not.toHaveBeenCalled();
         });
     });
 });
