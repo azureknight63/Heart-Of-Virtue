@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useId } from 'react';
 import { useAudio } from '../context/AudioContext';
-import { colors, spacing, shadows, fonts, zIndex } from '../styles/theme';
+import { colors, spacing, shadows, fonts, zIndex, accessibility } from '../styles/theme';
+import { useMobile } from '../hooks/useMobile';
 import GamePanel from './GamePanel';
 import GameText from './GameText';
 import GlossaryHelpButton from './GlossaryHelpButton';
 import GlossaryText from './GlossaryText';
 import { movesInGroup } from '../utils/categories';
-import { displayNameOf, moveAvailability, autoResolvedTargetId } from '../utils/combatMoveStatus';
+import { displayNameOf, moveAvailability, autoResolvedTargetId, moveDamagePreview } from '../utils/combatMoveStatus';
 import {
     STAGE_KEYS,
     getStageBeats,
@@ -145,6 +146,12 @@ function MoveCard({
   const autoTargetId = autoResolvedTargetId(move);
   const singleTargetId = autoTargetId?.startsWith('enemy_') ? autoTargetId : null;
 
+  // The predicted damage range for this card, or null when none applies
+  // (a support move, or a targeted move facing more than one candidate —
+  // see moveDamagePreview's own docstring for why those stay blank rather
+  // than guessing).
+  const damagePreview = moveDamagePreview(move);
+
   // The card is a wrapper, not the button itself: the
   // unavailability reason carries interactive glossary terms
   // (#507), and a disabled <button> does not dispatch pointer
@@ -244,6 +251,19 @@ function MoveCard({
                           Fatigue: {move.fatigue_cost}
                       </GameText>
                   )}
+                  {damagePreview && (
+                      <GameText variant="muted" size="xs">
+                          {`${damagePreview.min}-${damagePreview.max} dmg`}
+                      </GameText>
+                  )}
+                  {/* A word, not just a color, per the "state is never
+                      color-only" pillar (#576) -- the same LOCKED pattern
+                      above this. */}
+                  {damagePreview?.lethal && (
+                      <GameText variant="danger" size="xs" weight="bold" style={{ letterSpacing: '0.05em' }}>
+                          {'☠ LETHAL'}
+                      </GameText>
+                  )}
               </div>
           </div>
           <MoveCommitmentBar move={move} maxTotal={maxCommitmentBeats} />
@@ -278,6 +298,7 @@ function MoveCard({
 // LeftPanel's button gating reads too, so the two can never drift apart.
 const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover, isProcessing = false }) => {
     const [hoveredMoveName, setHoveredMoveName] = useState(null);
+    const isMobile = useMobile();
     // Base for the per-card reason ids that aria-describedby points at. useId
     // keeps them unique across concurrent panels and stable across re-renders.
     const reasonIdBase = useId();
@@ -333,6 +354,17 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                             cursor: 'pointer',
                             fontSize: '18px',
                             padding: spacing.xs,
+                            // issue #580: measured 23x35px on a 375px
+                            // viewport — a different control from BaseDialog's
+                            // close button (#542), since this panel renders
+                            // its own inline "✕" rather than using BaseDialog.
+                            ...(isMobile ? {
+                                minWidth: accessibility.touchTarget,
+                                minHeight: accessibility.touchTarget,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            } : {}),
                         }}
                     >
                         ✕

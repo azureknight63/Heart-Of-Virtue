@@ -241,6 +241,49 @@ describe('SettingsDialog', () => {
     });
   });
 
+  describe('mobile touch targets (issue #580)', () => {
+    // Re-measured after #542: the mute toggles and combat-speed segments were
+    // fixed, but the sliders themselves (247x16) and the three EXPERIMENTAL
+    // flag toggles (38x28 / 38x28 / 31x28) were not — the flag rows render
+    // through FeatureFlagRow -> ToggleRow, which never received the
+    // mobileTouchTarget style the "Auto-advance story" ToggleRow already gets.
+    it('grows both volume sliders to the touch-target minimum height on mobile', () => {
+      mobileMock.isMobile = true;
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      expect(screen.getByRole('slider', { name: 'Music volume' }).style.minHeight)
+        .toBe(accessibility.touchTarget);
+      expect(screen.getByRole('slider', { name: 'Sound effects volume' }).style.minHeight)
+        .toBe(accessibility.touchTarget);
+    });
+
+    it('leaves the sliders at their native height on desktop', () => {
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      expect(screen.getByRole('slider', { name: 'Music volume' }).style.minHeight).toBe('');
+      expect(screen.getByRole('slider', { name: 'Sound effects volume' }).style.minHeight).toBe('');
+    });
+
+    it('grows every EXPERIMENTAL flag toggle to 44px on mobile', () => {
+      mobileMock.isMobile = true;
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      for (const label of Object.values(FEATURE_FLAGS).map((flag) => flag.label)) {
+        const toggle = screen.getByRole('button', { name: label });
+        expect(toggle.style.minWidth).toBe(accessibility.touchTarget);
+        expect(toggle.style.minHeight).toBe(accessibility.touchTarget);
+      }
+    });
+
+    it('leaves the EXPERIMENTAL flag toggles at their native size on desktop', () => {
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      for (const label of Object.values(FEATURE_FLAGS).map((flag) => flag.label)) {
+        expect(screen.getByRole('button', { name: label }).style.minWidth).toBe('');
+      }
+    });
+  });
+
   describe('experimental feature flags', () => {
     afterEach(() => {
       resetFlags();

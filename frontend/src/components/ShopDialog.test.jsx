@@ -11,10 +11,19 @@ import {
   makeShopState as makeApiShopState,
   makeShopBuyItem,
   makeShopSellItem,
+  makeInventoryItem,
 } from '../test/payloads'
 
 vi.mock('../hooks/useShop', () => ({
   useShop: vi.fn(),
+}))
+
+// ShopDialog uses useToast internally to warn on close (issue #597); mocked
+// the same way FeedbackDialog.test.jsx does rather than wrapping every render
+// in a real ToastProvider.
+const mockToastWarning = vi.fn()
+vi.mock('../context/ToastContext', () => ({
+  useToast: vi.fn(() => ({ warning: mockToastWarning })),
 }))
 
 // Partial mock: only the icon is stubbed. Weight formatting must come from the
@@ -856,5 +865,46 @@ describe('ShopDialog', () => {
     expect(screen.getByText('0.25 lb')).toBeInTheDocument()      // stock[0].weight
     expect(screen.getByText('×2')).toBeInTheDocument()           // stock[0].count
     expect(screen.getByText('Potion')).toBeInTheDocument()       // stock[0].subtype
+  })
+
+  // ── Closing while holding unpurchased merchandise (issue #597) ────────────
+  //
+  // Closing the dialog never drops merchandise itself — that already happens
+  // server-side, at the next shop open (_collect_player_merchandise,
+  // src/npc/_shop.py) or at Player.teleport() (drop_merchandise_items,
+  // src/player/_inventory.py). Before this, closing was pure client state
+  // (LeftPanel's `onClose={() => setShopContext(null)}`) with no feedback at
+  // all, so a player could wander the same map holding shop goods with no
+  // indication anything was still unpaid for. This only covers the warning;
+  // it must not start dropping items itself, or it duplicates a drop the
+  // engine already owns.
+
+  describe('closing while holding unpurchased merchandise', () => {
+    it('warns via toast when the player inventory has a merchandise-flagged item', () => {
+      const player = makePlayer({
+        inventory: [makeInventoryItem({ is_merchandise: true })],
+      })
+      render(<ShopDialog npcId="1" npcName="Jambo" player={player} onClose={onClose} />)
+      fireEvent.click(screen.getByText(/✕/i))
+      expect(mockToastWarning).toHaveBeenCalledTimes(1)
+      expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not warn when closing with no merchandise-flagged items in inventory', () => {
+      const player = makePlayer({
+        inventory: [makeInventoryItem({ is_merchandise: false })],
+      })
+      render(<ShopDialog npcId="1" npcName="Jambo" player={player} onClose={onClose} />)
+      fireEvent.click(screen.getByText(/✕/i))
+      expect(mockToastWarning).not.toHaveBeenCalled()
+      expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not warn when the player has no inventory at all', () => {
+      render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+      fireEvent.click(screen.getByText(/✕/i))
+      expect(mockToastWarning).not.toHaveBeenCalled()
+      expect(onClose).toHaveBeenCalledTimes(1)
+    })
   })
 })

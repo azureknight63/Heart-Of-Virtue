@@ -967,15 +967,15 @@ class AfterGorranIntro(Event):
         begin_conversation(_JEAN_SOLO)
         narrate("Jean pauses at the threshold.")
         say(
-            "A faint current of air presses against his face — cooler than the chamber, carrying "
-            "the mineral smell of deeper stone. He notes which way it's moving before he steps inside.",
+            "A faint current of air presses against my face — cooler than the chamber, carrying "
+            "the mineral smell of deeper stone. I notice which way it's moving before I step inside.",
             "Jean",
             "neutral",
             thought=True,
         )
         say(
-            "His thumb moved once against the side of his finger — feeling for the first bead "
-            "of a string that wasn't there. An old habit. He didn't notice he'd done it.",
+            "My thumb moved once against the side of my finger — feeling for the first bead "
+            "of a string that wasn't there. An old habit. I didn't notice I'd done it.",
             "Jean",
             "neutral",
             thought=True,
@@ -1173,7 +1173,7 @@ class Ch01GorranFirstWord(Event):
         time.sleep(1.5)
         # Internal thought — no reaction from Gorran; he's looking past Jean, not at him.
         say(
-            "He stands there for a moment. He'd expected a rumble, a sound, the usual. Not that.",
+            "I stand there for a moment. I'd expected a rumble, a sound, the usual. Not that.",
             "Jean",
             "surprised",
             thought=True,

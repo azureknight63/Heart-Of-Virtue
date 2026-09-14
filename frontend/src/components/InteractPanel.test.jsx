@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import InteractPanel, { actionKeywords } from './InteractPanel';
 import apiEndpoints from '../api/endpoints';
 import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds';
-import { colors } from '../styles/theme';
+import { colors, accessibility } from '../styles/theme';
 import React from 'react';
 
 // Mock apiEndpoints
@@ -463,6 +463,13 @@ describe('InteractPanel', () => {
     expect(screen.getByText(/Search Area/i).textContent).toBe('🔍 Search Area');
   });
 
+  it('meets the 44px touch-target minimum on the Search Area button (issue #580)', () => {
+    // Measured 298x38px on a 375px viewport, 6px short of the minimum.
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    const searchButton = screen.getByText(/Search Area/i).closest('button');
+    expect(searchButton.style.minHeight).toBe(accessibility.touchTarget);
+  });
+
   it('hides Search Area button when a target is selected', () => {
     render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
     fireEvent.click(screen.getAllByText(/Guard/i)[0]);
@@ -833,6 +840,45 @@ describe('InteractPanel', () => {
       expect(screen.queryByTestId('book-reader-dialog')).not.toBeInTheDocument();
     });
   });
+
+  describe('dialog controls stay inert while an interaction is in flight (issue #585)', () => {
+    // A 'read' keyword's BookReaderDialog (z-index 2100, see BookReaderDialog.jsx)
+    // can only mount once handleActionClick's `await runInteract(...)` settles --
+    // and that promise does not resolve until useWorldInteract's `interact()`
+    // has also awaited its onRefetch/pollBackgroundEvents follow-up calls, well
+    // after `interactionOutput` (and this panel's own Back/keyword buttons) are
+    // already on screen and look fully live. Issue #585's reproduction landed a
+    // click on this panel's own dismiss button right as the read finally
+    // resolved and BookReaderDialog mounted on top of it, so the click was
+    // swallowed by the new overlay instead of reaching Back/close -- recoverable
+    // only via Escape. This asserts the invariant the fix relies on: neither
+    // control is a live target for the whole duration an interaction is
+    // in flight, so there is no window left for a later-mounting overlay to
+    // race a click against.
+    it('disables Back and hides the dismiss button until the interaction settles', async () => {
+      let resolveInteract
+      apiEndpoints.world.interact.mockReturnValue(new Promise((resolve) => { resolveInteract = resolve }))
+
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} />)
+      fireEvent.click(screen.getAllByText(/Guard/i)[0])
+      fireEvent.click(screen.getByText(/^Talk$/))
+
+      // Still pending -- neither control may be clickable while this panel's
+      // own request (any keyword, not just 'read') is unresolved.
+      await waitFor(() => {
+        expect(screen.getByText(/← Back/i).closest('button').disabled).toBe(true)
+      })
+      expect(screen.queryByText('✕')).not.toBeInTheDocument()
+
+      resolveInteract({ data: { success: true, message: 'Talk successful' } })
+
+      // Settled -- both controls are live again.
+      await waitFor(() => {
+        expect(screen.getByText(/← Back/i).closest('button').disabled).toBe(false)
+      })
+      expect(screen.getByText('✕')).toBeInTheDocument()
+    })
+  })
 
   it('closes the dialog after a teleport interaction', async () => {
     vi.useFakeTimers();
@@ -1521,6 +1567,74 @@ describe('InteractPanel', () => {
       const available = screen.getByText(/Available:/i);
       expect(available.tagName).toBe('SPAN');
       expect(available.closest('p')).not.toBeNull();
+    });
+  });
+
+  // Issue #595: the target list and the interaction-history panel both used a
+  // bare `overflowY: 'auto'` with no visual affordance beyond the native
+  // scrollbar. Wired to the same ScrollFadeIndicator/useScrollIndicators
+  // pattern CombatLog/EventDialog/CollapsibleRoomDescription already use.
+  // Follows CombatLog.test.jsx's technique for faking scroll geometry (jsdom
+  // never lays anything out for real): Object.defineProperty + fireEvent.scroll,
+  // then look for the fade overlay's `position: absolute`. Selected by
+  // data-testid rather than CombatLog's `div[style*="overflow-y: auto"]`
+  // selector — InteractPanel renders inside BaseDialog, whose own dialog-body
+  // wrapper (BaseDialog.jsx) ALSO carries a bare `overflowY: auto` and sits
+  // first in DOM order, so the unscoped selector silently grabbed the wrong
+  // element instead of either scroll container this test means to exercise.
+  describe('scroll-fade affordance (issue #595)', () => {
+    it('shows a scroll-fade indicator on the target list once it overflows', () => {
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+      const listEl = screen.getByTestId('interact-target-list');
+
+      Object.defineProperty(listEl, 'scrollHeight', { value: 500, configurable: true });
+      Object.defineProperty(listEl, 'clientHeight', { value: 100, configurable: true });
+      Object.defineProperty(listEl, 'scrollTop', { value: 50, configurable: true });
+      fireEvent.scroll(listEl);
+
+      expect(listEl.parentElement.querySelector('[style*="position: absolute"]')).not.toBeNull();
+    });
+
+    it('shows no scroll-fade indicator on the target list when everything fits', () => {
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+      const listEl = screen.getByTestId('interact-target-list');
+
+      Object.defineProperty(listEl, 'scrollHeight', { value: 80, configurable: true });
+      Object.defineProperty(listEl, 'clientHeight', { value: 100, configurable: true });
+      Object.defineProperty(listEl, 'scrollTop', { value: 0, configurable: true });
+      fireEvent.scroll(listEl);
+
+      expect(listEl.parentElement.querySelector('[style*="position: absolute"]')).toBeNull();
+    });
+
+    it('shows a scroll-fade indicator on the interaction-history panel once it overflows', async () => {
+      apiEndpoints.world.interact
+        .mockResolvedValueOnce({ data: { success: true, message: 'First message.' } })
+        .mockResolvedValueOnce({ data: { success: true, message: 'Second message.' } });
+
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+      fireEvent.click(screen.getByText(/^Talk$/i));
+      await settledOutput();
+      fireEvent.click(screen.getByText(/^Attack$/i));
+      await settledOutput();
+
+      // Two entries logged — the history toggle only appears once there is
+      // more than one, same precondition the existing history test uses.
+      fireEvent.click(screen.getByText(/View History/i));
+      const historyEl = screen.getByTestId('interact-history-list');
+
+      Object.defineProperty(historyEl, 'scrollHeight', { value: 500, configurable: true });
+      Object.defineProperty(historyEl, 'clientHeight', { value: 100, configurable: true });
+      // Writable, unlike the target-list test's equivalent line: this
+      // container's own pre-existing ref callback resets `scrollTop` to
+      // `scrollHeight` on every render (to keep the newest entry in view),
+      // and the fade check below triggers exactly such a re-render — a
+      // non-writable property here throws where a real DOM node wouldn't.
+      Object.defineProperty(historyEl, 'scrollTop', { value: 50, configurable: true, writable: true });
+      fireEvent.scroll(historyEl);
+
+      expect(historyEl.parentElement.querySelector('[style*="position: absolute"]')).not.toBeNull();
     });
   });
 });
