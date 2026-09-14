@@ -428,12 +428,26 @@ const CombatantMarker = React.memo(({
         </div>
       )}
 
-      {/* HP badge — a visible number alongside the torus's colour, so sighted
-          players get the same value the aria-label above gives assistive
-          tech, with no hover/click/tab required. Skipped in compact mode:
-          the marker itself is too small there for legible text (matches the
-          precedent set by the beat-countdown badge and status icons below). */}
-      {!isCompact && (
+      {/* HP badge — a visible number alongside the torus's colour, revealed on
+          hover (desktop) or tap (mobile) rather than always-on (issue #602).
+          The aria-label above stays unconditional — assistive tech still gets
+          the value with no interaction required — and the HP/fatigue torus
+          above still conveys magnitude by arc length, not hue alone, so a
+          sighted player who never interacts still has a non-color signal.
+          Hiding the numeral by default therefore does not reopen #536, which
+          was about there being *no* text signal at all, not about this exact
+          numeral being always-on.
+          `isHovered` and `isSelected` are the marker's existing signals
+          (mouse-enter on the token wrapper, and the click/tap that already
+          opens SelectedEntityPanel below) — reused rather than adding a
+          parallel "revealed" state or a pointer-type check: hovering already
+          means "desktop, no touch involved" and a click/tap already means
+          "this is the selected entity", so the two together already
+          distinguish hover-reveal from tap-reveal without new state.
+          Skipped in compact mode: the marker itself is too small there for
+          legible text (matches the precedent set by the beat-countdown badge
+          and status icons below). */}
+      {!isCompact && (isHovered || isSelected) && (
         <div
           className="absolute pointer-events-none select-none z-20 flex items-center justify-center rounded-full"
           style={{
