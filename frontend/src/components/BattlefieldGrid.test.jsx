@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import React from 'react';
-import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, act, cleanup, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import BattlefieldGrid from './BattlefieldGrid';
 import { getAnimationDuration } from '../utils/animationConfigs';
@@ -225,12 +225,14 @@ describe('BattlefieldGrid', () => {
             expect(screen.getByText('9 ft')).toBeInTheDocument();
         });
 
-        it('surfaces an HP number for every combatant on the default map view, not just the target picker or a hover/click (issue #536)', () => {
+        it('surfaces an HP aria-label for every combatant on the default map view, not just the target picker or a hover/click (issue #536)', () => {
             // Before this fix, the map view's only HP signal was a colored SVG
             // torus with no text anywhere — the hover tooltip and the
             // click-to-select panel both required an interaction, so a player
             // who never hovered or clicked saw no HP number at all for Jean,
-            // an ally, or an enemy.
+            // an ally, or an enemy. The aria-label this fix added is still
+            // unconditional today. The *visible* numeral it also added is not
+            // — issue #602 moved that behind hover/tap, covered below.
             const combat = {
                 ...mockCombat,
                 player: { ...mockCombat.player, name: 'Jean' },
@@ -240,8 +242,71 @@ describe('BattlefieldGrid', () => {
 
             expect(screen.getByLabelText('Jean: 100/100 HP')).toBeInTheDocument();
             expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
-            // A visible number, not just an aria-label buried off-screen.
-            expect(screen.getByText('30/50')).toBeInTheDocument();
+        });
+
+        describe('the visible HP numeral reveals on hover/tap instead of always-on (issue #602)', () => {
+            // Before this fix, {hp}/{maxHp} sat on every non-compact token
+            // permanently — a second, redundant always-on signal on top of the
+            // aria-label #536 already made unconditional. The maintainer's
+            // call: keep the aria-label unconditional (assistive tech and the
+            // color-coded HP/fatigue torus are the always-visible signals for
+            // #536's "not color alone" guarantee) and gate only the sighted
+            // numeral behind hover (desktop) or tap (mobile).
+            const combat = {
+                ...mockCombat,
+                enemies: [{ ...mockCombat.enemies[0], name: 'Goblin', hp: 30, max_hp: 50 }],
+            };
+
+            it('hides the numeral by default while keeping the aria-label present', () => {
+                render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+                expect(screen.queryByText('30/50')).toBeNull();
+                // Same aria-label #536 established, unaffected by the numeral
+                // now being hidden until interacted with.
+                expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
+            });
+
+            it('reveals the numeral on hover and hides it again once the pointer leaves (desktop)', () => {
+                render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+                const goblinWrapper = screen.getByText('G').closest('div[style*="position: absolute"]');
+
+                fireEvent.mouseEnter(goblinWrapper);
+                expect(screen.getByText('30/50')).toBeInTheDocument();
+
+                fireEvent.mouseLeave(goblinWrapper);
+                expect(screen.queryByText('30/50')).toBeNull();
+                // aria-label never left, through either state.
+                expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
+            });
+
+            it('reveals the numeral on tap/click, and it stays revealed alongside the detail panel the same tap already opens (mobile)', () => {
+                // A tap on a touchscreen synthesizes a click with no preceding
+                // mouseenter, unlike the desktop hover path above. The token's
+                // onClick already opens SelectedEntityPanel for this entity —
+                // the numeral reveal must ride the same isSelected signal
+                // rather than a separate listener that could race with it.
+                // The aria-label is on the marker's own root div, so it also
+                // scopes a query to just the on-token badge — the panel shows
+                // the identical "30/50" text of its own, elsewhere in the DOM.
+                render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+                fireEvent.click(screen.getByText('G'));
+
+                const marker = screen.getByLabelText('Goblin: 30/50 HP');
+                expect(within(marker).getByText('30/50')).toBeInTheDocument();
+                // The pre-existing detail panel opened from the very same tap.
+                expect(screen.getByText('INTEGRITY (HP)')).toBeInTheDocument();
+            });
+
+            it('hides the numeral again once the selection (and the detail panel) is cleared', () => {
+                const { container } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+                fireEvent.click(screen.getByText('G'));
+                const marker = screen.getByLabelText('Goblin: 30/50 HP');
+                expect(within(marker).getByText('30/50')).toBeInTheDocument();
+
+                fireEvent.click(container.firstChild);
+                expect(within(marker).queryByText('30/50')).toBeNull();
+                expect(screen.queryByText('INTEGRITY (HP)')).toBeNull();
+            });
         });
 
         it('clears the selection when the map background is clicked', () => {
