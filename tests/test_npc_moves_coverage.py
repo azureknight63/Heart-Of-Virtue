@@ -2570,6 +2570,117 @@ class TestDeclaredDamageMultiplier:
 
 
 # ---------------------------------------------------------------------------
+# telegraph_severity — issue #586
+#
+# King Slime's Tidal Surge (2.5x, 84-134 damage against a 114 HP Jean) was
+# telegraphed by one uncoloured line in the scrolling log, and its countdown
+# badge on the battlefield was identical to a routine NpcAttack wind-up
+# because both are "Offensive". The severity is declared on the move so the
+# serializer, the battlefield and the log all read one owner.
+# ---------------------------------------------------------------------------
+
+#: The closed vocabulary ``Move.telegraph_severity`` may take. Mirrored by
+#: ``telegraphSeverity`` in frontend/src/utils/combatMoveStatus.js.
+TELEGRAPH_SEVERITIES = ("normal", "heavy", "deadly")
+
+#: A move that CENTRES its hit at this multiple of its user's damage or more
+#: must say so — a heavy blow that leaves the default "normal" is the #586
+#: defect restored.
+HEAVY_MULTIPLIER_FLOOR = 2.0
+
+
+def _exported_move_classes():
+    """Every exported ``Move`` subclass, ``Move`` itself excluded."""
+    import src.moves as moves
+    from src.moves import Move
+
+    found = {}
+    for name in moves.__all__:
+        obj = getattr(moves, name, None)
+        if inspect.isclass(obj) and issubclass(obj, Move) and obj is not Move:
+            found[obj.__name__] = obj
+    return found
+
+
+def _heavy_hitters():
+    """The exported moves whose EFFECTIVE multiplier reaches the floor.
+
+    ``getattr``, not ``__dict__``: unlike the declaration audit above, this
+    one wants the value a class really carries, inherited or not, because
+    that is the number the serializer ships and the Tactical Advisor reads.
+    """
+    return {
+        name: cls
+        for name, cls in _exported_move_classes().items()
+        if getattr(cls, "_DAMAGE_MULTIPLIER", 1.0) >= HEAVY_MULTIPLIER_FLOOR
+    }
+
+
+class TestTelegraphSeverity:
+    """``Move.telegraph_severity`` is declared, closed-vocabulary, and honest.
+
+    Heavy moves opt IN: the base default is "normal" so the hundreds of
+    ordinary moves say nothing, and a move that hits for twice its user's
+    damage or more must override it. The population is discovered by
+    reflection over ``src.moves.__all__`` so a new heavy move added without
+    a severity fails here rather than shipping as a routine wind-up.
+    """
+
+    def test_move_declares_a_normal_default(self):
+        from src.moves import Move
+
+        assert "telegraph_severity" in Move.__dict__, (
+            "telegraph_severity must be DECLARED on Move (beside "
+            "_DAMAGE_MULTIPLIER), not probed for with getattr"
+        )
+        assert Move.telegraph_severity == "normal"
+
+    def test_reflection_actually_finds_heavy_hitters(self):
+        """Floor: an empty population would make the audit below vacuous."""
+        assert len(_heavy_hitters()) >= 3, sorted(_heavy_hitters())
+
+    def test_every_heavy_hitter_opts_in(self):
+        silent = sorted(
+            name
+            for name, cls in _heavy_hitters().items()
+            if cls.telegraph_severity == "normal"
+        )
+        assert not silent, (
+            f"moves at >= {HEAVY_MULTIPLIER_FLOOR}x damage still telegraph as "
+            f"'normal': {silent}"
+        )
+
+    def test_every_declared_value_is_in_the_vocabulary(self):
+        odd = sorted(
+            f"{name}={cls.telegraph_severity!r}"
+            for name, cls in _exported_move_classes().items()
+            if cls.telegraph_severity not in TELEGRAPH_SEVERITIES
+        )
+        assert not odd, odd
+
+    @pytest.mark.parametrize(
+        "cls_name,expected",
+        [
+            # The #586 move: boss-tier, the only "deadly" in the game today.
+            ("TidalSurge", "deadly"),
+            # The family base opts in once; its other members inherit it.
+            ("TelegraphedSurge", "heavy"),
+            ("SlimeVolley", "heavy"),
+            ("WailStrike", "heavy"),
+            # A plain Move at 2.25x — outside the surge family, which is why
+            # the audit walks every export rather than one base class.
+            ("GorranClub", "heavy"),
+            # Negative control: the generic swing every NPC uses stays quiet.
+            ("NpcAttack", "normal"),
+        ],
+    )
+    def test_declared_severity(self, cls_name, expected):
+        import src.moves as moves
+
+        assert getattr(moves, cls_name).telegraph_severity == expected
+
+
+# ---------------------------------------------------------------------------
 # statustype -> wire category
 #
 # DeathKnell (this module) is the only move that applies states.Death, and the

@@ -485,6 +485,13 @@ class CombatantSerializer:
                 "damage_multiplier": (
                     CombatantSerializer._serialize_damage_multiplier(move)
                 ),
+                # "normal" | "heavy" | "deadly" — declared on Move
+                # (src/moves/_base.py) and read off it here so the badge,
+                # enemies list and beat timeline (telegraphSeverity in
+                # combatMoveStatus.js) share one owner. The default is only
+                # the degraded-object guard: a legacy placeholder restored
+                # from a save carries none of Move's attributes.
+                "telegraph_severity": getattr(move, "telegraph_severity", "normal"),
             }
         return None
 

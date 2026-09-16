@@ -1,4 +1,4 @@
-import { isMovePending, beatsUntilResolve, displayNameOf } from './combatMoveStatus';
+import { isMovePending, beatsUntilResolve, displayNameOf, telegraphSeverity } from './combatMoveStatus';
 import { isLiving } from './combatEntities';
 
 /** Default column cap — "the next ~10 beats" from the design brief. Exported
@@ -45,6 +45,10 @@ function collectPending(combat) {
       beat,
       moveName: displayNameOf(move) || move.name || 'Move',
       category: move.category || 'Miscellaneous',
+      // 'normal' | 'heavy' | 'deadly' (issue #586) — carried raw; whether
+      // it earns a warning glyph is the marker's call, since only an
+      // enemy's heavy move is a threat cue.
+      severity: telegraphSeverity(move),
       alignment,
       isPlayer,
     });

@@ -147,3 +147,19 @@ describe('buildBeatTimelineColumns', () => {
     ]);
   });
 });
+
+// Issue #586: the strip must be able to tell a Tidal Surge column apart from
+// a routine NpcAttack column, so entries carry the move's declared severity.
+describe('entry severity', () => {
+  it('carries the wire severity and defaults to normal when absent', () => {
+    const combat = {
+      player: { id: 'player', name: 'Jean', hp: 10, current_move: pendingMove({ beats_until_resolve: 1 }) },
+      enemies: [
+        { id: 'enemy_1', name: 'King Slime', hp: 400, current_move: pendingMove({ beats_until_resolve: 7, telegraph_severity: 'deadly' }) },
+        { id: 'enemy_2', name: 'Slime', hp: 5, current_move: pendingMove({ beats_until_resolve: 2 }) },
+      ],
+    };
+    const bySeverity = Object.fromEntries(getBeatTimelineEntries(combat).map((e) => [e.name, e.severity]));
+    expect(bySeverity).toEqual({ Jean: 'normal', 'King Slime': 'deadly', Slime: 'normal' });
+  });
+});

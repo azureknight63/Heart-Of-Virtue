@@ -693,6 +693,13 @@ ACTIVE_MOVE_CONTRACT = {
     "damage_multiplier": Read(
         "ai/combat_strategist.py", 'get("damage_multiplier"'
     ),
+    # Issue #586. telegraphSeverity() marks a heavy/deadly wind-up with a
+    # glyph on the countdown badge, the enemies list and the beat timeline —
+    # the non-colour cue that tells a Tidal Surge apart from a routine
+    # NpcAttack, which are otherwise both "Offensive". Absent on the wire,
+    # the helper defaults to "normal" and the whole warning silently
+    # disappears, which is the drift class this file exists to catch.
+    "telegraph_severity": Read("combatMoveStatus.js", "move.telegraph_severity"),
 }
 
 # StatusEffectsIconPanel.jsx renders each element of status_effects/passives.
@@ -1116,6 +1123,40 @@ class TestCombatantWireContract:
             "fixture is degenerate: this move must declare a NON-default "
             "multiplier or the test cannot distinguish carried from defaulted"
         )
+
+    @staticmethod
+    def _serialize_mid_cast(move_cls, enemy_cls):
+        """A real ``move_cls`` mid-cast on a real ``enemy_cls``, serialized."""
+        player = Player()
+        enemy = enemy_cls()
+        enemy.target = player
+        move = move_cls(enemy)
+        move.current_stage = 0
+        move.beats_left = 2
+        enemy.current_move = move
+        return CombatantSerializer.serialize_combatant(enemy, reference=player)
+
+    def test_telegraph_severity_carries_the_moves_own_declaration(self):
+        """Presence is not enough here either: "normal" is a valid severity
+        AND the serializer's default, so a renamed ``Move.telegraph_severity``
+        would degrade the #586 warning to nothing without a missing key."""
+        from src.moves import TidalSurge
+        from src.npc._enemies import KingSlime
+
+        payload = self._serialize_mid_cast(TidalSurge, KingSlime)
+        assert payload["current_move"]["telegraph_severity"] == "deadly"
+        assert TidalSurge.telegraph_severity != "normal", (
+            "fixture is degenerate: this move must declare a NON-default "
+            "severity or the test cannot distinguish carried from defaulted"
+        )
+
+    def test_a_routine_windup_serializes_as_normal(self):
+        """Negative control: the generic NPC swing must NOT earn the warning,
+        or the glyph marks every enemy and warns of nothing."""
+        from src.moves import NpcAttack
+
+        payload = self._serialize_mid_cast(NpcAttack, Slime)
+        assert payload["current_move"]["telegraph_severity"] == "normal"
 
     def test_tactical_mechanics_carries_the_states_own_summary(self):
         """Same shape of guard for the status half of the combat prompt.
@@ -2622,6 +2663,31 @@ class TestThePayloadBuildersMatchTheWire:
 
         _assert_builder_matches_the_wire(
             "makeCombatant", combatant, "serialize_combatant"
+        )
+
+    def test_the_active_move_fixture_carries_exactly_the_keys_the_serializer_emits(
+        self, real_combat_player
+    ):
+        """``makeActiveMove`` -- the ``current_move`` a combatant carries
+        mid-cast. Every battlefield-telegraph test (countdown badge, enemies
+        list, beat timeline, #586 severity glyph) is built on it, so a key the
+        serializer sends and the fixture omits sends all of them down a
+        fallback no real payload takes."""
+        from src.moves import NpcAttack
+
+        enemy = Slime()
+        enemy.target = real_combat_player
+        move = NpcAttack(enemy)
+        move.current_stage = 0
+        move.beats_left = 1
+        enemy.current_move = move
+
+        active = CombatantSerializer.serialize_combatant(
+            enemy, real_combat_player
+        )["current_move"]
+
+        _assert_builder_matches_the_wire(
+            "makeActiveMove", active, "_serialize_active_move"
         )
 
     @pytest.mark.parametrize(
