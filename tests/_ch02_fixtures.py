@@ -17,13 +17,15 @@ the placement moved.
 import ast
 import functools
 import json
+from typing import NamedTuple
 from unittest.mock import Mock
 
 import src.items as items
 import src.npc as npc
 from src.story.ch02 import AfterDefeatingKingSlime, CLEANSED_CHANNEL_DESCRIPTIONS
+from src.story.effects import NPCSpawnerEvent
 from tests._gs_fixtures import make_tile
-from tests._map_scan import event_placements, map_data, tiles
+from tests._map_scan import event_placements, map_data, resolve_class, tiles
 from tests._source_scan import MAP_DIR, ROOT
 
 POOLS_MAP = MAP_DIR / "grondelith-mineral-pools.json"
@@ -133,11 +135,15 @@ def pre_572_cleansed_prose():
     channels = document["channels"]
     # The frozen channels ARE the population every legacy test asserts over:
     # thinned to nothing, each of those tests would pass on the arena alone.
-    # Held to the engine's own table, which is what the old code cleansed.
+    # Held to the engine's own table, which is what the old code cleansed --
+    # as a subset, not equal: a tile the cleanse gained since (#594's
+    # crevice) never had legacy prose for the repair to fold, so it is
+    # absent here by construction.
     prose = {ast.literal_eval(key): text for key, text in channels.items()}
-    assert prose.keys() == set(CLEANSED_CHANNEL_DESCRIPTIONS), (
-        "the frozen pre-#572 channels no longer match the tiles the event "
-        f"cleanses: {sorted(set(CLEANSED_CHANNEL_DESCRIPTIONS) ^ prose.keys())}"
+    assert prose, "the frozen pre-#572 channel prose is empty"
+    assert prose.keys() <= set(CLEANSED_CHANNEL_DESCRIPTIONS), (
+        "the frozen pre-#572 channels name tiles the event no longer "
+        f"cleanses: {sorted(prose.keys() - set(CLEANSED_CHANNEL_DESCRIPTIONS))}"
     )
     arena = arena_coord()
     assert arena not in prose, f"the frozen channel prose already names the arena {arena}"
@@ -222,3 +228,56 @@ def assert_description_untouched(tile, *, authored_text):
     spawned on it, and its description still that text."""
     tile.spawn_object.assert_not_called()
     assert tile.description == authored_text, tile.description
+
+
+class SpawnerPlacement(NamedTuple):
+    """One enemy spawner the pools map authors: where, which event class the
+    loader resolves it to, and the props it is authored with."""
+
+    coord: tuple
+    event_cls: type
+    props: dict
+
+
+@functools.lru_cache(maxsize=1)
+def pools_spawner_placements():
+    """Every ``NPCSpawnerEvent`` -- by inheritance, so the ``PulsingGlandEvent``
+    glands count -- the pools map authors, as ``SpawnerPlacement`` tuples.
+
+    Derived from the shipped map, never typed: the map places no static NPC,
+    so this IS the map's enemy population, and the #594 sweep is asserted
+    over it. Resolved through the engine's own class gate, so a placement the
+    game would refuse to load fails here rather than silently dropping out of
+    the population. The props are the shared parse: read, never mutate.
+    """
+    found = []
+    for placement in event_placements():
+        if placement.map_name != POOLS_MAP.name:
+            continue
+        event_cls = resolve_class(placement)
+        if issubclass(event_cls, NPCSpawnerEvent):
+            found.append(
+                SpawnerPlacement(ast.literal_eval(placement.coord), event_cls, placement.props)
+            )
+    return tuple(found)
+
+
+#: The authored props ``NPCSpawnerEvent.__init__`` (and the gland's) takes by
+#: name -- what ``Universe._deserialize_saved_instance`` hands the constructor
+#: after filtering the payload's props to the signature. ``player``/``tile``
+#: are authored null and supplied at runtime, so they are passed explicitly.
+_SPAWNER_CTOR_PROPS = ("name", "repeat", "npc_cls", "count")
+
+
+def build_authored_spawner(placement, player, tile):
+    """The spawner ``placement`` describes, constructed the way the map loader
+    constructs it, armed on ``tile`` (appended to its ``events_here``).
+
+    ``npc_cls`` is passed in its authored shape -- the ``{"__class_type__":
+    "npc:Slime"}`` marker for the plain spawners, a bare name for the glands
+    -- so the event resolves it through the same path it does in the game.
+    """
+    kwargs = {k: placement.props[k] for k in _SPAWNER_CTOR_PROPS if k in placement.props}
+    event = placement.event_cls(player=player, tile=tile, **kwargs)
+    tile.events_here.append(event)
+    return event

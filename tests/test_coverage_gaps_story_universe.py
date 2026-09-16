@@ -1182,7 +1182,9 @@ class TestAfterDefeatingKingSlime:
         gorran = Gorran()
         atrium_tile = Mock()
         atrium_tile.npcs_here = [gorran]
-        player.map = {ATRIUM_COORDS: atrium_tile}
+        # The atrium is found through the universe's pools map (#577), as
+        # Ch02GorranAtPools already finds it -- not through player.map.
+        player.universe.maps = [make_pools_map({ATRIUM_COORDS: atrium_tile})]
         with (
             patch("src.story.ch02.print_slow"),
             patch("src.story.ch02.time.sleep"),

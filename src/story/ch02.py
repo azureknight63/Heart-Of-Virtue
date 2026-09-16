@@ -9,7 +9,7 @@ from src import items
 from src.events import Event, gate_is_set, set_story_gate, story_gates
 from src.functions import print_slow, await_input
 from src.objects import TileDescription
-from src.story.effects import MemoryFlash
+from src.story.effects import MemoryFlash, NPCSpawnerEvent
 from src.journal import (
     complete_objective,
     set_objective,
@@ -559,6 +559,13 @@ CLEANSED_ARENA_DESCRIPTION = (
 #: evidence; active slime, living corruption and every rumbling reference
 #: are gone.
 CLEANSED_CHANNEL_DESCRIPTIONS = types.MappingProxyType({
+    (1, 2): (
+        "A gap barely wide enough to squeeze through. The thin film of slime that "
+        "reached this far has dried to a faint dark line across the threshold, as "
+        "though it stopped here and went no further. Beyond: cold, clean air, sharp "
+        "with minerals. Silence — the same silence as before, only now it is on "
+        "both sides of the gap."
+    ),
     (2, 2): (
         "The colour has returned. Where the channels ran green, they run clear now — "
         "milky-blue, lit from below, moving with quiet purpose. The walls carry the "
@@ -735,7 +742,9 @@ class AfterDefeatingKingSlime(Event):
         # Teleport Gorran to the arena. He lives as an ally NPC; find him wherever
         # he currently is (atrium fallback, then combat_list_allies).
         # player.map is a dict keyed by (x, y) tuples, not an object with .tiles.
-        current_map = self.player.map
+        # Looked up through the universe, as Ch02GorranAtPools does: after a
+        # flee player.map can point at a combat arena with no atrium in it.
+        current_map = find_pools_map(self.player) or self.player.map
         gorran = None
         if ATRIUM_COORDS in current_map:
             atrium_tile = current_map[ATRIUM_COORDS]
@@ -758,6 +767,19 @@ class AfterDefeatingKingSlime(Event):
                     old_tile.npcs_here.remove(gorran)
                 gorran.tile = self.tile
                 self.tile.npcs_here.append(gorran)
+
+        if gorran is not None:
+            # Rejoin the party (#577). Ch02GorranAtPools took him out of
+            # combat_list_allies to wait in the atrium, and that list is the
+            # single source of truth for the status party, battle allies and
+            # tile-following -- without this he stayed behind for good. Same
+            # join as Ch01's escape beat: friend flag, appended behind the
+            # player at index 0, levelled up to Jean.
+            gorran.friend = True
+            if gorran not in self.player.combat_list_allies:
+                self.player.combat_list_allies.append(gorran)
+            if hasattr(gorran, "sync_level"):
+                gorran.sync_level(getattr(self.player, "level", 1))
 
         # Narrate Gorran's arrival and his reaction to the cleansed pools
         time.sleep(1)
@@ -804,6 +826,59 @@ class AfterDefeatingKingSlime(Event):
                 # Overwrite, don't spawn a TileDescription -- see the
                 # arena comment in process() (#572/#573).
                 tile.description = description
+        self._clear_pool_enemies(pools_map)
+
+    def _clear_pool_enemies(self, pools_map):
+        """Sweep every remaining enemy out of the pools and spend every
+        spawner still armed there (#594).
+
+        The pools map places no static NPC: every enemy comes from an
+        ``NPCSpawnerEvent``. The plain ones fire on map entry, so by now
+        their NPCs stand on the channel tiles; the ``PulsingGlandEvent``
+        glands fire only on tile entry, so any Jean has not walked past
+        would still burst a fresh slime on the way out. Both contradict the
+        cleansing he just watched, so every NPC without ``friend`` set is
+        removed -- the CaveBats at the walkway included; two bats ambushing
+        him after "the corruption recedes" reads no better than a slime --
+        and every spawner is marked run and dropped. Allies (Gorran) stay.
+
+        Filtered by ``isinstance`` rather than ``tile.remove_event(name)``:
+        that stops at the first name match and several tiles carry more
+        than one event named ``NPCSpawnerEvent``.
+        """
+        for coords, tile in pools_map.items():
+            if not isinstance(coords, tuple):
+                continue
+            npcs_here = getattr(tile, "npcs_here", None)
+            if isinstance(npcs_here, list):
+                for npc in [n for n in npcs_here if not getattr(n, "friend", False)]:
+                    npcs_here.remove(npc)
+                    self._forget_combatant(npc)
+            events_here = getattr(tile, "events_here", None)
+            if isinstance(events_here, list):
+                for event in [e for e in events_here if isinstance(e, NPCSpawnerEvent)]:
+                    event.has_run = True
+                    events_here.remove(event)
+        narrate(
+            "Back along the channels, the last of the slime slackened and ran to "
+            "nothing, and the glands that had studded the walls went still. Nothing "
+            "in the pools would rise to meet him now."
+        )
+
+    def _forget_combatant(self, npc):
+        """Drop ``npc`` from Jean's enemy bookkeeping if it is there.
+
+        Combat is over when this event fires and the API clears
+        ``combat_list`` at fight end, so this is belt-and-braces; it exists
+        so a swept NPC can never linger as a phantom enemy. Guarded rather
+        than assumed: the story tests hand the event a Mock player.
+        """
+        combat_list = getattr(self.player, "combat_list", None)
+        if isinstance(combat_list, list) and npc in combat_list:
+            combat_list.remove(npc)
+        proximity = getattr(self.player, "combat_proximity", None)
+        if isinstance(proximity, dict):
+            proximity.pop(npc, None)
 
 
 def _prose_of(text):
