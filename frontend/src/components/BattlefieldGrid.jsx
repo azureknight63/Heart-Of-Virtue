@@ -308,6 +308,9 @@ const CombatantMarker = React.memo(({
 
   // HP / Fatigue stats
   const { hp, maxHp, hpPct, fatPct } = resolveEntityStats(entity);
+  // Whole percent for the bar's width and its data attribute — one rounding,
+  // so the two can never disagree.
+  const hpPctInt = Math.round(hpPct * 100);
 
   const content = displaySymbol || entity.battle_symbol || (entity.name && entity.name[0]) || '?';
 
@@ -333,7 +336,9 @@ const CombatantMarker = React.memo(({
       // torus's colour — no text anywhere, so a player who never hovered or
       // clicked a token (and the SELECT TARGET sub-dialog was the only place
       // HP appeared at all) had no way to read it. aria-label carries it to
-      // assistive tech; the badge below carries it to sighted players too.
+      // assistive tech ALWAYS — it is not gated on the hover/selection that
+      // reveals the numeral below (#602); the HP bar below is the sighted
+      // player's always-on cue.
       aria-label={`${entity.name}: ${hp}/${maxHp} HP`}
       className={`relative w-[75%] h-[75%] rounded-full transition-all duration-300 transform-gpu border-[3px]${
         pendingGlowColor ? ' battlefield-pending-glow' : ''
@@ -428,13 +433,52 @@ const CombatantMarker = React.memo(({
         </div>
       )}
 
-      {/* HP badge — a visible number alongside the torus's colour, so sighted
-          players get the same value the aria-label above gives assistive
-          tech, with no hover/click/tab required. Skipped in compact mode:
-          the marker itself is too small there for legible text (matches the
-          precedent set by the beat-countdown badge and status icons below). */}
+      {/* HP bar — the always-visible, non-colour HP cue (issue #602). Its
+          fill LENGTH is the fraction, so a sighted player who never hovers or
+          taps still reads HP without depending on the torus's colour. The
+          numeral below is interaction-gated; this bar is what stays.
+          Decorative for assistive tech: the aria-label above already carries
+          the exact value, and a progressbar per token would read it twice.
+          Skipped in compact mode, like every other token adornment: the
+          marker is too small there for a 3px bar to register. */}
       {!isCompact && (
         <div
+          data-testid="token-hp-bar"
+          data-hp-pct={hpPctInt}
+          aria-hidden="true"
+          className="absolute pointer-events-none z-20 overflow-hidden"
+          style={{
+            bottom: '-6px',
+            left: '10%',
+            width: '80%',
+            height: '3px',
+            backgroundColor: colors.bg.panelDeep,
+            border: `1px solid ${colors.alpha.danger[60]}`,
+            borderRadius: '2px',
+          }}
+        >
+          <div
+            data-testid="token-hp-bar-fill"
+            style={{
+              width: `${hpPctInt}%`,
+              height: '100%',
+              backgroundColor: colors.danger,
+              transition: 'width 0.5s ease-in-out',
+            }}
+          />
+        </div>
+      )}
+
+      {/* HP numeral — revealed on interaction only (issue #602): hover on
+          desktop, tap on touch, where "tap" is the same selection the
+          SelectedEntityPanel already keys on, so one mechanism serves both
+          and a repeat tap clears it. #536 rendered this always-on; the
+          maintainer reverted that to keep the field uncluttered, keeping the
+          aria-label above (always present, never hover-gated) for assistive
+          tech and the bar above for everyone else. */}
+      {!isCompact && (isHovered || isSelected) && (
+        <div
+          data-testid="token-hp-numeral"
           className="absolute pointer-events-none select-none z-20 flex items-center justify-center rounded-full"
           style={{
             bottom: '-5px',
@@ -446,9 +490,9 @@ const CombatantMarker = React.memo(({
             lineHeight: 1,
             fontWeight: 'bold',
             fontFamily: 'monospace',
-            color: '#fff',
-            backgroundColor: 'rgba(0,0,0,0.75)',
-            border: '1px solid #ff4444',
+            color: colors.text.bright,
+            backgroundColor: colors.bg.overlay,
+            border: `1px solid ${colors.danger}`,
             textShadow: 'none',
           }}
         >
@@ -1729,6 +1773,22 @@ function BattlefieldGrid({
     (entity) => setSelectedEntityId(entity?.id ?? null),
     []
   );
+  // Tapping a token toggles its selection: a repeat tap on the already-selected
+  // token deselects it. Touch has no hover-leave, so without this the HP
+  // numeral (#602) — and the panel — could only be dismissed via the
+  // background, Escape or the ✕. The deselecting tap also clears the hover:
+  // touch browsers emulate mouseenter on tap and hold it until another
+  // element is tapped, so the numeral would otherwise stay pinned by a hover
+  // that no finger is providing.
+  const toggleSelectedEntity = useCallback((entity) => {
+    const id = entity?.id ?? null;
+    if (id != null && id === selectedEntityId) {
+      setSelectedEntityId(null);
+      setHoveredEntity(null);
+    } else {
+      setSelectedEntityId(id);
+    }
+  }, [selectedEntityId]);
 
   // Notify parent when animation busy-state changes so end-of-combat timing
   // can wait for the death animation to finish before starting the grace timer.
@@ -2452,7 +2512,7 @@ function BattlefieldGrid({
           isCompact={isCompact}
           onHoverEntity={setHoveredEntity}
           onClearHover={handleClearHover}
-          onSelectEntity={setSelectedEntity}
+          onSelectEntity={toggleSelectedEntity}
         />
 
         <EffectsLayer

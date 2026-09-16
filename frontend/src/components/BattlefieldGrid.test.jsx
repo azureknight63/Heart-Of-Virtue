@@ -225,23 +225,113 @@ describe('BattlefieldGrid', () => {
             expect(screen.getByText('9 ft')).toBeInTheDocument();
         });
 
-        it('surfaces an HP number for every combatant on the default map view, not just the target picker or a hover/click (issue #536)', () => {
-            // Before this fix, the map view's only HP signal was a colored SVG
-            // torus with no text anywhere — the hover tooltip and the
-            // click-to-select panel both required an interaction, so a player
-            // who never hovered or clicked saw no HP number at all for Jean,
-            // an ally, or an enemy.
+        describe('HP on the token (issue #536 -> #602)', () => {
+            // #536 made the map view's only HP signal (a coloured SVG torus)
+            // legible by printing the numeral on every token, always. #602 is
+            // the maintainer's revision: the NUMERAL reveals on interaction
+            // (hover on desktop, tap on mobile), the aria-label stays put for
+            // assistive tech, and a partial-fill bar whose LENGTH carries the
+            // fraction stays on the token so a player who never interacts
+            // still has a non-colour cue.
             const combat = {
                 ...mockCombat,
                 player: { ...mockCombat.player, name: 'Jean' },
                 enemies: [{ ...mockCombat.enemies[0], name: 'Goblin', hp: 30, max_hp: 50 }],
             };
-            render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+            const tokenWrapper = (token) => token.closest('div[style*="position: absolute"]');
+            const numeralOf = (token) => token.querySelector('[data-testid="token-hp-numeral"]');
+            const barOf = (token) => token.querySelector('[data-testid="token-hp-bar"]');
 
-            expect(screen.getByLabelText('Jean: 100/100 HP')).toBeInTheDocument();
-            expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
-            // A visible number, not just an aria-label buried off-screen.
-            expect(screen.getByText('30/50')).toBeInTheDocument();
+            it('keeps the HP aria-label on every token but does not render the numeral until asked', () => {
+                render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+                const jean = screen.getByLabelText('Jean: 100/100 HP');
+                const goblin = screen.getByLabelText('Goblin: 30/50 HP');
+                expect(jean).toBeInTheDocument();
+                expect(goblin).toBeInTheDocument();
+                // Not hidden-by-class: not in the DOM at all.
+                expect(numeralOf(jean)).toBeNull();
+                expect(numeralOf(goblin)).toBeNull();
+                expect(screen.queryByText('30/50')).toBeNull();
+            });
+
+            it('reveals the numeral while the token is hovered and removes it on leave', () => {
+                render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+                const goblin = screen.getByLabelText('Goblin: 30/50 HP');
+
+                fireEvent.mouseEnter(tokenWrapper(goblin));
+                expect(numeralOf(goblin)).toHaveTextContent('30/50');
+                // The aria-label is not the hover state's to take away.
+                expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
+
+                fireEvent.mouseLeave(tokenWrapper(goblin));
+                expect(numeralOf(goblin)).toBeNull();
+                expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
+            });
+
+            it('toggles the numeral on tap: one tap shows it, a second tap on the same token hides it', () => {
+                // Touch has no hover, so the tap reuses the existing selection
+                // state rather than adding a second mechanism; a repeat tap
+                // deselects (and so closes the selected-entity panel too).
+                render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+                const goblin = screen.getByLabelText('Goblin: 30/50 HP');
+
+                // Touch browsers emulate mouseenter on the tap and never fire
+                // mouseleave until another element is tapped — so the test
+                // taps the way a finger does, hover included.
+                fireEvent.mouseEnter(tokenWrapper(goblin));
+                fireEvent.click(goblin);
+                expect(numeralOf(goblin)).toHaveTextContent('30/50');
+                expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
+
+                fireEvent.click(goblin);
+                // Gone despite the stale emulated hover: deselecting clears it.
+                expect(numeralOf(goblin)).toBeNull();
+                expect(screen.queryByText('INTEGRITY (HP)')).toBeNull();
+                expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
+            });
+
+            it('always renders an HP bar whose fill length is the HP fraction, not a colour', () => {
+                const { rerender } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+                const goblinBar = barOf(screen.getByLabelText('Goblin: 30/50 HP'));
+                expect(goblinBar).not.toBeNull();
+                expect(goblinBar.getAttribute('data-hp-pct')).toBe('60');
+                expect(goblinBar.querySelector('[data-testid="token-hp-bar-fill"]').style.width).toBe('60%');
+
+                const jeanBar = barOf(screen.getByLabelText('Jean: 100/100 HP'));
+                expect(jeanBar.getAttribute('data-hp-pct')).toBe('100');
+                expect(jeanBar.querySelector('[data-testid="token-hp-bar-fill"]').style.width).toBe('100%');
+
+                // Length tracks the fraction as it changes; the numeral is still
+                // not part of the always-visible layer.
+                rerender(
+                    <BattlefieldGrid
+                        combat={{ ...combat, enemies: [{ ...combat.enemies[0], hp: 5 }] }}
+                        tab="overview"
+                        zoom={1}
+                    />
+                );
+                const wounded = screen.getByLabelText('Goblin: 5/50 HP');
+                expect(barOf(wounded).getAttribute('data-hp-pct')).toBe('10');
+                expect(barOf(wounded).querySelector('[data-testid="token-hp-bar-fill"]').style.width).toBe('10%');
+                expect(numeralOf(wounded)).toBeNull();
+            });
+
+            it('skips both the bar and the numeral in compact mode, where the token is too small for either', () => {
+                // A 40x40 arena with combatants 24 cells apart frames at 32
+                // columns — past VIEW_SIZE, so the grid goes compact.
+                const spread = {
+                    player: { ...combat.player, position: { x: 5, y: 5 } },
+                    enemies: [{ ...combat.enemies[0], position: { x: 29, y: 5 } }],
+                };
+                render(<BattlefieldGrid combat={spread} tab="overview" zoom="fit" mapSize={40} />);
+                const goblin = screen.getByLabelText('Goblin: 30/50 HP');
+
+                expect(barOf(goblin)).toBeNull();
+                fireEvent.mouseEnter(tokenWrapper(goblin));
+                expect(numeralOf(goblin)).toBeNull();
+            });
         });
 
         it('clears the selection when the map background is clicked', () => {
