@@ -68,6 +68,10 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
 
     const inputRef = useRef(null)
     const dialogRef = useRef(null)
+    // Where the most recent press inside the dialog began. Read by
+    // handleGlobalInteraction so the click that ends a skip hold cannot
+    // double as a dismissal — see the note there.
+    const pressBeganOnSceneControlRef = useRef(false)
     // Guards the post-await re-enable below from firing after unmount.
     const isMountedRef = useRef(true)
     const { showTop, showBottom, check: checkScroll, ref: scrollRef } = useScrollIndicators()
@@ -360,6 +364,12 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
      */
     const handleGlobalInteraction = () => {
         if (isSubmitting) return
+        // The click that ends a skip hold is the tail of a gesture that began
+        // on the scene controls, not a "continue" on the prose. If the layout
+        // shifted during the hold the browser can retarget that click here —
+        // and the hold has just completed the scene, so this would dismiss
+        // the dialog the player only meant to fast-forward (issue #583).
+        if (pressBeganOnSceneControlRef.current) return
         if (isComplete && !needsInput) {
             setIsSubmitting(true)
             onClose()
@@ -414,12 +424,14 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     // the control EXISTS; `canSkip` decides whether it is live.
     //
     // They differ because the control must not vanish at the moment a hold
-    // completes. A browser whose mousedown target has been removed retargets
-    // the resulting click to the nearest still-connected ancestor — here the
+    // completes. A browser whose press target has been removed retargets the
+    // resulting click to the nearest still-connected ancestor — here the
     // dialog body, whose handler dismisses a completed event — so an
     // unmount-on-confirm made "skip this scene" close it instead of landing on
-    // its final beat. A disabled button dispatches no mouse events and stays
-    // connected, so nothing is left to retarget.
+    // its final beat. A disabled button dispatches no click and stays
+    // connected, so nothing is left to retarget. (The hold also captures the
+    // pointer now, and `pressBeganOnSceneControlRef` covers the click either
+    // way — three layers, because each alone has a browser it fails in.)
     const showSkipControl = !isDeathScene && !showHistory && (hasSegments || Boolean(eventText))
     const canSkip = showSkipControl && !isComplete
 
@@ -488,6 +500,9 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                 ref={dialogRef}
                 className={`event-dialog-body${isMemoryFlash ? ' memory-flash-frame' : ''}`}
                 tabIndex={-1}
+                onPointerDownCapture={(e) => {
+                    pressBeganOnSceneControlRef.current = Boolean(e.target.closest?.('[data-scene-controls]'))
+                }}
                 onClick={handleGlobalInteraction}
                 style={{
                     display: 'flex',
@@ -505,14 +520,16 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
 
                 {/* Scene controls: in-scene history, and the skip gesture.
 
-                    The row stops its own clicks. Completing the skip hold
-                    unmounts the skip button, and a browser whose mousedown
-                    target has gone retargets the resulting click to the
-                    nearest still-connected ancestor — which, without this,
-                    is the dialog body, whose click handler dismisses a
-                    completed event. Skipping a scene closed it. */}
+                    The row stops its own clicks: none of them is the "continue"
+                    gesture the dialog body listens for, and a click that
+                    reaches the body after the skip hold completes the scene
+                    would dismiss it. The row itself moves while a scene types
+                    (flex-end, and the skip label swaps mid-hold), so the click
+                    that ends the hold may not land in the row at all; the
+                    press-origin guard on the body handles that case. */}
                 {(history.length > 1 || showSkipControl) && (
                     <div
+                        data-scene-controls
                         onClick={(e) => e.stopPropagation()}
                         style={{ display: 'flex', justifyContent: 'flex-end', gap: spacing.sm, alignItems: 'center', marginBottom: `-${spacing.sm}` }}
                     >
