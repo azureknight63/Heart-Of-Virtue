@@ -742,7 +742,9 @@ class AfterDefeatingKingSlime(Event):
         # Teleport Gorran to the arena. He lives as an ally NPC; find him wherever
         # he currently is (atrium fallback, then combat_list_allies).
         # player.map is a dict keyed by (x, y) tuples, not an object with .tiles.
-        current_map = self.player.map
+        # Looked up through the universe, as Ch02GorranAtPools does: after a
+        # flee player.map can point at a combat arena with no atrium in it.
+        current_map = find_pools_map(self.player) or self.player.map
         gorran = None
         if ATRIUM_COORDS in current_map:
             atrium_tile = current_map[ATRIUM_COORDS]
@@ -765,6 +767,19 @@ class AfterDefeatingKingSlime(Event):
                     old_tile.npcs_here.remove(gorran)
                 gorran.tile = self.tile
                 self.tile.npcs_here.append(gorran)
+
+        if gorran is not None:
+            # Rejoin the party (#577). Ch02GorranAtPools took him out of
+            # combat_list_allies to wait in the atrium, and that list is the
+            # single source of truth for the status party, battle allies and
+            # tile-following -- without this he stayed behind for good. Same
+            # join as Ch01's escape beat: friend flag, appended behind the
+            # player at index 0, levelled up to Jean.
+            gorran.friend = True
+            if gorran not in self.player.combat_list_allies:
+                self.player.combat_list_allies.append(gorran)
+            if hasattr(gorran, "sync_level"):
+                gorran.sync_level(getattr(self.player, "level", 1))
 
         # Narrate Gorran's arrival and his reaction to the cleansed pools
         time.sleep(1)

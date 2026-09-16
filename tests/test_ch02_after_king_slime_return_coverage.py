@@ -466,7 +466,9 @@ class TestAfterDefeatingKingSlimeProcess:
         atrium_tile = Mock()
         atrium_tile.npcs_here = [gorran]
 
-        self.player.map = {ATRIUM_COORDS: atrium_tile}
+        # The atrium is found through the universe's pools map (#577), as
+        # Ch02GorranAtPools already finds it -- not through player.map.
+        self.player.universe.maps = [make_pools_map({ATRIUM_COORDS: atrium_tile})]
         evt = self._make_event()
         evt.process()
 
@@ -492,6 +494,66 @@ class TestAfterDefeatingKingSlimeProcess:
         # And he LEAVES the tile he was on: without this, dropping the removal
         # in ch02 puts Gorran on two tiles and the suite stays green.
         assert gorran not in old_tile.npcs_here
+
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
+    def test_gorran_from_the_atrium_rejoins_the_party(self, mock_print, mock_sleep):
+        """#577: Ch02GorranAtPools takes Gorran OUT of ``combat_list_allies``
+        while he waits in the atrium; the aftermath must put him back --
+        that list is what the status party, battle allies and tile-following
+        all read -- behind the player at index 0, flagged a friend, and
+        levelled up to Jean the way the ch01 join does."""
+        gorran = Gorran()
+        gorran.tile = None
+        gorran.sync_level = Mock()
+        atrium_tile = Mock()
+        atrium_tile.npcs_here = [gorran]
+        # The atrium is found through the universe's pools map (#577), as
+        # Ch02GorranAtPools already finds it -- not through player.map.
+        self.player.universe.maps = [make_pools_map({ATRIUM_COORDS: atrium_tile})]
+        self.player.combat_list_allies = [self.player]
+        self.player.level = 3
+
+        self._make_event().process()
+
+        assert self.player.combat_list_allies == [self.player, gorran]
+        assert gorran.friend is True
+        gorran.sync_level.assert_called_once_with(3)
+
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
+    def test_gorran_already_in_the_party_is_not_added_twice(self, mock_print, mock_sleep):
+        gorran = Gorran()
+        gorran.tile = None
+        self.player.combat_list_allies = [self.player, gorran]
+
+        self._make_event().process()
+
+        assert self.player.combat_list_allies == [self.player, gorran]
+        assert gorran.friend is True
+
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
+    def test_the_atrium_is_found_through_the_pools_map_when_player_map_is_elsewhere(
+        self, mock_print, mock_sleep
+    ):
+        """After a flee ``player.map`` can point at a combat arena; the
+        atrium must still be found, through ``find_pools_map`` as
+        ``Ch02GorranAtPools`` already does, or Gorran is left behind."""
+        gorran = Gorran()
+        gorran.tile = None
+        atrium_tile = Mock()
+        atrium_tile.npcs_here = [gorran]
+        self.player.map = {"name": "some-arena"}
+        self.player.universe.maps = [make_pools_map({ATRIUM_COORDS: atrium_tile})]
+        self.player.combat_list_allies = [self.player]
+
+        self._make_event().process()
+
+        assert gorran not in atrium_tile.npcs_here
+        assert gorran in self.tile.npcs_here
+        assert gorran.tile == self.tile
+        assert self.player.combat_list_allies == [self.player, gorran]
 
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")

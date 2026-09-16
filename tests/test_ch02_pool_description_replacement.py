@@ -91,12 +91,15 @@ def _authored_descriptions():
 
 
 def _mock_player():
-    """A Mock player with an empty story and no allies, on no map."""
+    """A Mock player with an empty story and no allies, on no map, at
+    level 1 (a joining ally is levelled up to Jean, and ``int(Mock)`` is
+    not a level)."""
     player = Mock()
     player.universe = Mock()
     player.universe.story = {}
     player.map = {}
     player.combat_list_allies = []
+    player.level = 1
     return player
 
 
