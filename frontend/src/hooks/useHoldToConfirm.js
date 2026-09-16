@@ -85,21 +85,40 @@ export default function useHoldToConfirm(onConfirm, { holdMs = DEFAULT_HOLD_MS, 
     }, [holdMs, cancel]);
 
     const handlers = {
-        // Primary button only. `mousedown` fires for every button, so without
-        // this a right- or middle-press arms the gauge — and while a context
-        // menu is open no reliable `mouseup` reaches the button, so the hold
-        // can run to completion from an interaction the player never meant as
-        // a confirmation.
-        onMouseDown: (e) => {
+        // Pointer events with pointer capture, not mouse/touch events. The
+        // button this drives sits inside a dialog that is vertically centred
+        // and grows upward while a scene types out — and it is only enabled
+        // while the scene is typing. So every hold begins on a button that is
+        // about to slide out from under a pointer that never moved, and a
+        // `mouseleave`-cancels-the-hold policy meant a mouse hold could never
+        // complete (issue #583). Capturing the pointer keeps the whole gesture
+        // on this element until the button is actually released, wherever the
+        // pointer has drifted to by then.
+        //
+        // Primary button only: `pointerdown` fires for every button, so
+        // without this a right- or middle-press arms the gauge — and while a
+        // context menu is open no reliable release reaches the button, so the
+        // hold can run to completion from an interaction the player never
+        // meant as a confirmation.
+        onPointerDown: (e) => {
             if (e.button !== 0) return;
+            // Capture can be refused (the pointer is already gone, or the
+            // environment does not implement it — jsdom, for one). The hold
+            // still starts; only the release-anywhere guarantee is lost.
+            try {
+                e.currentTarget.setPointerCapture(e.pointerId);
+            } catch {
+                /* ignore */
+            }
             begin();
         },
-        onMouseUp: cancel,
-        onMouseLeave: cancel,
+        onPointerUp: cancel,
+        // The browser ends the interaction without a `pointerup`: a touch
+        // that turned into a scroll, a pen leaving range, or the capture
+        // being taken away by an element removal. All of them release.
+        onPointerCancel: cancel,
+        onLostPointerCapture: cancel,
         onContextMenu: cancel,
-        onTouchStart: begin,
-        onTouchEnd: cancel,
-        onTouchCancel: cancel,
         onBlur: cancel,
         onKeyDown: (e) => {
             if (!isHoldKey(e.key)) return;

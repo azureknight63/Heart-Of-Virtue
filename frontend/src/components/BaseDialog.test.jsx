@@ -1,7 +1,7 @@
 import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import BaseDialog, { resolveDialogWidth } from './BaseDialog'
+import BaseDialog, { resolveDialogWidth, SKIP_INITIAL_FOCUS_PROPS } from './BaseDialog'
 import { colors, accessibility } from '../styles/theme'
 
 /** jsdom normalises inline colours to rgb(); theme.js mixes hex and rgba(). */
@@ -685,6 +685,28 @@ describe('BaseDialog', () => {
       const { container } = render(
         <BaseDialog title="Test" onClose={mockOnClose}>
           <p>Static content only</p>
+        </BaseDialog>
+      )
+      expect(document.activeElement).toBe(container.querySelector('[role="dialog"]'))
+    })
+
+    it('steps over a control marked SKIP_INITIAL_FOCUS_ATTR, the way it steps over the ✕ (issue #584)', () => {
+      // A hold-gesture control consumes Enter/Space itself (that is the
+      // gesture), so parking initial focus on it silently eats the app-wide
+      // advance keys — a tap did nothing and a held key skipped the scene.
+      render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <button {...SKIP_INITIAL_FOCUS_PROPS}>Hold Me</button>
+          <button>Second Button</button>
+        </BaseDialog>
+      )
+      expect(document.activeElement).toBe(screen.getByText('Second Button'))
+    })
+
+    it('focuses the container when every control is marked to skip initial focus', () => {
+      const { container } = render(
+        <BaseDialog title="Test" onClose={mockOnClose}>
+          <button {...SKIP_INITIAL_FOCUS_PROPS}>Hold Me</button>
         </BaseDialog>
       )
       expect(document.activeElement).toBe(container.querySelector('[role="dialog"]'))
