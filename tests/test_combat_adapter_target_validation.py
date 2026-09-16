@@ -19,6 +19,9 @@ for, and would happily agree with a wrong ``mvrange`` or a missing
 ``accepts_ally_target``.
 """
 
+import threading
+import time
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
@@ -418,3 +421,140 @@ def test_ready_move_still_works_through_both_entry_points(command):
         "Dodge" in entry.get("message", "")
         for entry in getattr(player, "combat_log", [])
     )
+
+
+# ---------------------------------------------------------------------------
+# Issue #569: the tactical-advisor worker must never touch engine move state
+# ---------------------------------------------------------------------------
+#
+# ``refresh_suggestions`` runs at the end of ``initialize_combat`` and of every
+# ``_execute_move``, and used to build the strategist context on its daemon
+# thread. That walk (``_get_available_moves`` -> ``_build_target_entry`` ->
+# ``Move._viable_for``) swaps ``move.target`` in and out per candidate on the
+# player's REAL move instance, so a worker still running from the previous
+# beat could flip the target a request thread had just committed. The test
+# above sampled ``fight["move"].target`` while that was happening (~1% flake);
+# in a live game the same swap can land under ``Disrupt.execute``.
+
+
+@contextmanager
+def _tracked_threads():
+    """Record every thread started inside the block, and join them on exit.
+
+    Joining ``threading.enumerate()`` is not an option: under xdist the worker
+    process owns execnet IO threads that never finish.
+    """
+    started = []
+    real_thread = threading.Thread
+
+    class _Tracked(real_thread):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            started.append(self)
+
+    with patch("threading.Thread", _Tracked):
+        try:
+            yield started
+        finally:
+            for thread in started:
+                thread.join(timeout=5)
+            assert not any(t.is_alive() for t in started), "worker did not settle"
+
+
+def _select_disrupt_on(fight):
+    adapter, near = fight["adapter"], fight["near"]
+    adapter.process_command({"type": "select_move", "move_index": 0})
+    with forced_roll(**_ALWAYS_HITS):
+        result = adapter.process_command(
+            {"type": "select_target", "target_id": CombatantSerializer.stream_id(near)}
+        )
+    assert "error" not in result
+
+
+def test_suggestion_worker_never_touches_engine_move_state():
+    """Contract: every ``viable``/``_viable_for`` call runs on the request thread."""
+    request_thread = threading.current_thread()
+    callers = []
+    real_viable_for = moves.Move._viable_for
+    real_viable = moves.Disrupt.viable
+
+    def recording_viable_for(self, target):
+        callers.append(threading.current_thread())
+        return real_viable_for(self, target)
+
+    def recording_viable(self):
+        callers.append(threading.current_thread())
+        return real_viable(self)
+
+    with (
+        _tracked_threads(),
+        patch.object(moves.Move, "_viable_for", recording_viable_for),
+        patch.object(moves.Disrupt, "viable", recording_viable),
+    ):
+        fight = _build()
+        _select_disrupt_on(fight)
+
+    assert callers, "recorder saw no viability checks at all"
+    off_thread = [t.name for t in callers if t is not request_thread]
+    assert off_thread == [], f"engine move state touched off the request thread: {off_thread}"
+
+
+@pytest.mark.real_sleep
+def test_move_target_survives_a_still_running_suggestion_worker():
+    """Direct race pin: widen the worker's window and sample the target at once.
+
+    ``real_sleep`` because ``tests/conftest.py`` no-ops ``time.sleep`` for
+    every test by default; a no-op sleep never releases the GIL, so the worker
+    would finish its swaps inside one interpreter slice and the poll below
+    could not observe them.
+    """
+    request_thread = threading.current_thread()
+    real_viable = moves.Disrupt.viable
+
+    def slow_off_thread(self):
+        if threading.current_thread() is not request_thread:
+            time.sleep(0.002)
+        return real_viable(self)
+
+    with patch.object(moves.Disrupt, "viable", slow_off_thread):
+        for attempt in range(10):
+            with _tracked_threads() as started:
+                fight = _build()
+                _select_disrupt_on(fight)
+                # The committed target must be stable from the moment the
+                # command returns until the next command -- sample it at once,
+                # then keep sampling while any worker is still alive.
+                observed = {fight["move"].target}
+                deadline = time.monotonic() + 1.0
+                while any(t.is_alive() for t in started) and time.monotonic() < deadline:
+                    observed.add(fight["move"].target)
+                    time.sleep(0.0005)
+                names = {getattr(t, "name", t) for t in observed}
+                assert names == {"NearEnemy"}, (
+                    f"attempt {attempt}: move.target drifted through {names}"
+                )
+                assert fight["near"].hp < 100
+
+
+def test_suggestions_still_populate_from_the_snapshot_context():
+    """Negative control: moving the context build off the worker must not
+    starve it -- the strategist still gets a full context and its answer still
+    lands on the player, and the adapter keeps the thread handle so callers
+    can join it."""
+    stub = [{"move_name": "Disrupt", "score": 90, "reasoning": "stub"}]
+    with _tracked_threads() as started:
+        fight = _build()
+        adapter, player = fight["adapter"], fight["player"]
+        with patch.object(
+            adapter.strategist, "get_suggestions", return_value=stub
+        ) as get_suggestions:
+            adapter.refresh_suggestions()
+            thread = adapter._suggestion_thread
+            assert thread is started[-1]
+            thread.join(timeout=5)
+
+    assert player.suggested_moves == stub
+    assert player.suggestions_loading is False
+    ctx = get_suggestions.call_args.args[0]
+    assert {m["name"] for m in ctx["available_moves"]} == {"Disrupt"}
+    assert {e["name"] for e in ctx["enemies"]} == {"NearEnemy", "SecondEnemy", "FarEnemy"}
