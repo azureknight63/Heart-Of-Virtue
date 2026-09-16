@@ -382,13 +382,15 @@ class LootEvent(Event):
         self._rebuild_options()
 
     def _rebuild_options(self):
+        from src.items import stack_base_name
+
         self.input_options = []
         if not hasattr(self.container, "inventory") or not self.container.inventory:
             self.input_options.append({"value": "exit", "label": "Close (Empty)"})
             return
 
         for i, item in enumerate(self.container.inventory):
-            label = f"Take {item.name}"
+            label = f"Take {stack_base_name(item)}"
             if hasattr(item, "count") and item.count > 1:
                 label += f" ({item.count})"
             self.input_options.append({"value": str(i), "label": label})
