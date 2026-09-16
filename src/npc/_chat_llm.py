@@ -26,6 +26,13 @@ derives this list from the source and makes every entry carry a reason:
 Optional setup (for story NPCs only):
     self._chat_config_path   str | None (path to character JSON config)
 
+Optional class attributes (for named NPCs with no authored config):
+    _chat_keep_name          bool -- True: the NPC is always called ``self.name``;
+                             the generated personality supplies voice and
+                             knowledge only, never the name (issue #599)
+    _chat_generic_role       str -- what "You are <name>, <role>." says in the
+                             synthesized character block (default "a nomad")
+
 Instance attributes (set by _init_chat_attrs):
     self.loquacity_current   int (current conversation stamina)
     self.loquacity_max       int (max stamina for this NPC)
@@ -1471,13 +1478,17 @@ _BRUSH_OFF_LINES = (
 )
 
 
-def _validate_restored_personality(raw: Any) -> Optional[Dict[str, Any]]:
+def _validate_restored_personality(
+    raw: Any, own_name: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
     """Re-check a save-restored personality seed, or ``None`` if unusable.
 
     ``NpcChatLLMAdapter._validate_personality`` is the one definition of a
     usable seed: every field type-checked, the three strings neutralised and
     length-capped, ``attitude_to_strangers`` confined to the four the prompt
-    offers, ``loquacity_base`` clamped to its bounds. It lives on the adapter
+    offers, ``loquacity_base`` clamped to its bounds, and ``given_name`` not
+    borrowed from the story cast (``own_name`` exempts a named NPC's own name,
+    which is what a ``_chat_keep_name`` host's seed carries). It lives on the adapter
     because that is where seeds are generated; it is *reached* from here
     through the same shared module loader :meth:`_get_adapter` uses, rather
     than re-implemented, because a second copy of this rule would drift the way
@@ -1524,6 +1535,10 @@ def _validate_restored_personality(raw: Any) -> Optional[Dict[str, Any]]:
         )
         return None
     try:
+        # Keyword only when set: the authority is reached by name, and a
+        # validator that predates ``own_name`` must still be callable.
+        if own_name:
+            return validate(raw, own_name=own_name)
         return validate(raw)
     except Exception as e:  # a hand-edited save must never break loading a game
         logger.warning(
@@ -1576,6 +1591,15 @@ class ConversationalNPCMixin:
     # Class-level caches: files are read once per process, not once per NPC instance.
     _world_facts_cache: Optional[Dict[str, Any]] = None
     _char_config_cache: Dict[str, Any] = {}
+
+    # A named NPC without an authored config (Jambo) opts in with
+    # ``_chat_keep_name = True``: it is always called ``self.name``, and the
+    # generated personality only ever lends its voice and knowledge. Explicit
+    # rather than inferred from ``self.name``, because the generic hosts'
+    # names ("Nomad", "Nomad Scout") are labels too and nothing about the
+    # string tells the two apart. See ``_claim_personality``.
+    _chat_keep_name: bool = False
+    _chat_generic_role: str = "a nomad"
 
     @staticmethod
     def _read_json_config(path, label: str) -> Optional[Dict[str, Any]]:
@@ -1932,7 +1956,10 @@ class ConversationalNPCMixin:
         entry = hists[key]
         self._chat_history = entry.get("exchanges", [])
         if entry.get("personality"):
-            restored = _validate_restored_personality(entry["personality"])
+            restored = _validate_restored_personality(
+                entry["personality"],
+                own_name=self.name if self._chat_keep_name else None,
+            )
             if restored is None:
                 # _ensure_personality's deterministic pool is a better character
                 # than a half-invented one, and it is what an NPC with no saved
@@ -1942,7 +1969,10 @@ class ConversationalNPCMixin:
                     "the deterministic fallback will be used instead.",
                     key,
                 )
-            self._chat_personality = restored
+            # A save written before #599 can carry a borrowed name on a named
+            # NPC (Jambo saved as "Ren" with the LLM off); the name is
+            # reclaimed here and written back on the next exchange.
+            self._chat_personality = self._claim_personality(restored)
 
         # Use None (absent) rather than 0 as the "never persisted" sentinel —
         # a persisted 0 (patience exhausted) must be restored as 0, not
@@ -2187,14 +2217,16 @@ class ConversationalNPCMixin:
                 return (snippet + "\n" + "\n".join(extras)).strip()
             return snippet
 
-        # Generic NPC: synthesize from personality
+        # Generic NPC: synthesize from personality. A keep-name host is named
+        # here too, not only in _display_name: the prompt is the other half
+        # of the identity, and it is the half the player reads as dialogue.
         pers = self._chat_personality or {}
-        given_name = pers.get("given_name", "Nomad")
+        given_name = self.name if self._chat_keep_name else pers.get("given_name", "Nomad")
         voice = pers.get("voice", "terse")
         knowledge_list = pers.get("knowledge", [])
         knowledge = ", ".join(knowledge_list) if knowledge_list else "survival"
         return (
-            f"You are {given_name}, a nomad. {voice}. "
+            f"You are {given_name}, {self._chat_generic_role}. {voice}. "
             f"You know about {knowledge}. You speak in first person. "
             f"Keep responses to 1-{MAX_NPC_SENTENCES} sentences."
         )
@@ -2322,6 +2354,29 @@ class ConversationalNPCMixin:
         if not self._chat_personality:
             key = self._chat_npc_key or self.name
             self._chat_personality = self._stable_pick(key, _GENERIC_FALLBACKS).copy()
+        self._chat_personality = self._claim_personality(self._chat_personality)
+
+    def _claim_personality(
+        self, personality: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """Put this NPC's own name on a seed, if it is one that keeps its name.
+
+        The seed's ``given_name`` is read in four places -- the speaker label,
+        the character block, the fallback flavor pool and the proper-noun
+        allow-list -- and it is persisted. Rewriting it once here, at the two
+        points a seed enters the instance (generation and restore), is what
+        keeps every consumer and every later save agreeing on who is talking;
+        a display-time override alone left the prompt saying "You are Mara"
+        under Jambo's portrait (issue #599). Generic hosts get the seed back
+        untouched: their generated name IS their name.
+        """
+        if not personality or not self._chat_keep_name:
+            return personality
+        if personality.get("given_name") == self.name:
+            return personality
+        claimed = dict(personality)
+        claimed["given_name"] = self.name
+        return claimed
 
     @staticmethod
     def _stable_pick(key: str, pool: Sequence[_T]) -> _T:
@@ -4577,7 +4632,7 @@ class ConversationalNPCMixin:
 
     def _display_name(self) -> str:
         """Return display name for this NPC."""
-        if self._chat_char_config:
+        if self._chat_char_config or self._chat_keep_name:
             return self.name
         # Generic: use generated name if available
         if self._chat_personality and "given_name" in self._chat_personality:

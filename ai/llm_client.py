@@ -5,7 +5,7 @@ import logging
 import re
 import threading
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Literal, Optional, Tuple
 try:
     import requests
 except ImportError:
@@ -2983,6 +2983,60 @@ class MynxLLMAdapter(GenericLLMClient):
 _NPC_CHAT_HUMAN_DIR = os.path.join(AI_DIR, "npc", "human")
 _NPC_CHAT_WORLD_FACTS_PATH = os.path.join(_NPC_CHAT_HUMAN_DIR, "world_facts.json")
 
+# The stub below is a fraction of the real allow-list, and the allow-list is
+# what the name-invention QC scans against -- so a missing or corrupt
+# world_facts.json makes legitimate proper nouns start reading as
+# hallucinations. Worth a WARNING, not a shrug.
+_WORLD_FACTS_STUB: Dict[str, Any] = {
+    "world_name": "Aurelion",
+    "allowed_proper_nouns": ["Jean", "Gorran", "Mara", "Devet", "Liss",
+                             "Aurelion", "Grondia", "Badlands", "Echoing Caves"],
+    "tone_notes": "Low fantasy, grounded, practical.",
+}
+
+
+def _read_world_facts() -> Dict[str, Any]:
+    """The world-facts JSON, or the built-in stub when the file is unusable.
+
+    One reader for the adapter instance (which renders the facts into every
+    prompt) and for :func:`_reserved_given_names` (which turns the same
+    proper-noun list into a validator), so the names the model is shown and
+    the names it is refused cannot come from two different files.
+    """
+    try:
+        with open(_NPC_CHAT_WORLD_FACTS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning(
+            "Could not load %s (%s: %s); using the built-in world facts stub.",
+            _NPC_CHAT_WORLD_FACTS_PATH, type(e).__name__, e,
+        )
+        return dict(_WORLD_FACTS_STUB)
+
+
+# Lazily built by _reserved_given_names(); a test may monkeypatch it.
+_RESERVED_GIVEN_NAMES: Optional[FrozenSet[str]] = None
+
+
+def _reserved_given_names() -> FrozenSet[str]:
+    """Lower-cased proper nouns a generated personality may not be named after.
+
+    ``generate_personality`` shows the model ``allowed_proper_nouns`` so it
+    stops inventing places and factions -- and the model read that list as a
+    name pool, so a merchant with no authored config opened conversation as
+    "Mara" (issue #599). The list is reference material, not casting, and the
+    validator holds the model to that from the same JSON the prompt is built
+    from.
+    """
+    global _RESERVED_GIVEN_NAMES
+    if _RESERVED_GIVEN_NAMES is None:
+        _RESERVED_GIVEN_NAMES = frozenset(
+            str(noun).strip().lower()
+            for noun in _read_world_facts().get("allowed_proper_nouns", [])
+            if str(noun).strip()
+        )
+    return _RESERVED_GIVEN_NAMES
+
 
 class NpcChatLLMAdapter(GenericLLMClient):
     """LLM adapter for conversational human NPC dialogue.
@@ -3173,24 +3227,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             return "default" in cls._instances or cls._prewarm_attempted
 
     def _load_world_facts(self) -> None:
-        try:
-            with open(_NPC_CHAT_WORLD_FACTS_PATH, "r", encoding="utf-8") as f:
-                self._world_facts = json.load(f)
-        except Exception as e:
-            # The stub below is a fraction of the real allow-list, and the
-            # allow-list is what the name-invention QC scans against — so a
-            # missing or corrupt world_facts.json makes legitimate proper nouns
-            # start reading as hallucinations. Worth a WARNING, not a shrug.
-            logger.warning(
-                "Could not load %s (%s: %s); using the built-in world facts stub.",
-                _NPC_CHAT_WORLD_FACTS_PATH, type(e).__name__, e,
-            )
-            self._world_facts = {
-                "world_name": "Aurelion",
-                "allowed_proper_nouns": ["Jean", "Gorran", "Mara", "Devet", "Liss",
-                                         "Aurelion", "Grondia", "Badlands", "Echoing Caves"],
-                "tone_notes": "Low fantasy, grounded, practical.",
-            }
+        self._world_facts = _read_world_facts()
 
     def _world_facts_block(self) -> str:
         if not self._world_facts:
@@ -3354,7 +3391,12 @@ class NpcChatLLMAdapter(GenericLLMClient):
         user = (
             f"Generate personality JSON for a {npc_class_display}. "
             "Return exactly these keys:\n"
-            '"given_name": a simple nomadic first name (no invented proper nouns),\n'
+            # "no invented proper nouns" plus a list of known names read as
+            # "pick from the list": the model named a merchant "Mara" (#599).
+            # The validator refuses every name on the list, so the prompt
+            # says so too rather than burning a generation on a refusal.
+            '"given_name": a simple nomadic first name; it must not be any of '
+            "the known names listed below,\n"
             '"voice": one sentence describing speech rhythm (e.g. "sparse, declarative"),\n'
             f'"knowledge": list of {_MAX_KNOWLEDGE_TOPICS} topics this person knows well,\n'
             '"attitude_to_strangers": one of '
@@ -3362,7 +3404,8 @@ class NpcChatLLMAdapter(GenericLLMClient):
             '"speech_sample": one in-character line (10-20 words),\n'
             f'"loquacity_base": integer {LOQUACITY_BASE_BOUNDS[0]}-'
             f'{LOQUACITY_BASE_BOUNDS[1]} representing social patience.\n'
-            f"Do NOT invent locations, factions, or creatures not in: {allowed}."
+            f"Known names (reference only, never a given_name): {allowed}. "
+            "Do NOT invent locations, factions, or creatures not in that list."
         )
         temp = float(os.getenv("NPC_CHAT_TEMP_PERSONALITY", "0.7"))
         parsed = self._generate_parsed(
@@ -3375,7 +3418,9 @@ class NpcChatLLMAdapter(GenericLLMClient):
         return self._validate_personality(parsed)
 
     @staticmethod
-    def _validate_personality(parsed: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _validate_personality(
+        parsed: Dict[str, Any], *, own_name: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """Type-check and bound one personality seed, or None if unusable.
 
         See ``generate_personality``: this value outlives the turn that made
@@ -3391,6 +3436,11 @@ class NpcChatLLMAdapter(GenericLLMClient):
         fails the whole seed rather than being defaulted: the caller has a
         hand-written pool to fall back on, which is better than a silently
         half-invented character.
+
+        ``given_name`` may also not be one of :func:`_reserved_given_names`
+        (issue #599: the model cast a merchant as "Mara"). ``own_name`` is the
+        one exemption, for an NPC that keeps its real name and whose seed is
+        being re-validated out of a save: its own name is never borrowed.
         """
         result: Dict[str, Any] = {}
         for key in ("given_name", "voice", "speech_sample"):
@@ -3419,6 +3469,15 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 logger.warning("generate_personality: %s is empty.", key)
                 return None
             result[key] = value[:_MAX_PERSONALITY_FIELD_CHARS]
+
+        given = result["given_name"].strip().lower()
+        if given in _reserved_given_names() and given != (own_name or "").strip().lower():
+            logger.warning(
+                "generate_personality: given_name=%r is a known story name, not a "
+                "nomad's; the seed is refused.",
+                result["given_name"],
+            )
+            return None
 
         knowledge = parsed.get("knowledge")
         if not isinstance(knowledge, list):
