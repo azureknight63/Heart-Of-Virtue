@@ -201,6 +201,73 @@ describe('useCombatLogPlayback — reload recovery', () => {
     ])
     expect(mockPlaySFX).not.toHaveBeenCalled()
   })
+
+  /**
+   * `useCombat()` (useApi.js) starts `combat` at `null` and only populates it
+   * once, on whichever `GET /combat/status` fetch happens to be the page's
+   * first — mid-fight or not. That means a mid-fight reload reaches this
+   * hook exactly the same way a brand-new fight does: `combat.combat_id`
+   * transitioning from `undefined` to a real id on the very first render
+   * that carries a combat payload. Without a way to tell the two apart, that
+   * transition was ALWAYS treated as "genuinely new fight" (see the negative
+   * control below), which suppressed reload-recovery and paced the whole
+   * backlog at the live 400ms/line rate — locking the player out of acting
+   * for roughly (backlog length * 400ms) after an ordinary refresh.
+   *
+   * GamePage already distinguishes the same two cases for the battlefield's
+   * own reload-recovery flag (`isCombatReloadRecovery`) by checking whether
+   * any log entry is NOT `system`-typed: a fresh fight's log holds only
+   * `system` entries (or none) until a blow lands. This hook needs the same
+   * discriminator so its OWN first-ever combat_id transition doesn't keep
+   * losing the recovery fast path GamePage's does not.
+   */
+  it('recognizes a mid-fight reload on the very first combat_id transition, not just a static mount', () => {
+    const log = [entry('Jean attacks the slime'), entry('the slime is hit'), entry('Jean parries the blow')]
+    const { result, rerender } = renderHook(
+      ({ combat }) => useCombatLogPlayback(combat),
+      { initialProps: { combat: null } }
+    )
+
+    act(() => {
+      rerender({ combat: { combat_id: 'fight-1', combat_active: true, round: 3, log } })
+    })
+    act(() => { vi.runAllTimers() })
+
+    expect(messages(result)).toEqual([
+      'Jean attacks the slime', 'the slime is hit', 'Jean parries the blow',
+    ])
+    expect(mockPlaySFX).not.toHaveBeenCalled()
+  })
+
+  /**
+   * The negative control the fix above must not break: a fight that is
+   * genuinely new when this hook first sees it (opening `system` narration
+   * only, no blows landed) still paces normally rather than fast-forwarding
+   * like a reload.
+   */
+  it('still paces a brand new live fight normally on its first-ever payload, not like a reload', () => {
+    const opening = [entry('The battle begins', { type: 'system' })]
+    const { result, rerender } = renderHook(
+      ({ combat }) => useCombatLogPlayback(combat),
+      { initialProps: { combat: null } }
+    )
+
+    act(() => {
+      rerender({ combat: { combat_id: 'fight-1', combat_active: true, round: 1, log: opening } })
+    })
+    expect(messages(result)).toEqual(['The battle begins'])
+
+    const batch = [...opening, entry('second line'), entry('third line')]
+    act(() => {
+      rerender({ combat: { combat_id: 'fight-1', combat_active: true, round: 1, log: batch } })
+    })
+    // Head of the new batch is revealed synchronously; the tail still waits.
+    expect(messages(result)).toEqual(['The battle begins', 'second line'])
+    act(() => { vi.advanceTimersByTime(399) })
+    expect(messages(result)).toEqual(['The battle begins', 'second line'])
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(messages(result)).toEqual(['The battle begins', 'second line', 'third line'])
+  })
 })
 
 describe('useCombatLogPlayback — per-fight reset', () => {

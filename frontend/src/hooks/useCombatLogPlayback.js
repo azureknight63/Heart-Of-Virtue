@@ -101,9 +101,31 @@ export default function useCombatLogPlayback(combat, {
   const [prevCombatId, setPrevCombatId] = useState(combat?.combat_id)
   const newCombatResetRef = useRef(false)
   if (combat?.combat_id !== undefined && combat.combat_id !== prevCombatId) {
+    // `useCombat` (useApi.js) starts `combat` at `null` and populates it once,
+    // on whichever status fetch happens to be the page's first — mid-fight or
+    // not. That makes THIS branch's first-ever firing (prevCombatId still
+    // `undefined`) ambiguous between "a fight just started" and "we reloaded
+    // mid-fight and are only now seeing it": both look identical here, a
+    // combat_id appearing where there was none. Only the first case should
+    // suppress reload-recovery below; blindly doing it for both paced a
+    // reload's whole backlog at the live 400ms/line rate, locking the player
+    // out of acting for the length of the backlog (a milder cousin of #508).
+    //
+    // Same discriminator GamePage already uses for the battlefield's own
+    // reload-recovery flag (`isCombatReloadRecovery`): a genuinely fresh
+    // fight's log holds only `system` narration (or nothing) until a blow
+    // lands, while a fight already under way carries combat/animation/
+    // player_action entries from earlier rounds. Scoped to the first-ever
+    // transition only — an ordinary fight-to-fight change (prevCombatId
+    // already set) keeps pacing normally regardless of what its opening log
+    // looks like.
+    const isMidFightReload = prevCombatId === undefined &&
+      (combat.log || []).some(e => e.type !== 'system')
     setPrevCombatId(combat.combat_id)
     setDisplayedLog([])
-    newCombatResetRef.current = true
+    if (!isMidFightReload) {
+      newCombatResetRef.current = true
+    }
   }
 
   // Detect page reload during combat: all logs pending on first batch (no logs displayed yet)
