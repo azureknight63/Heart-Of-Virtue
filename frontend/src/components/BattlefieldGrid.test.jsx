@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import BattlefieldGrid from './BattlefieldGrid';
+import BattlefieldGrid, { VIEW_SIZE, splitPanAxis, panCellBounds } from './BattlefieldGrid';
 import { getAnimationDuration } from '../utils/animationConfigs';
 import { CATEGORY_GROUPS, MOVE_CATEGORY_COLOR, MOVE_CATEGORY_GLOW } from '../utils/categories';
 import { setFlag, resetFlags } from '../utils/featureFlags';
@@ -1895,14 +1895,238 @@ describe('BattlefieldGrid', () => {
                 .map((d) => d.style.transform)
                 .find((t) => t && t.startsWith('translate(') && t.includes('px'));
 
+        // Jean mid-arena on a 41-column map, so the window can legally move
+        // in every direction. With the default 9x9 fixture the 13-cell window
+        // already covers the whole arena and the pan clamp collapses to zero.
+        const pannableCombat = {
+            ...mockCombat,
+            player: { ...mockCombat.player, position: { x: 20, y: 20, facing: 'N' } },
+            enemies: [{ ...mockCombat.enemies[0], position: { x: 22, y: 20, facing: 'S' } }],
+        };
+        // One follow-mode cell in the 400px stub box. A drag shorter than this
+        // is all remainder (a translate); anything past it steps the window.
+        const CELL = 400 / VIEW_SIZE;
+        const translate = (x, y) => `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+
         const renderPannableGrid = (props = {}) => {
-            const result = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} {...props} />);
+            const result = render(
+                <BattlefieldGrid combat={pannableCombat} tab="overview" zoom={1} mapSize={40} {...props} />
+            );
             const gridEl = result.container.firstChild;
             gridEl.getBoundingClientRect = () => ({ width: 400, height: 400, top: 0, left: 0, right: 400, bottom: 400 });
             // The pan layer sits inside the viewport box, which is itself
-            // inside the grid container.
-            return { ...result, gridEl, panLayer: result.getByTestId('battlefield-viewport').firstChild };
+            // inside the grid container. The cell size a drag converts px
+            // through is measured off the pan layer, so it needs a rect too:
+            // 400px / 13 cells ≈ 30.8px per cell in follow mode.
+            const panLayer = result.getByTestId('battlefield-viewport').firstChild;
+            panLayer.getBoundingClientRect = gridEl.getBoundingClientRect;
+            return { ...result, gridEl, panLayer };
         };
+
+        // A drag has to move the camera WINDOW, not just slide the rendered
+        // cells: the old pan was a CSS translate of the 13x13 that was already
+        // on screen, clamped to 40% of the box, so it never revealed anything
+        // (#592). Whole cells of travel shift leftX/topY; only the sub-cell
+        // remainder is a translate.
+        describe('drag-to-pan moves the camera window (#592)', () => {
+            describe('splitPanAxis', () => {
+                it('splits travel into whole cells and a same-signed remainder', () => {
+                    expect(splitPanAxis(-100, 30, -10, 10)).toEqual({ cells: -3, residual: -10 });
+                    expect(splitPanAxis(100, 30, -10, 10)).toEqual({ cells: 3, residual: 10 });
+                });
+
+                it('clamps the px total before splitting, so a stopped edge has no remainder', () => {
+                    expect(splitPanAxis(-1000, 30, -2, 5)).toEqual({ cells: -2, residual: 0 });
+                    expect(splitPanAxis(1000, 30, -2, 5)).toEqual({ cells: 5, residual: 0 });
+                });
+
+                it('moves nothing without a measurable cell size', () => {
+                    expect(splitPanAxis(-100, 0, -10, 10)).toEqual({ cells: 0, residual: 0 });
+                    expect(splitPanAxis(-100, NaN, -10, 10)).toEqual({ cells: 0, residual: 0 });
+                });
+            });
+
+            describe('panCellBounds', () => {
+                it('lets a window inside the arena slide to either edge', () => {
+                    // 13 cells at 7..19 on a 41-cell arena: 7 back to 0, 21 on to 28.
+                    expect(panCellBounds(7, 13, 41)).toEqual({ min: -7, max: 21 });
+                });
+
+                it('never carries the window further off the arena than it already is', () => {
+                    // Already hanging 6 cells off the low edge: can come back in, not go further out.
+                    expect(panCellBounds(-6, 13, 41)).toEqual({ min: 0, max: 34 });
+                    // Already past the high edge (30..42 on 0..40): can come back to 28, not go further.
+                    expect(panCellBounds(30, 13, 41)).toEqual({ min: -30, max: 0 });
+                });
+
+                it('collapses when the window already covers the whole arena', () => {
+                    expect(panCellBounds(0, 21, 21)).toEqual({ min: 0, max: 0 });
+                    // Follow window wider than a 9-cell arena, centred at -2.
+                    expect(panCellBounds(-2, 13, 9)).toEqual({ min: 0, max: 0 });
+                });
+            });
+
+            const archerAt = (x, y) => ({
+                ...mockCombat,
+                enemies: [{
+                    id: 'enemy_archer', name: 'Archer', hp: 10, max_hp: 10,
+                    distance: 7, position: { x, y },
+                }],
+            });
+            const onMapCells = (container) =>
+                container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]').length;
+            const drag = (gridEl, from, to) => {
+                fireEvent.mouseDown(gridEl, { button: 0, clientX: from[0], clientY: from[1] });
+                fireEvent.mouseMove(window, { clientX: to[0], clientY: to[1] });
+                fireEvent.mouseUp(window);
+            };
+            /** Residual translate in px, parsed off the pan layer. */
+            const residualOf = (panLayer) =>
+                panLayer.style.transform.match(/-?\d+(\.\d+)?/g).map(Number);
+
+            it('reveals a combatant just beyond the window after dragging toward them', () => {
+                // Jean at (6,6) frames columns 0..12; the archer at x=13 is one
+                // column past the edge.
+                const { gridEl } = renderPannableGrid({ combat: archerAt(13, 6), mapSize: 40 });
+                expect(screen.queryByText('A')).toBeNull();
+                expect(screen.getByLabelText('Archer off-screen, 7 feet away')).toBeInTheDocument();
+
+                // 100px leftward ≈ 3.25 cells: the window slides three columns
+                // east (to 3..15) and the archer's token is rendered.
+                drag(gridEl, [200, 200], [100, 200]);
+
+                expect(screen.getByText('A')).toBeInTheDocument();
+                expect(screen.queryByLabelText(/off-screen/)).toBeNull();
+            });
+
+            it('carries only the sub-cell remainder as a translate', () => {
+                const { gridEl, panLayer } = renderPannableGrid({ combat: archerAt(13, 6), mapSize: 40 });
+                drag(gridEl, [200, 200], [100, 200]);
+
+                // 100px = 3 cells (92.3px) + 7.7px of remainder.
+                const [tx, ty] = residualOf(panLayer);
+                expect(tx).toBeCloseTo(-7.7, 0);
+                expect(ty).toBe(0);
+                expect(Math.abs(tx)).toBeLessThan(400 / 13);
+            });
+
+            it('pans on the y axis too: dragging down reveals rows above', () => {
+                // Window rows 12..0; the archer at y=13 is one row above it.
+                const { gridEl } = renderPannableGrid({ combat: archerAt(6, 13), mapSize: 40 });
+                expect(screen.queryByText('A')).toBeNull();
+
+                drag(gridEl, [200, 100], [200, 200]);
+
+                expect(screen.getByText('A')).toBeInTheDocument();
+            });
+
+            it('cannot drag the map out of view: the window stops at the arena edge', () => {
+                // Jean at (6,6) on a 41-column arena, an archer on the last
+                // column. A huge leftward drag must stop with the window's
+                // right edge on column 40 — the whole window still on the map
+                // — rather than sliding on into the void.
+                const { container, gridEl, panLayer } = renderPannableGrid({ combat: archerAt(40, 6), mapSize: 40 });
+                expect(onMapCells(container)).toBe(169);
+
+                drag(gridEl, [390, 200], [-4000, 200]);
+
+                expect(screen.getByText('A')).toBeInTheDocument();
+                expect(screen.queryByText('J')).toBeNull();
+                expect(onMapCells(container)).toBe(169);
+                // The remainder is clamped along with the cells — no
+                // half-cell of void hangs off the stopped edge.
+                expect(panLayer.style.transform).toBe('translate(0.0px, 0.0px)');
+            });
+
+            it('does not pan past an edge the window is already touching', () => {
+                // Jean at (6,6) frames columns 0..12 and rows 12..0: the west
+                // and south edges of the arena are already on screen, so a
+                // drag right/up (which would reveal x<0 / y<0) is a no-op.
+                const { container, gridEl, panLayer } = renderPannableGrid({ combat: archerAt(13, 6), mapSize: 40 });
+
+                drag(gridEl, [10, 300], [390, 10]);
+
+                expect(panLayer.style.transform).toBe('translate(0.0px, 0.0px)');
+                expect(onMapCells(container)).toBe(169);
+                expect(screen.queryByText('A')).toBeNull();
+                expect(screen.queryByTitle('Recenter the map')).toBeNull();
+            });
+
+            it('collapses to nothing in fit mode when the frame is the whole arena', () => {
+                // (0,0) and (20,20) on a 21-column arena: the fit frame IS the
+                // arena, so there is nothing a pan could reveal.
+                const combat = {
+                    ...mockCombat,
+                    player: { ...mockCombat.player, position: { x: 0, y: 0 } },
+                    enemies: [{ id: 'enemy_far', name: 'Xeno', hp: 10, max_hp: 10, position: { x: 20, y: 20 } }],
+                };
+                const { container, gridEl, panLayer } = renderPannableGrid({ combat, zoom: 'fit', mapSize: 20 });
+                expect(onMapCells(container)).toBe(21 * 21);
+
+                drag(gridEl, [200, 200], [50, 350]);
+
+                expect(onMapCells(container)).toBe(21 * 21);
+                expect(panLayer.style.transform).toBe('translate(0.0px, 0.0px)');
+                expect(screen.getByText('J')).toBeInTheDocument();
+                expect(screen.getByText('X')).toBeInTheDocument();
+            });
+
+            it('resets the window shift when the view mode changes', () => {
+                const combat = archerAt(13, 6);
+                const { gridEl, rerender } = renderPannableGrid({ combat, mapSize: 40 });
+                drag(gridEl, [200, 200], [100, 200]);
+                expect(screen.getByText('A')).toBeInTheDocument();
+
+                rerender(<BattlefieldGrid combat={combat} tab="overview" zoom="fit" mapSize={40} />);
+                rerender(<BattlefieldGrid combat={combat} tab="overview" zoom={1} mapSize={40} />);
+
+                // Back in follow mode the camera is Jean-centred again, so
+                // the archer is once more just past the edge.
+                expect(screen.queryByText('A')).toBeNull();
+                expect(screen.getByLabelText(/off-screen/)).toBeInTheDocument();
+            });
+
+            it('recenter zeroes the window shift as well as the remainder', () => {
+                const { gridEl, panLayer } = renderPannableGrid({ combat: archerAt(13, 6), mapSize: 40 });
+                drag(gridEl, [200, 200], [100, 200]);
+                expect(screen.getByText('A')).toBeInTheDocument();
+
+                act(() => { fireEvent.click(screen.getByTitle('Recenter the map')); vi.advanceTimersByTime(1000); });
+
+                expect(panLayer.style.transform).toBe('translate(0.0px, 0.0px)');
+                expect(screen.queryByText('A')).toBeNull();
+                expect(screen.queryByTitle('Recenter the map')).toBeNull();
+            });
+
+            it('keeps the window shift across a same-fight reinit and drops it for a new fight', () => {
+                const combat = archerAt(13, 6);
+                const { gridEl, rerender } = renderPannableGrid({
+                    combat, mapSize: 40, combatId: 'fight-0001', combatActive: true,
+                });
+                drag(gridEl, [200, 200], [100, 200]);
+                expect(screen.getByText('A')).toBeInTheDocument();
+
+                rerender(<BattlefieldGrid combat={{ ...combat }} tab="overview" zoom={1} mapSize={40} combatId="fight-0001" combatActive />);
+                expect(screen.getByText('A')).toBeInTheDocument();
+
+                rerender(<BattlefieldGrid combat={combat} tab="overview" zoom={1} mapSize={40} combatId="fight-0002" combatActive />);
+                expect(screen.queryByText('A')).toBeNull();
+            });
+
+            it('does nothing but stays quiet when the viewport has no measurable size', () => {
+                // jsdom's default rect is 0x0. With no cell size to convert
+                // through, a drag must neither throw nor produce NaN
+                // transforms — it just cannot move anything.
+                const { container } = render(
+                    <BattlefieldGrid combat={archerAt(13, 6)} tab="overview" zoom={1} mapSize={40} />
+                );
+                const gridEl = container.firstChild;
+                drag(gridEl, [200, 200], [100, 200]);
+
+                expect(panTransform(container)).toBe('translate(0.0px, 0.0px)');
+                expect(screen.queryByText('A')).toBeNull();
+            });
+        });
 
         it('keeps a touch pan where the player left it instead of springing back', () => {
             const { gridEl, panLayer } = renderPannableGrid();
@@ -1910,12 +2134,14 @@ describe('BattlefieldGrid', () => {
             fireEvent.touchStart(gridEl, { touches: [{ clientX: 100, clientY: 100 }] });
             fireEvent.touchMove(gridEl, { touches: [{ clientX: 60, clientY: 80 }] });
             fireEvent.touchEnd(gridEl);
-            expect(panLayer.style.transform).toBe('translate(-40.0px, -20.0px)');
+            // -40px on x is one whole cell of window shift plus the remainder
+            // as a translate; -20px on y is under a cell, so all remainder.
+            expect(panLayer.style.transform).toBe(translate(-40 + CELL, -20));
 
             // The old behaviour decayed the offset to zero on release, which
             // made the advertised "drag to pan" affordance do nothing at all.
             act(() => vi.advanceTimersByTime(1000));
-            expect(panLayer.style.transform).toBe('translate(-40.0px, -20.0px)');
+            expect(panLayer.style.transform).toBe(translate(-40 + CELL, -20));
         });
 
         it('offers a recenter control once panned, and it returns the map to center', () => {
@@ -1925,7 +2151,7 @@ describe('BattlefieldGrid', () => {
             fireEvent.mouseDown(gridEl, { button: 0, clientX: 100, clientY: 100 });
             fireEvent.mouseMove(window, { clientX: 60, clientY: 80 });
             fireEvent.mouseUp(window);
-            expect(panLayer.style.transform).toBe('translate(-40.0px, -20.0px)');
+            expect(panLayer.style.transform).toBe(translate(-40 + CELL, -20));
 
             const recenter = screen.getByTitle('Recenter the map');
             act(() => { fireEvent.click(recenter); vi.advanceTimersByTime(1000); });
@@ -1941,20 +2167,22 @@ describe('BattlefieldGrid', () => {
             // on the detached node and panning is dead for the rest of the
             // session — with nothing on screen to suggest why.
             const { rerender, getByTestId } = render(
-                <BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />
+                <BattlefieldGrid combat={pannableCombat} tab="overview" zoom={1} mapSize={40} />
             );
-            rerender(<BattlefieldGrid combat={mockCombat} tab="enemies" zoom={1} />);
-            rerender(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+            rerender(<BattlefieldGrid combat={pannableCombat} tab="enemies" zoom={1} mapSize={40} />);
+            rerender(<BattlefieldGrid combat={pannableCombat} tab="overview" zoom={1} mapSize={40} />);
 
             const gridEl = document.querySelector('[style*="cursor: grab"]');
             gridEl.getBoundingClientRect = () => ({ width: 400, height: 400, top: 0, left: 0, right: 400, bottom: 400 });
             const panLayer = getByTestId('battlefield-viewport').firstChild;
+            panLayer.getBoundingClientRect = gridEl.getBoundingClientRect;
 
             fireEvent.mouseDown(gridEl, { button: 0, clientX: 100, clientY: 100 });
             fireEvent.mouseMove(window, { clientX: 70, clientY: 90 });
             fireEvent.mouseUp(window);
 
-            expect(panLayer.style.transform).toBe('translate(-30.0px, -10.0px)');
+            // Both under one cell, so the whole drag is remainder.
+            expect(panLayer.style.transform).toBe(translate(-30, -10));
         });
 
         it('does not clear the selected combatant when a drag ends over the map', () => {
@@ -1998,11 +2226,12 @@ describe('BattlefieldGrid', () => {
         // changes only when a genuinely new combat starts. The camera reset is
         // keyed on it, so both halves have to hold.
         describe('pan reset keyed on combat_id', () => {
+            const panned = translate(-40 + CELL, -20);
             const panTo = (container, gridEl) => {
                 fireEvent.mouseDown(gridEl, { button: 0, clientX: 100, clientY: 100 });
                 fireEvent.mouseMove(window, { clientX: 60, clientY: 80 });
                 fireEvent.mouseUp(window);
-                expect(panTransform(container)).toBe('translate(-40.0px, -20.0px)');
+                expect(panTransform(container)).toBe(panned);
             };
 
             it('keeps the pan across a reinit that reuses the same combat_id', () => {
@@ -2015,14 +2244,15 @@ describe('BattlefieldGrid', () => {
                 // A wave transition: new enemies, SAME fight, same combat_id.
                 rerender(
                     <BattlefieldGrid
-                        combat={{ ...mockCombat, enemies: [...mockCombat.enemies] }}
+                        combat={{ ...pannableCombat, enemies: [...pannableCombat.enemies] }}
                         tab="overview"
                         zoom={1}
+                        mapSize={40}
                         combatId="fight-0001"
                         combatActive
                     />
                 );
-                expect(panTransform(container)).toBe('translate(-40.0px, -20.0px)');
+                expect(panTransform(container)).toBe(panned);
             });
 
             it('recentres the camera when a genuinely new fight starts', () => {
@@ -2034,9 +2264,10 @@ describe('BattlefieldGrid', () => {
 
                 rerender(
                     <BattlefieldGrid
-                        combat={mockCombat}
+                        combat={pannableCombat}
                         tab="overview"
                         zoom={1}
+                        mapSize={40}
                         combatId="fight-0002"
                         combatActive
                     />
@@ -2053,9 +2284,10 @@ describe('BattlefieldGrid', () => {
 
                 rerender(
                     <BattlefieldGrid
-                        combat={mockCombat}
+                        combat={pannableCombat}
                         tab="overview"
                         zoom={1}
+                        mapSize={40}
                         combatId="fight-0001"
                         combatActive={false}
                     />
