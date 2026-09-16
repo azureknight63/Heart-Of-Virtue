@@ -171,6 +171,67 @@ describe('BattlefieldGrid', () => {
             expect(screen.queryByLabelText(/Move resolves in/)).toBeNull();
         });
 
+        // Issue #586: King Slime's Tidal Surge (a full-to-dead hit) wound up
+        // behind the same badge and glow as a routine NpcAttack, because both
+        // are "Offensive". The wire's telegraph_severity now drives a glyph,
+        // a heavier ring and a labelled countdown — none of it colour-only.
+        describe('heavy-move telegraph', () => {
+            const surge = {
+                name: 'Tidal Surge', display_name: 'Tidal Surge', category: 'Offensive',
+                current_stage: 0, beats_left: 2, beats_until_resolve: 7, telegraph_severity: 'deadly',
+            };
+            const withEnemyMove = (current_move) => ({
+                ...mockCombat,
+                enemies: [{ ...mockCombat.enemies[0], name: 'King Slime', current_move }],
+            });
+
+            it('labels the countdown by severity and prefixes a warning glyph', () => {
+                render(<BattlefieldGrid combat={withEnemyMove(surge)} tab="overview" zoom={1} />);
+                const badge = screen.getByLabelText('Deadly move — resolves in 7 beats');
+                expect(badge.textContent).toContain('⚠');
+                expect(badge.textContent).toContain('7');
+                expect(screen.queryByLabelText('Move resolves in 7 beats')).toBeNull();
+            });
+
+            it('makes the token ring visibly heavier, not just a different colour', () => {
+                render(<BattlefieldGrid combat={withEnemyMove(surge)} tab="overview" zoom={1} />);
+                const marker = screen.getByLabelText('King Slime: 50/50 HP');
+                expect(marker.style.borderStyle).toBe('dashed');
+                expect(marker.style.borderWidth).toBe('4px');
+            });
+
+            it('uses the plain label and ring for a routine wind-up (negative control)', () => {
+                render(<BattlefieldGrid combat={withEnemyMove(pendingMove)} tab="overview" zoom={1} />);
+                const badge = screen.getByLabelText('Move resolves in 7 beats');
+                expect(badge.textContent).not.toContain('⚠');
+                const marker = screen.getByLabelText('King Slime: 50/50 HP');
+                expect(marker.style.borderStyle).toBe('');
+                expect(screen.queryByLabelText(/Deadly move|Heavy move/)).toBeNull();
+            });
+
+            it('does not warn about a friendly heavy move — the cue is a threat to Jean', () => {
+                const combat = {
+                    ...mockCombat,
+                    player: { ...mockCombat.player, current_move: { ...surge, telegraph_severity: 'heavy' } },
+                };
+                render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+                expect(screen.getByLabelText('Move resolves in 7 beats')).toBeInTheDocument();
+                expect(screen.queryByLabelText(/Heavy move/)).toBeNull();
+            });
+
+            it('spells the severity out in the enemies list', () => {
+                render(<BattlefieldGrid combat={withEnemyMove(surge)} tab="enemies" zoom={1} />);
+                expect(
+                    screen.getByText(/⚠ DEADLY — Preparing: Tidal Surge/).textContent
+                ).toMatch(/resolves in 7 beats/);
+            });
+
+            it('keeps the enemies-list line plain for a routine wind-up', () => {
+                render(<BattlefieldGrid combat={withEnemyMove(pendingMove)} tab="enemies" zoom={1} />);
+                expect(screen.getByText(/Preparing: Reap/).textContent).not.toContain('⚠');
+            });
+        });
+
         it('marks off-screen enemies with an edge chevron and their distance', () => {
             const combat = {
                 ...mockCombat,

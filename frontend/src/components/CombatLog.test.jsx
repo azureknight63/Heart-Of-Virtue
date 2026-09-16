@@ -290,8 +290,46 @@ describe('CombatLog', () => {
       }
       expect(appends, 'found no direct combat_log appends to read').toBeGreaterThan(0);
 
+      // Types minted by CombatOutputCapture.write rather than passed to
+      // _add_log_entry as a literal are declared as `*_LOG_TYPE = "..."`
+      // module constants in combat_adapter.py (issue #586 added the first,
+      // TELEGRAPH_LOG_TYPE), which is the shape this clause reads.
+      let declared = 0;
+      for (const match of adapter.matchAll(/^[A-Z_]+_LOG_TYPE\s*=\s*"(\w+)"/gm)) {
+        declared += 1;
+        types.add(match[1]);
+      }
+      expect(declared, 'found no *_LOG_TYPE declarations to read').toBeGreaterThan(0);
+
       return types;
     };
+
+    // Issue #586: the wind-up line of a heavy enemy move is minted
+    // "telegraph" so it can read differently from the body of the fight —
+    // and not by colour alone (pillar 5), hence a glyph with an accessible
+    // name.
+    describe('the telegraph type', () => {
+      it('is one of the engine types this table colours', () => {
+        expect([...engineEntryTypes()]).toContain('telegraph');
+        expect(LOG_ENTRY_COLORS).toHaveProperty('telegraph');
+      });
+
+      it('prefixes a warning glyph a screen reader can name', () => {
+        render(<CombatLog log={[
+          { type: 'combat', message: 'The slime coils.', timestamp: '12:00:00' },
+          { type: 'telegraph', message: 'It is about to surge.', timestamp: '12:00:01' },
+        ]} />);
+        const list = screen.getByTestId('combat-log-entries');
+        const warning = within(list).getByRole('img', { name: 'Warning' });
+        expect(warning.textContent).toBe('⚠');
+        expect(warning.closest('div').textContent).toContain('It is about to surge.');
+        // Negative control: the ordinary line carries no glyph.
+        const routine = [...list.querySelectorAll('div')]
+          .find((el) => el.textContent.includes('The slime coils.'));
+        expect(routine.textContent).not.toContain('⚠');
+        expect(within(list).getAllByRole('img', { name: 'Warning' })).toHaveLength(1);
+      });
+    });
 
     it('colours exactly the types the engine can send, minus the one it hides', () => {
       const engine = engineEntryTypes();

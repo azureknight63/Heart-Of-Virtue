@@ -393,6 +393,9 @@ class TelegraphedSurge(NpcAttack):
                                      (src/moves/_base.py); evaluate() below
                                      scales NpcAttack's rolled power by it
         _EXTRA_PREP_BEATS   int    — extra beats added to prep phase (dodge window)
+        telegraph_severity  str    — "heavy" for the whole family (set here);
+                                     a boss-tier member overrides to "deadly".
+                                     Documented on ``Move``.
         _prep_text(npc)     str    — yellow telegraph line shown during wind-up
         _hit_text(npc, target_name)  str  — red line shown on impact
         _recoil_text(npc)   str    — plain line shown after surge
@@ -400,6 +403,10 @@ class TelegraphedSurge(NpcAttack):
     display_name = 'Telegraphed Surge'
 
     web_animation = "shockwave"
+
+    # Every surge is a heavy blow behind a long wind-up — that is the point of
+    # the family — so the opt-in is made once here and inherited.
+    telegraph_severity = "heavy"
 
     _EXTRA_PREP_BEATS = 0
 
@@ -479,6 +486,9 @@ class TidalSurge(TelegraphedSurge):
 
     _DAMAGE_MULTIPLIER = 2.5
     _EXTRA_PREP_BEATS = 5
+    # 2.5x of King Slime's 50 damage is 84-134 against a 114 HP Jean: a
+    # full-to-dead hit, which is what "deadly" means (issue #586).
+    telegraph_severity = "deadly"
 
     def __init__(self, npc):
         super().__init__(npc)
@@ -520,6 +530,9 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
     _POWER_ROLL_MIN = 1.5
     _POWER_ROLL_MAX = 3.0
     _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
+    # A 2.25x blow outside the TelegraphedSurge family — the case the #586
+    # audit walks every exported move for, rather than one base class.
+    telegraph_severity = "heavy"
 
     def __init__(self, npc):
         description = ""

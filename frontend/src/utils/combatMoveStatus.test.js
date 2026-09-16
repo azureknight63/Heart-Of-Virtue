@@ -6,8 +6,64 @@ import {
   beatsUntilResolve,
   moveAvailability,
   moveDamagePreview,
+  telegraphSeverity,
+  telegraphWarning,
   NO_REACHABLE_TARGET_REASON,
 } from './combatMoveStatus';
+
+// Issue #586: King Slime's Tidal Surge (2.5x, a full-to-dead hit) was
+// telegraphed identically to a routine NpcAttack wind-up because both are
+// "Offensive". The serializer now carries Move.telegraph_severity
+// (src/moves/_base.py) as `telegraph_severity`; these read it.
+describe('telegraphSeverity', () => {
+  it('passes the engine vocabulary through', () => {
+    expect(telegraphSeverity({ telegraph_severity: 'heavy' })).toBe('heavy');
+    expect(telegraphSeverity({ telegraph_severity: 'deadly' })).toBe('deadly');
+    expect(telegraphSeverity({ telegraph_severity: 'normal' })).toBe('normal');
+  });
+
+  it('defaults to normal when the field is absent — the pre-#586 payload', () => {
+    expect(telegraphSeverity({ name: 'NPC_Attack', current_stage: 0 })).toBe('normal');
+  });
+
+  it('treats no move, a legacy string move, and an unknown value as normal', () => {
+    expect(telegraphSeverity(null)).toBe('normal');
+    expect(telegraphSeverity(undefined)).toBe('normal');
+    expect(telegraphSeverity('Attacking')).toBe('normal');
+    // The vocabulary is closed on the Python side; a value outside it must
+    // not be handed to a label lookup as though it were a severity.
+    expect(telegraphSeverity({ telegraph_severity: 'apocalyptic' })).toBe('normal');
+  });
+
+  it('does not mistake an Object.prototype key for a severity', () => {
+    // A bracket read of the label table would find `constructor` truthy and
+    // pass it through as a severity; the table must be read prototype-safely
+    // (utils/lookup.js), like every other table in the client.
+    expect(telegraphSeverity({ telegraph_severity: 'constructor' })).toBe('normal');
+    expect(telegraphWarning({ current_stage: 0, beats_until_resolve: 3, telegraph_severity: 'toString' })).toBeNull();
+  });
+});
+
+describe('telegraphWarning', () => {
+  const pending = (severity) => ({
+    name: 'Tidal Surge', current_stage: 0, beats_until_resolve: 7, telegraph_severity: severity,
+  });
+
+  it('is null for a routine wind-up, so the glyph marks nothing ordinary', () => {
+    expect(telegraphWarning(pending('normal'))).toBeNull();
+    expect(telegraphWarning(pending(undefined))).toBeNull();
+    expect(telegraphWarning(null)).toBeNull();
+  });
+
+  it('names a heavy and a deadly wind-up', () => {
+    expect(telegraphWarning(pending('heavy'))).toEqual({ severity: 'heavy', label: 'Heavy move' });
+    expect(telegraphWarning(pending('deadly'))).toEqual({ severity: 'deadly', label: 'Deadly move' });
+  });
+
+  it('is null once the move has resolved — a spent surge is not a threat', () => {
+    expect(telegraphWarning({ ...pending('deadly'), current_stage: 3 })).toBeNull();
+  });
+});
 
 describe('formatCombatMoveStatus', () => {
   it.each([

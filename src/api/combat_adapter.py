@@ -544,6 +544,63 @@ def _take_resolution(pending: dict, beat: Optional[int] = None) -> dict:
     return animation
 
 
+#: Log-entry ``type`` of a hostile heavy move's wind-up line (issue #586).
+#:
+#: Every NPC line used to reach the client as ``"combat"``, the body-text
+#: type, so King Slime's Tidal Surge announcement — the one line the player
+#: has to act on — was indistinguishable from the swing before it. The
+#: move's inline ``colored(..., "yellow")`` never helps: ``narrate`` honours
+#: only its ``color=`` keyword and the API does not forward narration colour
+#: anyway; CombatLog.jsx colours by ``entry.type`` alone. Minting the line
+#: as its own type is what lets ``LOG_ENTRY_COLORS`` there paint it and
+#: prefix a ⚠ glyph. CombatLog.test.jsx derives the engine's type
+#: vocabulary from this module and reads ``*_LOG_TYPE`` declarations like
+#: this one, so a new type belongs in a constant of this shape.
+TELEGRAPH_LOG_TYPE = "telegraph"
+
+#: Types that feed ``player.last_move_summary`` — the wire's
+#: ``last_move_outcome`` and the strategist prompt's ``last_move``. A type
+#: left off this list is dropped from both: ``animation`` deliberately,
+#: since it is bookkeeping, and ``telegraph`` would have been by accident.
+SUMMARY_LOG_TYPES = ("combat", "player_action", TELEGRAPH_LOG_TYPE)
+
+#: How many of those lines the summary keeps.
+SUMMARY_LOG_LINES = 5
+
+
+def summarize_recent_log(log):
+    """The last :data:`SUMMARY_LOG_LINES` readable lines of ``log``, joined."""
+    lines = [
+        entry["message"] for entry in log if entry.get("type") in SUMMARY_LOG_TYPES
+    ]
+    return " ".join(lines[-SUMMARY_LOG_LINES:])
+
+
+def _is_hostile_heavy_windup(entity, player):
+    """Whether a line ``entity`` narrates right now is a heavy-move telegraph.
+
+    Three conditions, each load-bearing:
+
+    * ``entity`` is an ENEMY. The type is a threat cue for Jean; an ally
+      charging a heavy blow is not something the player must get clear of.
+      Jean has no ``friend`` flag of his own, hence the identity check.
+    * the in-progress move declares a non-"normal" ``telegraph_severity``
+      (src/moves/_base.py) — the move opts in, the adapter does not guess
+      from the multiplier.
+    * the move is in its WIND-UP stage. ``Move.cast`` sets ``current_stage``
+      to 0 before it narrates the prep announcement, and ``Move.advance``
+      has already stepped to stage 1 by the time ``execute`` narrates the
+      hit, so this marks the moment the player can still react and not
+      the blow itself.
+    """
+    if entity is None or entity is player or getattr(entity, "friend", False):
+        return False
+    move = getattr(entity, "current_move", None)
+    if move is None or getattr(move, "current_stage", None) != 0:
+        return False
+    return getattr(move, "telegraph_severity", "normal") != "normal"
+
+
 class CombatOutputCapture:
     """Captures print statements and stores them in a combat log."""
 
@@ -603,10 +660,17 @@ class CombatOutputCapture:
                             pending, getattr(self.player, "combat_beat", None)
                         )
 
+                # The same `entity` decides the type: a hostile heavy move's
+                # wind-up line is TELEGRAPH_LOG_TYPE, everything else is the
+                # body-text type `_add_log_entry` defaults to.
                 entry = {
                     "round": self.current_round,
                     "message": clean_text,
-                    "type": "combat",
+                    "type": (
+                        TELEGRAPH_LOG_TYPE
+                        if _is_hostile_heavy_windup(entity, self.player)
+                        else "combat"
+                    ),
                     "timestamp": datetime.now().strftime("%H:%M:%S"),
                 }
                 if trigger_anim_data:
@@ -2514,14 +2578,7 @@ class ApiCombatAdapter:
                     break
 
         # Capture last move summary from the log entries of this move
-        move_logs = [
-            s["message"]
-            for s in self.player.combat_log
-            if s.get("type") in ("combat", "player_action")
-        ][
-            -5:
-        ]  # Last 5 relevant entries
-        self.player.last_move_summary = " ".join(move_logs)
+        self.player.last_move_summary = summarize_recent_log(self.player.combat_log)
 
         self._flush_pending_animations()
 
@@ -4228,10 +4285,12 @@ class ApiCombatAdapter:
         if new_entries:
             current_beat = getattr(self.player, "combat_beat", 0)
             for entry in new_entries:
+                # The type is decided where the acting entity is known —
+                # CombatOutputCapture.write — and carried through here.
                 self._add_log_entry(
                     current_beat,
                     entry["message"],
-                    "combat",
+                    entry["type"],
                     self.current_beat_state_index,
                     timestamp=entry.get("timestamp"),
                 )

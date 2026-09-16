@@ -1,3 +1,5 @@
+import { lookupOr } from './lookup';
+
 const STAGE_LABELS = {
   0: 'Preparing',
   1: 'Using',
@@ -76,6 +78,69 @@ export function formatCombatMoveStatus(move, stage, displayName) {
 export function displayNameOf(value) {
   if (!value) return null;
   return typeof value === 'string' ? value : (value.display_name || value.name);
+}
+
+/**
+ * The glyph that marks a heavy or deadly enemy wind-up everywhere it is
+ * shown (countdown badge, enemies list, beat timeline, combat log). One
+ * constant so the four surfaces cannot drift; a glyph rather than a colour
+ * because state is never conveyed by colour alone (pillar 5).
+ */
+export const TELEGRAPH_GLYPH = '⚠';
+
+// Labels for the non-default severities. Doubles as the closed vocabulary:
+// a value with no label here is not a severity the client knows, and
+// `telegraphSeverity` folds it back to 'normal' rather than passing an
+// arbitrary string on to a lookup.
+const TELEGRAPH_LABELS = {
+  heavy: 'Heavy move',
+  deadly: 'Deadly move',
+};
+
+/**
+ * The move's declared `telegraph_severity` — 'normal' | 'heavy' | 'deadly'
+ * (issue #586). A passthrough of `Move.telegraph_severity`
+ * (src/moves/_base.py), which the move itself opts into; nothing is derived
+ * from the damage multiplier here.
+ *
+ * Defaults to 'normal' when absent — the pre-#586 payload, a legacy string
+ * move, or no move at all — so an older server degrades to the plain
+ * telegraph rather than throwing.
+ */
+export function telegraphSeverity(move) {
+  if (!move || typeof move === 'string') return 'normal';
+  const severity = move.telegraph_severity;
+  return telegraphLabel(severity) ? severity : 'normal';
+}
+
+/**
+ * Human label for a non-default severity ('Heavy move' / 'Deadly move'), or
+ * null for 'normal' and anything outside the vocabulary.
+ *
+ * `lookupOr`, not a bracket read: the key comes off the wire, and a bracket
+ * read finds `constructor`/`toString` truthy on any object literal, which
+ * would pass an Object.prototype name through as a severity.
+ */
+export function telegraphLabel(severity) {
+  return lookupOr(TELEGRAPH_LABELS, severity, null);
+}
+
+/**
+ * The warning a pending heavy move earns, or null when there is none.
+ *
+ * Gated on `isMovePending` like every other telegraph: a Tidal Surge in
+ * recoil is history, and a warning on a spent move would be exactly the
+ * "cooldown looks like a wind-up" mistake `isMovePending` exists to stop.
+ * Callers decide WHO earns it — the glyph is a threat cue for Jean, so the
+ * battlefield and timeline apply it to enemies only.
+ *
+ * @returns {?{severity: string, label: string}}
+ */
+export function telegraphWarning(move) {
+  if (!isMovePending(move)) return null;
+  const severity = telegraphSeverity(move);
+  const label = telegraphLabel(severity);
+  return label ? { severity, label } : null;
 }
 
 /**

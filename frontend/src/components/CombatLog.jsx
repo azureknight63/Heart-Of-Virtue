@@ -5,6 +5,7 @@ import GameText from './GameText'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
 import { lookupOr } from '../utils/lookup'
+import { TELEGRAPH_GLYPH } from '../utils/combatMoveStatus'
 import LiveAnnouncer from './LiveAnnouncer'
 
 /**
@@ -28,6 +29,11 @@ import LiveAnnouncer from './LiveAnnouncer'
  *   animation      bookkeeping for the battlefield, never rendered — filtered
  *                  out of `visibleEntries` below, which is why it is the one
  *                  engine type with no colour here.
+ *   telegraph      the wind-up line of a hostile heavy/deadly move
+ *                  (`TELEGRAPH_LOG_TYPE`, minted by the adapter's
+ *                  CombatOutputCapture — issue #586). The one line the
+ *                  player must act on, so it gets the warning colour AND a
+ *                  ⚠ glyph below: colour alone conveys nothing (pillar 5).
  *
  * CombatLog.test.jsx derives that list from the Python and fails if this table
  * and the engine stop agreeing in either direction.
@@ -36,8 +42,12 @@ export const LOG_ENTRY_COLORS = {
   combat: colors.text.main,
   player_action: colors.primary,
   system: colors.gold,
-  info: colors.text.muted
+  info: colors.text.muted,
+  telegraph: colors.secondary
 }
+
+/** Entry types that carry the warning glyph — see `LOG_ENTRY_COLORS`. */
+const TELEGRAPH_TYPE = 'telegraph'
 
 /**
  * One log entry's message as plain speech: no markup, no entities.
@@ -95,7 +105,13 @@ function spokenText(message) {
  */
 function LogAnnouncer({ entries }) {
   const latest = entries[entries.length - 1]
-  const spoken = useMemo(() => (latest ? spokenText(latest.message) : ''), [latest])
+  // A telegraph line is spoken with the same "Warning" the sighted player
+  // gets from the glyph, so the cue is not lost on the way to the reader.
+  const spoken = useMemo(() => {
+    if (!latest) return ''
+    const text = spokenText(latest.message)
+    return latest.type === TELEGRAPH_TYPE ? `Warning: ${text}` : text
+  }, [latest])
 
   return <LiveAnnouncer text={spoken} seq={entries.length} testId="combat-log-announcer" />
 }
@@ -244,8 +260,13 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
                     <span style={{ opacity: 0.5, marginRight: spacing.sm, color: colors.text.muted, fontSize: '11px' }}>
                       [{entry.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}]
                     </span>
+                    {entry.type === TELEGRAPH_TYPE && (
+                      <span role="img" aria-label="Warning" style={{ color: textColor, marginRight: spacing.xs, fontWeight: 'bold' }}>
+                        {TELEGRAPH_GLYPH}
+                      </span>
+                    )}
                     <span
-                      style={{ color: textColor }}
+                      style={{ color: textColor, fontWeight: entry.type === TELEGRAPH_TYPE ? 'bold' : undefined }}
                       dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(entry.message) }}
                     />
                   </div>

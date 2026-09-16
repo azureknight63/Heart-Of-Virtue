@@ -14,7 +14,13 @@ import useBattlefieldAnimations, {
   takeAnimationBatch,
   removeBatchByIdentity,
 } from '../hooks/useBattlefieldAnimations';
-import { formatCombatMoveStatus, isMovePending, beatsUntilResolve } from '../utils/combatMoveStatus';
+import {
+  formatCombatMoveStatus,
+  isMovePending,
+  beatsUntilResolve,
+  telegraphWarning,
+  TELEGRAPH_GLYPH,
+} from '../utils/combatMoveStatus';
 import { useFeatureFlag } from '../utils/featureFlags';
 import { isLiving } from '../utils/combatEntities';
 
@@ -329,6 +335,11 @@ const CombatantMarker = React.memo(({
   const pendingGlowColor = moveCategory ? categoryGlowOrNull(moveCategory) : null;
   const pendingBorderColor = moveCategory ? categoryColorOrNull(moveCategory) : null;
   const beatsToResolve = beatsUntilResolve(move);
+  // Issue #586: a heavy/deadly ENEMY wind-up earns a glyph, a heavier ring
+  // and a labelled countdown, so a Tidal Surge no longer looks like a
+  // routine NpcAttack (both "Offensive"). Enemies only — the cue is a
+  // threat to Jean, not a note on an ally's big hit.
+  const warning = isFriendly ? null : telegraphWarning(move);
   const [isHoveredEffect, setIsHoveredEffect] = useState(false);
 
   // Alignment border: lime for friend/player, red for enemy. When a pending
@@ -402,6 +413,10 @@ const CombatantMarker = React.memo(({
         boxShadow: pendingGlowColor
           ? undefined
           : `0 0 6px 1px ${isFriendly ? colors.alpha.primary[40] : colors.alpha.danger[40]}`,
+        // Heavy-move wind-up (#586): a thicker, dashed ring — a change of
+        // weight and pattern, not of colour, so it survives the palette and
+        // reads on the compact map where the badge below is not drawn.
+        ...(warning ? { borderWidth: '4px', borderStyle: 'dashed' } : {}),
         // Spread last so an active animation's backgroundColor/boxShadow/transform
         // (hit flash, parry/block flash, debuff/drain glow, per-phase source glow)
         // actually take effect instead of being clobbered by the defaults above.
@@ -561,10 +576,14 @@ const CombatantMarker = React.memo(({
             border: '1px solid rgba(0,0,0,0.6)',
             textShadow: 'none',
           }}
-          title={`Resolves ${formatBeatCountdown(beatsToResolve)}`}
-          aria-label={`Move resolves ${formatBeatCountdown(beatsToResolve)}`}
+          title={`${warning ? warning.label : 'Move'} — resolves ${formatBeatCountdown(beatsToResolve)}`}
+          aria-label={
+            warning
+              ? `${warning.label} — resolves ${formatBeatCountdown(beatsToResolve)}`
+              : `Move resolves ${formatBeatCountdown(beatsToResolve)}`
+          }
         >
-          {beatsToResolve}
+          {warning ? `${TELEGRAPH_GLYPH}${beatsToResolve}` : beatsToResolve}
         </div>
       )}
 
@@ -644,6 +663,8 @@ const EnemiesList = React.memo(({ enemies }) => (
         const category = isMovePending(move) ? (move.category || 'Miscellaneous') : null;
         const moveColor = category ? categoryColorOrNull(category) : null;
         const beatsToResolve = beatsUntilResolve(move);
+        // #586: this list is enemies only, so no alignment gate is needed.
+        const warning = telegraphWarning(move);
         return (
           <div
             key={enemy.id ?? `${enemy.name}-${idx}`}
@@ -671,8 +692,10 @@ const EnemiesList = React.memo(({ enemies }) => (
                     earns a line — it just loses the category color that marks
                     live intent, and the countdown. */}
                 {move && (
-                  <GameText size="xs" style={{ marginTop: spacing.xs, color: moveColor || colors.text.muted }}>
-                    ◆ {formatCombatMoveStatus(move)}
+                  <GameText size="xs" style={{ marginTop: spacing.xs, color: moveColor || colors.text.muted, fontWeight: warning ? 'bold' : undefined }}>
+                    {/* Plain text nodes, not a nested span: the severity prefix
+                        and the stage label must read as one line. */}
+                    ◆ {warning ? `${TELEGRAPH_GLYPH} ${warning.severity.toUpperCase()} — ` : ''}{formatCombatMoveStatus(move)}
                     {category && <span style={{ opacity: 0.6 }}> ({category})</span>}
                     {beatsToResolve !== null && (
                       <span style={{ opacity: 0.85 }}> — resolves {formatBeatCountdown(beatsToResolve)}</span>
