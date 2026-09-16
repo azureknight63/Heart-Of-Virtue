@@ -257,3 +257,73 @@ class TestBothInteractionArmsShipTheSameEventShape:
         events = result.get("events_triggered") or []
         assert len(events) == 1, events
         assert events[0].get("event_id") in session_data.get("pending_events", {})
+
+
+# ---------------------------------------------------------------------------
+# Stacked items are counted once in engine-side labels (#565 engine half)
+# ---------------------------------------------------------------------------
+
+def _make_stacked_sap_container():
+    """An opened Container whose two DriedCrystalSap merge into one x2 stack."""
+    from src.items import DriedCrystalSap
+
+    container = Container(
+        name="Old Chest",
+        nickname="old chest",
+        inventory=[DriedCrystalSap(), DriedCrystalSap()],
+        start_open=True,
+    )
+    # Precondition: stack_items() merged them and stack_grammar baked the count.
+    assert len(container.inventory) == 1
+    assert container.inventory[0].count == 2
+    assert container.inventory[0].name == "Dried Crystal Sap x2"
+    return container
+
+
+class TestStackedItemLabelsCountOnce:
+    def test_take_all_narration_names_stack_once(self, narrated):
+        container = _make_stacked_sap_container()
+        player, _ = _make_player_on_tile(container)
+
+        messages = narrated(container.take_all, player)
+        texts = [m.get("text", "") for m in messages]
+        takes = [t for t in texts if t.startswith("Jean takes")]
+
+        assert takes == ["Jean takes 2× Dried Crystal Sap."]
+        assert "x2" not in takes[0]
+
+    def test_loot_event_option_label_counts_once(self):
+        container = _make_stacked_sap_container()
+        player, _ = _make_player_on_tile(container)
+
+        event = LootEvent("loot", player, None, container)
+        labels = [o["label"] for o in event.input_options]
+
+        assert labels[0] == "Take Dried Crystal Sap (2)"
+        assert "x2" not in labels[0]
+
+    def test_unstacked_item_labels_unchanged(self, narrated):
+        # Negative control: a single item carries no suffix and gets no count.
+        container = _make_container(num_items=1)
+        player, _ = _make_player_on_tile(container)
+        name = container.inventory[0].name
+        assert " x" not in name
+
+        event = LootEvent("loot", player, None, container)
+        assert event.input_options[0]["label"] == f"Take {name}"
+
+        messages = narrated(container.take_all, player)
+        takes = [m.get("text", "") for m in messages if m.get("text", "").startswith("Jean takes")]
+        assert takes == [f"Jean takes {name}."]
+
+    def test_stack_base_name_helper_is_conservative(self):
+        from src.items import stack_base_name
+
+        sap = SimpleNamespace(name="Dried Crystal Sap x3", count=3)
+        assert stack_base_name(sap) == "Dried Crystal Sap"
+        # Suffix that does not match the stack size is part of the name.
+        odd = SimpleNamespace(name="Potion x3", count=2)
+        assert stack_base_name(odd) == "Potion x3"
+        # No count attribute at all: name passes through.
+        plain = SimpleNamespace(name="Rusty Key")
+        assert stack_base_name(plain) == "Rusty Key"

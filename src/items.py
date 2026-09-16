@@ -1,11 +1,44 @@
 from __future__ import annotations
 import copy
 import importlib
+import re
 import random
 import math
 from src.narration import colored, cprint, narrate
 import src.functions as functions
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
+
+# A space, then `x` or `×`, then digits, at the very end of a name -- the
+# suffix ``stack_grammar()`` bakes into ``item.name`` ("Dried Crystal Sap x2").
+_BAKED_STACK_COUNT = re.compile(r"\s[x×](\d+)$", re.IGNORECASE)
+
+
+def stack_base_name(item) -> str:
+    """Return ``item.name`` without the ``stack_grammar()`` count suffix.
+
+    Engine copy of the client's ``stackDisplayName`` (frontend/src/utils/
+    stackName.js). Callers that print their own quantity next to the name
+    (``Container.take_all``, ``LootEvent._rebuild_options``) use this so a
+    stacked item is not counted twice ("2× Dried Crystal Sap x2").
+
+    Deliberately conservative: the suffix is dropped only when its number
+    equals the stack size the item reports, so an item genuinely named
+    "Potion x3" sitting two-to-a-stack keeps its name.
+    """
+    name = getattr(item, "name", "")
+    if not isinstance(name, str):
+        return ""
+    try:
+        size = int(getattr(item, "count", 1))
+    except (TypeError, ValueError):
+        return name
+    if size <= 1:
+        return name
+    baked = _BAKED_STACK_COUNT.search(name)
+    if baked and int(baked.group(1)) == size:
+        return name[: baked.start()]
+    return name
+
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
     from src.player import Player  # noqa
