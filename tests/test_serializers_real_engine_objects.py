@@ -268,19 +268,22 @@ class TestItemComparisonFromRealItems:
 
         assert not hasattr(LeatherArmor(), "damage")
 
+    # Dagger (piercing) vs Longsword (slashing) was the original pair here;
+    # since #571 cross-type weapons are not ranked, so the #412 check uses
+    # two piercing daggers — same category, same type, different damage.
     def test_weaker_weapon_is_a_downgrade(self):
-        from src.items import Dagger, Longsword
+        from src.items import Dagger, RustedDagger
 
-        result = ItemComparisonSerializer.serialize(Longsword(), Dagger())
+        result = ItemComparisonSerializer.serialize(Dagger(), RustedDagger())
 
         assert result["differences"]["damage_diff"] < 0
         assert result["differences"]["protection_diff"] == 0
         assert result["recommendation"] == "downgrade"
 
     def test_stronger_weapon_is_an_upgrade(self):
-        from src.items import Dagger, Longsword
+        from src.items import Dagger, RustedDagger
 
-        result = ItemComparisonSerializer.serialize(Dagger(), Longsword())
+        result = ItemComparisonSerializer.serialize(RustedDagger(), Dagger())
 
         assert result["recommendation"] == "upgrade"
 
@@ -300,11 +303,95 @@ class TestItemComparisonFromRealItems:
 
         assert result["recommendation"] == "upgrade"
 
-    def test_equal_damage_weapons_are_a_sidegrade(self):
+    def test_equal_damage_weapons_of_the_same_type_are_a_sidegrade(self):
+        """Same base damage type, same damage: the ladder still applies and
+        the verdict is "sidegrade" (#412). Longsword/Shortsword are both
+        slashing, so the only trade-off is weight."""
+        from src.items import Longsword, Shortsword
+
+        current, candidate = Longsword(), Shortsword()
+        candidate.damage = current.damage  # equalize; keep both slashing
+
+        result = ItemComparisonSerializer.serialize(current, candidate)
+
+        assert result["recommendation"] == "sidegrade"
+
+    def test_equal_damage_weapons_of_different_types_are_not_ranked(self):
+        """Mace (crushing) vs Shortsword (slashing) used to be "sidegrade"
+        purely because their damage numbers matched. That was a coincidence,
+        not a verdict: the two weapons hit different resistance tables, so
+        the serializer must not rank them at all (#571) — the same reason the
+        beta loadout's Rusted Iron Mace must not read "DOWNGRADE"."""
         from src.items import Mace, Shortsword
 
-        # Both deal 25 damage; the trade-off is weight/subtype, not power.
+        # Both deal 25 damage; the trade-off is damage type, not power.
         assert Mace().damage == Shortsword().damage
         result = ItemComparisonSerializer.serialize(Mace(), Shortsword())
 
-        assert result["recommendation"] == "sidegrade"
+        assert result["recommendation"] == "different_type"
+
+    # -- Issue #571 — cross-damage-type weapons are not ranked ------------
+
+    def test_beta_loadout_mace_vs_shortsword_is_different_type(self):
+        """config_grondia_beta.ini starts Jean with a slashing Shortsword and
+        a crushing Rusted Iron Mace. Every enemy on that route resists
+        slashing and is weak to crushing, so "DOWNGRADE" on the mace (damage
+        15 < 25) contradicts the engine. Cross-type weapons get a neutral
+        verdict; the reason line names both types so the player can decide."""
+        from src.items import RustedIronMace, Shortsword
+
+        current, candidate = Shortsword(), RustedIronMace()
+        result = ItemComparisonSerializer.serialize(current, candidate)
+
+        assert result["recommendation"] == "different_type"
+        reason = result["reason"].lower()
+        assert "slashing" in reason
+        assert "crushing" in reason
+        # Raw numbers are still reported — the diff is a fact, the ranking
+        # was the lie.
+        assert result["differences"]["damage_diff"] == -10
+        assert "Damage -10" in result["reason"]
+
+    def test_beta_loadout_is_symmetric(self):
+        """The verdict does not depend on which weapon is equipped."""
+        from src.items import RustedIronMace, Shortsword
+
+        result = ItemComparisonSerializer.serialize(RustedIronMace(), Shortsword())
+
+        assert result["recommendation"] == "different_type"
+        assert result["differences"]["damage_diff"] == 10
+
+    def test_comparison_sides_carry_damage_type_and_subtype(self):
+        """`comparison.current`/`comparison.candidate` come from
+        ItemDetailSerializer, which omitted the weapon's type — the inventory
+        row had it, the comparison did not, so the client had nothing to
+        explain the verdict with."""
+        from src.items import RustedIronMace, Shortsword
+
+        result = ItemComparisonSerializer.serialize(Shortsword(), RustedIronMace())
+
+        assert result["current"]["damage_type"] == "slashing"
+        assert result["current"]["subtype"] == "Sword"
+        assert result["candidate"]["damage_type"] == "crushing"
+        assert result["candidate"]["subtype"] == "Bludgeon"
+
+    def test_same_type_weapons_are_still_ranked(self):
+        """Longsword vs Shortsword are both slashing: #571 must not silence
+        the upgrade/downgrade verdict where it is legitimate."""
+        from src.items import Longsword, Shortsword
+
+        assert ItemComparisonSerializer.serialize(
+            Shortsword(), Longsword()
+        )["recommendation"] == "upgrade"
+        assert ItemComparisonSerializer.serialize(
+            Longsword(), Shortsword()
+        )["recommendation"] == "downgrade"
+
+    def test_armor_is_never_different_type(self):
+        """Armor has no damage type; the cross-type branch is weapons-only."""
+        from src.items import IronCuirass, LeatherArmor
+
+        result = ItemComparisonSerializer.serialize(LeatherArmor(), IronCuirass())
+
+        assert result["recommendation"] == "upgrade"
+        assert "damage_type" not in result["candidate"]
