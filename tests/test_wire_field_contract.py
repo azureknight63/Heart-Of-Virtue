@@ -1881,6 +1881,27 @@ class TestInventoryWireContract:
             "damage_diff", "protection_diff", "weight_diff", "value_diff",
             "bonus_diffs", "resistance_diffs", "status_resistance_diffs",
         }
+        # Both sides are ItemDetailSerializer output; for weapons they carry
+        # the base damage type and subtype so a `different_type` verdict (#571)
+        # can be explained on the client, not just asserted.
+        for side in ("current", "candidate"):
+            assert comparison[side]["damage_type"] == "slashing", side
+            assert comparison[side]["subtype"] == "Sword", side
+
+    def test_comparison_verdict_vocabulary(self):
+        """ItemDetailDialog's REC_LABELS/REC_COLORS key off `recommendation`;
+        every verdict the serializer can emit must be in that vocabulary."""
+        from src.api.serializers.inventory import ItemComparisonSerializer
+        from src.items import IronCuirass, LeatherArmor, Longsword, RustedIronMace, Shortsword
+
+        verdicts = {
+            ItemComparisonSerializer.serialize(None, Longsword())["recommendation"],
+            ItemComparisonSerializer.serialize(Shortsword(), Longsword())["recommendation"],
+            ItemComparisonSerializer.serialize(Longsword(), Shortsword())["recommendation"],
+            ItemComparisonSerializer.serialize(Shortsword(), RustedIronMace())["recommendation"],
+            ItemComparisonSerializer.serialize(LeatherArmor(), IronCuirass())["recommendation"],
+        }
+        assert verdicts == {"upgrade", "downgrade", "different_type"}
 
 
 # ============================================================================

@@ -8,6 +8,7 @@ import { stackDisplayName, stackCountLabel, stackSize, isStackedCount } from '..
 import { apiErrorMessage } from '../utils/apiError'
 import { lookupOr } from '../utils/lookup'
 import { getHpBarColor } from '../utils/entityUtils'
+import { colors } from '../styles/theme'
 
 // Display labels for the scalar stat-bonus keys the backend emits (see
 // inventory.py's _BONUS_ATTRS) — keep in sync if new bonus stats are added.
@@ -24,9 +25,22 @@ const BONUS_STAT_LABELS = {
   weight_tolerance: 'Weight Tolerance',
 }
 
-// Equip-comparison recommendation styling (see inventory.py's ItemComparisonSerializer)
-const REC_COLORS = { upgrade: '#00ff88', downgrade: '#ff6666', sidegrade: '#ffcc00' }
-const REC_LABELS = { upgrade: '↑ UPGRADE', downgrade: '↓ DOWNGRADE', sidegrade: '↔ SIDEGRADE' }
+// Equip-comparison recommendation styling (see inventory.py's ItemComparisonSerializer).
+// `different_type` (#571): weapons of different base damage types are not
+// ranked — the label and the reason line ("Slashing → Crushing, …") carry the
+// meaning, the colour is only a hint.
+const REC_COLORS = {
+  upgrade: '#00ff88',
+  downgrade: '#ff6666',
+  sidegrade: '#ffcc00',
+  different_type: colors.accent,
+}
+const REC_LABELS = {
+  upgrade: '↑ UPGRADE',
+  downgrade: '↓ DOWNGRADE',
+  sidegrade: '↔ SIDEGRADE',
+  different_type: '⇄ DIFFERENT TYPE',
+}
 
 /**
  * The action-message line for an inventory request that THREW.

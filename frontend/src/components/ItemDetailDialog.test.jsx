@@ -991,6 +991,44 @@ describe('ItemDetailDialog', () => {
       render(<ItemDetailDialog item={mockItem} player={mockPlayer} onBack={mockOnBack} />);
       expect(screen.queryByText(/vs\. Equipped/)).toBeNull();
     });
+
+    // Issue #571: a crushing mace vs. a slashing sword is not a DOWNGRADE —
+    // the backend emits `different_type` and a reason naming both types.
+    // The label text and the reason line carry the meaning (never colour
+    // alone), so the raw verdict key must not leak through as the label.
+    it('renders a different_type comparison with the DIFFERENT TYPE label and the typed reason', () => {
+      const mace = makeInventoryItem({
+        name: 'Rusted Iron Mace',
+        subtype: 'Bludgeon',
+        damage: 15,
+        damage_type: 'crushing',
+        comparison: {
+          comparison_type: 'item_to_item',
+          current: { name: 'Shortsword', damage_type: 'slashing', subtype: 'Sword' },
+          candidate: { name: 'Rusted Iron Mace', damage_type: 'crushing', subtype: 'Bludgeon' },
+          differences: {
+            damage_diff: -10,
+            protection_diff: 0,
+            weight_diff: 3,
+            value_diff: -90,
+            bonus_diffs: {},
+            resistance_diffs: {},
+            status_resistance_diffs: {},
+          },
+          recommendation: 'different_type',
+          reason: 'Slashing → Crushing, Damage -10, Weight +3',
+        },
+      });
+      render(<ItemDetailDialog item={mace} player={mockPlayer} onBack={mockOnBack} />);
+
+      expect(screen.getByText(/vs\. Equipped: Shortsword/)).toBeDefined();
+      expect(screen.getByText('⇄ DIFFERENT TYPE')).toBeDefined();
+      expect(screen.queryByText(/DOWNGRADE/)).toBeNull();
+      expect(screen.queryByText('different_type')).toBeNull();
+      expect(screen.getByText('Slashing → Crushing, Damage -10, Weight +3')).toBeDefined();
+      // The raw numbers still show — the diff is a fact, the ranking was the lie.
+      expect(screen.getByText(/DMG -10/)).toBeDefined();
+    });
   });
 
   // ---------------------------------------------------------------------------
