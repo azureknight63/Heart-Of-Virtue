@@ -101,29 +101,49 @@ export default function useCombatLogPlayback(combat, {
   const [prevCombatId, setPrevCombatId] = useState(combat?.combat_id)
   const newCombatResetRef = useRef(false)
   if (combat?.combat_id !== undefined && combat.combat_id !== prevCombatId) {
-    // `useCombat` (useApi.js) starts `combat` at `null` and populates it once,
-    // on whichever status fetch happens to be the page's first — mid-fight or
-    // not. That makes THIS branch's first-ever firing (prevCombatId still
-    // `undefined`) ambiguous between "a fight just started" and "we reloaded
-    // mid-fight and are only now seeing it": both look identical here, a
-    // combat_id appearing where there was none. Only the first case should
-    // suppress reload-recovery below; blindly doing it for both paced a
-    // reload's whole backlog at the live 400ms/line rate, locking the player
-    // out of acting for the length of the backlog (a milder cousin of #508).
+    // Only a genuinely NEW fight replacing a previously-tracked one
+    // (prevCombatId was already a real id) needs to skip the reload-recovery
+    // check below -- that's the per-fight reset this ref exists for.
     //
-    // Same discriminator GamePage already uses for the battlefield's own
-    // reload-recovery flag (`isCombatReloadRecovery`): a genuinely fresh
-    // fight's log holds only `system` narration (or nothing) until a blow
-    // lands, while a fight already under way carries combat/animation/
-    // player_action entries from earlier rounds. Scoped to the first-ever
-    // transition only — an ordinary fight-to-fight change (prevCombatId
-    // already set) keeps pacing normally regardless of what its opening log
-    // looks like.
-    const isMidFightReload = prevCombatId === undefined &&
-      (combat.log || []).some(e => e.type !== 'system')
+    // The FIRST combat_id this hook ever observes is a different case:
+    // `combat` itself starts null (useApi.js's useCombat), so prevCombatId is
+    // still undefined here, and there is no prior fight's dedup state to
+    // protect. But "first ever" is NOT by itself evidence of a reload -- it's
+    // also what a completely ordinary first fight of the session looks like,
+    // the moment its very first status fetch resolves. Two different shapes
+    // of reload land here, and each needs its own signal to tell apart from
+    // that ordinary first fight:
+    //
+    // - Already-ended (#570): `end_state` present means the fight is already
+    //   over, which a fresh live fight's opening payload never has.
+    // - Still active, mid-fight: no `end_state` yet, but a real backlog has
+    //   already accumulated. `end_state` can't help here, so this uses
+    //   `round` (== `combat.beat`, the same underlying `combat_beat` counter
+    //   -- see Battlefield.jsx's `combat?.beat ?? combat?.round` fallback of
+    //   one to the other, and GamePage's own `combat?.round > 1` check for
+    //   the same "fight already under way" question). A brand-new fight's
+    //   very first payload starts at round 1, exactly like the #570 negative
+    //   -control fixture below; a reload landing after any full round has
+    //   elapsed cannot be that fight's opening moment. (Log entry TYPE was
+    //   tried and rejected here: the #570 negative control's own opening
+    //   payload carries ordinary `combat`-typed entries, not `system`, so
+    //   filtering on type misclassified it.)
+    //
+    // Skipping the reset for either combination is what fixes issue #570 and
+    // its still-active sibling (a reload's full log was masked as "a fight
+    // just started," suppressing the reload-recovery detection below and
+    // pacing the reveal at 400ms/line plus animation holds -- tens of
+    // seconds to minutes replaying a fight after a page reload) without also
+    // swallowing a brand new live fight's opening line(s) into the same
+    // instant, silent, SFX-less catch-up path -- which is what unconditionally
+    // exempting every first-ever transition did.
+    const isFirstSighting = prevCombatId === undefined
+    const isAlreadyResolvedFirstSighting = isFirstSighting && !!combat?.end_state
+    const isMidFightReloadFirstSighting = isFirstSighting && !combat?.end_state &&
+      combat.round > 1
     setPrevCombatId(combat.combat_id)
     setDisplayedLog([])
-    if (!isMidFightReload) {
+    if (!isAlreadyResolvedFirstSighting && !isMidFightReloadFirstSighting) {
       newCombatResetRef.current = true
     }
   }

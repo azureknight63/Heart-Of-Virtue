@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useCapabilities } from '../context/CapabilitiesContext'
 import { useEventManager } from '../hooks/useEventManager'
-import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
+import { COMBAT_INIT_EVENT_ID, PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
 import { useCombatSocket } from '../hooks/useCombatSocket'
 
@@ -38,7 +38,7 @@ export default function GamePage() {
   const { combatSocketStreaming } = useCapabilities()
   const { playBGM, playSFX, playSting } = useAudio()
   const { combatSpeed } = usePreferences()
-  const { error: showError } = useToast()
+  const { error: showError, warning: warnToast } = useToast()
 
   // The server answers an in-game refusal (not enough fatigue, move on
   // cooldown, an event still open) with HTTP 200 + `success:false` and no
@@ -234,7 +234,8 @@ export default function GamePage() {
   }, [location, setExploredTiles])
 
   /**
-   * Did this page load land in the middle of a fight?
+   * Did this page load land in the middle of a fight -- or after one had
+   * already ended?
    *
    * Combat progress lives on the server; the client's view of what it has
    * already shown the player does not survive a refresh. LeftPanel has always
@@ -245,11 +246,34 @@ export default function GamePage() {
    * load, from the first combat payload we see: any non-`system` log entry means
    * blows have already been traded. Cleared when the fight ends so the next
    * fight in the same session mounts the battlefield with a clean slate.
+   *
+   * A reload after the fight had ALREADY ended is the same situation -- the
+   * whole log is history -- but `inCombat` is false on every render of that
+   * case, so it never reached the decision below at all: isCombatReloadRecovery
+   * stayed permanently false, the battlefield replayed the finished fight's
+   * animations at full speed, and the resulting isBattlefieldAnimating=true
+   * held for as long as that took, blocking useCombatCoordinator's
+   * victory/defeat dialog gate for the same duration (issue #570).
+   * everInCombatRef distinguishes the two: it only becomes true once this
+   * mount has actually observed the fight live, which a reload after the
+   * fight ended in a PREVIOUS page life never does.
    */
   const [isCombatReloadRecovery, setIsCombatReloadRecovery] = useState(false)
   const reloadRecoveryDecidedRef = useRef(false)
+  const everInCombatRef = useRef(false)
   useEffect(() => {
+    if (inCombat) everInCombatRef.current = true
+
     if (!inCombat) {
+      // A fight that just ended live resets the flag for the next one. But
+      // if this mount never saw it live -- decided once, below, exactly like
+      // the mid-fight branch -- the log is entirely history and gets the
+      // same recovery treatment instead of being left false forever.
+      if (!reloadRecoveryDecidedRef.current && !everInCombatRef.current && combat?.end_state) {
+        reloadRecoveryDecidedRef.current = true
+        setIsCombatReloadRecovery((combat.log || []).some(entry => entry.type !== 'system'))
+        return
+      }
       setIsCombatReloadRecovery(false)
       return
     }
@@ -382,6 +406,23 @@ export default function GamePage() {
         fetchCombatStatus()
       }
       return
+    }
+
+    // A player who picks up merchandise directly (no shop dialog ever
+    // opened) and then leaves via a Passageway gets zero prominent feedback
+    // today: the engine already drops that merchandise on every teleport
+    // (Player.teleport() -> drop_merchandise_items()) and narrates it, but
+    // that narration is buried in the confirmation event's own text and easy
+    // to miss during the map transition (issue #597 follow-up). This warns
+    // with one summary toast the moment the player confirms "Step through",
+    // before the confirmation is even submitted to the server -- the
+    // PassagewayTransitionEvent has exactly one input option, so submitting
+    // it at all means confirming the crossing.
+    if (
+      currentEvent?.type === PASSAGEWAY_TRANSITION_EVENT_TYPE &&
+      (player?.inventory || []).some((item) => item?.is_merchandise)
+    ) {
+      warnToast('Jean returns the merchandise he is holding.')
     }
 
     // Use the hook's handler for backend events

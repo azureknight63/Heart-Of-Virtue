@@ -252,17 +252,17 @@ class Ch02GuideToCitadel(
             )
             say(
                 "The ceiling ran up into darkness the way the roof of a nave runs up into "
-                "candle-smoke, and a hand had half-lifted toward his brow before he thought "
-                "about it. He let the old gesture finish. It steadied him.",
+                "candle-smoke, and a hand had half-lifted toward my brow before I thought "
+                "about it. I let the old gesture finish. It steadied me.",
                 "Jean",
                 "neutral",
                 thought=True,
             )
             say(
-                "Then the air reached him, and the carvings lost him entirely — steady, "
-                "slow-moving, cool at his feet and perceptibly warmer at his shoulders. "
-                "Convection, working the way it's supposed to, on a scale he had never "
-                "encountered. He wanted to find where it rose.",
+                "Then the air reached me, and the carvings lost me entirely — steady, "
+                "slow-moving, cool at my feet and perceptibly warmer at my shoulders. "
+                "Convection, working the way it's supposed to, on a scale I had never "
+                "encountered. I wanted to find where it rose.",
                 "Jean",
                 "neutral",
                 thought=True,
@@ -459,10 +459,10 @@ class Ch02GuideToCitadel(
                 say("Humans.", "Votha Krr", "curious")
                 narrate("The word rumbled from him like a landslide, reverberating into Jean's chest.")
                 say(
-                    "Jean was quiet, but his mind was already moving — tracing the shape of the "
-                    "problem. An infestation with a center. Corrupted channels. A source. He'd had "
-                    "that kind of job before. Somewhere, in some life. He didn't ask himself why "
-                    "he was so sure of that.",
+                    "I was quiet, but my mind was already moving — tracing the shape of the "
+                    "problem. An infestation with a center. Corrupted channels. A source. I'd had "
+                    "that kind of job before. Somewhere, in some life. I didn't ask myself why "
+                    "I was so sure of that.",
                     "Jean",
                     "neutral",
                     thought=True,
@@ -696,7 +696,7 @@ class AfterDefeatingKingSlime(Event):
         )
         time.sleep(1)
         say(
-            "He didn't know what to do with his hands when they weren't needed.",
+            "I didn't know what to do with my hands when they weren't needed.",
             "Jean",
             "neutral",
             thought=True,
@@ -1162,7 +1162,7 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
             "The fragment was in his hand, still sharp, still bright.",
             "",
             (
-                "The bleeding finger was real. Everything else was gone.",
+                "My bleeding finger was real. Everything else was gone.",
                 {"speaker": "Jean", "emotion": "sad", "thought": True},
             ),
         ]

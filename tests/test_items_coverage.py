@@ -55,6 +55,21 @@ def _fresh_player():
     return p
 
 
+class _FakeMerchant:
+    """Minimal stand-in for a real merchant NPC.
+
+    Production code (``Item.take``, ``inventory_utils.transfer_item``) detects
+    a merchant by the presence of a ``shop_name`` attribute -- real
+    ``Merchant``/``MerchantShopMixin`` NPCs always set it in ``__init__``
+    (``src/npc/_shop.py``); nothing else in the engine ever has one (issue
+    #442). Mirrors the ``FakeMerchant`` stub in ``tests/test_transfer_item.py``.
+    """
+
+    def __init__(self):
+        self.name = "Merchant"
+        self.shop_name = "Fake Merchant Shop"
+
+
 def _narrated(callable_, *args, **kwargs):
     """Run ``callable_`` under a narration sink and return the emitted texts.
 
@@ -332,9 +347,15 @@ class TestItemTake:
         assert item.count == 5
         assert item in player.current_room.items_here
 
-    def test_take_stack_in_shop_map_sets_merchandise_true(self):
+    def test_take_stack_on_merchant_tile_sets_merchandise_true(self):
+        """A real merchant NPC actually present on the tile -- not the map's
+        *name* -- is what makes an item taken there shop goods (issue #598).
+        Real merchants always carry `shop_name` (set by `Merchant.__init__`
+        in `src/npc/_shop.py`), the same attribute issue #442 settled on to
+        tell a genuine merchant from a lookalike.
+        """
         player = _fresh_player()
-        player.map = {"name": "grondia-jambos_shop"}
+        player.current_room.npcs_here = [_FakeMerchant()]
         item = items.Restorative(count=1, merchandise=False)
         player.current_room.items_here = [item]
 
@@ -342,6 +363,34 @@ class TestItemTake:
 
         assert item in player.inventory
         assert item.merchandise is True
+
+    def test_take_on_shop_named_map_without_merchant_leaves_merchandise_false(self):
+        """Issue #598: Item.take() used to flip `merchandise` to True whenever
+        the player's *map* merely had "shop" in its name -- e.g. "Jambo's
+        Little Book of Big Deals" is authored `merchandise: false` and sits in
+        Jambo's private lounge tile of grondia-jambos_shop.json, a map that
+        also contains the actual shop floor (where Jambo, a real merchant, is
+        placed on a different tile). Taking the book from the lounge tile --
+        which hosts no merchant -- incorrectly overrode its authored
+        `merchandise: false` and re-triggered the on_equip/use purchase gate
+        for a book the player already owned. Only a real merchant NPC actually
+        present on the *tile* the item is taken from should ever set the flag
+        True.
+        """
+        player = _fresh_player()
+        player.map = {"name": "grondia-jambos_shop"}
+        player.current_room.npcs_here = []  # no merchant on this tile (the lounge)
+        book = items.Book(
+            name="Jambo's Little Book of Big Deals",
+            text="A dusty little ledger of deals.",
+            merchandise=False,
+        )
+        player.current_room.items_here = [book]
+
+        book.take(player)
+
+        assert book in player.inventory
+        assert book.merchandise is False
 
     def test_take_non_stackable_too_heavy_returns_early(self):
         player = _fresh_player()

@@ -1302,15 +1302,25 @@ class TestItemTake:
         assert player.inventory == [item]
 
     @pytest.mark.parametrize(
-        "map_name, expected_merchandise",
-        [("milo-shop", True), ("dark-grotto", False)],
+        "merchant_present, expected_merchandise",
+        [(True, True), (False, False)],
     )
-    def test_take_tags_merchandise_only_inside_a_shop_map(
-        self, player, map_name, expected_merchandise
+    def test_take_tags_merchandise_only_when_a_merchant_is_on_the_tile(
+        self, player, merchant_present, expected_merchandise
     ):
+        """Issue #598: a genuine merchant NPC actually standing on the tile --
+        not the map's *name* -- is what makes an item taken there shop goods.
+        A map-name substring match flagged items on any tile of a "...shop"
+        map file, including a tile with no merchant on it at all -- so the
+        map name here is held constant across both cases to prove it no
+        longer decides the outcome.
+        """
         item = items.Shortsword()
         item.merchandise = not expected_merchandise
-        player.map = {"name": map_name}
+        player.map = {"name": "milo-shop"}
+        if merchant_present:
+            # Real merchants carry `shop_name` (see issue #442).
+            player.current_room.npcs_here = [Mock(shop_name="Milo's Shop")]
         player.current_room.items_here = [item]
 
         item.take(player)
