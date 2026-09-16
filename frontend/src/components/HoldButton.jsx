@@ -23,6 +23,9 @@ import { accessibility, colors } from '../styles/theme';
  * @param {string}   [fillColor] - progress fill colour
  * @param {string}   [testId] - data-testid for the fill element
  * @param {Object}   [style] - style overrides, merged last
+ * @param {Object}   [rest] - forwarded onto the <button> (data-/aria- attributes
+ *                            a host dialog uses to place it, e.g.
+ *                            BaseDialog's SKIP_INITIAL_FOCUS_PROPS)
  */
 export default function HoldButton({
     label,
@@ -35,6 +38,7 @@ export default function HoldButton({
     fillColor = colors.alpha.secondary[30],
     testId = 'hold-fill',
     style = {},
+    ...rest
 }) {
     const { progress, isHolding, handlers } = useHoldToConfirm(onConfirm, { holdMs, disabled });
 
@@ -43,6 +47,7 @@ export default function HoldButton({
             type="button"
             aria-label={ariaLabel}
             disabled={disabled}
+            {...rest}
             {...handlers}
             style={{
                 position: 'relative',

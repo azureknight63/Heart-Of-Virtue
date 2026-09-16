@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import BaseDialog from './BaseDialog'
+import BaseDialog, { SKIP_INITIAL_FOCUS_PROPS } from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
 import GameInput from './GameInput'
@@ -438,11 +438,12 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     /**
      * Hand focus back to the dialog when the skip control disappears.
      *
-     * The skip control is usually the first focusable element inside the
-     * dialog, so BaseDialog's focus trap parks focus on it at mount. When the
-     * scene finishes, the control unmounts and focus would otherwise fall to
-     * `<body>` — outside the trap, so Tab escapes into the page behind and the
-     * dialog's own Escape handling is the only way back.
+     * The skip control is marked to be skipped for INITIAL focus (issue
+     * #584), but a keyboard user Tabs onto it to run the hold, and the hold
+     * then completes the scene, which disables the control. Focus left on a
+     * disabled element (or blurred to `<body>` — browsers differ) is outside
+     * the trap, so Tab escapes into the page behind and the dialog's own
+     * Escape handling is the only way back.
      *
      * `.modal-content` is BaseDialog's container, the same node its trap
      * focuses when a dialog has no focusable descendant, and the node the
@@ -543,6 +544,14 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                                 color={colors.text.muted}
                                 fillColor="rgba(255, 255, 255, 0.16)"
                                 testId="skip-scene-fill"
+                                // Not the initial focus target (issue #584):
+                                // Enter/Space on this button ARE the hold
+                                // gesture, so focus parked here ate the
+                                // scene's advance keys. It stays in the Tab
+                                // cycle; the trap falls through to
+                                // `.modal-content`, from which those keys
+                                // bubble to the document listeners.
+                                {...SKIP_INITIAL_FOCUS_PROPS}
                             />
                         )}
                         {history.length > 1 && (

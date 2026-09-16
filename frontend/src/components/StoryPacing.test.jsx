@@ -289,17 +289,13 @@ describe('SKIP SCENE (issue #538 item 1)', () => {
     });
 
     it('keeps focus inside the dialog when the skip control goes dead', () => {
-        // Staged on a needs_input event on purpose: BaseDialog hides its ✕
-        // while an event needs an answer, so the skip control really is the
-        // first focusable node and the focus trap really does park focus on
-        // it. On a needs_input:false event the ✕ takes focus first and this
-        // assertion would hold with the hand-back deleted.
-        renderDialog({
-            ...stagedEvent,
-            needs_input: true,
-            input_type: 'choice',
-            input_options: [{ label: 'Go on', value: 'go' }],
-        });
+        // The focus trap no longer parks initial focus on the skip control
+        // (issue #584), so this stages what a keyboard user does: Tab onto
+        // the button, then hold it. jsdom does not move focus on Tab, so the
+        // focus() call stands in for the keystroke.
+        renderDialog(stagedEvent);
+        expect(document.activeElement).toBe(document.querySelector('.modal-content'));
+        act(() => skipButton().focus());
         expect(document.activeElement).toBe(skipButton());
 
         holdOut(skipButton());
