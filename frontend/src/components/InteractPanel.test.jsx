@@ -1,6 +1,6 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import InteractPanel, { actionKeywords } from './InteractPanel';
+import InteractPanel, { actionKeywords, TARGET_CATEGORIES } from './InteractPanel';
 import apiEndpoints from '../api/endpoints';
 import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds';
 import { colors, accessibility } from '../styles/theme';
@@ -1677,7 +1677,9 @@ describe('InteractPanel', () => {
 
     it('gives each header a 44px touch target and an aria-expanded state', () => {
       render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
-      for (const label of ['NPCs', 'Objects', 'Items']) {
+      // Driven by the component's own taxonomy so a category added to the
+      // table is covered here without a second list to keep in step.
+      for (const { label } of TARGET_CATEGORIES) {
         const h = header(label);
         expect(h.tagName).toBe('BUTTON');
         expect(h.style.minHeight).toBe(accessibility.touchTarget);
@@ -1714,11 +1716,34 @@ describe('InteractPanel', () => {
 
     it('marks the expanded/collapsed state with a text glyph, not only a colour or an attribute', () => {
       render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
-      // Same ▾/▸ pair HeatMeter and JournalDialog use; the glyph is the
-      // sighted reader's state marker, aria-expanded the assistive tech's.
+      // Same ▾/▸ pair HeatMeter uses; the glyph is the sighted reader's
+      // state marker, aria-expanded the assistive tech's.
       expect(header('Items').textContent.trim()).toMatch(/^▾/);
       fireEvent.click(header('Items'));
       expect(header('Items').textContent.trim()).toMatch(/^▸/);
+    });
+
+    it('renders two targets of one category inside that category\'s rows, in payload order', () => {
+      const location = {
+        ...mockLocation,
+        items: [
+          ...mockLocation.items,
+          { id: 'item2', name: 'Rusty Key', description: 'An old key.', keywords: ['Take'] },
+        ],
+      };
+      render(<InteractPanel location={location} onClose={mockOnClose} />);
+
+      // The header's aria-controls names the rows container; both items must
+      // live inside it (not just somewhere in the list) and keep the order
+      // the payload listed them in.
+      const itemsHeader = header('Items');
+      const rows = within(document.getElementById(itemsHeader.getAttribute('aria-controls')));
+      expect(rows.getAllByRole('button').map((b) => b.textContent)).toEqual([
+        expect.stringMatching(/Gold Coin/),
+        expect.stringMatching(/Rusty Key/),
+      ]);
+      // ...and nothing from another category leaked in.
+      expect(rows.queryByRole('button', { name: /Guard/ })).toBeNull();
     });
 
     it('does not render a header for a category with no targets', () => {

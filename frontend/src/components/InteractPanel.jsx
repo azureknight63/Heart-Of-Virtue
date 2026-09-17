@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useId } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useId } from 'react'
 import { HOSTILITY_TOKENS } from '../utils/combatEntities'
 import { useWorldInteract } from '../hooks/useWorldInteract'
 import BaseDialog from './BaseDialog'
@@ -38,15 +38,16 @@ const DIRECTION_KEYWORDS = new Set([
     'up', 'down',
 ])
 
-// The target list's sections, in render order. Every row the location
-// payload can carry is one of these three (`npcs`/`objects`/`items` on the
-// serialized location — see the location-sync effect below); a type outside
-// this table would render nowhere, so the table IS the exhaustive list, not
-// a display preference layered on top of one (#596).
+// The target taxonomy, in render order — the ONE place a category is
+// defined. `payloadKey` is the array on the serialized location the rows come
+// from (the location-sync effect maps each into `type`), `label` heads the
+// list section, `icon` leads every row. A type outside this table would
+// render nowhere, so the table IS the exhaustive list, not a display
+// preference layered on top of one (#596).
 export const TARGET_CATEGORIES = [
-    { type: 'npc', label: 'NPCs' },
-    { type: 'object', label: 'Objects' },
-    { type: 'item', label: 'Items' },
+    { type: 'npc', payloadKey: 'npcs', label: 'NPCs', icon: '👤' },
+    { type: 'object', payloadKey: 'objects', label: 'Objects', icon: '🪵' },
+    { type: 'item', payloadKey: 'items', label: 'Items', icon: '📦' },
 ]
 
 /**
@@ -132,6 +133,155 @@ function getTargetAccentColor(target) {
     return isHostileNpc(target)
         ? HOSTILITY_TOKENS.hostile.color
         : getEntityColor(target?.type)
+}
+
+/** Row glyph for a target: the hostile token's, else its category's from TARGET_CATEGORIES. */
+function getTargetIcon(target) {
+    // A hostile NPC gets its own glyph rather than the friendly 👤 — the
+    // two must not read as the same kind of thing (issue #537). The glyph
+    // is HOSTILITY_TOKENS', not a second copy: that table owns the
+    // colour, the glyph and the word, and this panel was re-typing all
+    // three. The colour and glyph now come from it; the WORD deliberately
+    // does not -- see the type badge in TargetRow for why.
+    if (isHostileNpc(target)) return HOSTILITY_TOKENS.hostile.glyph
+    return TARGET_CATEGORIES.find((c) => c.type === target?.type)?.icon ?? '❓'
+}
+
+/** One selectable row of the target list; shared by every category. */
+function TargetRow({ target, onSelect }) {
+    const accentColor = getTargetAccentColor(target)
+    return (
+        <GameButton
+            onClick={() => onSelect(target)}
+            variant="secondary"
+            style={{
+                padding: spacing.md,
+                width: '100%',
+            }}
+        >
+            <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, width: '100%', textAlign: 'left' }}>
+                <div style={{ fontSize: '20px' }}>{getTargetIcon(target)}</div>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                    {/* GameButton's own label styling is uppercase (see baseStyle in
+                        GameButton.jsx) and text-transform inherits into any descendant
+                        that doesn't override it — proper nouns and prose were being
+                        force-uppercased just by living inside this button (#540 item 8).
+                        Uppercase stays for the type badge below, which IS a label/chip. */}
+                    <GameText variant="primary" size="sm" weight="bold" style={{ textTransform: 'none' }}>
+                        {/* stackDisplayName, not target.name: the engine bakes the
+                            count into a stackable item's own name, so this rendered
+                            "Mineral Powder x3 (x3)" (#565). */}
+                        {stackLabel(target)}
+                    </GameText>
+                    {target.description && (
+                        <GameText
+                            variant="muted"
+                            size="xs"
+                            style={{
+                                textTransform: 'none',
+                                fontStyle: 'italic',
+                                // Was a single hard-truncated line at 250px (~30 characters) —
+                                // wrap up to 2 lines instead, so more of the description
+                                // actually reaches the player.
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'normal',
+                                wordBreak: 'break-word',
+                            }}
+                        >
+                            {target.description}
+                        </GameText>
+                    )}
+                </div>
+                <div style={{
+                    fontSize: '10px',
+                    color: accentColor,
+                    border: `1px solid ${accentColor}`,
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    textTransform: 'uppercase',
+                    fontWeight: 'bold',
+                    letterSpacing: '1px',
+                    fontFamily: fonts.main,
+                }}>
+                    {/* Lowercase, unlike HostilityChip's
+                        HOSTILITY_TOKENS.hostile.label ('HOSTILE').
+                        Not a style preference: `textTransform`
+                        above renders either spelling identically,
+                        while the DOM text is what assistive tech
+                        reads, and an all-caps word there is liable
+                        to be spelled out letter by letter. The
+                        colour and glyph DO come from the token --
+                        only the casing is local. */}
+                    {isHostileNpc(target) ? 'hostile' : target.type}
+                </div>
+            </div>
+        </GameButton>
+    )
+}
+
+/**
+ * One collapsible section of the target list: the category's header (a
+ * button carrying the row count and the expanded/collapsed state) over its
+ * rows container. `children` are the rendered rows; they mount only while
+ * `expanded`, the container itself always does so `aria-controls` resolves.
+ */
+function TargetCategorySection({ category, rows, expanded, rowsId, onToggle, children }) {
+    return (
+        <div>
+            <button
+                type="button"
+                onClick={onToggle}
+                aria-expanded={expanded}
+                aria-controls={rowsId}
+                style={{
+                    ...commonStyles.eyebrowLabel,
+                    width: '100%',
+                    minHeight: accessibility.touchTarget,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: spacing.sm,
+                    padding: `0 ${spacing.sm}`,
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: `1px solid ${colors.border.light}`,
+                    color: getEntityColor(category.type),
+                    fontWeight: 'bold',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    touchAction: 'manipulation',
+                }}
+            >
+                {/* The glyph is the state, readable without colour or
+                    aria — same ▾/▸ pair HeatMeter uses. */}
+                <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+                {/* Literal spaces: flex `gap` spaces the spans visually but
+                    leaves the DOM text as "NPCs(1)", which is what assistive
+                    tech would read. Whitespace-only nodes are not flex items. */}
+                {' '}
+                <span>{category.label}</span>
+                {' '}
+                <span style={{ color: colors.text.muted, fontWeight: 'normal' }}>({rows.length})</span>
+            </button>
+            {/* Always mounted so aria-controls always resolves; the
+                rows themselves come and go. Spacing only while there
+                are rows to space, or a folded header trails a blank. */}
+            <div
+                id={rowsId}
+                style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: spacing.sm,
+                    marginTop: expanded ? spacing.sm : 0,
+                }}
+            >
+                {expanded && children}
+            </div>
+        </div>
+    )
 }
 
 /**
@@ -241,12 +391,19 @@ function InteractPanel({
 
     useEffect(() => {
         if (location) {
-            const npcs = (location.npcs || []).map(n => ({ ...n, npc_class: n.type, type: 'npc' }))
-            const objects = (location.objects || []).map(o => ({ ...o, type: 'object' }))
-            const items = (location.items || []).map(i => ({ ...i, type: 'item' }))
-
+            // Each payload array becomes rows tagged with its category `type`,
+            // in TARGET_CATEGORIES order (the same table the list renders by).
+            // An NPC row's serialized `type` is its class key — what the chat
+            // panel POSTs as `npc_key` — so it is demoted to `npc_class`
+            // before `type` takes the category.
+            const allTargets = TARGET_CATEGORIES.flatMap(({ type, payloadKey }) =>
+                (location[payloadKey] || []).map(row => (
+                    type === 'npc'
+                        ? { ...row, npc_class: row.type, type }
+                        : { ...row, type }
+                ))
             // Filter out hidden entities if the API sends them
-            const allTargets = [...npcs, ...objects, ...items].filter(t => !t.hidden)
+            ).filter(t => !t.hidden)
             // eslint-disable-next-line react-hooks/set-state-in-effect -- mirrors the server-authoritative `location` payload and reconciles selectedTarget against it in the same pass; deriving targets at render time would split that reconciliation from the isSyncingTarget guard this effect sets.
             setTargets(allTargets)
 
@@ -340,6 +497,15 @@ function InteractPanel({
         }
     }, [targets.length, selectedTarget, interactionOutput, interactionHistory.length, error, loading, showHistory, location, onClose]);
 
+    // Targets grouped by category, computed once per `targets` change: the
+    // section renderer and the Take-All gate both read it, and neither
+    // should re-filter the list on every render.
+    const rowsByType = useMemo(() => {
+        const groups = new Map(TARGET_CATEGORIES.map((c) => [c.type, []]))
+        for (const target of targets) groups.get(target.type)?.push(target)
+        return groups
+    }, [targets])
+
     const handleTargetClick = (target) => {
         setSelectedTarget(target)
         resetInteraction()
@@ -357,7 +523,7 @@ function InteractPanel({
     const handleTakeAll = async () => {
         if (isLocked || takingAllItems) return
 
-        const takeableItems = targets.filter(t => t.type === 'item')
+        const takeableItems = rowsByType.get('item')
         if (takeableItems.length === 0) return
 
         setShowQuantityInput(false)
@@ -425,22 +591,6 @@ function InteractPanel({
         setShowHistory(false)
     }
 
-    const getTargetIcon = (target) => {
-        // A hostile NPC gets its own glyph rather than the friendly 👤 — the
-        // two must not read as the same kind of thing (issue #537). The glyph
-        // is HOSTILITY_TOKENS', not a second copy: that table owns the
-        // colour, the glyph and the word, and this panel was re-typing all
-        // three. The colour and glyph now come from it; the WORD deliberately
-        // does not -- see the type badge below for why.
-        if (isHostileNpc(target)) return HOSTILITY_TOKENS.hostile.glyph
-        switch (target?.type) {
-            case 'npc': return '👤'
-            case 'item': return '📦'
-            case 'object': return '🪵'
-            default: return '❓'
-        }
-    }
-
     // The NPC's class key, which is what `/api/npc/chat/open` receives as
     // `npc_key`; the instance id would 404 it. `npc_class` is the remap of the
     // serializer's `type` applied above, and the display name is the fallback
@@ -454,80 +604,6 @@ function InteractPanel({
     // nothing is selected -- stackSize(null) is 1, and the prompt is gated on
     // showQuantityInput anyway.
     const availableToTake = stackSize(selectedTarget)
-
-    /** One selectable row of the target list; shared by every category. */
-    const renderTargetRow = (target, idx) => (
-        <GameButton
-            key={`${target.id}-${idx}`}
-            onClick={() => handleTargetClick(target)}
-            variant="secondary"
-            style={{
-                padding: spacing.md,
-                width: '100%',
-            }}
-        >
-            <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, width: '100%', textAlign: 'left' }}>
-                <div style={{ fontSize: '20px' }}>{getTargetIcon(target)}</div>
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-                    {/* GameButton's own label styling is uppercase (see baseStyle in
-                        GameButton.jsx) and text-transform inherits into any descendant
-                        that doesn't override it — proper nouns and prose were being
-                        force-uppercased just by living inside this button (#540 item 8).
-                        Uppercase stays for the type badge below, which IS a label/chip. */}
-                    <GameText variant="primary" size="sm" weight="bold" style={{ textTransform: 'none' }}>
-                        {/* stackDisplayName, not target.name: the engine bakes the
-                            count into a stackable item's own name, so this rendered
-                            "Mineral Powder x3 (x3)" (#565). */}
-                        {stackLabel(target)}
-                    </GameText>
-                    {target.description && (
-                        <GameText
-                            variant="muted"
-                            size="xs"
-                            style={{
-                                textTransform: 'none',
-                                fontStyle: 'italic',
-                                // Was a single hard-truncated line at 250px (~30 characters) —
-                                // wrap up to 2 lines instead, so more of the description
-                                // actually reaches the player.
-                                display: '-webkit-box',
-                                WebkitLineClamp: 2,
-                                WebkitBoxOrient: 'vertical',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'normal',
-                                wordBreak: 'break-word',
-                            }}
-                        >
-                            {target.description}
-                        </GameText>
-                    )}
-                </div>
-                <div style={{
-                    fontSize: '10px',
-                    color: getTargetAccentColor(target),
-                    border: `1px solid ${getTargetAccentColor(target)}`,
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    textTransform: 'uppercase',
-                    fontWeight: 'bold',
-                    letterSpacing: '1px',
-                    fontFamily: fonts.main,
-                }}>
-                    {/* Lowercase, unlike HostilityChip's
-                        HOSTILITY_TOKENS.hostile.label ('HOSTILE').
-                        Not a style preference: `textTransform`
-                        above renders either spelling identically,
-                        while the DOM text is what assistive tech
-                        reads, and an all-caps word there is liable
-                        to be spelled out letter by letter. The
-                        colour and glyph DO come from the token --
-                        only the casing is local. */}
-                    {isHostileNpc(target) ? 'hostile' : target.type}
-                </div>
-            </div>
-        </GameButton>
-    )
 
     return (<>
         <BaseDialog
@@ -633,7 +709,7 @@ function InteractPanel({
                                 </div>
                             )}
                         </div>
-                        {targets.filter(t => t.type === 'item' && !t.is_container).length > 1 && (
+                        {rowsByType.get('item').filter(t => !t.is_container).length > 1 && (
                             <GameButton
                                 onClick={() => handleActionClick('take_all_ground')}
                                 variant="primary"
@@ -655,61 +731,21 @@ function InteractPanel({
                             </div>
                         ) : (
                             TARGET_CATEGORIES.map((category) => {
-                                const rows = targets.filter(t => t.type === category.type)
+                                const rows = rowsByType.get(category.type)
                                 if (rows.length === 0) return null
-                                const expanded = !collapsedCategories.has(category.type)
-                                const rowsId = `${categoryListId}-${category.type}`
                                 return (
-                                    <div key={category.type}>
-                                        <button
-                                            type="button"
-                                            onClick={() => toggleCategory(category.type)}
-                                            aria-expanded={expanded}
-                                            aria-controls={rowsId}
-                                            style={{
-                                                ...commonStyles.eyebrowLabel,
-                                                width: '100%',
-                                                minHeight: accessibility.touchTarget,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: spacing.sm,
-                                                padding: `0 ${spacing.sm}`,
-                                                background: 'transparent',
-                                                border: 'none',
-                                                borderBottom: `1px solid ${colors.border.light}`,
-                                                color: getEntityColor(category.type),
-                                                fontWeight: 'bold',
-                                                textAlign: 'left',
-                                                cursor: 'pointer',
-                                                touchAction: 'manipulation',
-                                            }}
-                                        >
-                                            {/* The glyph is the state, readable without colour or
-                                                aria — same ▾/▸ pair HeatMeter and JournalDialog use. */}
-                                            <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-                                            {/* Literal spaces: flex `gap` spaces the spans visually but
-                                                leaves the DOM text as "NPCs(1)", which is what assistive
-                                                tech would read. Whitespace-only nodes are not flex items. */}
-                                            {' '}
-                                            <span>{category.label}</span>
-                                            {' '}
-                                            <span style={{ color: colors.text.muted, fontWeight: 'normal' }}>({rows.length})</span>
-                                        </button>
-                                        {/* Always mounted so aria-controls always resolves; the
-                                            rows themselves come and go. Spacing only while there
-                                            are rows to space, or a folded header trails a blank. */}
-                                        <div
-                                            id={rowsId}
-                                            style={{
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: spacing.sm,
-                                                marginTop: expanded ? spacing.sm : 0,
-                                            }}
-                                        >
-                                            {expanded && rows.map(renderTargetRow)}
-                                        </div>
-                                    </div>
+                                    <TargetCategorySection
+                                        key={category.type}
+                                        category={category}
+                                        rows={rows}
+                                        expanded={!collapsedCategories.has(category.type)}
+                                        rowsId={`${categoryListId}-${category.type}`}
+                                        onToggle={() => toggleCategory(category.type)}
+                                    >
+                                        {rows.map((target, idx) => (
+                                            <TargetRow key={`${target.id}-${idx}`} target={target} onSelect={handleTargetClick} />
+                                        ))}
+                                    </TargetCategorySection>
                                 )
                             })
                         )}
