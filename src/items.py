@@ -8,38 +8,6 @@ from src.narration import colored, cprint, narrate
 import src.functions as functions
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
-# A space, then `x` or `×`, then digits, at the very end of a name -- the
-# suffix ``stack_grammar()`` bakes into ``item.name`` ("Dried Crystal Sap x2").
-_BAKED_STACK_COUNT = re.compile(r"\s[x×](\d+)$", re.IGNORECASE)
-
-
-def stack_base_name(item) -> str:
-    """Return ``item.name`` without the ``stack_grammar()`` count suffix.
-
-    Engine copy of the client's ``stackDisplayName`` (frontend/src/utils/
-    stackName.js). Callers that print their own quantity next to the name
-    (``Container.take_all``, ``LootEvent._rebuild_options``) use this so a
-    stacked item is not counted twice ("2× Dried Crystal Sap x2").
-
-    Deliberately conservative: the suffix is dropped only when its number
-    equals the stack size the item reports, so an item genuinely named
-    "Potion x3" sitting two-to-a-stack keeps its name.
-    """
-    name = getattr(item, "name", "")
-    if not isinstance(name, str):
-        return ""
-    try:
-        size = int(getattr(item, "count", 1))
-    except (TypeError, ValueError):
-        return name
-    if size <= 1:
-        return name
-    baked = _BAKED_STACK_COUNT.search(name)
-    if baked and int(baked.group(1)) == size:
-        return name[: baked.start()]
-    return name
-
-
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
     from src.player import Player  # noqa
 
@@ -121,6 +89,59 @@ def get_base_damage_type(item: Any) -> str:
         if getattr(item, "subtype", None) in weapontypes:
             damagetype = basetype
     return damagetype
+
+
+# A space, then `x` or `×`, then digits, at the very end of a name -- the
+# suffix ``stack_grammar()`` bakes into ``item.name`` ("Dried Crystal Sap x2").
+_BAKED_STACK_COUNT = re.compile(r"\s[x×](\d+)$", re.IGNORECASE)
+
+
+def stack_base_name(item: Any) -> str:
+    """Return ``item.name`` without the ``stack_grammar()`` count suffix.
+
+    Engine copy of the client's ``stackDisplayName`` (frontend/src/utils/
+    stackName.js). The root cause is ``stack_grammar()`` rewriting ``name``
+    to carry the stack size -- a leftover from the terminal readout -- so any
+    caller that prints its own quantity next to the name would otherwise
+    count the stack twice ("2× Dried Crystal Sap x2").
+
+    Deliberately conservative: the suffix is dropped only when it is exactly
+    the digits of the stack size the item reports, so an item genuinely named
+    "Potion x3" sitting two-to-a-stack keeps its name. The comparison is on
+    strings, not ints: ``int()`` on a pathological digit run raises on 3.11+
+    (4300-digit cap), and it also means a zero-padded "x02" is *not* treated
+    as a baked count -- ``stack_grammar()`` never pads, so that suffix is the
+    item's own name. Both are intended.
+    """
+    name = getattr(item, "name", "")
+    if not isinstance(name, str):
+        return ""
+    try:
+        size = int(getattr(item, "count", 1))
+    except (TypeError, ValueError):
+        return name
+    if size <= 1:
+        return name
+    baked = _BAKED_STACK_COUNT.search(name)
+    if baked and baked.group(1) == str(size):
+        return name[: baked.start()]
+    return name
+
+
+def stack_sentence_label(item: Any, qty: Any) -> str:
+    """``"2× Dried Crystal Sap"`` for a stack, or just the base name for one.
+
+    The one spelling every "Jean takes ..." sentence uses (``Container.take_all``
+    and both ``LootEvent.process`` arms), so the take paths cannot drift apart
+    again. A prefix, not the client's ``×3`` suffix badge: this is a sentence
+    about a quantity rather than a label on a row.
+    """
+    name = stack_base_name(item)
+    try:
+        stacked = int(qty) > 1
+    except (TypeError, ValueError):
+        stacked = False
+    return f"{qty}× {name}" if stacked else name
 
 
 def _as_number(value):

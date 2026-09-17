@@ -30,9 +30,11 @@ const BONUS_STAT_LABELS = {
 // ranked — the label and the reason line ("Slashing → Crushing, …") carry the
 // meaning, the colour is only a hint.
 const REC_COLORS = {
-  upgrade: '#00ff88',
+  upgrade: colors.primary,
+  // Pre-dates the token set: a softer red than colors.danger, kept so the
+  // verdict chip does not read as an error box. No token carries this value.
   downgrade: '#ff6666',
-  sidegrade: '#ffcc00',
+  sidegrade: colors.gold,
   different_type: colors.accent,
 }
 const REC_LABELS = {

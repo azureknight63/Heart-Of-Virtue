@@ -44,9 +44,12 @@ export const stackSize = (item) => Number(item?.count ?? item?.quantity ?? 1);
  * within the same pass, claiming the migration was complete while the shop and
  * party surfaces still doubled.
  *
- * This is the client half of that fix. The engine half — not mutating `name`
- * in `stack_grammar()` — belongs in `src/`, and once it lands this function
- * becomes a no-op rather than needing removal.
+ * This is the client half of that fix. The engine mirrors it with
+ * `stack_base_name()` in `src/items.py` (same match-then-compare rule) for
+ * the narration it composes itself — take-all sentences and loot-dialog
+ * labels — so the two strippers must stay in step. The root cause, the
+ * `name` mutation in `stack_grammar()`, is still in place; once it goes,
+ * both helpers become no-ops rather than needing removal.
  *
  * Deliberately conservative: the suffix is dropped only when the number in it
  * equals the stack size the item itself reports, so an item genuinely named
