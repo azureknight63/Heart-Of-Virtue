@@ -79,6 +79,27 @@ Proposed starting pool:
 - **redirect** — returns to a subject the NPC raised earlier.
 - **confide** — Jean volunteers something of his own.
 - **ask-guidance** — Jean asks the NPC's counsel on his own situation.
+- **counsel** — Jean turns toward the NPC's trouble: advice, thinking it through
+  with them, shared feeling, or something from his own road offered in service of
+  theirs.
+
+`counsel` replaces the rejected `offer-help` (2026-09-17). `offer-help` failed
+the grounding rule — an offer to *do* something needs quest state to honour it,
+and a promise the engine cannot keep is worse than no option. Recast as a purely
+verbal act it needs nothing the prompt lacks: the NPC's trouble is in the
+conversation, and Jean's judgement is his own.
+
+It is **one** kind rather than three. Advice, thinking-aloud and commiseration
+are modes of a single stance — Jean turning toward the other person — and which
+mode fits is the model's business, expressed in the text, exactly as `reply` does
+not enumerate its modes. If it reads mushy in play, the split is `counsel`
+(advice, the head) and `commiserate` (shared feeling, the heart); the pool is
+built to make that a one-line change.
+
+`counsel` and `confide` are separated by **whose trouble is the subject**, not by
+warmth: `confide` is about Jean, `counsel` is about them. That completes a grid
+the pool had been half-filling — `ask-npc` / `ask-guidance` ask about their
+business and his, `counsel` / `confide` give about their business and his.
 
 `ask-guidance` is adopted in a **constrained** form (2026-09-17): the NPC may
 offer a view on Jean's state of mind or his predicament, never an objective.
@@ -159,6 +180,7 @@ affordance that already exists.
    | `redirect` | Change the subject |
    | `confide` | Share something |
    | `ask-guidance` | Ask *{NPC name}*'s advice |
+   | `counsel` | Offer counsel |
 
    `ask-npc` interpolates the NPC's display name, which the panel already holds —
    "Ask about Mara" costs nothing on the wire. Doing the same for `ask-lore`
@@ -190,6 +212,11 @@ That bounds the pool:
   NPC deliberately misdirecting Jean is a story device and also a separate
   concern; it is not what an ungrounded model produces, which is noise rather
   than a lie with intent.
+- **`offer-help` is NOT adopted** (2026-09-17), and `counsel` takes the slot it
+  was aiming at. An offer to *do* something is a promise, and nothing wires a
+  promise to quest state; the player would collect assurances the game never
+  honours. `counsel` is the same impulse with the verb changed from *do* to
+  *say*, which is why it clears a rule `offer-help` fails.
 - **`ask-guidance` is adopted constrained**, per above: counsel, never
   objectives. Advice about Jean's situation needs only the conversation and the
   NPC's persona, both of which the prompt has. Advice about what to *do* next
@@ -236,13 +263,14 @@ confirming any failure 3× on each side.
 
 ## Open questions for the maintainer
 
-- **`offer-help`** — Jean offers something of himself to the NPC — is the one
-  candidate not yet ruled on. It is the only kind that can open a diegetic route
-  into a quest, which is its appeal and also its grounding problem: an offer the
-  engine cannot honour is a promise to the player it will not keep. Adoptable in
-  the same constrained shape as `ask-guidance` (Jean may offer, the NPC may
-  accept in words, nothing is wired to quest state), or deferred with `ask-way`
-  until there is state to wire it to.
+Nothing outstanding on the axes themselves — the pool is nine and every kind has
+named the prompt block that answers it. Two things worth a look once this is
+running rather than now:
+
+- Whether `counsel` wants splitting into `counsel` and `commiserate` (above).
+- Whether `ask-way` and `offer-help` come back once a map-context block and
+  quest state exist to ground them. Both are filed against that block, not
+  refused on their merits.
 
 ## What changed in revision 2
 
@@ -275,6 +303,8 @@ confirming any failure 3× on each side.
   checking it produced the grounding rule above.
 - Repeating the previous round's kinds is fine; no anti-repeat nudge in the
   prompt.
+- `offer-help` rejected as too active — a promise the engine cannot honour —
+  and replaced by `counsel`, the same impulse as a verbal act. Pool is nine.
 
 ## Out of scope
 

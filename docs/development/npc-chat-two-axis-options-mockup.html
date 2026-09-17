@@ -227,7 +227,7 @@
     <h3>Two options, one emotion</h3>
     <div class="opts">
       <button class="opt"><span class="opt-text">The Warden's men. You've dealt with them before?</span><span class="kind" style="">Ask about Mara</span></button>
-      <button class="opt"><span class="opt-text">Three weeks, and no reason given. That sits badly.</span><span class="kind" style="">Press further</span></button>
+      <button class="opt"><span class="opt-text">A stall to keep and no say in it. That is its own weight.</span><span class="kind" style="">Offer counsel</span></button>
       <button class="opt"><span class="opt-text">Then I'll go around. Thank you, Mara.</span><span class="kind" style="">Answer</span></button>
     </div>
     <div style="display:flex;gap:var(--sm);margin-top:var(--md);font-size:0.65rem;color:var(--dim)">
@@ -288,6 +288,7 @@
     <tr><td><span class="chip">redirect</span></td><td style="color:var(--highlight)">Change the subject</td><td class="gloss">returns to a subject the NPC raised earlier</td></tr>
     <tr><td><span class="chip">confide</span></td><td style="color:var(--highlight)">Share something</td><td class="gloss">Jean volunteers something of his own</td></tr>
     <tr><td><span class="chip">ask-guidance</span></td><td style="color:var(--highlight)">Ask {NPC}'s advice</td><td class="gloss">asks the NPC's counsel on Jean's own situation — never an objective</td></tr>
+    <tr><td><span class="chip">counsel</span></td><td style="color:var(--highlight)">Offer counsel</td><td class="gloss">turns toward the NPC's trouble: advice, thinking it through, or shared feeling</td></tr>
 </tbody>
 </table>
 <p class="legend">
@@ -342,33 +343,37 @@
   alone.
 </p>
 
-<h2>Settled in review · what is still open</h2>
+<h2>Settled in review · the pool is nine</h2>
 <p class="note" style="border-color:rgba(0,255,136,0.35)">
-  <b>Settled.</b> Plain labels, not tinted · <code>challenge</code>, <code>redirect</code> and
-  <code>confide</code> ship · <code>ask-guidance</code> ships constrained ·
+  <b>Settled.</b> Plain labels, not tinted · <code>challenge</code>, <code>redirect</code>,
+  <code>confide</code> ship · <code>ask-guidance</code> ships constrained to counsel, never
+  objectives · <code>counsel</code> replaces the rejected <code>offer-help</code> ·
   <code>ask-lore</code> gates on natural logic, and an NPC may answer "I wouldn't know" ·
-  the wire key stays <code>tone</code> · repeating the previous round's kinds is fine, so no
-  anti-repeat nudge in the prompt. <b>The pool is eight.</b>
+  the wire key stays <code>tone</code> · repeating the previous round's kinds is fine.
+</p>
+<p class="note">
+  <b>The pool closes a grid.</b> <code>ask-npc</code> and <code>ask-guidance</code> ask about
+  the NPC's business and about Jean's; <code>counsel</code> and <code>confide</code> give about
+  the NPC's business and about Jean's. <code>counsel</code> and <code>confide</code> are
+  separated by whose trouble is the subject, not by warmth — warmth is the portrait's job.<br>
+  <code>counsel</code> is <b>one</b> kind, not three: advice, thinking-aloud and commiseration
+  are modes of a single stance, and which one fits is the model's business, expressed in the
+  text — <code>reply</code> does not enumerate its modes either. If it reads mushy in play the
+  split is <code>counsel</code> (the head) and <code>commiserate</code> (the heart).
 </p>
 <p class="note" style="border-color:rgba(255,68,68,0.35)">
-  <b>A kind is only safe if the prompt can answer it.</b> <code>_build_system_prompt</code>
+  <b>Two kinds were refused, both on the same rule: a kind is only safe if the prompt can
+  answer it.</b> <code>_build_system_prompt</code>
   (<code>src/npc/_chat_llm.py:2196-2210</code>) carries world facts, character, trade, combat
-  knowledge, conduct and Jean's context — and nothing else. No map block, no tile or player
-  position, no exit graph, no quest state. <code>world_facts.json</code>'s geography is eight
-  bare place names with no adjacency or direction between them.<br>
-  So <b><code>ask-way</code> is not adopted</b>: asked for a route, the model has names and no
-  topology, and a player acts on directions. It needs a map-context block — its own issue.
-  <b><code>ask-guidance</code> is adopted constrained</b>: counsel on Jean's situation (which
-  needs only the conversation and the NPC's persona) but never an objective (which needs quest
-  state the prompt does not have). The gloss must say so, or the model invents quest steps.<br>
-  <b>The rule for anyone extending the pool later:</b> name the block that answers the kind.
-  If none does, it waits for that block or is constrained to what the existing ones support.
+  knowledge, conduct and Jean's context — no map block, no position, no exit graph, no quest
+  state, and a geography of eight bare place names with no adjacency between them.<br>
+  <b><code>ask-way</code></b> — asked for a route the model has names and no topology, and a
+  player acts on directions. <b><code>offer-help</code></b> — an offer to <i>do</i> something
+  is a promise, and nothing wires a promise to quest state, so the player collects assurances
+  the game never honours. <code>counsel</code> is that same impulse with the verb changed from
+  <i>do</i> to <i>say</i>, which is why it clears the rule <code>offer-help</code> fails.<br>
+  Both are filed against the missing blocks, not refused on their merits.
 </p>
-<ul style="color:var(--muted);font-size:0.8rem;max-width:80ch">
-  <li><b><code>offer-help</code></b> is the one candidate not yet ruled on — the only kind
-      that can open a route into a quest, which is its appeal and its grounding problem:
-      an offer the engine cannot honour is a promise to the player it will not keep.</li>
-</ul>
 <p class="note">
   <b>Also surfaced in review, on nobody's list.</b> The standalone
   <code>generate_jean_options</code> prompt (<code>ai/llm_client.py:3855-3866</code>) carries
