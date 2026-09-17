@@ -48,6 +48,25 @@ describe('HoldButton', () => {
         expect(screen.getByRole('button', { name: /Hold to skip/i })).toBeInTheDocument();
     });
 
+    it('forwards host attributes, but a forwarded prop cannot override its own contract', () => {
+        // Hosts spread placement attributes onto it (BaseDialog's
+        // SKIP_INITIAL_FOCUS_PROPS). A stray `type` must not turn a hold into
+        // a form submit, and a caller's own pointer handler must not displace
+        // the gauge's.
+        const onPointerDown = vi.fn();
+        renderButton({ type: 'submit', 'data-host-marker': 'placed', onPointerDown });
+        const button = screen.getByRole('button', { name: /Hold to skip/i });
+
+        expect(button).toHaveAttribute('data-host-marker', 'placed');
+        expect(button.type).toBe('button');
+
+        fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+        expect(onPointerDown).not.toHaveBeenCalled();
+        expect(button).toHaveTextContent('hold to skip scene'); // gauge armed, not yet painted
+        advance(16);
+        expect(button).toHaveTextContent('keep holding…');
+    });
+
     describe('pointer', () => {
         it('confirms only once the hold elapses', () => {
             const onConfirm = vi.fn();

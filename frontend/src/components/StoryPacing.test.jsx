@@ -51,14 +51,22 @@ const settle = (ms, times = 12) => {
     for (let i = 0; i < times; i += 1) tick(ms);
 };
 
-const holdOut = (button) => {
-    fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+/** Begin a primary-button press on the hold control. */
+const pressSkip = (button) => fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+
+/** Run the gauge's clock past a full hold, one frame at a time. */
+const elapseHold = () => {
     act(() => {
         for (let elapsed = 0; elapsed <= DEFAULT_HOLD_MS + 32; elapsed += 16) {
             now += 16;
             vi.advanceTimersByTime(16);
         }
     });
+};
+
+const holdOut = (button) => {
+    pressSkip(button);
+    elapseHold();
 };
 
 const SEGMENTS = [
@@ -256,16 +264,11 @@ describe('SKIP SCENE (issue #538 item 1)', () => {
         renderDialog();
         const button = skipButton();
 
-        fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+        pressSkip(button);
         tick(DEFAULT_HOLD_MS / 3);
         fireEvent.mouseLeave(button);
         fireEvent.pointerLeave(button, { pointerId: 1 });
-        act(() => {
-            for (let elapsed = 0; elapsed <= DEFAULT_HOLD_MS + 32; elapsed += 16) {
-                now += 16;
-                vi.advanceTimersByTime(16);
-            }
-        });
+        elapseHold();
 
         expect(screen.getByText('Beat three, the last.')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /^CLOSE$/ })).toBeInTheDocument();
@@ -319,12 +322,71 @@ describe('SKIP SCENE (issue #538 item 1)', () => {
         renderDialog(stagedEvent, { onClose });
         holdOut(skipButton());
         expect(screen.getByText('Beat three, the last.')).toBeInTheDocument();
+        const body = document.querySelector('.event-dialog-body');
 
-        fireEvent.click(document.querySelector('.event-dialog-body'));
+        fireEvent.click(body);
         expect(onClose).not.toHaveBeenCalled();
 
         // The next, genuine click on the body is still a dismissal.
-        fireEvent.pointerDown(document.querySelector('.event-dialog-body'), { button: 0, pointerId: 1 });
+        fireEvent.pointerDown(body, { button: 0, pointerId: 1 });
+        fireEvent.click(body);
+        expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('swallows only the click that ends the hold; the next click on the body, with no press of its own, still dismisses', () => {
+        // The press-origin record is consumed by the click it was made for.
+        // Left latched, every later click on the body would be swallowed until
+        // some other pointerdown happened to overwrite it — including a click
+        // synthesised without one (assistive tech, a keyboard-driven click).
+        const onClose = vi.fn();
+        renderDialog(stagedEvent, { onClose });
+        holdOut(skipButton());
+        const body = document.querySelector('.event-dialog-body');
+
+        fireEvent.click(body);
+        expect(onClose).not.toHaveBeenCalled();
+
+        fireEvent.click(body);
+        expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('forgets a press that began on the controls row once the engine hands over the next stage', () => {
+        // A hold whose click never arrived (a touch the browser cancelled)
+        // leaves the record set. The next stage is a new scene: its first
+        // genuine click on the body must not be paid for by the last one's.
+        const onClose = vi.fn();
+        const { rerender } = renderDialog(
+            {
+                ...stagedEvent,
+                needs_input: true,
+                input_type: 'choice',
+                input_options: [{ label: 'Go on', value: 'go' }],
+            },
+            { onClose }
+        );
+        holdOut(skipButton());
+        expect(screen.getByText('Go on')).toBeInTheDocument();
+
+        rerender(
+            <EventDialog
+                event={{
+                    ...stagedEvent,
+                    event_id: 'skip-2',
+                    output_text: 'Stage two.',
+                    segments: [{ text: 'Stage two.', in_conversation: false }],
+                }}
+                onClose={onClose}
+                onSubmitInput={vi.fn()}
+                history={[]}
+            />
+        );
+        // Walk stage two to its end from the keyboard: the key path never
+        // touches the click handler, so nothing here can consume the record
+        // by accident.
+        fireEvent.keyDown(document.activeElement, { key: 'Enter' }); // finish typing
+        fireEvent.keyDown(document.activeElement, { key: 'Enter' }); // complete the stage
+        expect(screen.getByRole('button', { name: /^CLOSE$/ })).toBeInTheDocument();
+
         fireEvent.click(document.querySelector('.event-dialog-body'));
         expect(onClose).toHaveBeenCalledTimes(1);
     });

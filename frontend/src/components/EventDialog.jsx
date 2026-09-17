@@ -29,6 +29,13 @@ const STORY_DIALOG_TITLE = '\u2728 STORY'
 const MEMORY_FLASH_TITLE = '\u2727 A Memory Stirs \u2727'
 
 /**
+ * Marks the scene-controls row (LOG, hold-to-skip). One name for the JSX
+ * attribute and the selector that finds it, so the two cannot drift apart.
+ */
+const SCENE_CONTROLS_ATTR = 'data-scene-controls'
+const SCENE_CONTROLS_PROPS = Object.freeze({ [SCENE_CONTROLS_ATTR]: 'true' })
+
+/**
  * Build the retry banner text for a failed input submission.
  *
  * The event manager returns `{ success: false }` (server rejection, already
@@ -68,8 +75,9 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
 
     const inputRef = useRef(null)
     const dialogRef = useRef(null)
-    // Where the most recent press inside the dialog began. Read by
-    // handleGlobalInteraction so the click that ends a skip hold cannot
+    // Whether the most recent press inside the dialog began on the scene
+    // controls. Set by recordPressOrigin, consumed (read once, then cleared)
+    // by handleGlobalInteraction so the click that ends a skip hold cannot
     // double as a dismissal — see the note there.
     const pressBeganOnSceneControlRef = useRef(false)
     // Guards the post-await re-enable below from firing after unmount.
@@ -145,6 +153,9 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
         setSelectedChoice(null)
         setIsSubmitting(false)
         setSkipRequested(false)
+        // A press whose click never arrived (a cancelled touch) must not be
+        // charged to the next stage's first genuine click.
+        pressBeganOnSceneControlRef.current = false
     }, [eventText, needsInput, isDeathScene, eventId])
 
     // Focus input when shown
@@ -362,14 +373,33 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
      * `isComplete`: making it unconditional would turn the very click that
      * reveals the text into the click that dismisses the whole dialog.
      */
+    /**
+     * Note where a press inside the dialog began, for handleGlobalInteraction.
+     *
+     * Bounded to THIS dialog's row: `closest` walks the DOM, and the pointer
+     * event arrives here through React's tree, which a nested dialog's portal
+     * does not follow — so the row found must also be inside `currentTarget`
+     * before it counts.
+     */
+    const recordPressOrigin = (e) => {
+        const row = e.target.closest(`[${SCENE_CONTROLS_ATTR}]`)
+        pressBeganOnSceneControlRef.current = Boolean(row && e.currentTarget.contains(row))
+    }
+
     const handleGlobalInteraction = () => {
+        // Consumed by the click it was recorded for, whatever that click does:
+        // left latched, every later click on the body would be swallowed until
+        // some other pointerdown happened to overwrite it — including a click
+        // synthesised without one (assistive tech, a keyboard-driven click).
+        const pressBeganOnSceneControl = pressBeganOnSceneControlRef.current
+        pressBeganOnSceneControlRef.current = false
         if (isSubmitting) return
         // The click that ends a skip hold is the tail of a gesture that began
         // on the scene controls, not a "continue" on the prose. If the layout
         // shifted during the hold the browser can retarget that click here —
         // and the hold has just completed the scene, so this would dismiss
         // the dialog the player only meant to fast-forward (issue #583).
-        if (pressBeganOnSceneControlRef.current) return
+        if (pressBeganOnSceneControl) return
         if (isComplete && !needsInput) {
             setIsSubmitting(true)
             onClose()
@@ -501,9 +531,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                 ref={dialogRef}
                 className={`event-dialog-body${isMemoryFlash ? ' memory-flash-frame' : ''}`}
                 tabIndex={-1}
-                onPointerDownCapture={(e) => {
-                    pressBeganOnSceneControlRef.current = Boolean(e.target.closest?.('[data-scene-controls]'))
-                }}
+                onPointerDownCapture={recordPressOrigin}
                 onClick={handleGlobalInteraction}
                 style={{
                     display: 'flex',
@@ -530,7 +558,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                     press-origin guard on the body handles that case. */}
                 {(history.length > 1 || showSkipControl) && (
                     <div
-                        data-scene-controls
+                        {...SCENE_CONTROLS_PROPS}
                         onClick={(e) => e.stopPropagation()}
                         style={{ display: 'flex', justifyContent: 'flex-end', gap: spacing.sm, alignItems: 'center', marginBottom: `-${spacing.sm}` }}
                     >
@@ -560,6 +588,12 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                                 e.stopPropagation();
                                 setShowHistory(!showHistory);
                             }}
+                            // Same reason as the skip control: on a chained
+                            // event this is the next focusable, and Enter/Space
+                            // on a focused button is a click -- so parking
+                            // here turned the scene's advance keys into a
+                            // history toggle once the stage completed.
+                            {...SKIP_INITIAL_FOCUS_PROPS}
                             style={{
                                 background: 'rgba(0, 204, 102, 0.1)',
                                 border: `1px solid ${colors.border.success}`,

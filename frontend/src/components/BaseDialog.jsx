@@ -156,11 +156,12 @@ export const SKIP_INITIAL_FOCUS_PROPS = Object.freeze({ [SKIP_INITIAL_FOCUS_ATTR
  * Where focus should land when a dialog opens.
  *
  * The first focusable not marked `SKIP_INITIAL_FOCUS_ATTR` (the ✕, a hold
- * control), or `null` to say "the container itself" — which is what the staged Event Result dialog already did
- * correctly by accident: it hides the ✕ for a `needs_input` frame, leaves
- * nothing else focusable, and fell through to `container.focus()`. A dialog
- * whose only control is "close" gets the same treatment deliberately, rather
- * than arming Enter to dismiss it on arrival.
+ * control), or `null` to say "the container itself" — which is what the
+ * staged Event Result dialog already did correctly by accident: it hides the
+ * ✕ for a `needs_input` frame, leaves nothing else focusable, and fell
+ * through to `container.focus()`. A dialog whose only control is "close"
+ * gets the same treatment deliberately, rather than arming Enter to dismiss
+ * it on arrival.
  */
 function initialFocusTarget(container) {
     const focusables = getFocusableElements(container)
