@@ -8,7 +8,7 @@ import src.functions as functions
 from src.player import Player
 from src.tiles import MapTile
 from src.events import Event, gate_is_set, set_story_gate  # noqa: F401 (Event: type hints only)
-from src.items import Item, stack_base_name  # noqa; Item is used in type hints
+from src.items import Item, stack_sentence_label  # noqa; Item is used in type hints
 
 #####
 # These are objects that exist on tiles as opposed to items carried by the player
@@ -624,9 +624,10 @@ class Container(Object):
         taken_labels = []
         for item in snapshot:
             qty = getattr(item, "count", 1)
+            # Label first: transfer_item may split the stack and rewrite
+            # name/count on this instance via stack_grammar().
+            label = stack_sentence_label(item, qty)
             transfer_item(self, player, item, qty)
-            name = stack_base_name(item)
-            label = f"{qty}× {name}" if qty > 1 else name
             taken_labels.append(label)
 
         if taken_labels:

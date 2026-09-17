@@ -83,8 +83,84 @@ _MAINTYPE_TO_SLOT = {
 
 
 def _is_weapon(item) -> bool:
-    """True for anything the engine treats as a weapon (class or maintype)."""
+    """True for anything the engine treats as a weapon (class or maintype).
+
+    Every constructed ``Weapon`` sets ``maintype="Weapon"`` so the class-name
+    arm is redundant for live items; it stays for degraded objects -- a
+    ``Weapon`` built via ``__new__`` or a stub carrying only ``__class__``
+    (the serializer-fuzz shapes) -- which must still serialize as a weapon.
+    """
     return item.__class__.__name__ == "Weapon" or getattr(item, "maintype", "") == "Weapon"
+
+
+def _weapon_damage_type(item) -> str:
+    """The engine's base damage type for a weapon (``get_base_damage_type``)."""
+    from src.items import get_base_damage_type  # local import: see game_service.py precedent
+
+    return get_base_damage_type(item)
+
+
+def _is_cross_type(current_data: Dict, candidate_data: Dict) -> bool:
+    """Two weapons of different base damage types?
+
+    ``damage_type`` is only emitted for weapons, so armor (and a weapon
+    against armor) is never cross-type.
+    """
+    current_type = current_data.get("damage_type")
+    candidate_type = candidate_data.get("damage_type")
+    return bool(current_type and candidate_type and current_type != candidate_type)
+
+
+def _recommendation(cross_type: bool, damage_diff, protection_diff) -> str:
+    """The equip verdict for a same-slot comparison."""
+    # Weapons of different base damage types are not ranked (#571): a
+    # crushing mace with less raw damage than a slashing sword is the
+    # better pick against everything that resists slashing, and the
+    # serializer has no business asserting otherwise. The resistance math
+    # stays in the engine -- this just declines to rank.
+    if cross_type:
+        return "different_type"
+    # Weapons never carry protection and armor never carries damage, so one
+    # side of each pair is always exactly 0 for a same-category comparison.
+    # The upgrade/downgrade checks below are symmetric on purpose: each stat
+    # only needs to improve/worsen while the other doesn't move in the
+    # opposite direction, so a strictly-worse weapon (damage_diff < 0,
+    # protection_diff == 0) or a strictly-worse armor piece
+    # (protection_diff < 0, damage_diff == 0) is still correctly flagged
+    # instead of falling through to "sidegrade".
+    if damage_diff > 0 and protection_diff >= 0:
+        return "upgrade"
+    if damage_diff >= 0 and protection_diff > 0:
+        return "upgrade"
+    if damage_diff < 0 and protection_diff <= 0:
+        return "downgrade"
+    if damage_diff <= 0 and protection_diff < 0:
+        return "downgrade"
+    return "sidegrade"
+
+
+def _reason(
+    cross_type: bool,
+    current_data: Dict,
+    candidate_data: Dict,
+    damage_diff,
+    protection_diff,
+    weight_diff,
+) -> str:
+    """The one-line explanation shown under the verdict ("Damage +3, Weight -1")."""
+    parts = []
+    if cross_type:
+        # Named types up front so the client can explain why nothing was ranked.
+        parts.append(
+            f"{current_data['damage_type'].capitalize()} → "
+            f"{candidate_data['damage_type'].capitalize()}"
+        )
+    if damage_diff:
+        parts.append(f"Damage {'+' if damage_diff > 0 else ''}{damage_diff}")
+    if protection_diff:
+        parts.append(f"Protection {'+' if protection_diff > 0 else ''}{protection_diff}")
+    parts.append(f"Weight {'+' if weight_diff > 0 else ''}{weight_diff}")
+    return ", ".join(parts)
 
 
 def _collect_item_bonuses(item) -> Dict:
@@ -244,9 +320,7 @@ class InventoryItemSerializer:
             item_data["damage"] = round(getattr(item, "damage", 0))
             item_data["str_mod"] = getattr(item, "str_mod", 0)
             item_data["fin_mod"] = getattr(item, "fin_mod", 0)
-            from src.items import get_base_damage_type  # local import: see game_service.py precedent
-
-            item_data["damage_type"] = get_base_damage_type(item)
+            item_data["damage_type"] = _weapon_damage_type(item)
 
         # Add armor-specific stats (Armor, Boots, Helm, Gloves, Accessory)
         if item_type in [
@@ -458,7 +532,7 @@ class ItemDetailSerializer:
         Returns:
             Dictionary with full item information
         """
-        from src.items import Special, get_base_damage_type
+        from src.items import Special
 
         data = {
             "name": getattr(item, "name", "Unknown Item"),
@@ -503,7 +577,7 @@ class ItemDetailSerializer:
         # Weapons only, same as the inventory row: the comparison block reads
         # this off both sides to explain a `different_type` verdict (#571).
         if _is_weapon(item):
-            data["damage_type"] = get_base_damage_type(item)
+            data["damage_type"] = _weapon_damage_type(item)
         return data
 
 
@@ -555,48 +629,12 @@ class ItemComparisonSerializer:
             current_item, candidate_item, "add_status_resistance"
         )
 
-        # Weapons of different base damage types are not ranked (#571): a
-        # crushing mace with less raw damage than a slashing sword is the
-        # better pick against everything that resists slashing, and the
-        # serializer has no business asserting otherwise. `damage_type` is
-        # only emitted for weapons, so armor never takes this branch. The
-        # resistance math stays in the engine — this just declines to rank.
-        current_type = current_data.get("damage_type")
-        candidate_type = candidate_data.get("damage_type")
-        cross_type = bool(current_type and candidate_type and current_type != candidate_type)
-
-        # Determine recommendation. Weapons never carry protection and armor
-        # never carries damage, so one side of each pair is always exactly 0
-        # for a same-category comparison. The upgrade/downgrade checks below
-        # are symmetric on purpose: each stat only needs to improve/worsen
-        # while the other doesn't move in the opposite direction, so a
-        # strictly-worse weapon (damage_diff < 0, protection_diff == 0) or a
-        # strictly-worse armor piece (protection_diff < 0, damage_diff == 0)
-        # is still correctly flagged instead of falling through to
-        # "sidegrade".
-        if cross_type:
-            recommendation = "different_type"
-        elif damage_diff > 0 and protection_diff >= 0:
-            recommendation = "upgrade"
-        elif damage_diff >= 0 and protection_diff > 0:
-            recommendation = "upgrade"
-        elif damage_diff < 0 and protection_diff <= 0:
-            recommendation = "downgrade"
-        elif damage_diff <= 0 and protection_diff < 0:
-            recommendation = "downgrade"
-        else:
-            recommendation = "sidegrade"
-
-        reason_parts = []
-        if cross_type:
-            reason_parts.append(f"{current_type.capitalize()} → {candidate_type.capitalize()}")
-        if damage_diff:
-            reason_parts.append(f"Damage {'+' if damage_diff > 0 else ''}{damage_diff}")
-        if protection_diff:
-            reason_parts.append(
-                f"Protection {'+' if protection_diff > 0 else ''}{protection_diff}"
-            )
-        reason_parts.append(f"Weight {'+' if weight_diff > 0 else ''}{weight_diff}")
+        cross_type = _is_cross_type(current_data, candidate_data)
+        recommendation = _recommendation(cross_type, damage_diff, protection_diff)
+        reason = _reason(
+            cross_type, current_data, candidate_data,
+            damage_diff, protection_diff, weight_diff,
+        )
 
         return {
             "comparison_type": "item_to_item",
@@ -612,5 +650,5 @@ class ItemComparisonSerializer:
                 "status_resistance_diffs": status_resistance_diffs,
             },
             "recommendation": recommendation,
-            "reason": ", ".join(reason_parts),
+            "reason": reason,
         }

@@ -404,17 +404,21 @@ class LootEvent(Event):
             self.needs_input = False
             return {"success": True, "message": "Interaction ended."}
 
+        # Method-local imports are this file's convention for engine helpers
+        # (see the other Event subclasses); there is no import cycle to dodge.
         from src.narration import cprint
-
         from src.inventory_utils import transfer_item
+        from src.items import stack_sentence_label
 
         if user_input == "all":
             snapshot = list(self.container.inventory)
             taken_names = []
             for item in snapshot:
                 qty = getattr(item, "count", 1)
+                # Label before the transfer: it can rewrite name/count.
+                label = stack_sentence_label(item, qty)
                 transfer_item(self.container, self.player, item, qty)
-                taken_names.append(item.name)
+                taken_names.append(label)
 
             if taken_names:
                 cprint(f"Jean takes everything: {', '.join(taken_names)}", "green")
@@ -434,8 +438,9 @@ class LootEvent(Event):
             if 0 <= idx < len(self.container.inventory):
                 item = self.container.inventory[idx]
                 qty = getattr(item, "count", 1)
+                label = stack_sentence_label(item, qty)
                 transfer_item(self.container, self.player, item, qty)
-                cprint(f"Jean takes the {item.name}.", "green")
+                cprint(f"Jean takes the {label}.", "green")
 
                 if hasattr(self.container, "refresh_description"):
                     self.container.refresh_description()

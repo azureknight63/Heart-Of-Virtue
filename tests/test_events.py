@@ -428,9 +428,10 @@ class TestLootEvent:
             call(mock_container, mock_player, sword, 1),
             call(mock_container, mock_player, potions, 3),
         ]
-        # The narration names every item taken, in order.
+        # The narration names every item taken, in order, with a stack's
+        # quantity spelled the way Container.take_all spells it.
         assert [m["text"] for m in msgs] == [
-            "Jean takes everything: Iron Sword, Restorative"
+            "Jean takes everything: Iron Sword, 3× Restorative"
         ]
         assert msgs[0]["color"] == "green"
         mock_container.refresh_description.assert_called_once_with()
