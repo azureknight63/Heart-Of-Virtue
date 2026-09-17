@@ -2185,7 +2185,7 @@ class TestSavedPersonalityValidationCannotFailOpen:
 
         class _Adapter:
             @staticmethod
-            def _validate_personality(parsed):
+            def _validate_personality(parsed, *, own_name=None):
                 return dict(parsed)
 
         namespace = type("_LLMDouble", (), {"NpcChatLLMAdapter": _Adapter})
