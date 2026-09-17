@@ -78,6 +78,13 @@ Proposed starting pool:
 - **challenge** — doubts or tests what the NPC just claimed.
 - **redirect** — returns to a subject the NPC raised earlier.
 - **confide** — Jean volunteers something of his own.
+- **ask-guidance** — Jean asks the NPC's counsel on his own situation.
+
+`ask-guidance` is adopted in a **constrained** form (2026-09-17): the NPC may
+offer a view on Jean's state of mind or his predicament, never an objective.
+"Go to the Echoing Caves and find the smith" is out of scope for it, because
+nothing in the prompt knows whether that is true — see the grounding note below.
+The gloss sent to the model has to say so, or the model will invent quest steps.
 
 `confide` is in the starting pool by maintainer decision (2026-09-17). It carries
 the risk the first revision deferred it over — generic confession — and the
@@ -151,6 +158,7 @@ affordance that already exists.
    | `challenge` | Push back |
    | `redirect` | Change the subject |
    | `confide` | Share something |
+   | `ask-guidance` | Ask *{NPC name}*'s advice |
 
    `ask-npc` interpolates the NPC's display name, which the panel already holds —
    "Ask about Mara" costs nothing on the wire. Doing the same for `ask-lore`
@@ -162,6 +170,34 @@ affordance that already exists.
    `JEAN_KINDS` with no entry in `KIND_LABELS` renders an unlabelled button, so
    the contract test that pins `EMOTIONS` against `JEAN_TONES` gains a sibling
    pinning `KIND_LABELS`' keys against `JEAN_KINDS`.
+
+### What a kind may ask for is bounded by what the prompt knows
+
+A kind is only safe if the NPC can answer it from context the prompt actually
+carries. `_build_system_prompt` (`src/npc/_chat_llm.py:2196-2210`) assembles
+world facts, character, trade, combat knowledge, conduct and Jean's context —
+**and nothing else**. There is no map block, no tile or player position, no exit
+graph, and no quest or story-flag state. `world_facts.json`'s `geography` is
+eight bare place names ("the river", "the Echoing Caves", "Grondia") with no
+adjacency, direction or distance between them.
+
+That bounds the pool:
+
+- **`ask-way` is NOT adopted** (2026-09-17). Asked for a route, the model has
+  place names and no topology, so any "east past the foothills, then north" is
+  invented — and a player acts on directions. It needs a map-context block
+  feeding real adjacency and exits into the prompt, which is its own issue. An
+  NPC deliberately misdirecting Jean is a story device and also a separate
+  concern; it is not what an ungrounded model produces, which is noise rather
+  than a lie with intent.
+- **`ask-guidance` is adopted constrained**, per above: counsel, never
+  objectives. Advice about Jean's situation needs only the conversation and the
+  NPC's persona, both of which the prompt has. Advice about what to *do* next
+  needs quest state, which it does not.
+
+The general rule for anyone extending `JEAN_KINDS` later: name the block that
+answers it. If no block does, the kind either waits for that block or is
+constrained to what the existing ones support.
 
 ### Implementation traps
 
@@ -200,18 +236,13 @@ confirming any failure 3× on each side.
 
 ## Open questions for the maintainer
 
-- **Does the pool want more kinds?** Seven is the adopted set. Three candidates
-  were weighed and none is adopted: `offer-help` (Jean offers something — the
-  only kind that can open a diegetic route into a quest, which is why it ranks
-  first), `ask-guidance` (Jean asks what he should do — the receiving half of
-  `confide`, and the one most tied to pillar 2), and `ask-way` (directions and
-  routes — serves pillar 4, but overlaps the map UI). Each costs a gloss line in
-  the system prompt on every call forever, and every addition thins how often any
-  one kind is picked into the three slots. Adding all three is not recommended.
-- **Should the prompt discourage repeating the previous round's kinds?** With
-  seven kinds and three slots the model will have a favourite trio. A one-line
-  nudge is cheap; whether it is worth the prompt text is a judgement call best
-  made against a measured round rather than in advance.
+- **`offer-help`** — Jean offers something of himself to the NPC — is the one
+  candidate not yet ruled on. It is the only kind that can open a diegetic route
+  into a quest, which is its appeal and also its grounding problem: an offer the
+  engine cannot honour is a promise to the player it will not keep. Adoptable in
+  the same constrained shape as `ask-guidance` (Jean may offer, the NPC may
+  accept in words, nothing is wired to quest state), or deferred with `ask-way`
+  until there is state to wire it to.
 
 ## What changed in revision 2
 
@@ -238,6 +269,12 @@ confirming any failure 3× on each side.
 - The wire key stays `tone` although it now carries emotion values.
 - The player-facing label layer (`KIND_LABELS`) was added after review found the
   raw schema names too obscure on the button.
+- `ask-guidance` adopted constrained to counsel; `ask-way` rejected for now
+  because nothing in the prompt can ground a route. The reviewer's condition —
+  "provided their related data referencing holds" — is what these turn on, and
+  checking it produced the grounding rule above.
+- Repeating the previous round's kinds is fine; no anti-repeat nudge in the
+  prompt.
 
 ## Out of scope
 

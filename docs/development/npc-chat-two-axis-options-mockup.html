@@ -287,6 +287,7 @@
     <tr><td><span class="chip">challenge</span></td><td style="color:var(--highlight)">Push back</td><td class="gloss">doubts or tests what the NPC just claimed</td></tr>
     <tr><td><span class="chip">redirect</span></td><td style="color:var(--highlight)">Change the subject</td><td class="gloss">returns to a subject the NPC raised earlier</td></tr>
     <tr><td><span class="chip">confide</span></td><td style="color:var(--highlight)">Share something</td><td class="gloss">Jean volunteers something of his own</td></tr>
+    <tr><td><span class="chip">ask-guidance</span></td><td style="color:var(--highlight)">Ask {NPC}'s advice</td><td class="gloss">asks the NPC's counsel on Jean's own situation — never an objective</td></tr>
 </tbody>
 </table>
 <p class="legend">
@@ -344,19 +345,32 @@
 <h2>Settled in review · what is still open</h2>
 <p class="note" style="border-color:rgba(0,255,136,0.35)">
   <b>Settled.</b> Plain labels, not tinted · <code>challenge</code>, <code>redirect</code> and
-  <code>confide</code> all ship · <code>ask-lore</code> gates on natural logic, and an NPC may
-  answer "I wouldn't know" · the wire key stays <code>tone</code>.
+  <code>confide</code> ship · <code>ask-guidance</code> ships constrained ·
+  <code>ask-lore</code> gates on natural logic, and an NPC may answer "I wouldn't know" ·
+  the wire key stays <code>tone</code> · repeating the previous round's kinds is fine, so no
+  anti-repeat nudge in the prompt. <b>The pool is eight.</b>
+</p>
+<p class="note" style="border-color:rgba(255,68,68,0.35)">
+  <b>A kind is only safe if the prompt can answer it.</b> <code>_build_system_prompt</code>
+  (<code>src/npc/_chat_llm.py:2196-2210</code>) carries world facts, character, trade, combat
+  knowledge, conduct and Jean's context — and nothing else. No map block, no tile or player
+  position, no exit graph, no quest state. <code>world_facts.json</code>'s geography is eight
+  bare place names with no adjacency or direction between them.<br>
+  So <b><code>ask-way</code> is not adopted</b>: asked for a route, the model has names and no
+  topology, and a player acts on directions. It needs a map-context block — its own issue.
+  <b><code>ask-guidance</code> is adopted constrained</b>: counsel on Jean's situation (which
+  needs only the conversation and the NPC's persona) but never an objective (which needs quest
+  state the prompt does not have). The gloss must say so, or the model invents quest steps.<br>
+  <b>The rule for anyone extending the pool later:</b> name the block that answers the kind.
+  If none does, it waits for that block or is constrained to what the existing ones support.
 </p>
 <ul style="color:var(--muted);font-size:0.8rem;max-width:80ch">
-  <li><b>Does the pool want more kinds?</b> Three candidates weighed, none adopted:
-      <code>offer-help</code> (the only kind that can open a route into a quest),
-      <code>ask-guidance</code> (the receiving half of <code>confide</code>), and
-      <code>ask-way</code> (directions — overlaps the map UI). Each costs a gloss line on
-      every call forever, and thins how often any one kind reaches the three slots.</li>
-  <li>Whether the prompt should discourage repeating the previous round's kinds.</li>
+  <li><b><code>offer-help</code></b> is the one candidate not yet ruled on — the only kind
+      that can open a route into a quest, which is its appeal and its grounding problem:
+      an offer the engine cannot honour is a promise to the player it will not keep.</li>
 </ul>
 <p class="note">
-  <b>One thing the review surfaced that was not on anyone's list.</b> The standalone
+  <b>Also surfaced in review, on nobody's list.</b> The standalone
   <code>generate_jean_options</code> prompt (<code>ai/llm_client.py:3855-3866</code>) carries
   the identity and merchant rules but <b>not</b> the "JEAN'S KNOWN CONTEXT" clause the turn
   prompt uses. Options minted on that path are ungated today — invisible while every option is
