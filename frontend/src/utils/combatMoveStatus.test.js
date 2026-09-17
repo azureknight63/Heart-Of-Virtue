@@ -14,7 +14,8 @@ import {
   NO_REACHABLE_TARGET_REASON,
 } from './combatMoveStatus';
 
-// Issue #586: King Slime's Tidal Surge (2.5x, a full-to-dead hit) was
+// Issue #586: King Slime's Tidal Surge (then 2.5x, a full-to-dead hit; 1.8x
+// since part B of the same issue, still "deadly") was
 // telegraphed identically to a routine NpcAttack wind-up because both are
 // "Offensive". The serializer now carries Move.telegraph_severity
 // (src/moves/_base.py) as `telegraph_severity`; these read it.

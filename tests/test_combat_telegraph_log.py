@@ -1,6 +1,7 @@
 """Issue #586: a heavy enemy wind-up is its own combat-log entry type.
 
-King Slime's Tidal Surge (2.5x, 84-134 damage against a 114 HP Jean) was
+King Slime's Tidal Surge (then 2.5x, 84-134 damage against a 114 HP Jean;
+retuned to 1.8x by part B of the same issue) was
 announced by one uncoloured line in the scrolling log. The move's inline
 ``colored(..., "yellow")`` never survives ``narrate`` (src/narration.py only
 honours the ``color=`` keyword) and the API never forwards narration colour

@@ -2523,7 +2523,10 @@ class TestDeclaredDamageMultiplier:
         # TelegraphedSurge family — the attribute is functionally live here,
         # applied by TelegraphedSurge.evaluate().
         "SlimeVolley": 2.2,
-        "TidalSurge": 2.5,
+        # 2.5 -> 1.8 in #586 part B: a max roll (150 raw) killed a full-HP
+        # level-3 Jean outright; tests/test_tidal_surge_balance.py derives
+        # the survivability guard the new number has to satisfy.
+        "TidalSurge": 1.8,
         "WailStrike": 1.8,
         # Plain Move subclasses — declared for the wire, derived from the
         # bounds their own evaluate() rolls between.
@@ -2583,7 +2586,8 @@ class TestDeclaredDamageMultiplier:
 # ---------------------------------------------------------------------------
 # telegraph_severity — issue #586
 #
-# King Slime's Tidal Surge (2.5x, 84-134 damage against a 114 HP Jean) was
+# King Slime's Tidal Surge (then 2.5x, 84-134 damage against a 114 HP Jean;
+# 1.8x since part B of the same issue) was
 # telegraphed by one uncoloured line in the scrolling log, and its countdown
 # badge on the battlefield was identical to a routine NpcAttack wind-up
 # because both are "Offensive". The severity is declared on the move so the
@@ -2603,7 +2607,10 @@ HEAVY_MULTIPLIER_FLOOR = 2.0
 #: Moves known to sit at or above the floor today. The reflection below must
 #: find at least these, or an enumerator that silently returns nothing (a
 #: renamed ``__all__``, a moved multiplier) would make the audit vacuous.
-KNOWN_HEAVY_HITTERS = {"SlimeVolley", "TidalSurge", "GorranClub"}
+#: TidalSurge left this set when #586 part B retuned it 2.5x -> 1.8x; it
+#: keeps its "deadly" severity by opt-in (pinned below), which the floor
+#: never forbids -- the floor only forces heavy moves to speak up.
+KNOWN_HEAVY_HITTERS = {"SlimeVolley", "GorranClub"}
 
 
 def _heavy_hitters():

@@ -477,17 +477,24 @@ class SlimeVolley(TelegraphedSurge):
 class TidalSurge(TelegraphedSurge):
     """
     Boss-tier telegraphed surge used by KingSlime. Same two-turn structure as
-    SlimeVolley but with dramatically higher damage multiplier and longer prep.
+    SlimeVolley but with a boss's damage stat behind it and longer prep.
     The sheer volume of the surge makes coating the target almost certain.
     """
     display_name = 'Tidal Surge'
 
     web_animation = "shockwave"
 
-    _DAMAGE_MULTIPLIER = 2.5
+    # 1.8x of King Slime's 50 damage, rolled through NpcAttack's 0.8-1.2 band,
+    # is 72-108 raw (~52-88 landed through the beta's leather set): still the
+    # hardest hit in the game, but one a full-HP Jean at the level the beta
+    # reaches the arena (level 3, ~100 HP) survives on the worst roll. It was
+    # 2.5x -- 100-150 raw, 84-134 landed against a 114 HP Jean -- a
+    # full-to-dead hit no warning could make fair, so #586 part B retuned the
+    # number once part A had made the wind-up legible. The "deadly" severity
+    # stays: it is still the one blow the player must answer when it winds up.
+    # tests/test_tidal_surge_balance.py derives the survivability guard.
+    _DAMAGE_MULTIPLIER = 1.8
     _EXTRA_PREP_BEATS = 5
-    # 2.5x of King Slime's 50 damage is 84-134 against a 114 HP Jean: a
-    # full-to-dead hit, which is what "deadly" means (issue #586).
     telegraph_severity = "deadly"
 
     def __init__(self, npc):
@@ -525,7 +532,7 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
     # The TelegraphedSurge multipliers above are midpoints on this same scale,
     # not exact factors: NpcAttack.evaluate has already rolled power through
     # its own band by the time TelegraphedSurge.evaluate multiplies by them, so
-    # 2.2/2.5/1.8 centre the hit on the user's damage exactly as this midpoint
+    # 2.2/1.8/1.8 centre the hit on the user's damage exactly as this midpoint
     # does. Every declaration in this module means the same thing.
     _POWER_ROLL_MIN = 1.5
     _POWER_ROLL_MAX = 3.0
