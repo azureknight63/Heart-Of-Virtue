@@ -115,6 +115,7 @@ try:  # pragma: no cover - trivially exercised by importing this module
         JEAN_DEFAULT_KIND,
         JEAN_DEFAULT_TONE,
         JEAN_KINDS,
+        JEAN_OPTION_COUNT,
         JEAN_TONES,
         LOQUACITY_DELTA_BOUNDS,
         LOQUACITY_DELTA_DEFAULT,
@@ -164,6 +165,7 @@ except Exception as _constants_import_error:  # pragma: no cover - no AI stack
     }
     JEAN_DEFAULT_TONE = "neutral"
     JEAN_DEFAULT_KIND = "reply"
+    JEAN_OPTION_COUNT = 3
     MAX_NPC_TEXT_CHARS = 300
     MAX_FLAVOR_CHARS = 200
     MAX_OPTION_CHARS = 160
@@ -671,10 +673,11 @@ def _is_combined_adapter(adapter: Any) -> TypeGuard[CombinedChatAdapter]:
 # generator has to obey the same numbers the filter enforces.
 # Jean is always offered exactly three. This was ``len(JEAN_TONES)``, which was
 # the same number only by coincidence: issue #591 widened that tuple to the eight
-# portrait emotions and the expression silently became eight. Pinned to the
-# literal, with the relationship the QC pipeline actually depends on asserted
-# below — it needs the KIND pool to outnumber the options, not the tone tuple.
-_JEAN_OPTION_COUNT = 3
+# portrait emotions and the expression silently became eight. It now comes from
+# ai/llm_client.py like every other shared conversation constant, so the number
+# the prompts ask the model for and the number this pipeline keeps are one
+# value; tests/test_npc_chat_turn_pipeline.py pins the mirrored copy.
+_JEAN_OPTION_COUNT = JEAN_OPTION_COUNT
 _OPTION_SIMILARITY_MAX = 0.6  # Jaccard ceiling before two options count as duplicates
 _NPC_REPEAT_SIMILARITY = 0.7  # Jaccard floor before an NPC line counts as a repeat
 
@@ -3571,6 +3574,15 @@ class ConversationalNPCMixin:
         round satisfies the rule for free.
         """
         options = [dict(o) for o in options[:_JEAN_OPTION_COUNT]]
+        # The pool fetch is NOT a pure read — `_get_fallback_jean_options`
+        # advances `_chat_fallback_idx` so successive degraded rounds offer
+        # different stock phrases. So it happens only when this call is
+        # actually going to draw from it: a healthy round that needs neither a
+        # filler nor the reply repair must leave the rotation where it found
+        # it, or every ordinary beat silently spends a group that a later
+        # degraded round would have used.
+        if len(options) >= _JEAN_OPTION_COUNT and self._has_a_reply(options):
+            return options
         pool = self._get_fallback_jean_options()
         used_tones = {o["tone"] for o in options}
         for fb in pool:
@@ -3590,6 +3602,17 @@ class ConversationalNPCMixin:
             options.append(dict(fb))
         return self._ensure_a_reply(options, pool)
 
+    @staticmethod
+    def _has_a_reply(options: List[Dict[str, str]]) -> bool:
+        """Whether the set already answers the NPC's last line.
+
+        Named rather than inlined because two callers ask it for different
+        reasons — one to decide whether the pool is needed at all, one to
+        decide whether to repair — and a copy in each is how the two would
+        drift into disagreeing about what satisfies the rule.
+        """
+        return any(o.get("kind") == JEAN_DEFAULT_KIND for o in options)
+
     def _ensure_a_reply(
         self, options: List[Dict[str, str]], pool: List[Dict[str, str]]
     ) -> List[Dict[str, str]]:
@@ -3601,7 +3624,7 @@ class ConversationalNPCMixin:
         pool entry's, so the portrait sequence the round already established
         does not jump.
         """
-        if not options or any(o.get("kind") == JEAN_DEFAULT_KIND for o in options):
+        if not options or self._has_a_reply(options):
             return options
         texts = [o["text"] for o in options[:-1]]
         for fb in pool:

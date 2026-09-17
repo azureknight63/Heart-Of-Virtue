@@ -67,12 +67,13 @@ export const CHAT_PHASES = {
 /**
  * Resolve a tagged value against an emotion table, defaulting to neutral.
  *
- * Both tables are looked up the same way — case-folded, with an unmapped or
- * missing value reading as neutral — so the rule lives here once instead of
- * being written out per table.
+ * One table reaches this now — `QUALITY_EMOTIONS`. It stays parameterised
+ * because the rule it carries (case-folded, unmapped reads as neutral) is the
+ * same rule `normalizeEmotion` applies on the tone side, and collapsing it
+ * into its single caller would put that rule in two shapes.
  *
- * `lookupOr`, not `table[key] || DEFAULT_EMOTION`. `tone` and
- * `conversation_quality` are strings the server chose; a value of
+ * `lookupOr`, not `table[key] || DEFAULT_EMOTION`. `conversation_quality` is
+ * a string the server chose; a value of
  * `constructor` or `toString` found an inherited function on the table, which
  * is truthy, so the default never ran and a FUNCTION went on to be used as a
  * portrait emotion. `table` arrives as a parameter here, so the static audit

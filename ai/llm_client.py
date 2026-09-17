@@ -367,10 +367,14 @@ _STAGE_DIRECTION_RE = re.compile(r'^\[[^\[\]{}"]{1,80}\]\s*\S')
 # against cannot drift apart again.
 # ---------------------------------------------------------------------------
 
-#: How many options one round offers. ``src/npc/_chat_llm.py`` owns the QC-side
-#: copy (``_JEAN_OPTION_COUNT``); this one exists so the prompts can ask for the
-#: right number without importing the engine.
-_JEAN_OPTIONS_WANTED = 3
+#: How many options one round offers.
+#:
+#: Public and mirrored into ``src/npc/_chat_llm.py`` through the same import
+#: guard as the tone and length constants, so the number the prompts ASK for
+#: and the number the QC pipeline KEEPS cannot drift. It briefly existed as two
+#: private literals in two files, which is the exact hazard the header above
+#: says these constants are centralised to prevent.
+JEAN_OPTION_COUNT = 3
 
 #: Jean's tone on an option: the portrait emotion he wears delivering it.
 #:
@@ -477,7 +481,7 @@ LOQUACITY_DELTA_DEFAULT = -8
 #: neither axis is positional any more: the model chooses a tone and a kind per
 #: option, and QC enforces the constraints afterwards.
 _JEAN_OPTIONS_SKELETON = "[%s]" % ", ".join(
-    ['{"tone": "...", "kind": "...", "text": "..."}'] * _JEAN_OPTIONS_WANTED
+    ['{"tone": "...", "kind": "...", "text": "..."}'] * JEAN_OPTION_COUNT
 )
 
 #: The rule ``_normalise_turn_fields`` then enforces on ``npc_text``.
@@ -3812,7 +3816,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             "(-3..-12); up to +8 only when Jean raises something this NPC genuinely cares "
             "about; -25..-35 if Jean is deeply offensive.\n"
             "On an opening line set both deltas to 0.\n"
-            f"jean_options: Jean's {_JEAN_OPTIONS_WANTED} replies (he/him, cautious and "
+            f"jean_options: Jean's {JEAN_OPTION_COUNT} replies (he/him, cautious and "
             f"measured). 8-20 words each, never over {MAX_OPTION_CHARS} characters. "
             "Ground each one in the specific thing the NPC just said and in the history — "
             "concrete details, not pleasantries. Never echo a history line. "
@@ -3979,7 +3983,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             f"{NPC_SPEAKER_LABEL}: {quoted_name} — {npc_voice_summary}\n"
             f'{quoted_name} just said: "{last_line}"\n\n'
             f"Jean's recent lines (avoid repeating these): {history_hint}\n\n"
-            f"Generate exactly {_JEAN_OPTIONS_WANTED} Jean response options. Return this "
+            f"Generate exactly {JEAN_OPTION_COUNT} Jean response options. Return this "
             "JSON object:\n"
             f'{{"options": {_JEAN_OPTIONS_SKELETON}}}\n\n'
             "Rules:\n"

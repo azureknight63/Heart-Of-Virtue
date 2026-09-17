@@ -248,3 +248,50 @@ class TestBothAxesReachTheWire:
         assert block, "could not find KIND_LABELS in hooks/useNpcChat.js"
         labelled = set(re.findall(r"^\s*'?([a-z-]+)'?\s*:", block.group(1), re.M))
         assert labelled == set(JEAN_KINDS)
+
+
+class TestTheFallbackRotationOnlyAdvancesWhenUsed:
+    """A healthy round must not consume a fallback group.
+
+    ``_get_fallback_jean_options`` is not a pure read: it advances
+    ``_chat_fallback_idx`` so successive degraded rounds offer different stock
+    phrases. Adding the at-least-one-reply repair moved the pool fetch above
+    the early return, so every full, healthy round started spinning that
+    counter — invisible in the payload, and it changes which group a later
+    degraded round actually gets.
+    """
+
+    def _npc(self):
+        npc = _qc_host()
+        npc._chat_fallback_idx = 0
+        return npc
+
+    def test_a_complete_set_does_not_spin_the_counter(self):
+        npc = self._npc()
+        options = [
+            {"tone": "curious", "kind": "ask-lore", "text": "Who holds the eastern road?"},
+            {"tone": "neutral", "kind": "reply", "text": "Then I will go around."},
+            {"tone": "concerned", "kind": "counsel", "text": "That is a heavy thing."},
+        ]
+        assert npc._top_up_jean_options(options) == options
+        assert npc._chat_fallback_idx == 0
+
+    def test_a_partial_set_does_spin_it(self):
+        """The other half: the counter must still advance when the pool is
+        genuinely drawn from, or degraded rounds would repeat one group."""
+        npc = self._npc()
+        npc._top_up_jean_options(
+            [{"tone": "neutral", "kind": "reply", "text": "Then I will go around."}]
+        )
+        assert npc._chat_fallback_idx != 0
+
+    def test_an_all_question_set_spins_it_because_the_repair_needs_the_pool(self):
+        npc = self._npc()
+        npc._top_up_jean_options(
+            [
+                {"tone": "curious", "kind": "ask-lore", "text": "Who holds the road?"},
+                {"tone": "neutral", "kind": "ask-npc", "text": "How long have you traded?"},
+                {"tone": "angry", "kind": "challenge", "text": "That story has a hole."},
+            ]
+        )
+        assert npc._chat_fallback_idx != 0
