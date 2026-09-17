@@ -419,6 +419,17 @@ class GameService:
             "look",
             "take",
             "equip",
+            # The client renders TAKE ALL on every open container, independent
+            # of authored keywords, but ``Container.__init__``'s own
+            # ``take_all`` keyword is overwritten by the placement's authored
+            # list at map load — so 40 of 47 shipped containers refused their
+            # own button (issue #609). Safe to allow rather than to author into
+            # 40 maps: the arm this falls through to in
+            # ``_dispatch_interaction`` resolves the verb on the target and
+            # refuses it in fiction when the class implements nothing by that
+            # name, and ``Container.take_all`` is the engine's only
+            # implementation. One container verb, not an arbitrary attribute.
+            "take_all",
         }
     )
 

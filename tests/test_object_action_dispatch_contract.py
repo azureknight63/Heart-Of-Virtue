@@ -39,8 +39,10 @@ special (``tests/test_ferry_demo_end.py`` pins that behaviour).
 
 import functools
 import inspect
+import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -48,8 +50,16 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from src import map_placeholders  # noqa: E402
 from src.objects import Container, Passageway  # noqa: E402
-from tests._map_scan import object_placements, resolve_class  # noqa: E402
+from tests._js_scan import FRONTEND_SRC  # noqa: E402
+from tests._map_scan import (  # noqa: E402
+    class_ref,
+    map_data,
+    object_placements,
+    resolve_class,
+    tiles,
+)
 
 
 class _StubTile:
@@ -345,3 +355,302 @@ def test_no_authored_keyword_anywhere_is_undispatchable():
         if not _is_dispatchable(cls, instance, keyword)
     })
     assert not broken, f"undispatchable authored (class, keyword) pairs: {broken}"
+
+
+# ---------------------------------------------------------------------------
+# The verbs the CLIENT sends that no placement advertises — issue #609
+# ---------------------------------------------------------------------------
+#
+# Everything above asks "does every authored keyword resolve to something".
+# #609 is the other direction, and nothing was asking it: the client renders a
+# TAKE ALL button on every open container regardless of what the placement
+# authors, while ``GameService._verb_refusal`` accepts a verb only when the
+# target ADVERTISES it in ``keywords`` or it sits on that service's
+# ``_ALLOWED_INTERACTION_VERBS``.
+#
+# ``Container.__init__`` does advertise it (``keywords.extend(["loot",
+# "take_all"])``), which is why a container built here would pass — but the map
+# loader ``setattr``s the placement's authored ``keywords`` straight over that
+# list, and 40 of the 47 shipped placements author one without ``take_all``. So
+# the button was dead almost everywhere, answering "There's no way for Jean to
+# take_all the Dusty Satchel."
+#
+# Both halves of the derivation below are therefore external to the service and
+# to this file: the verb is read out of the component that sends it, and the
+# targets are built from the shipped maps by the engine's own loader.
+
+_INTERACT_PANEL = FRONTEND_SRC / "components" / "InteractPanel.jsx"
+
+#: The container TAKE ALL button in ``InteractPanel.jsx``: ONE ``<GameButton``
+#: element, from its opening tag through its ``onClick`` verb literal to its
+#: own label, with no other ``<GameButton`` anywhere inside. Anchoring on the
+#: element (rather than just on "the nearest ``handleActionClick`` before the
+#: label") is what stops a silent wrong capture: if that button ever stops
+#: passing its verb inline, this matches nothing and
+#: :func:`_client_take_all_verb` fails, instead of quietly reading a
+#: neighbouring button's verb and testing the wrong thing.
+#:
+#: The label is matched case-sensitively, so the tile-level "Take All Items"
+#: control -- a different path (``take_all_ground``, handled client-side) --
+#: cannot be picked up here.
+_TAKE_ALL_BUTTON = re.compile(
+    r"<GameButton\b(?:(?!<GameButton).)*?"
+    r"handleActionClick\(\s*'([A-Za-z_]+)'\s*\)"
+    r"(?:(?!<GameButton).)*?>\s*TAKE ALL\s*<",
+    re.DOTALL,
+)
+
+
+@functools.lru_cache(maxsize=1)
+def _client_take_all_verb():
+    """The verb the container TAKE ALL button sends, read off the component.
+
+    Derived, never transcribed: the claim under test is that the client emits
+    a verb the server refuses, so the verb has to come from the client. Exactly
+    one match must exist — a renamed verb, a deleted button or a second TAKE
+    ALL control fails here, naming itself, rather than quietly leaving these
+    tests pinning a spelling nothing sends any more.
+    """
+    matches = _TAKE_ALL_BUTTON.findall(
+        _INTERACT_PANEL.read_text(encoding="utf-8")
+    )
+    assert len(matches) == 1, (
+        f"expected exactly one container TAKE ALL button in "
+        f"{_INTERACT_PANEL.name}, found {len(matches)}: {matches}. The verb "
+        "these tests assert on is read from that button, so it has to be "
+        "unambiguous."
+    )
+    return matches[0]
+
+
+def _container_payloads():
+    """``(map_name, coord, ref, payload)`` for every shipped container.
+
+    Built on the shared parse (``map_data``/``tiles``/``class_ref``) rather
+    than a second glob — see ``tests/_map_scan``'s docstring. The raw payload
+    rides along because the loader below takes the payload, not a summary of
+    it.
+    """
+    rows = []
+    for path, decoded in map_data():
+        for coord, tile_data in tiles(decoded):
+            for payload in tile_data.get("objects") or []:
+                ref = class_ref(payload)
+                if ref is None:
+                    continue
+                if issubclass(map_placeholders.resolve_class(ref.dotted), Container):
+                    rows.append((path.name, coord, ref, payload))
+    return rows
+
+
+class _LoadedContainer(NamedTuple):
+    """One shipped container placement and the instance the loader built.
+
+    A NamedTuple rather than a bare 4-tuple so the assertions below read
+    ``row.instance`` instead of ``row[3]`` -- the rows are unpacked in several
+    places and one transposed index would silently test a coordinate string
+    for keywords.
+    """
+
+    map_name: str
+    coord: str
+    name: str
+    instance: object
+
+
+@functools.lru_cache(maxsize=1)
+def _loaded_containers():
+    """Every shipped container, built the way the game builds it.
+
+    ``Universe._deserialize_saved_instance`` IS the map-load path: the class
+    trust gate, the constructor-signature filter, then the ``setattr`` of every
+    remaining authored prop — and that last step is the one that replaces the
+    constructor's ``keywords``. Constructing ``Container(...)`` here instead
+    would leave the inherited ``take_all`` in place and this whole section
+    would pass while every shipped placement failed, which is the defect.
+
+    ``Universe()`` loads no maps of its own, so it is cheap; its ``player`` is
+    what the loader injects into constructors that accept one.
+
+    Called from inside tests rather than at import, so the autouse terminal
+    patch is in place for the narration the constructors emit.
+    """
+    from src.universe import Universe
+
+    universe = Universe(player=_player())
+    rows = []
+    for map_name, coord, ref, payload in _container_payloads():
+        instance = universe._deserialize_saved_instance(payload, tile=_StubTile())
+        assert instance is not None, (
+            f"the engine loader refused {map_name} {coord} {ref.dotted} — "
+            "the shipped map would load an emptier world than this test thinks"
+        )
+        name = ref.props.get("name") or ref.class_name
+        rows.append(_LoadedContainer(map_name, coord, name, instance))
+    return tuple(rows)
+
+
+def _gate_refusal(target, verb):
+    """What ``GameService._verb_refusal`` answers for one verb on one target.
+
+    The gate is the thing under contract, so it is called for real; the request
+    is the service's own ``_InteractionRequest``, and this gate reads only its
+    ``target`` and ``action``. Imported lazily for the reason the module
+    docstring gives: reverting the fix must produce these tests' assertion
+    failures, not a collection error.
+    """
+    from src.api.services.game_service import GameService, _InteractionRequest
+
+    request = _InteractionRequest(
+        player=None,
+        target=target,
+        target_id="",
+        tile=None,
+        action=verb,
+        quantity=None,
+        session_data=None,
+    )
+    return GameService()._verb_refusal(request)
+
+
+def test_the_clients_take_all_verb_names_a_real_container_method():
+    """Cross-check of the client-side derivation against the engine.
+
+    Not ``== "take_all"``: a literal here would be this file agreeing with
+    itself. What matters is that whatever the button sends resolves to
+    something callable on a container — if it ever stops doing so, the button
+    is #553 again and the contract below would be asserting about a verb the
+    engine cannot serve either.
+    """
+    from src.objects import resolve_interaction
+
+    verb = _client_take_all_verb()
+    assert verb and verb.strip() == verb
+    assert resolve_interaction(Container(), verb) is not None, (
+        f"the TAKE ALL button sends {verb!r}, which resolves to nothing "
+        "callable on a Container"
+    )
+
+
+def test_shipped_containers_lose_the_constructors_take_all_keyword():
+    """The population the allow-list has to carry, proved non-empty.
+
+    ``Container.__init__`` advertises the verb, so a target that still carries
+    it passes the gate through the ADVERTISED arm and says nothing about the
+    allow-list. This is the positive control for the contract below: if the
+    loader ever stopped dropping the keyword — or this scan stopped finding
+    containers — that contract would pass vacuously for a gate that accepts
+    nothing at all.
+    """
+    verb = _client_take_all_verb()
+    assert verb in Container().keywords, (
+        f"Container.__init__ no longer advertises {verb!r}; the premise of "
+        "this section (the loader drops an inherited keyword) has changed"
+    )
+
+    loaded = _loaded_containers()
+    assert len(loaded) > 20, (
+        f"only {len(loaded)} container placements found — the map scan broke"
+    )
+    unadvertised = [
+        row for row in loaded
+        if verb not in (getattr(row.instance, "keywords", None) or [])
+    ]
+    assert len(unadvertised) > 20, (
+        f"only {len(unadvertised)} of {len(loaded)} shipped containers fail to "
+        f"advertise {verb!r} — the contract below no longer exercises the "
+        "service's allow-list, so it is not testing #609 any more"
+    )
+
+
+def test_the_reported_container_is_in_the_scan():
+    """grondia (1, 3) 'Dusty Satchel' — the placement #609 was filed against."""
+    verb = _client_take_all_verb()
+    hits = [
+        row for row in _loaded_containers()
+        if row.map_name == "grondia.json" and row.coord == "(1, 3)"
+        and row.name == "Dusty Satchel"
+    ]
+    assert len(hits) == 1, (
+        "the exact placement issue #609 was reproduced against is no longer "
+        "in the scan — if it was renamed or removed, update this anchor "
+        "deliberately"
+    )
+    assert verb not in hits[0].instance.keywords, (
+        f"the Dusty Satchel now advertises {verb!r} itself, so it no longer "
+        "reproduces the reported bug — pick another anchor rather than "
+        "deleting this one"
+    )
+
+
+def test_every_shipped_container_accepts_the_clients_take_all():
+    """The contract: the button the client always renders is never refused.
+
+    One aggregate assertion so the failure names every placement, the way
+    ``test_no_authored_keyword_anywhere_is_undispatchable`` does.
+    """
+    verb = _client_take_all_verb()
+    refused = [
+        f"{map_name} {coord} {name!r}"
+        for map_name, coord, name, instance in _loaded_containers()
+        if _gate_refusal(instance, verb) is not None
+    ]
+    assert not refused, (
+        f"GameService refuses the client's {verb!r} on {len(refused)} shipped "
+        f"container placements (issue #609): {refused}. The frontend renders "
+        "TAKE ALL for every open container regardless of authored keywords, so "
+        "the verb belongs on _ALLOWED_INTERACTION_VERBS — do not fix this by "
+        "authoring the keyword into the maps."
+    )
+
+
+def test_take_all_dispatches_on_every_shipped_container():
+    """Passing the gate is half of it; the verb must also reach the method.
+
+    ``_dispatch_interaction`` falls through to ``resolve_interaction`` for this
+    verb, and a target that resolves nothing is refused in fiction there
+    instead — the same player-visible failure one branch later.
+    """
+    from src.objects import resolve_interaction
+
+    verb = _client_take_all_verb()
+    unimplemented = [
+        f"{map_name} {coord} {name!r}"
+        for map_name, coord, name, instance in _loaded_containers()
+        if resolve_interaction(instance, verb) is None
+    ]
+    assert not unimplemented, (
+        f"{verb!r} resolves to nothing callable on: {unimplemented}"
+    )
+
+
+def test_the_gate_still_refuses_an_unadvertised_public_method():
+    """The #334 guarantee the #609 fix must not have widened.
+
+    ``Container.process_events`` is a real, public, callable method that no
+    placement authors as a keyword — exactly the arbitrary-attribute dispatch
+    the allow-list exists to stop. It is also the negative control for the
+    contract above: the gate genuinely refuses something, so "not refused" is
+    a fact about ``take_all`` rather than about a gate that waves everything
+    through.
+    """
+    from src.objects import resolve_interaction
+
+    containers = [row.instance for row in _loaded_containers()]
+    assert containers, "no containers loaded — see the population guard above"
+    sample = containers[0]
+
+    assert resolve_interaction(sample, "process_events") is not None, (
+        "process_events is no longer a callable attribute, so it is no longer "
+        "the hazard this control stands for — pick another public method"
+    )
+    assert "process_events" not in (getattr(sample, "keywords", None) or [])
+
+    refusals = [
+        _gate_refusal(instance, "process_events") for instance in containers
+    ]
+    assert all(r is not None for r in refusals), (
+        "GameService accepted 'process_events' as an interaction verb — the "
+        "allow-list has been widened past the container verbs the client "
+        "sends, re-opening issue #334"
+    )
