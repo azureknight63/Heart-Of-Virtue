@@ -1826,8 +1826,9 @@ class ApiCombatAdapter:
             self.awaiting_input = True
             self.input_type = "move_selection"
             self.available_options = self._get_available_moves()
-            # Start async suggestion fetch (non-blocking)
-            self.refresh_suggestions()
+            # Start async suggestion fetch (non-blocking), off the list just
+            # built rather than a second walk of it.
+            self.refresh_suggestions(self.available_options)
 
             result = self.get_combat_state()
 
@@ -1878,7 +1879,17 @@ class ApiCombatAdapter:
         Returns:
             Updated combat state
         """
+        # Held for the WHOLE command, not just the _execute_move it ends in.
+        # The handlers write move.target / target_direction / duration and
+        # walk _get_available_targets (-> Move._viable_for, which swaps
+        # move.target per candidate) BEFORE they reach _execute_move's lock,
+        # and the status poll walks the same move instances from its own
+        # thread (#569). Reentrant, so the nested _execute_move still takes it.
+        with self._beat_lock:
+            return self._process_command_locked(command)
 
+    def _process_command_locked(self, command: Dict[str, Any]) -> Dict[str, Any]:
+        """Body of :meth:`process_command`. Call only with ``_beat_lock`` held."""
         if not isinstance(command, dict):
             return {"error": "Invalid command: expected an object"}
 
@@ -2739,8 +2750,9 @@ class ApiCombatAdapter:
             self.input_type = "move_selection"
             self.available_options = self._get_available_moves()
             self.pending_move_index = None
-            # Start async suggestion fetch (non-blocking)
-            self.refresh_suggestions()
+            # Start async suggestion fetch (non-blocking), off the list just
+            # built rather than a second walk of it.
+            self.refresh_suggestions(self.available_options)
         else:
             # Events just fired (e.g., reinforcement wave spawned). Clear stale
             # pending-move state so when the player dismisses events and returns
@@ -3189,15 +3201,24 @@ class ApiCombatAdapter:
                 amt = 0.001
             self.player.heat -= amt
 
-    def refresh_suggestions(self):
+    def refresh_suggestions(self, all_moves=None):
         """Fetch tactical suggestions asynchronously without blocking combat.
 
         The strategist context is built HERE, on the calling thread, and the
-        worker receives a finished snapshot. Both callers (``initialize_combat``
-        and ``_execute_move_inner``) hold ``_beat_lock``, so the snapshot is
-        consistent, and the worker then does exactly two things: call
-        ``strategist.get_suggestions`` and write ``player.suggested_moves``
-        under ``_suggestion_lock``. It never reads or writes engine state.
+        worker receives a finished snapshot. The adapter's own callers
+        (``initialize_combat`` and ``_execute_move_inner``) hold
+        ``_beat_lock``; ``game_service.get_combat_status`` calls this from the
+        status poll's resume and move-selection branches without it, which is
+        fine because the one engine walk the snapshot needs
+        (``_get_available_moves``) is self-locking. The worker then does
+        exactly two things: call ``strategist.get_suggestions`` and write
+        ``player.suggested_moves`` under ``_suggestion_lock``. It never reads
+        or writes engine state.
+
+        ``all_moves`` is the option list a caller has just built with
+        ``_get_available_moves``; passing it saves the snapshot a second walk
+        of every move and candidate. Anything that is not a list is ignored
+        and the walk is redone.
 
         It used to build the context itself, and that walk
         (``_get_available_moves`` -> ``_build_target_entry`` ->
@@ -3234,7 +3255,7 @@ class ApiCombatAdapter:
 
         try:
             count = self._suggestion_count()
-            ctx, available_move_names = self._build_strategist_context()
+            ctx, available_move_names = self._build_strategist_context(all_moves)
         except Exception as e:
             logger.error(f"Error building strategist context: {e}", exc_info=True)
             with self._suggestion_lock:
@@ -3357,21 +3378,27 @@ class ApiCombatAdapter:
                 count += 1
         return count
 
-    def _build_strategist_context(self) -> Tuple[Dict[str, Any], Set[str]]:
+    def _build_strategist_context(
+        self, all_moves=None
+    ) -> Tuple[Dict[str, Any], Set[str]]:
         """Snapshot the fight for the strategist, on the caller's thread.
 
         Returns ``(ctx, available_move_names)``: the context dict the
         strategist prompt is rendered from, and the names of every move the
         snapshot considered available, used to filter the strategist's answer
-        without touching the engine again. Must run on the request thread
-        under ``_beat_lock`` -- see :meth:`refresh_suggestions`.
+        without touching the engine again. Must run on the request thread --
+        see :meth:`refresh_suggestions`. ``all_moves`` is a freshly built
+        ``_get_available_moves`` list to reuse; when it is anything else
+        (``None``, or the dict / direction list ``available_options`` holds
+        for the other input types) the walk is done here.
         """
         # Ensure combat_log exists
         if not hasattr(self.player, "combat_log"):
             self.player.combat_log = []
 
         # Gather context
-        all_moves = self._get_available_moves()
+        if not isinstance(all_moves, list):
+            all_moves = self._get_available_moves()
         logger.debug(
             f"Preparing strategist context: {len(self.player.combat_list)} enemies, {len(all_moves)} moves considered"
         )
@@ -3972,7 +3999,23 @@ class ApiCombatAdapter:
         return int(reach)
 
     def _get_available_moves(self) -> List[Dict[str, Any]]:
-        """Get list of all moves for the player with availability status."""
+        """Get list of all moves for the player with availability status.
+
+        Self-locking: the walk below reaches ``Move._viable_for``, which swaps
+        ``move.target`` in and out per candidate on the player's REAL move
+        instances, and it is called from threads that hold no lock of their
+        own -- ``get_combat_state`` on the status poll and
+        ``game_service.get_combat_status``'s resume and move-selection
+        branches. Unlocked, a poll landing under a ``select_move_and_target``
+        restored a stale target over the one the command had just committed
+        (#569). ``_beat_lock`` is reentrant, so the move loop and
+        ``initialize_combat``, which already hold it, nest here freely.
+        """
+        with self._beat_lock:
+            return self._get_available_moves_locked()
+
+    def _get_available_moves_locked(self) -> List[Dict[str, Any]]:
+        """Body of :meth:`_get_available_moves`. Call only with ``_beat_lock`` held."""
         moves = []
 
         # Get all known moves, not just viable ones

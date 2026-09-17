@@ -27,6 +27,7 @@ from unittest.mock import patch
 import pytest
 
 import src.moves as moves
+from src.api.combat_adapter import ApiCombatAdapter
 from src.npc import NPC
 from src.api.serializers.combat import CombatantSerializer
 from src.combatant import combatant_handle
@@ -580,3 +581,164 @@ def test_suggestions_still_populate_from_the_snapshot_context():
     ctx = get_suggestions.call_args.args[0]
     assert {m["name"] for m in ctx["available_moves"]} == {"Disrupt"}
     assert {e["name"] for e in ctx["enemies"]} == {"NearEnemy", "SecondEnemy", "FarEnemy"}
+
+
+# ---------------------------------------------------------------------------
+# Issue #569, second path: the status poll walks the same move instances
+# ---------------------------------------------------------------------------
+#
+# The worker was not the only off-thread walker. ``GET /api/combat/status``
+# runs ``get_combat_state`` -> ``_get_available_moves`` on its own request
+# thread every few seconds, and ``game_service.get_combat_status`` walks it
+# directly on the resume and move-selection branches too. None of those held
+# ``_beat_lock``, so the same ``_viable_for`` target swap could land under a
+# ``select_move_and_target`` the player's request thread was committing --
+# that command keeps ``input_type == "move_selection"`` for its whole handler,
+# which is exactly the condition the poll rebuilds the option list on.
+
+#: How long each side of the handshake below waits for the other. Once the
+#: walk is locked the poll can never reach its half while a command holds the
+#: lock, so the request side times out here and the test still passes.
+_HANDSHAKE_S = 0.5
+
+
+def _poll_forever(adapter, stop, errors):
+    """The status poll, reduced to its engine call: ``get_combat_state`` in
+    a loop until told to stop. Exceptions are kept, not raised -- the poll
+    thread has no assertion of its own to fail."""
+    while not stop.is_set():
+        try:
+            adapter.get_combat_state()
+        except Exception as exc:  # pragma: no cover - diagnostic only
+            errors.append(repr(exc))
+
+
+def test_move_target_survives_a_concurrent_status_poll():
+    """Deterministic pin of the poll race, staged as a handshake.
+
+    ``_viable_for`` swaps ``move.target`` in, calls ``viable()``, and restores
+    what it found. Two threads doing that on one move interleave as: request
+    swaps A in (saving the real target), poll swaps B in (saving A), request
+    restores, poll restores A -- and the committed target is gone. The
+    handshake forces exactly that order: the request thread's swapped-in
+    ``viable()`` waits until the poll thread is inside its own swap, and the
+    poll thread's stays there until the command has returned.
+
+    The command commits ``SecondEnemy`` while the walk's first candidate --
+    the A above -- is ``NearEnemy``, so the stale restore is visible: were
+    the committed target also the first candidate, the clobber would put
+    back the right combatant by coincidence.
+    """
+    request_thread = threading.current_thread()
+    real_viable_for = moves.Move._viable_for
+    real_viable = moves.Disrupt.viable
+    in_swap = threading.local()
+    request_in_window = threading.Event()
+    poll_in_window = threading.Event()
+    command_returned = threading.Event()
+
+    def tracking_viable_for(self, target):
+        in_swap.active = True
+        try:
+            return real_viable_for(self, target)
+        finally:
+            in_swap.active = False
+
+    def handshake_viable(self):
+        if getattr(in_swap, "active", False):
+            if threading.current_thread() is request_thread:
+                if not request_in_window.is_set():
+                    request_in_window.set()
+                    poll_in_window.wait(_HANDSHAKE_S)
+            elif request_in_window.is_set() and not poll_in_window.is_set():
+                poll_in_window.set()
+                command_returned.wait(_HANDSHAKE_S)
+        return real_viable(self)
+
+    fight = _build()
+    adapter, second = fight["adapter"], fight["second"]
+    stop = threading.Event()
+    errors = []
+
+    with (
+        patch.object(moves.Move, "_viable_for", tracking_viable_for),
+        patch.object(moves.Disrupt, "viable", handshake_viable),
+        _tracked_threads(),
+    ):
+        poller = threading.Thread(
+            target=_poll_forever, args=(adapter, stop, errors), daemon=True
+        )
+        poller.start()
+        try:
+            with forced_roll(**_ALWAYS_HITS):
+                result = adapter.process_command(
+                    {
+                        "type": "select_move_and_target",
+                        "move_name": "Disrupt",
+                        "target_id": CombatantSerializer.stream_id(second),
+                    }
+                )
+        finally:
+            command_returned.set()
+            stop.set()
+
+    assert "error" not in result
+    assert request_in_window.is_set(), "fixture never walked the option set"
+    assert fight["move"].target is second, (
+        f"move.target is {getattr(fight['move'].target, 'name', fight['move'].target)!r} "
+        f"after the command committed SecondEnemy (poll errors: {errors})"
+    )
+    assert second.hp < 100
+
+
+def test_every_viability_walk_holds_the_beat_lock():
+    """Contract behind the pin above: ``Move._viable_for`` never runs on this
+    adapter unless the calling thread owns ``_beat_lock`` -- through
+    ``initialize_combat``, the status poll's ``get_combat_state`` and a
+    ``process_command`` alike. ``RLock._is_owned`` is the check because the
+    lock is reentrant: a non-blocking ``acquire`` would succeed for the owner
+    and for nobody else only on a plain Lock."""
+    real_viable_for = moves.Move._viable_for
+    real_init = ApiCombatAdapter.__init__
+    holder = {}
+    phase = {"name": "initialize_combat"}
+    walks = []
+
+    def capturing_init(self, *args, **kwargs):
+        real_init(self, *args, **kwargs)
+        holder["adapter"] = self
+
+    def recording_viable_for(self, target):
+        adapter = holder.get("adapter")
+        if adapter is not None:
+            walks.append((phase["name"], adapter._beat_lock._is_owned()))
+        return real_viable_for(self, target)
+
+    with (
+        patch.object(ApiCombatAdapter, "__init__", capturing_init),
+        patch.object(moves.Move, "_viable_for", recording_viable_for),
+        _tracked_threads(),
+    ):
+        fight = _build()
+        phase["name"] = "get_combat_state"
+        fight["adapter"].get_combat_state()
+        phase["name"] = "process_command"
+        with forced_roll(**_ALWAYS_HITS):
+            result = fight["adapter"].process_command(
+                {
+                    "type": "select_move_and_target",
+                    "move_name": "Disrupt",
+                    "target_id": CombatantSerializer.stream_id(fight["near"]),
+                }
+            )
+        assert "error" not in result
+
+    # ``initialize_combat`` is recorded but cannot be required: the fixture
+    # places the combatants after it runs, so its walk finds nothing in range
+    # and never reaches ``_viable_for``.
+    phases_seen = {name for name, _owned in walks}
+    assert {"get_combat_state", "process_command"} <= phases_seen, (
+        f"recorder did not see every phase walk the option set: {phases_seen}"
+    )
+    unlocked = sorted({name for name, owned in walks if not owned})
+    assert unlocked == [], f"_viable_for ran without _beat_lock in: {unlocked}"
