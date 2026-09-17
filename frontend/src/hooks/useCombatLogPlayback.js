@@ -110,26 +110,40 @@ export default function useCombatLogPlayback(combat, {
     // still undefined here, and there is no prior fight's dedup state to
     // protect. But "first ever" is NOT by itself evidence of a reload -- it's
     // also what a completely ordinary first fight of the session looks like,
-    // the moment its very first status fetch resolves. The two are only
-    // distinguishable by what that first payload actually contains:
-    // `end_state` present means the fight is already over, which a fresh
-    // live fight's opening payload never has. Skipping the reset ONLY for
-    // that combination is what fixes issue #570 (an already-resolved fight's
-    // full log was masked as "a fight just started," suppressing the
-    // reload-recovery detection below and pacing the reveal at 400ms/line
-    // plus animation holds -- tens of seconds to minutes replaying a
-    // finished fight after a page reload) without also swallowing a brand
-    // new live fight's opening line(s) into the same instant, silent,
-    // SFX-less catch-up path -- which is what unconditionally exempting
-    // every first-ever transition did: a fresh fight's first payload landed
-    // here too, so its opening entries lost their pacing and SFX exactly
-    // like a reload's did. Mirrors the discriminator GamePage.jsx's sibling
-    // `isCombatReloadRecovery` flag already uses for the same class of
-    // problem (see the block comment above its effect).
-    const isAlreadyResolvedFirstSighting = prevCombatId === undefined && !!combat?.end_state
+    // the moment its very first status fetch resolves. Two different shapes
+    // of reload land here, and each needs its own signal to tell apart from
+    // that ordinary first fight:
+    //
+    // - Already-ended (#570): `end_state` present means the fight is already
+    //   over, which a fresh live fight's opening payload never has.
+    // - Still active, mid-fight: no `end_state` yet, but a real backlog has
+    //   already accumulated. `end_state` can't help here, so this uses
+    //   `round` (== `combat.beat`, the same underlying `combat_beat` counter
+    //   -- see Battlefield.jsx's `combat?.beat ?? combat?.round` fallback of
+    //   one to the other, and GamePage's own `combat?.round > 1` check for
+    //   the same "fight already under way" question). A brand-new fight's
+    //   very first payload starts at round 1, exactly like the #570 negative
+    //   -control fixture below; a reload landing after any full round has
+    //   elapsed cannot be that fight's opening moment. (Log entry TYPE was
+    //   tried and rejected here: the #570 negative control's own opening
+    //   payload carries ordinary `combat`-typed entries, not `system`, so
+    //   filtering on type misclassified it.)
+    //
+    // Skipping the reset for either combination is what fixes issue #570 and
+    // its still-active sibling (a reload's full log was masked as "a fight
+    // just started," suppressing the reload-recovery detection below and
+    // pacing the reveal at 400ms/line plus animation holds -- tens of
+    // seconds to minutes replaying a fight after a page reload) without also
+    // swallowing a brand new live fight's opening line(s) into the same
+    // instant, silent, SFX-less catch-up path -- which is what unconditionally
+    // exempting every first-ever transition did.
+    const isFirstSighting = prevCombatId === undefined
+    const isAlreadyResolvedFirstSighting = isFirstSighting && !!combat?.end_state
+    const isMidFightReloadFirstSighting = isFirstSighting && !combat?.end_state &&
+      combat.round > 1
     setPrevCombatId(combat.combat_id)
     setDisplayedLog([])
-    if (!isAlreadyResolvedFirstSighting) {
+    if (!isAlreadyResolvedFirstSighting && !isMidFightReloadFirstSighting) {
       newCombatResetRef.current = true
     }
   }

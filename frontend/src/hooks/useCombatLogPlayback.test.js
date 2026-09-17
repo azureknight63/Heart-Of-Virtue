@@ -203,6 +203,46 @@ describe('useCombatLogPlayback — reload recovery', () => {
   })
 })
 
+describe('useCombatLogPlayback — reload mid-fight while still active', () => {
+  /**
+   * The #570 fix below only covers a reload landing after the fight has
+   * already ENDED (`end_state` present). A reload landing mid-fight, while
+   * the fight is still active, reaches this hook's first-ever combat_id
+   * transition the same way -- `combat` starts `null` and this is the first
+   * payload to carry a real one -- but has no `end_state` to key off. Left
+   * unhandled, it fell into the same bucket as an ordinary fresh fight (see
+   * #570's own negative control below), pacing the whole backlog at the
+   * live 400ms/line rate and locking the player out of acting for roughly
+   * (backlog length * 400ms) after an ordinary refresh.
+   *
+   * Log entry TYPE cannot be the discriminator here: #570's negative-control
+   * fixture (below) is a genuinely fresh fight whose opening payload already
+   * carries ordinary `combat`-typed entries, not `system`. `round` (aliased
+   * as `combat.beat` elsewhere -- both read the same `combat_beat` counter)
+   * is what GamePage's own `combat?.round > 1` check already uses for this
+   * same "fight already under way" question: a brand-new fight's first
+   * payload starts at round 1, so a reload past round 1 can't be mistaken
+   * for one.
+   */
+  it('recognizes a mid-fight reload on the very first combat_id transition, not just a static mount', () => {
+    const log = [entry('Jean attacks the slime'), entry('the slime is hit'), entry('Jean parries the blow')]
+    const { result, rerender } = renderHook(
+      ({ combat }) => useCombatLogPlayback(combat),
+      { initialProps: { combat: null } }
+    )
+
+    act(() => {
+      rerender({ combat: { combat_id: 'fight-1', combat_active: true, round: 3, log } })
+    })
+    act(() => { vi.runAllTimers() })
+
+    expect(messages(result)).toEqual([
+      'Jean attacks the slime', 'the slime is hit', 'Jean parries the blow',
+    ])
+    expect(mockPlaySFX).not.toHaveBeenCalled()
+  })
+})
+
 describe('useCombatLogPlayback — reload after combat already ended (issue #570)', () => {
   /**
    * `useCombat()` (frontend/src/hooks/useApi.js) starts `combat` at `null` and
