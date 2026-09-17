@@ -1,3 +1,5 @@
+import copy
+import functools
 import json
 import math
 import os
@@ -2983,10 +2985,7 @@ class MynxLLMAdapter(GenericLLMClient):
 _NPC_CHAT_HUMAN_DIR = os.path.join(AI_DIR, "npc", "human")
 _NPC_CHAT_WORLD_FACTS_PATH = os.path.join(_NPC_CHAT_HUMAN_DIR, "world_facts.json")
 
-# The stub below is a fraction of the real allow-list, and the allow-list is
-# what the name-invention QC scans against -- so a missing or corrupt
-# world_facts.json makes legitimate proper nouns start reading as
-# hallucinations. Worth a WARNING, not a shrug.
+# A fraction of the real allow-list, for when world_facts.json is unusable.
 _WORLD_FACTS_STUB: Dict[str, Any] = {
     "world_name": "Aurelion",
     "allowed_proper_nouns": ["Jean", "Gorran", "Mara", "Devet", "Liss",
@@ -2995,27 +2994,57 @@ _WORLD_FACTS_STUB: Dict[str, Any] = {
 }
 
 
-def _read_world_facts() -> Dict[str, Any]:
-    """The world-facts JSON, or the built-in stub when the file is unusable.
+def _read_world_facts() -> Tuple[Dict[str, Any], bool]:
+    """``(facts, from_file)``: the world-facts JSON, or the stub and ``False``.
 
-    One reader for the adapter instance (which renders the facts into every
-    prompt) and for :func:`_reserved_given_names` (which turns the same
-    proper-noun list into a validator), so the names the model is shown and
-    the names it is refused cannot come from two different files.
+    One reader on the adapter side for the adapter instance (which renders
+    the facts into every prompt) and for :func:`_reserved_given_names` (which
+    turns the same proper-noun list into a validator), so the names the model
+    is shown and the names it is refused cannot come from two different
+    files. (``ConversationalNPCMixin`` reads the file once more for its own
+    scrubber; that is pre-existing and not unified here.)
+
+    ``from_file`` lets a caller that memoises tell a real read from the
+    degraded one; the stub is deep-copied so no caller can edit it in place.
     """
     try:
         with open(_NPC_CHAT_WORLD_FACTS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            return json.load(f), True
     except Exception as e:
+        # The stub is a fraction of the real allow-list, and the allow-list is
+        # what the name-invention QC scans against -- so a missing or corrupt
+        # world_facts.json makes legitimate proper nouns start reading as
+        # hallucinations. Worth a WARNING, not a shrug.
         logger.warning(
             "Could not load %s (%s: %s); using the built-in world facts stub.",
             _NPC_CHAT_WORLD_FACTS_PATH, type(e).__name__, e,
         )
-        return dict(_WORLD_FACTS_STUB)
+        return copy.deepcopy(_WORLD_FACTS_STUB), False
 
 
-# Lazily built by _reserved_given_names(); a test may monkeypatch it.
-_RESERVED_GIVEN_NAMES: Optional[FrozenSet[str]] = None
+def _normalise_given_name(value: Any) -> str:
+    """The one spelling a name is compared under: stripped, lower-cased."""
+    return str(value).strip().lower()
+
+
+def _reserved_names_from(facts: Dict[str, Any]) -> FrozenSet[str]:
+    return frozenset(
+        _normalise_given_name(noun)
+        for noun in facts.get("allowed_proper_nouns", [])
+        if _normalise_given_name(noun)
+    )
+
+
+@functools.lru_cache(maxsize=1)
+def _file_reserved_given_names() -> Optional[FrozenSet[str]]:
+    """The reserved set read from disk, memoised -- or ``None`` on a failed read.
+
+    ``None`` is what keeps the degraded stub out of the memo: the wrapper
+    below clears the entry so the next call reads the file again. Tests reset
+    this with ``_file_reserved_given_names.cache_clear()``.
+    """
+    facts, from_file = _read_world_facts()
+    return _reserved_names_from(facts) if from_file else None
 
 
 def _reserved_given_names() -> FrozenSet[str]:
@@ -3027,15 +3056,16 @@ def _reserved_given_names() -> FrozenSet[str]:
     "Mara" (issue #599). The list is reference material, not casting, and the
     validator holds the model to that from the same JSON the prompt is built
     from.
+
+    A successful read is memoised for the process; a failed one yields the
+    stub-derived set *uncached*, so a transient read error does not shrink
+    the refusal list for every later seed.
     """
-    global _RESERVED_GIVEN_NAMES
-    if _RESERVED_GIVEN_NAMES is None:
-        _RESERVED_GIVEN_NAMES = frozenset(
-            str(noun).strip().lower()
-            for noun in _read_world_facts().get("allowed_proper_nouns", [])
-            if str(noun).strip()
-        )
-    return _RESERVED_GIVEN_NAMES
+    names = _file_reserved_given_names()
+    if names is not None:
+        return names
+    _file_reserved_given_names.cache_clear()
+    return _reserved_names_from(_WORLD_FACTS_STUB)
 
 
 class NpcChatLLMAdapter(GenericLLMClient):
@@ -3227,7 +3257,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             return "default" in cls._instances or cls._prewarm_attempted
 
     def _load_world_facts(self) -> None:
-        self._world_facts = _read_world_facts()
+        self._world_facts, _ = _read_world_facts()
 
     def _world_facts_block(self) -> str:
         if not self._world_facts:
@@ -3470,10 +3500,14 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 return None
             result[key] = value[:_MAX_PERSONALITY_FIELD_CHARS]
 
-        given = result["given_name"].strip().lower()
-        if given in _reserved_given_names() and given != (own_name or "").strip().lower():
+        given = _normalise_given_name(result["given_name"])
+        own = _normalise_given_name(own_name or "")
+        # ``given`` is non-empty here, so an absent ``own_name`` ("" after
+        # normalising) can never match it: no exemption unless one was named.
+        is_borrowed_story_name = given in _reserved_given_names() and given != own
+        if is_borrowed_story_name:
             logger.warning(
-                "generate_personality: given_name=%r is a known story name, not a "
+                "_validate_personality: given_name=%r is a known story name, not a "
                 "nomad's; the seed is refused.",
                 result["given_name"],
             )
