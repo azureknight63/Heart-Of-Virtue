@@ -440,7 +440,10 @@ class LootEvent(Event):
                 qty = getattr(item, "count", 1)
                 label = stack_sentence_label(item, qty)
                 transfer_item(self.container, self.player, item, qty)
-                cprint(f"Jean takes the {label}.", "green")
+                # "the" reads wrong before a quantity ("the 2× Sap"), so it is
+                # only used for a single item.
+                article = "" if qty > 1 else "the "
+                cprint(f"Jean takes {article}{label}.", "green")
 
                 if hasattr(self.container, "refresh_description"):
                     self.container.refresh_description()

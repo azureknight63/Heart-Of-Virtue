@@ -336,7 +336,7 @@ class TestStackedItemLabelsCountOnce:
         messages = narrated(event.process, "0")
         takes = [m.get("text", "") for m in messages if m.get("text", "").startswith("Jean takes")]
 
-        assert takes == ["Jean takes the 2× Dried Crystal Sap."]
+        assert takes == ["Jean takes 2× Dried Crystal Sap."]
 
     def test_stack_sentence_label_matches_take_all_form(self):
         from src.items import stack_sentence_label
