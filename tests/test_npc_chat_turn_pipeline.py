@@ -183,28 +183,37 @@ class TestRemovedClauseLeavesOneTerminator:
 # ---------------------------------------------------------------------------
 
 
-class TestJeanOptionTonesAreRekeyed:
-    def test_a_mid_list_drop_still_offers_three_distinct_tones(self):
-        # Every option arrives with a valid tone, which is what ai/llm_client.py
-        # guarantees — so the old `tone or <default>` was inert and the dropped
-        # entry left "direct" twice and "guarded" not at all.
-        options = [
-            {"tone": "direct", "text": "Tell me about the river."},
-            {"tone": "guarded", "text": "x"},
-            {"tone": "open", "text": "Who else works this bank?"},
-            {"tone": "direct", "text": "What keeps you here?"},
-        ]
-        kept = _qc_host_with_empty_allowlist()._qc_jean_options(options)
-        assert len(kept) == 3
-        assert sorted(o["tone"] for o in kept) == sorted(JEAN_TONES)
+class TestNeitherAxisIsRekeyed:
+    """Issue #591 deleted the tone re-keying these used to pin.
 
-    def test_a_model_tone_survives_when_it_is_still_free(self):
+    The old rule cycled direct/guarded/open over the KEPT options so a dropped
+    entry could not leave the player two buttons labelled the same. It existed
+    because tone was the label. Tone is now the portrait emotion and the kind
+    is the label, and a kind cannot be reassigned the way a tone could: the
+    player reads it to decide what an option does, so manufacturing variety by
+    relabelling would misdescribe the choice. Both axes are taken at face
+    value now, and variety is asked for in the generation prompt instead.
+    """
+
+    def test_a_mid_list_drop_leaves_the_survivors_untouched(self):
         options = [
-            {"tone": "open", "text": "Tell me about the river."},
-            {"tone": "guarded", "text": "Who else works this bank?"},
+            {"tone": "neutral", "kind": "ask-lore", "text": "Tell me about the river."},
+            {"tone": "skeptical", "kind": "challenge", "text": "x"},
+            {"tone": "curious", "kind": "ask-npc", "text": "Who else works this bank?"},
         ]
         kept = _qc_host_with_empty_allowlist()._qc_jean_options(options)
-        assert [o["tone"] for o in kept] == ["open", "guarded"]
+        assert kept == [
+            {"tone": "neutral", "kind": "ask-lore", "text": "Tell me about the river."},
+            {"tone": "curious", "kind": "ask-npc", "text": "Who else works this bank?"},
+        ]
+
+    def test_a_repeated_tone_is_not_diversified(self):
+        options = [
+            {"tone": "curious", "kind": "reply", "text": "Tell me about the river."},
+            {"tone": "curious", "kind": "ask-lore", "text": "Who else works this bank?"},
+        ]
+        kept = _qc_host_with_empty_allowlist()._qc_jean_options(options)
+        assert [o["tone"] for o in kept] == ["curious", "curious"]
 
 
 # ---------------------------------------------------------------------------
@@ -514,7 +523,10 @@ class TestConstantFallbacksDoNotDrift:
         above would be asserting nothing again, silently.
         """
         namespace = {}
-        exec("JEAN_TONES = (\"direct\", \"guarded\", \"open\")", namespace)
+        # Built from llm_client's own value rather than a literal copy of it:
+        # this test is about object identity, and a hand-spelled tuple here
+        # goes stale every time the vocabulary changes (it did, in #591).
+        exec("JEAN_TONES = %r" % (llm_client.JEAN_TONES,), namespace)
         fallback_copy = namespace["JEAN_TONES"]
         assert fallback_copy == llm_client.JEAN_TONES
         assert fallback_copy is not llm_client.JEAN_TONES

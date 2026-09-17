@@ -71,7 +71,7 @@ class NpcChatScenario(Scenario):
             bugs.append(bug)
 
         # POST /api/npc/chat/respond — no open conversation, must not 500 ---
-        body = {"npc_key": _BAD_NPC, "jean_text": "Hello there.", "jean_tone": "direct"}
+        body = {"npc_key": _BAD_NPC, "jean_text": "Hello there.", "jean_tone": "neutral"}
         resp = client.post("/api/npc/chat/respond", json=body)
         bug = self._check_no_crash(
             resp, "/api/npc/chat/respond", "POST",
@@ -122,10 +122,20 @@ class NpcChatScenario(Scenario):
             if bug:
                 bugs.append(bug)
             elif resp.status_code == 200 and client.parse(resp).get("success"):
+                # Both axes reach the wire, on real options built by the real
+                # pipeline (issue #591). The unit suite cannot see this: it
+                # tests the QC functions directly, so a serializer that dropped
+                # `kind` on the way out would leave every one of them green
+                # while the player got unlabelled buttons.
+                bug = self._check_option_axes(
+                    client.parse(resp).get("jean_options"), "/api/npc/chat/open"
+                )
+                if bug:
+                    bugs.append(bug)
                 body = {
                     "npc_key": real_npc_id,
                     "jean_text": "Hello there.",
-                    "jean_tone": "direct",
+                    "jean_tone": "neutral",
                 }
                 resp = client.post("/api/npc/chat/respond", json=body)
                 bug = self._check_no_crash(
@@ -134,6 +144,13 @@ class NpcChatScenario(Scenario):
                 )
                 if bug:
                     bugs.append(bug)
+                else:
+                    bug = self._check_option_axes(
+                        client.parse(resp).get("jean_options"),
+                        "/api/npc/chat/respond",
+                    )
+                    if bug:
+                        bugs.append(bug)
 
                 resp = client.post(
                     "/api/npc/chat/end", json={"npc_key": real_npc_id}
@@ -155,6 +172,36 @@ class NpcChatScenario(Scenario):
                     bugs.append(bug)
 
         return bugs
+
+    def _check_option_axes(self, options, endpoint):
+        """Every option carries a valid tone and kind, or report which did not.
+
+        Imported lazily: the harness runs against a live app that has already
+        imported the engine, and a module-level import here would pull
+        ai.llm_client into a tool that may run without the AI stack configured.
+        """
+        from src.npc._chat_llm import JEAN_KINDS, JEAN_TONES
+
+        if not isinstance(options, list) or not options:
+            return self._bug(
+                "Chat round returned no Jean options",
+                endpoint=endpoint, method="POST",
+                expected="a non-empty jean_options list",
+                actual=repr(options)[:200],
+                severity="high",
+                category="missing",
+            )
+        for opt in options:
+            if opt.get("tone") not in JEAN_TONES or opt.get("kind") not in JEAN_KINDS:
+                return self._bug(
+                    "Jean option is missing a valid tone/kind pair",
+                    endpoint=endpoint, method="POST",
+                    expected="every option tagged with a JEAN_TONES tone and a JEAN_KINDS kind",
+                    actual=repr(opt)[:200],
+                    severity="high",
+                    category="wrong",
+                )
+        return None
 
     def _find_chattable_npc(self, client: GameClient) -> Optional[str]:
         """Return the id of a friendly (non-hostile) NPC on the current tile.

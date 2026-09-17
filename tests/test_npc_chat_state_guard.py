@@ -560,14 +560,15 @@ class TestAdapterReviseTurn:
     def test_parses_revision(self):
         adapter = self._adapter(
             '{"npc_text": "The rack by the door holds my work.", '
-            '"jean_options": [{"tone":"direct","text":"Who taught you the trade?"},'
-            '{"tone":"guarded","text":"Long time at one bench."},'
-            '{"tone":"open","text":"What happened to him?"}]}'
+            '"jean_options": [{"tone":"curious","kind":"ask-npc","text":"Who taught you the trade?"},'
+            '{"tone":"neutral","kind":"reply","text":"Long time at one bench."},'
+            '{"tone":"concerned","kind":"follow-up","text":"What happened to him?"}]}'
         )
         result = adapter.revise_turn("sys", "Here, take this blade.", _opts("a", "b", "c"), "g")
         assert result["npc_text"] == "The rack by the door holds my work."
         assert len(result["jean_options"]) == 3
-        assert result["jean_options"][0]["tone"] == "direct"
+        assert result["jean_options"][0]["tone"] == "curious"
+        assert result["jean_options"][0]["kind"] == "ask-npc"
 
     def test_none_raw_returns_none(self):
         assert self._adapter(None).revise_turn("sys", "x", [], "g") is None
@@ -594,7 +595,9 @@ class TestAdapterReviseTurn:
             '{"npc_text": "Fine.", "jean_options": ["nope", {"text":"Go on."}]}'
         )
         result = adapter.revise_turn("sys", "x", [], "g")
-        assert result["jean_options"] == [{"tone": "direct", "text": "Go on."}]
+        assert result["jean_options"] == [
+            {"tone": "neutral", "kind": "reply", "text": "Go on."}
+        ]
 
 
 # ---------------------------------------------------------------------------

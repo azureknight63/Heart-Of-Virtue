@@ -4923,7 +4923,7 @@ class GameService:
         player: "player_module.Player",
         npc_key: str,
         jean_text: str,
-        jean_tone: str = "direct",
+        jean_tone: str = "neutral",
     ) -> Dict[str, Any]:
         """Process Jean's dialogue choice and get NPC response.
 
@@ -4931,7 +4931,7 @@ class GameService:
             player: The player instance
             npc_key: NPC identifier for active chat
             jean_text: Jean's dialogue text
-            jean_tone: Tone of Jean's response ("direct", "guarded", "open", etc.)
+            jean_tone: Jean's portrait emotion for the line (ai/llm_client.py's JEAN_TONES)
 
         Returns:
             Dict with success status and NPC response

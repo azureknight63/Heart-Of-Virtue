@@ -908,7 +908,14 @@ export function makeMove(overrides = {}) {
  * so a fixture inventing e.g. 'curious' describes a payload that cannot occur.
  */
 export function makeJeanOption(overrides = {}) {
-  return merge({ text: 'What else can you tell me?', tone: 'direct' }, overrides)
+  // `tone` is a portrait emotion and `kind` is what the option is about — the
+  // two axes from issue #591. A fixture missing `kind` renders a button with a
+  // blank label slot, which is a real shape (an older adapter) but not the one
+  // most tests mean.
+  return merge(
+    { text: 'What else can you tell me?', tone: 'neutral', kind: 'reply' },
+    overrides
+  )
 }
 
 /** NPCRelationshipSerializer.serialize_relationship — the badge payload. */
@@ -943,8 +950,8 @@ export function makeNpcChatOpen(overrides = {}) {
       npc_name: 'Mynx',
       npc_opening: 'Well, well. What do we have here?',
       jean_options: [
-        makeJeanOption({ text: 'What is this place?', tone: 'direct' }),
-        makeJeanOption({ text: "I'll keep that in mind.", tone: 'guarded' }),
+        makeJeanOption({ text: 'What is this place?', tone: 'curious', kind: 'ask-lore' }),
+        makeJeanOption({ text: "I'll keep that in mind.", tone: 'skeptical', kind: 'reply' }),
       ],
       loquacity_current: 2,
       loquacity_max: 5,
@@ -965,7 +972,7 @@ export function makeNpcChatRespond(overrides = {}) {
       success: true,
       npc_key: 'Mynx',
       npc_response: 'That depends on who is asking.',
-      jean_options: [makeJeanOption({ text: 'Go on.', tone: 'direct' })],
+      jean_options: [makeJeanOption({ text: 'Go on.', tone: 'neutral' })],
       loquacity_current: 1,
       loquacity_max: 5,
       turn: 1,

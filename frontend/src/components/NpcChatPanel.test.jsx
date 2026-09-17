@@ -118,8 +118,8 @@ describe('NpcChatPanel', () => {
     loquacity_current: 2,
     loquacity_max: 5,
     jean_options: [
-      makeJeanOption({ text: 'Hi there', tone: 'open' }),
-      makeJeanOption({ text: 'Leave me alone', tone: 'guarded' }),
+      makeJeanOption({ text: 'Hi there', tone: 'curious', kind: 'ask-npc' }),
+      makeJeanOption({ text: 'Leave me alone', tone: 'skeptical', kind: 'reply' }),
     ],
     relationship: makeRelationship({ npc_id: 'Mynx the Swift', npc_name: 'Mynx the Swift' }),
   })
@@ -300,15 +300,17 @@ describe('NpcChatPanel', () => {
   })
 
   describe('Dialogue Options', () => {
-    it('renders one button per jean_option, labelled with its text and tone', async () => {
+    it("renders one button per jean_option, labelled with its text and the option's kind", async () => {
       renderPanel()
 
       await screen.findByText('Hi there')
       const buttons = optionButtons()
 
       expect(buttons).toHaveLength(2)
-      expect(buttons[0]).toHaveTextContent('Hi there[open]')
-      expect(buttons[1]).toHaveTextContent('Leave me alone[guarded]')
+      // The KIND, in player-facing words, not the tone and not the schema
+      // name (issue #591). `ask-npc` interpolates the NPC's display name.
+      expect(buttons[0]).toHaveTextContent('Hi thereAsk about Mynx the Swift')
+      expect(buttons[1]).toHaveTextContent('Leave me aloneAnswer')
     })
 
     it('withdraws the options and disables End Conversation while the NPC composes a reply', async () => {
@@ -327,7 +329,7 @@ describe('NpcChatPanel', () => {
         resolveRespond({
           data: makeNpcChatRespond({
             npc_response: 'Back to you.',
-            jean_options: [makeJeanOption({ text: 'Go on.', tone: 'direct' })],
+            jean_options: [makeJeanOption({ text: 'Go on.', tone: 'neutral' })],
           }),
         })
       })
@@ -615,8 +617,8 @@ describe('NpcChatPanel', () => {
         data: makeNpcChatRespond({
           npc_response: 'Ah, welcome back.',
           jean_options: [
-            makeJeanOption({ text: 'Tell me more', tone: 'direct' }),
-            makeJeanOption({ text: 'Leave me alone', tone: 'guarded' }),
+            makeJeanOption({ text: 'Tell me more', tone: 'neutral' }),
+            makeJeanOption({ text: 'Leave me alone', tone: 'skeptical' }),
           ],
         }),
       })
@@ -842,7 +844,7 @@ describe('NpcChatPanel', () => {
           npc_key: 'npc_session_123',
           npc_name: 'Mynx the Swift',
           npc_opening: 'A rather long opening line, delivered slowly.',
-          jean_options: [makeJeanOption({ text: 'Hi there', tone: 'open' })],
+          jean_options: [makeJeanOption({ text: 'Hi there', tone: 'curious' })],
         }),
       })
       // Freeze the stage mid-line. The old version of this test only waited
@@ -959,7 +961,7 @@ describe('NpcChatPanel', () => {
       npcChat.respond.mockResolvedValue({
         data: makeNpcChatRespond({
           npc_response: text,
-          jean_options: [makeJeanOption({ text: 'Go on', tone: 'open' })],
+          jean_options: [makeJeanOption({ text: 'Go on', tone: 'curious' })],
           loquacity_current: 1,
           conversation_quality: 'positive',
         }),

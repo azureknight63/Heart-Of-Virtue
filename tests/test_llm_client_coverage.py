@@ -2270,14 +2270,15 @@ class TestGenerateJeanOptions:
         monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
         adapter = NpcChatLLMAdapter()
         raw = json.dumps([
-            {"tone": "direct", "text": "I need to go."},
-            {"tone": "guarded", "text": "Maybe. We'll see."},
-            {"tone": "open", "text": "Tell me more about this place."},
+            {"tone": "neutral", "kind": "reply", "text": "I need to go."},
+            {"tone": "skeptical", "kind": "challenge", "text": "Maybe. We'll see."},
+            {"tone": "curious", "kind": "ask-lore", "text": "Tell me more about this place."},
         ])
         with patch.object(adapter, "_call_llm", return_value=raw):
             result = adapter.generate_jean_options("Nomad", "voice", "last line", [], 1)
         assert len(result) == 3
-        assert result[0]["tone"] == "direct"
+        assert result[0]["tone"] == "neutral"
+        assert result[0]["kind"] == "reply"
 
     def test_code_fence_stripped_before_parse(self, monkeypatch):
         monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
@@ -2342,17 +2343,20 @@ class TestGenerateJeanOptions:
         with patch.object(adapter, "_call_llm", return_value=raw):
             assert adapter.generate_jean_options("Nomad", "voice", "last", [], 1) is None
 
-    def test_invalid_tone_replaced_with_expected(self, monkeypatch):
+    def test_an_invalid_axis_value_is_replaced_with_its_default(self, monkeypatch):
         monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
         adapter = NpcChatLLMAdapter()
         raw = json.dumps([
-            {"tone": "bogus", "text": "a"},
-            {"tone": "guarded", "text": "b"},
-            {"tone": "open", "text": "c"},
+            {"tone": "bogus", "kind": "haggle", "text": "a"},
+            {"tone": "skeptical", "kind": "reply", "text": "b"},
+            {"tone": "curious", "kind": "ask-npc", "text": "c"},
         ])
         with patch.object(adapter, "_call_llm", return_value=raw):
             result = adapter.generate_jean_options("Nomad", "voice", "last", [], 1)
-        assert result[0]["tone"] == "direct"
+        assert result[0]["tone"] == "neutral"
+        assert result[0]["kind"] == "reply"
+        # A usable sibling is untouched by its neighbour's repair.
+        assert result[2] == {"tone": "curious", "kind": "ask-npc", "text": "c"}
 
     def test_text_truncated_to_the_shared_option_cap(self, monkeypatch):
         """This used to assert 200, which was the bug written down.
@@ -2693,10 +2697,15 @@ class TestCleanJeanOptionsKeepsTheWholeList:
             "keeps to the road", "asks about the bend", "says nothing at all",
         ]
 
-    def test_the_tone_cycle_still_follows_KEPT_position(self):
+    def test_an_unusable_axis_defaults_by_name_not_by_position(self):
+        """Issue #591: the tone cycle is gone. Positional defaulting meant
+        something across three registers in a fixed order; across eight
+        portrait emotions an option is not "happy" because it landed second,
+        so both axes fall back to a named default instead."""
         raw = [{"tone": "nonsense"}, {"text": "a"}, {"text": "b"}, {"text": "c"}]
         cleaned = NpcChatLLMAdapter._clean_jean_options(raw)
-        assert [o["tone"] for o in cleaned] == ["direct", "guarded", "open"]
+        assert [o["tone"] for o in cleaned] == ["neutral", "neutral", "neutral"]
+        assert [o["kind"] for o in cleaned] == ["reply", "reply", "reply"]
 
     def test_a_non_list_is_still_no_options(self):
         assert NpcChatLLMAdapter._clean_jean_options({"a": 1}) == []

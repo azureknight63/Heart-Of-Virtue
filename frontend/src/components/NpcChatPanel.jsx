@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { useNpcChat, npcCast, JEAN_ID, CHAT_PHASES } from '../hooks/useNpcChat'
+import { useNpcChat, npcCast, JEAN_ID, CHAT_PHASES, kindLabel } from '../hooks/useNpcChat'
 import useTypewriter from '../hooks/useTypewriter'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
@@ -612,14 +612,21 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
               }}
             >
               <span style={{ marginRight: spacing.sm }}>{option.text}</span>
+              {/* The KIND, not the tone (issue #591). Tone is the portrait
+                  emotion now and Jean's face already shows it, so labelling it
+                  here spent the row's only label slot restating the picture.
+                  What the option is ABOUT is the thing the player cannot see
+                  anywhere else. `kindLabel` renders '' for an unknown kind, and
+                  an empty span collapses to nothing. */}
               <span
                 style={{
                   marginLeft: 'auto',
+                  paddingLeft: spacing.md,
                   color: colors.text.dim,
                   fontSize: '11px',
                 }}
               >
-                [{option.tone}]
+                {kindLabel(option.kind, displayName)}
               </span>
             </GameButton>
           ))}

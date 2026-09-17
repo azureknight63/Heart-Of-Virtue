@@ -246,20 +246,37 @@ constrained to what the existing ones support.
 
 ### Cost
 
-Roughly **+30 prompt tokens and +12 completion tokens per round**, estimated,
-not measured. The tone vocabulary gets *cheaper*: three hand-written gloss lines
-(`ai/llm_client.py:3857-3859`) become eight self-describing emotion names that
-need no gloss. The kind vocabulary adds six short glosses. Completion grows by
-one short field on each of three options — the option count does not change,
-which is where the previous revision of this note spent its budget.
+**Measured, not estimated — and the first estimate was wrong.** An earlier
+revision of this note guessed "+30 prompt tokens"; the real figure is roughly
+**eight times that**.
 
-System prompts are re-sent on every call, so vocabulary prose is paid once per
-beat forever (`.claude/rules/llm-prompts.md`). Measure with
-`python tools/measure_llm_tokens.py --outputs` before and after — Aug 2026
-baseline: NPC chat round ~1,279 in / ~160 out — and keep the round inside the
-Groq free-tier budget. Per the same rules file, a prompt change is a behaviour
-change: run the live A/B (`HOV_LIVE_LLM=1 python -m pytest tests/integration/ -q`),
-confirming any failure 3× on each side.
+`tools/measure_llm_tokens.py` could not run in the implementation container (its
+tiktoken BPE table is fetched over the network and the proxy refuses the host),
+so the prompts were captured at the `_call_llm` seam and measured in characters
+against a pre-change worktree, converted at the 4.0 chars/token corpus average
+recorded in `.claude/rules/llm-prompts.md`:
+
+| prompt | before | after | delta |
+|---|---|---|---|
+| `generate_turn` user | 2,150 ch | 2,903 ch | **+753 ch ≈ +188 tok** |
+| `generate_jean_options` user | 1,132 ch | 1,766 ch | **+634 ch ≈ +159 tok** |
+
+Against the Aug 2026 baseline of ~1,279 in per round that is about **+15%**,
+paid on every call forever, and it buys a nine-kind vocabulary plus the NPC's
+permission to admit ignorance. A first pass measured +253/+218 tokens; tightening
+the glosses and rewriting the axes rule field-per-line recovered about a quarter
+of it without dropping a clause. What remains is irreducible at nine kinds —
+roughly 135 tokens is the vocabulary itself, and the only way further down is
+fewer kinds.
+
+Completion grows by one short field on each of three options, ~12 tokens.
+
+Re-measure with `python tools/measure_llm_tokens.py --outputs` anywhere the
+tokenizer can be fetched, and confirm the round still fits the Groq free-tier
+budget. Per the same rules file a prompt change is a behaviour change: run the
+live A/B (`HOV_LIVE_LLM=1 python -m pytest tests/integration/ -q`), confirming
+any failure 3x on each side. **That has not been run** — it needs provider
+credentials this container does not have.
 
 ## Open questions for the maintainer
 

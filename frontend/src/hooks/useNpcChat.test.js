@@ -9,7 +9,8 @@ import {
   qualityEmotion,
   npcCast,
   JEAN_ID,
-  TONE_EMOTIONS,
+  KIND_LABELS,
+  kindLabel,
   QUALITY_EMOTIONS,
   NPC_LISTENING_EMOTION,
   __resetPreloadedPortraits,
@@ -49,8 +50,8 @@ describe('useNpcChat', () => {
     loquacity_current: 2,
     loquacity_max: 5,
     jean_options: [
-      makeJeanOption({ text: 'Hi there', tone: 'open' }),
-      makeJeanOption({ text: 'Leave me alone', tone: 'guarded' }),
+      makeJeanOption({ text: 'Hi there', tone: 'curious' }),
+      makeJeanOption({ text: 'Leave me alone', tone: 'skeptical' }),
     ],
     relationship: makeRelationship({ npc_id: 'Mynx the Swift', npc_name: 'Mynx the Swift' }),
   })
@@ -127,9 +128,9 @@ describe('useNpcChat', () => {
           npc_key: 'k',
           npc_name: 'Preloadable',
           jean_options: [
-            makeJeanOption({ text: 'a', tone: 'open' }),
-            makeJeanOption({ text: 'b', tone: 'open' }), // same tone -> same URL
-            makeJeanOption({ text: 'c', tone: 'guarded' }),
+            makeJeanOption({ text: 'a', tone: 'curious' }),
+            makeJeanOption({ text: 'b', tone: 'curious' }), // same tone -> same URL
+            makeJeanOption({ text: 'c', tone: 'skeptical' }),
           ],
         }),
       })
@@ -157,11 +158,11 @@ describe('useNpcChat', () => {
       npcChat.respond.mockResolvedValue({
         data: makeNpcChatRespond({
           npc_response: 'Again.',
-          jean_options: [makeJeanOption({ text: 'a', tone: 'open' })],
+          jean_options: [makeJeanOption({ text: 'a', tone: 'curious' })],
         }),
       })
       await act(async () => {
-        await result.current.handleOptionClick({ text: 'a', tone: 'open' })
+        await result.current.handleOptionClick({ text: 'a', tone: 'curious' })
       })
       expect(built).toHaveLength(0)
     })
@@ -173,7 +174,7 @@ describe('useNpcChat', () => {
       // has two portraits) 404'd it once per beat — uncached, undeduped, and
       // invisible to `preloadedPortraits`, which only remembers what it asked for.
       npcChat.open.mockResolvedValue({
-        data: makeNpcChatOpen({ jean_options: [makeJeanOption({ tone: 'direct' })] }),
+        data: makeNpcChatOpen({ jean_options: [makeJeanOption({ tone: 'neutral' })] }),
       })
       const { result } = await mountOpened('PreloadableGamma')
 
@@ -182,7 +183,7 @@ describe('useNpcChat', () => {
       )
       // ...and it is the same constant the optimistic Jean segment reacts with.
       await act(async () => {
-        await result.current.handleOptionClick({ text: 'Hi', tone: 'direct' })
+        await result.current.handleOptionClick({ text: 'Hi', tone: 'neutral' })
       })
       expect(result.current.conversationSegments[1].reactions).toEqual({
         PreloadableGamma: NPC_LISTENING_EMOTION,
@@ -191,7 +192,7 @@ describe('useNpcChat', () => {
 
     it('marks preloads for asynchronous decode', async () => {
       npcChat.open.mockResolvedValue({
-        data: makeNpcChatOpen({ jean_options: [makeJeanOption({ tone: 'direct' })] }),
+        data: makeNpcChatOpen({ jean_options: [makeJeanOption({ tone: 'neutral' })] }),
       })
       await mountOpened('PreloadableBeta')
 
@@ -204,31 +205,24 @@ describe('useNpcChat', () => {
   // Emotion tables
   // -------------------------------------------------------------------------
   describe('toneEmotion', () => {
-    // `direct` / `guarded` / `open` are the ONLY tones the engine emits
-    // (src/npc/_chat_llm.py, src/api/routes/npc_chat.py). Fixtures elsewhere
-    // used to invent 'curious'/'hostile', which fell through the `|| 'neutral'`
-    // fallback — so every portrait assertion in the suite read 'neutral' and
-    // rewriting this function as `() => 'neutral'` broke nothing.
-    it.each([
-      ['direct', 'neutral'],
-      ['guarded', 'skeptical'],
-      ['open', 'curious'],
-    ])('maps the %s tone to the %s portrait', (tone, emotion) => {
-      expect(toneEmotion(tone)).toBe(emotion)
+    // Tone IS the portrait emotion (issue #591) — there is no table between
+    // them, so this is `normalizeEmotion` and the test is that every emotion
+    // the art registers survives the trip unchanged.
+    it.each(EMOTIONS)('passes the %s tone through as its own portrait', (tone) => {
+      expect(toneEmotion(tone)).toBe(tone)
     })
 
     it('is case-insensitive', () => {
-      expect(toneEmotion('GUARDED')).toBe('skeptical')
-      expect(toneEmotion('Open')).toBe('curious')
+      expect(toneEmotion('SKEPTICAL')).toBe('skeptical')
+      expect(toneEmotion('Curious')).toBe('curious')
     })
 
-    it.each([undefined, null, '', 'hostile', 'curious', 42])(
+    it.each([undefined, null, '', 'hostile', 'direct', 'guarded', 42])(
       'falls back to neutral for %s',
       (tone) => {
         expect(toneEmotion(tone)).toBe('neutral')
       }
     )
-
   })
 
   describe('qualityEmotion', () => {
@@ -249,24 +243,17 @@ describe('useNpcChat', () => {
     )
   })
 
-  describe('the emotion tables as a whole', () => {
-    // One derived test over BOTH tables plus the listening emotion, iterating
-    // the tables themselves rather than a hand-copied list of their keys. The
-    // guard used to exist for TONE_EMOTIONS only, and even that walked a
-    // literal `['direct','guarded','open']` — so a mapping added to either
-    // table, or the guaranteed listening emotion, could point at art the
-    // vocabulary does not know about and nothing would notice.
-    // `utils/combatSfx`'s ALL_COMBAT_CUES is the same pattern.
+  describe('the vocabularies as a whole', () => {
+    // Tone no longer has a table — it IS the emotion list — so what is left to
+    // check is the quality table, the guaranteed listening emotion, and that
+    // both engine-owned vocabularies still line up with their client halves.
     const everyMappedEmotion = () => [
-      ...Object.values(TONE_EMOTIONS),
+      ...EMOTIONS,
       ...Object.values(QUALITY_EMOTIONS),
       NPC_LISTENING_EMOTION,
     ]
 
     it('maps only to emotions utils/portraits actually registers', () => {
-      // An emotion outside EMOTIONS is coerced to 'neutral' when the URL is
-      // built, so the mapping still READS as mapped here while doing nothing
-      // — a silent no-op rather than a failure.
       expect(everyMappedEmotion().length).toBeGreaterThan(0)
       for (const emotion of everyMappedEmotion()) {
         expect(EMOTIONS, `"${emotion}" is not a registered portrait emotion`)
@@ -280,42 +267,35 @@ describe('useNpcChat', () => {
       }
     })
 
-    it('routes every key of both tables through its own lookup', () => {
-      // Keys, not values: proves the lookups are wired to the tables under
-      // test. Note what this CANNOT say — the expectations are read out of the
-      // very tables being tested, so it passes for any table whatsoever. What
-      // the key SET has to agree with is the engine's, and that is the test
-      // below.
-      for (const tone of Object.keys(TONE_EMOTIONS)) {
-        expect(toneEmotion(tone)).toBe(TONE_EMOTIONS[tone])
-      }
+    it('routes every quality through its own lookup', () => {
       for (const quality of Object.keys(QUALITY_EMOTIONS)) {
         expect(qualityEmotion(quality)).toBe(QUALITY_EMOTIONS[quality])
       }
     })
 
-    it('has exactly the tones the engine emits, read from the engine', () => {
-      // The independent source. `TONE_EMOTIONS` keys are Jean's tone
-      // vocabulary, owned by ai/llm_client.py's JEAN_TONES: the prompt asks
-      // for those three labels and `_qc_jean_options` rejects anything else,
-      // so a tone added there and not here silently loses its portrait, and
-      // one removed there leaves a dead row nothing can reach.
-      //
-      // Parsed out of the Python source rather than restated, for the same
-      // reason tests/test_narration_emotions.py parses portraits.js: a
-      // hand-copied list cannot fail when the thing it copies changes. This is
-      // the JS-side mirror of that test, pointing the other way.
+    /** A module-level tuple or dict literal, read out of the Python source. */
+    const engineVocabulary = (name, open, close) => {
       const source = readFileSync(
         join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'ai', 'llm_client.py'),
         'utf8'
       )
-      // Module level (column 0), so the indented fallback copy in
+      // Module level (column 0), so the indented fallback copies in
       // src/npc/_chat_llm.py's ImportError branch can never be what matches —
-      // and that copy is pinned to this one by
+      // and those are pinned to these by
       // tests/test_npc_chat_turn_pipeline.py.
-      const match = source.match(/^JEAN_TONES\s*=\s*\(([^)]*)\)/m)
-      expect(match, 'could not find the JEAN_TONES tuple in ai/llm_client.py').toBeTruthy()
-      const engineTones = match[1]
+      const match = source.match(
+        new RegExp(`^${name}\\s*=\\s*\\${open}([^\\${close}]*)\\${close}`, 'm')
+      )
+      expect(match, `could not find ${name} in ai/llm_client.py`).toBeTruthy()
+      return match[1]
+    }
+
+    it('has exactly the tones the engine emits, read from the engine', () => {
+      // `tone` selects Jean's portrait directly now, so the vocabulary the
+      // engine emits and the vocabulary the art registers have to be the SAME
+      // list — a tone with no portrait renders a neutral face and says nothing
+      // about it, and a portrait no tone names is art the chat can never show.
+      const engineTones = engineVocabulary('JEAN_TONES', '(', ')')
         .split(',')
         .map((token) => token.trim().replace(/^['"]|['"]$/g, ''))
         .filter(Boolean)
@@ -323,8 +303,47 @@ describe('useNpcChat', () => {
       // make the comparison below vacuous in the permissive direction.
       expect(engineTones.length).toBeGreaterThan(1)
 
-      expect([...engineTones].sort()).toEqual(Object.keys(TONE_EMOTIONS).sort())
+      expect([...engineTones].sort()).toEqual([...EMOTIONS].sort())
     })
+
+    it('labels exactly the kinds the engine emits, read from the engine', () => {
+      // A kind the engine can emit with no entry in KIND_LABELS renders a
+      // button with a blank label slot; one here that the engine never emits
+      // is a dead row. Same pinning as the tones above, against JEAN_KINDS.
+      const engineKinds = [
+        ...engineVocabulary('JEAN_KINDS', '{', '}').matchAll(/^\s*"([^"]+)":/gm),
+      ].map((m) => m[1])
+      expect(engineKinds.length).toBeGreaterThan(1)
+
+      expect([...engineKinds].sort()).toEqual(Object.keys(KIND_LABELS).sort())
+    })
+  })
+
+  describe('kindLabel', () => {
+    it('renders the player-facing words, never the schema name', () => {
+      expect(kindLabel('ask-lore', 'Mara')).toBe('Ask about the world')
+      expect(kindLabel('reply', 'Mara')).toBe('Answer')
+    })
+
+    it("fills {npc} with the NPC's display name", () => {
+      expect(kindLabel('ask-npc', 'Mara')).toBe('Ask about Mara')
+      expect(kindLabel('ask-guidance', 'Mara')).toBe("Ask Mara's advice")
+    })
+
+    it('falls back to a pronoun when the name is missing', () => {
+      expect(kindLabel('ask-npc', '')).toBe('Ask about them')
+    })
+
+    it('is case-insensitive', () => {
+      expect(kindLabel('ASK-LORE', 'Mara')).toBe('Ask about the world')
+    })
+
+    it.each([undefined, null, '', 'haggle', 'constructor', 'toString', 42])(
+      'renders nothing for %s rather than leaking it to the button',
+      (kind) => {
+        expect(kindLabel(kind, 'Mara')).toBe('')
+      }
+    )
   })
 
   describe('npcCast', () => {
@@ -457,7 +476,7 @@ describe('useNpcChat', () => {
         data: makeNpcChatRespond({ npc_response: '', npc_flavor: 'Silence.', llm_available: false }),
       })
       await act(async () => {
-        await result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
 
       expect(result.current.llmAvailable).toBe(false)
@@ -512,7 +531,7 @@ describe('useNpcChat', () => {
                 npc_key: 'gorran_key',
                 npc_name: 'Gorran',
                 npc_opening: 'You again.',
-                jean_options: [makeJeanOption({ text: 'Peace, Gorran.', tone: 'open' })],
+                jean_options: [makeJeanOption({ text: 'Peace, Gorran.', tone: 'curious' })],
               }),
             })
       )
@@ -533,7 +552,7 @@ describe('useNpcChat', () => {
       expect(result.current.displayName).toBe('Gorran')
       expect(result.current.conversationSegments[0].text).toBe('You again.')
       expect(result.current.currentOptions).toEqual([
-        makeJeanOption({ text: 'Peace, Gorran.', tone: 'open' }),
+        makeJeanOption({ text: 'Peace, Gorran.', tone: 'curious' }),
       ])
       expect(result.current.conversationCast).toEqual(npcCast('Gorran', 'Gorran'))
       // Dropped, NOT ended. `npc_chat_end` pops `_active_chat_npc_id`
@@ -682,7 +701,7 @@ describe('useNpcChat', () => {
       npcChat.respond.mockResolvedValue({
         data: makeNpcChatRespond({
           npc_response: 'Coin first.',
-          jean_options: [makeJeanOption({ text: 'Go on', tone: 'direct' })],
+          jean_options: [makeJeanOption({ text: 'Go on', tone: 'neutral' })],
           loquacity_current: 1,
           conversation_quality: 'positive',
         }),
@@ -690,13 +709,13 @@ describe('useNpcChat', () => {
       const { result } = await mountOpened()
 
       await act(async () => {
-        await result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
 
-      expect(npcChat.respond).toHaveBeenCalledWith('npc_session_123', 'Hi there', 'open')
+      expect(npcChat.respond).toHaveBeenCalledWith('npc_session_123', 'Hi there', 'curious')
       const segments = result.current.conversationSegments
       expect(segments).toHaveLength(3)
-      // Jean wears the tone she answered with; the NPC wears the turn quality.
+      // Jean wears the tone he answered with; the NPC wears the turn quality.
       expect(segments[1]).toMatchObject({ speaker: 'Jean', emotion: 'curious', text: 'Hi there' })
       expect(segments[1].reactions).toEqual({ Mynx: 'curious' })
       expect(segments[2]).toMatchObject({ speaker: 'Mynx', emotion: 'happy', text: 'Coin first.' })
@@ -718,7 +737,7 @@ describe('useNpcChat', () => {
       const { result } = await mountOpened()
 
       await act(async () => {
-        await result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
 
       const segments = result.current.conversationSegments
@@ -735,12 +754,12 @@ describe('useNpcChat', () => {
       const { result } = await mountOpened()
 
       act(() => {
-        result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
       await waitFor(() => expect(result.current.phase).toBe('waiting_npc'))
 
       await act(async () => {
-        await result.current.handleOptionClick({ text: 'Leave me alone', tone: 'guarded' })
+        await result.current.handleOptionClick({ text: 'Leave me alone', tone: 'skeptical' })
       })
       expect(npcChat.respond).toHaveBeenCalledTimes(1)
 
@@ -760,7 +779,7 @@ describe('useNpcChat', () => {
       const { result, rerender } = await mountOpened('Mynx')
 
       act(() => {
-        result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
       await waitFor(() => expect(result.current.phase).toBe('waiting_npc'))
 
@@ -771,7 +790,7 @@ describe('useNpcChat', () => {
           npc_opening: 'You again.',
           loquacity_current: 4,
           loquacity_max: 4,
-          jean_options: [makeJeanOption({ text: 'Peace, Gorran.', tone: 'open' })],
+          jean_options: [makeJeanOption({ text: 'Peace, Gorran.', tone: 'curious' })],
         }),
       })
       await act(async () => rerender({ id: 'Gorran', name: 'Gorran' }))
@@ -781,7 +800,7 @@ describe('useNpcChat', () => {
         pending.resolve({
           data: makeNpcChatRespond({
             npc_response: 'Mynx answers, far too late.',
-            jean_options: [makeJeanOption({ text: 'Stale option', tone: 'direct' })],
+            jean_options: [makeJeanOption({ text: 'Stale option', tone: 'neutral' })],
             loquacity_current: 1,
             loquacity_max: 5,
           }),
@@ -803,7 +822,7 @@ describe('useNpcChat', () => {
       const { result, rerender } = await mountOpened('Mynx')
 
       act(() => {
-        result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
       await waitFor(() => expect(result.current.phase).toBe('waiting_npc'))
 
@@ -825,7 +844,7 @@ describe('useNpcChat', () => {
       const { result } = mount()
 
       await act(async () => {
-        await result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
       expect(npcChat.respond).not.toHaveBeenCalled()
 
@@ -840,7 +859,7 @@ describe('useNpcChat', () => {
       const { result } = await mountOpened()
 
       act(() => {
-        result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
 
       // The optimistic write must actually happen, or "rollback" proves nothing.
@@ -864,7 +883,7 @@ describe('useNpcChat', () => {
       const { result } = await mountOpened()
 
       await act(async () => {
-        await result.current.handleOptionClick({ text: 'Leave me alone', tone: 'guarded' })
+        await result.current.handleOptionClick({ text: 'Leave me alone', tone: 'skeptical' })
       })
       expect(result.current.conversationSegments).toHaveLength(1)
 
@@ -878,7 +897,7 @@ describe('useNpcChat', () => {
       expect(npcChat.respond).toHaveBeenLastCalledWith(
         'npc_session_123',
         'Leave me alone',
-        'guarded'
+        'skeptical'
       )
       const segments = result.current.conversationSegments
       expect(segments.filter((s) => s.text === 'Leave me alone')).toHaveLength(1)
@@ -892,7 +911,7 @@ describe('useNpcChat', () => {
       const { result } = await mountOpened()
 
       await act(async () => {
-        await result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
       expect(result.current.error).toBe('NPC did not respond')
 
@@ -900,7 +919,7 @@ describe('useNpcChat', () => {
         data: makeNpcChatRespond({ npc_response: 'Fine.', jean_options: [] }),
       })
       await act(async () => {
-        await result.current.handleOptionClick({ text: 'Leave me alone', tone: 'guarded' })
+        await result.current.handleOptionClick({ text: 'Leave me alone', tone: 'skeptical' })
       })
 
       // The panel gates the option list on `!error`, so a stale error hid every
@@ -918,7 +937,7 @@ describe('useNpcChat', () => {
       const { result } = await mountOpened()
 
       await act(async () => {
-        await result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
 
       expect(result.current.error).toBe('Too many messages — give it a moment.')
@@ -1042,7 +1061,7 @@ describe('useNpcChat', () => {
       const rendered = mount()
       await act(async () => {})
       await act(async () => {
-        await rendered.result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        await rendered.result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
       expect(rendered.result.current.phase).toBe('ended')
       return rendered
@@ -1191,7 +1210,7 @@ describe('useNpcChat', () => {
         const rendered = mount()
         await act(async () => {})
         await act(async () => {
-          await rendered.result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+          await rendered.result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
         })
         return rendered
       },
@@ -1277,7 +1296,7 @@ describe('useNpcChat', () => {
       })
       const { result, unmount } = await mountOpened()
       await act(async () => {
-        await result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
       expect(result.current.phase).toBe('ended')
 
@@ -1346,7 +1365,7 @@ describe('useNpcChat', () => {
       const { result, unmount } = await mountOpened()
 
       act(() => {
-        result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
       await waitFor(() => expect(result.current.phase).toBe('waiting_npc'))
       unmount()
@@ -1367,7 +1386,7 @@ describe('useNpcChat', () => {
       const { result, unmount } = await mountOpened()
 
       act(() => {
-        result.current.handleOptionClick({ text: 'Hi there', tone: 'open' })
+        result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
       await waitFor(() => expect(result.current.phase).toBe('waiting_npc'))
       unmount()

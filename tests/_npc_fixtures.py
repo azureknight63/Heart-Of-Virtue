@@ -364,10 +364,14 @@ class ScriptedAdapter:
     """
 
     #: A Jean-options block that survives ``_qc_jean_options`` unchanged.
+    #:
+    #: Distinct kinds and at least one ``reply``, which is what "unchanged" now
+    #: requires: QC re-keys a duplicate kind and `_ensure_a_reply` rewrites the
+    #: last option of an all-question set (issue #591).
     VALID_OPTIONS: List[Dict[str, str]] = [
-        {"text": "Tell me more.", "tone": "direct"},
-        {"text": "I will remember that.", "tone": "guarded"},
-        {"text": "Go on, then.", "tone": "open"},
+        {"text": "Tell me more.", "tone": "neutral", "kind": "follow-up"},
+        {"text": "I will remember that.", "tone": "skeptical", "kind": "reply"},
+        {"text": "Go on, then.", "tone": "curious", "kind": "redirect"},
     ]
 
     def __init__(self, npc_text: str = "The road north is closed.",
