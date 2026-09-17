@@ -169,9 +169,9 @@
   </div>
 
   <div class="opts">
-    <button class="opt"><span class="opt-text">Who is the Warden, that a road closes on his word?</span><span class="kind" style="">ask-lore</span></button>
-    <button class="opt"><span class="opt-text">You'd rather not ask. Has it cost you trade?</span><span class="kind" style="">ask-npc</span></button>
-    <button class="opt"><span class="opt-text">Then I'll find another way east. My thanks.</span><span class="kind" style="">reply</span></button>
+    <button class="opt"><span class="opt-text">Who is the Warden, that a road closes on his word?</span><span class="kind" style="">Ask about the world</span></button>
+    <button class="opt"><span class="opt-text">You'd rather not ask. Has it cost you trade?</span><span class="kind" style="">Ask about Mara</span></button>
+    <button class="opt"><span class="opt-text">Then I'll find another way east. My thanks.</span><span class="kind" style="">Answer</span></button>
   </div>
 
   <div class="actions">
@@ -208,9 +208,9 @@
     <span class="tag a">PROPOSED</span>
     <h3>label = kind, tone drives the portrait only</h3>
     <div class="opts">
-      <button class="opt"><span class="opt-text">Three weeks is a long time to keep a road shut.</span><span class="kind" style="">follow-up</span></button>
-      <button class="opt"><span class="opt-text">Who is the Warden, that a road closes on his word?</span><span class="kind" style="">ask-lore</span></button>
-      <button class="opt"><span class="opt-text">You'd rather not ask. Has it cost you trade?</span><span class="kind" style="">ask-npc</span></button>
+      <button class="opt"><span class="opt-text">Three weeks is a long time to keep a road shut.</span><span class="kind" style="">Press further</span></button>
+      <button class="opt"><span class="opt-text">Who is the Warden, that a road closes on his word?</span><span class="kind" style="">Ask about the world</span></button>
+      <button class="opt"><span class="opt-text">You'd rather not ask. Has it cost you trade?</span><span class="kind" style="">Ask about Mara</span></button>
     </div>
   </div>
 </div>
@@ -226,9 +226,9 @@
   <div class="panel">
     <h3>Two options, one emotion</h3>
     <div class="opts">
-      <button class="opt"><span class="opt-text">The Warden's men. You've dealt with them before?</span><span class="kind" style="">ask-npc</span></button>
-      <button class="opt"><span class="opt-text">Three weeks, and no reason given. That sits badly.</span><span class="kind" style="">follow-up</span></button>
-      <button class="opt"><span class="opt-text">Then I'll go around. Thank you, Mara.</span><span class="kind" style="">reply</span></button>
+      <button class="opt"><span class="opt-text">The Warden's men. You've dealt with them before?</span><span class="kind" style="">Ask about Mara</span></button>
+      <button class="opt"><span class="opt-text">Three weeks, and no reason given. That sits badly.</span><span class="kind" style="">Press further</span></button>
+      <button class="opt"><span class="opt-text">Then I'll go around. Thank you, Mara.</span><span class="kind" style="">Answer</span></button>
     </div>
     <div style="display:flex;gap:var(--sm);margin-top:var(--md);font-size:0.65rem;color:var(--dim)">
       <span>portrait per row →</span>
@@ -240,9 +240,9 @@
   <div class="panel">
     <h3>Degraded round — LLM unusable</h3>
     <div class="opts">
-      <button class="opt"><span class="opt-text">What else can you tell me?</span><span class="kind" style="">reply</span></button>
-      <button class="opt"><span class="opt-text">I'll keep that in mind.</span><span class="kind" style="">reply</span></button>
-      <button class="opt"><span class="opt-text">That's worth knowing.</span><span class="kind" style="">reply</span></button>
+      <button class="opt"><span class="opt-text">What else can you tell me?</span><span class="kind" style="">Answer</span></button>
+      <button class="opt"><span class="opt-text">I'll keep that in mind.</span><span class="kind" style="">Answer</span></button>
+      <button class="opt"><span class="opt-text">That's worth knowing.</span><span class="kind" style="">Answer</span></button>
     </div>
     <div style="display:flex;gap:var(--sm);margin-top:var(--md);font-size:0.65rem;color:var(--dim)">
       <span>portrait per row →</span>
@@ -276,32 +276,34 @@
   <code>skeptical</code> is highlighted as the emotion the hovered option above would select.
 </p>
 
-<h2>5 · Kind vocabulary — label treatments</h2>
+<h2>5 · Kind vocabulary — schema name vs. what the player reads</h2>
 <table>
-  <thead><tr><th style="width:120px">Plain (spec)</th><th style="width:120px">Tinted (alt)</th><th>Gloss sent to the model</th></tr></thead>
-  <tbody>
-    <tr><td><span class="chip">reply</span></td><td><span class="chip tint" style="color:#8fa89b">reply</span></td><td class="gloss">answers what the NPC just said</td></tr>
-    <tr><td><span class="chip">follow-up</span></td><td><span class="chip tint" style="color:#00ff88">follow-up</span></td><td class="gloss">presses the current subject one step further</td></tr>
-    <tr><td><span class="chip">ask-lore</span></td><td><span class="chip tint" style="color:#00ccff">ask-lore</span></td><td class="gloss">asks about a place, faction or event</td></tr>
-    <tr><td><span class="chip">ask-npc</span></td><td><span class="chip tint" style="color:#ffcc00">ask-npc</span></td><td class="gloss">asks about the NPC themself: trade, history, opinion</td></tr>
-    <tr><td><span class="chip">challenge</span></td><td><span class="chip tint" style="color:#ff4444">challenge</span></td><td class="gloss">doubts or tests what the NPC just claimed</td></tr>
-    <tr><td><span class="chip">redirect</span></td><td><span class="chip tint" style="color:#9944ff">redirect</span></td><td class="gloss">returns to a subject the NPC raised earlier</td></tr>
-  </tbody>
+<thead><tr><th style="width:110px">kind (wire)</th><th style="width:170px">label (player sees)</th><th>gloss (sent to the model)</th></tr></thead>
+<tbody>
+    <tr><td><span class="chip">reply</span></td><td style="color:var(--highlight)">Answer</td><td class="gloss">answers what the NPC just said</td></tr>
+    <tr><td><span class="chip">follow-up</span></td><td style="color:var(--highlight)">Press further</td><td class="gloss">presses the current subject one step further</td></tr>
+    <tr><td><span class="chip">ask-lore</span></td><td style="color:var(--highlight)">Ask about the world</td><td class="gloss">asks about a place, faction or event</td></tr>
+    <tr><td><span class="chip">ask-npc</span></td><td style="color:var(--highlight)">Ask about {NPC}</td><td class="gloss">asks about the NPC themself: trade, history, opinion</td></tr>
+    <tr><td><span class="chip">challenge</span></td><td style="color:var(--highlight)">Push back</td><td class="gloss">doubts or tests what the NPC just claimed</td></tr>
+    <tr><td><span class="chip">redirect</span></td><td style="color:var(--highlight)">Change the subject</td><td class="gloss">returns to a subject the NPC raised earlier</td></tr>
+    <tr><td><span class="chip">confide</span></td><td style="color:var(--highlight)">Share something</td><td class="gloss">Jean volunteers something of his own</td></tr>
+</tbody>
 </table>
 <p class="legend">
   <code>close</code> was considered and rejected — the player ends a conversation by dismissing
-  the dialog. <code>confide</code> is deferred, not refused.
+  the dialog.
 </p>
 <p class="note">
-  <b>Two treatments, one decision left.</b> The design note specifies the plain column: one
-  dim label, identical in weight to today's tone label, no new colour. The tinted column is
-  offered because six kinds are more scannable with a hue, and it stays inside the
-  accessibility rule (colour is paired with the word, never carrying state alone) — but it
-  puts six more colours into an amber-themed dialog. <b>Plain is the recommendation;</b> tinted
-  is here so the choice is visible rather than assumed.<br>
-  The pool is an ordered mapping in <code>ai/llm_client.py</code> that the prompt renders
-  from, so adding or renaming a kind is a one-line edit — this table is a snapshot of a
-  constant, not a fixed set.
+  <b>The player never sees the schema name.</b> Review found <code>ask-lore</code> and
+  <code>ask-npc</code> too obscure on a button, so the wire keeps the machine name and the
+  frontend owns a <code>KIND_LABELS</code> map. <code>Ask about Mara</code> interpolates the
+  NPC's display name, which the panel already holds — it costs nothing on the wire.<br>
+  <b>Not proposed:</b> the same trick for <code>ask-lore</code> ("Ask about the Warden").
+  It would need the model to emit a <code>subject</code> field, and rule 4 already makes the
+  option text name its subject — the label would restate the sentence directly above it.<br>
+  <b>Labels are plain, never tinted</b> — a hue per kind was weighed and dropped. A kind added
+  to <code>JEAN_KINDS</code> with no <code>KIND_LABELS</code> entry renders an unlabelled
+  button, so this pairing needs the contract test the tone table used to have.
 </p>
 
 <h2>6 · Phone width (390px)</h2>
@@ -321,9 +323,9 @@
     </div>
   </div>
   <div class="opts">
-    <button class="opt"><span class="opt-text">Who is the Warden, that a road closes on his word?</span><span class="kind" style="">ask-lore</span></button>
-    <button class="opt"><span class="opt-text">You'd rather not ask. Has it cost you trade?</span><span class="kind" style="">ask-npc</span></button>
-    <button class="opt"><span class="opt-text">Then I'll find another way east. My thanks.</span><span class="kind" style="">reply</span></button>
+    <button class="opt"><span class="opt-text">Who is the Warden, that a road closes on his word?</span><span class="kind" style="">Ask about the world</span></button>
+    <button class="opt"><span class="opt-text">You'd rather not ask. Has it cost you trade?</span><span class="kind" style="">Ask about Mara</span></button>
+    <button class="opt"><span class="opt-text">Then I'll find another way east. My thanks.</span><span class="kind" style="">Answer</span></button>
   </div>
   <div class="actions">
     <button class="btn-ghost">History</button>
@@ -339,15 +341,27 @@
   alone.
 </p>
 
-<h2>Open questions this mockup does not settle</h2>
+<h2>Settled in review · what is still open</h2>
+<p class="note" style="border-color:rgba(0,255,136,0.35)">
+  <b>Settled.</b> Plain labels, not tinted · <code>challenge</code>, <code>redirect</code> and
+  <code>confide</code> all ship · <code>ask-lore</code> gates on natural logic, and an NPC may
+  answer "I wouldn't know" · the wire key stays <code>tone</code>.
+</p>
 <ul style="color:var(--muted);font-size:0.8rem;max-width:80ch">
-  <li>Plain vs tinted kind labels (section 5).</li>
-  <li>Whether <code>challenge</code> and <code>redirect</code> ship in the starting pool —
-      both are proposed here, neither was requested.</li>
-  <li><code>ask-lore</code> gating: <code>allowed_proper_nouns</code> is world-level, so
-      nothing stops a blacksmith being asked about a faction they have never heard of.</li>
-  <li>Whether the wire key stays <code>tone</code> now that it carries emotion values.</li>
+  <li><b>Does the pool want more kinds?</b> Three candidates weighed, none adopted:
+      <code>offer-help</code> (the only kind that can open a route into a quest),
+      <code>ask-guidance</code> (the receiving half of <code>confide</code>), and
+      <code>ask-way</code> (directions — overlaps the map UI). Each costs a gloss line on
+      every call forever, and thins how often any one kind reaches the three slots.</li>
+  <li>Whether the prompt should discourage repeating the previous round's kinds.</li>
 </ul>
+<p class="note">
+  <b>One thing the review surfaced that was not on anyone's list.</b> The standalone
+  <code>generate_jean_options</code> prompt (<code>ai/llm_client.py:3855-3866</code>) carries
+  the identity and merchant rules but <b>not</b> the "JEAN'S KNOWN CONTEXT" clause the turn
+  prompt uses. Options minted on that path are ungated today — invisible while every option is
+  a mood, and a route to invented lore the moment <code>ask-lore</code> exists.
+</p>
 
 </div>
 </body>

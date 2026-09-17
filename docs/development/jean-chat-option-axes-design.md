@@ -77,6 +77,14 @@ Proposed starting pool:
 - **ask-npc** — asks about the NPC themself: trade, history, opinion.
 - **challenge** — doubts or tests what the NPC just claimed.
 - **redirect** — returns to a subject the NPC raised earlier.
+- **confide** — Jean volunteers something of his own.
+
+`confide` is in the starting pool by maintainer decision (2026-09-17). It carries
+the risk the first revision deferred it over — generic confession — and the
+mitigation is a prompt constraint rather than authored beats: Jean may only
+confide something already in JEAN'S KNOWN CONTEXT, never a new fact about
+himself. Per-chapter authored beats remain the better answer and remain out of
+scope here.
 
 Kinds are speech acts, never registers. The two axes must stay orthogonal or the
 prompt defines the same word twice: "deflect" is already the prompt's gloss for
@@ -103,14 +111,57 @@ affordance that already exists.
    honest failure mode, and it satisfies rule 2 for free. Its tones migrate
    through the table being deleted: `direct`→`neutral`, `guarded`→`skeptical`,
    `open`→`curious`.
-4. **A non-reply option must name a subject** that appears in the NPC's last two
-   lines or in the world-level `allowed_proper_nouns`, so the model cannot invent
-   lore. See the open question below — this list is world-level, not per-NPC.
+4. **Natural logic on both sides of the exchange** (maintainer decision,
+   2026-09-17). Jean may ask about anything *he* knows; the NPC answers from what
+   *they* know; "I wouldn't know" is a valid answer. No per-NPC `known_facts`
+   table is needed, because ignorance is an answer rather than a gap.
+
+   Jean's half already exists: the turn prompt forbids referencing anything
+   outside "JEAN'S KNOWN CONTEXT, the WORLD facts, and this conversation"
+   (`ai/llm_client.py:3691`). **The NPC's half does not** — nothing in either
+   prompt currently permits an NPC to admit ignorance, so a model asked about
+   something outside its brief will confabulate rather than decline. That
+   permission is new prompt text this work has to add, and it is the one place
+   where "natural logic" is not already the behaviour.
+
+   Note the asymmetry trap in the *other* generator: the standalone
+   `generate_jean_options` prompt (`ai/llm_client.py:3855-3866`) carries the
+   identity and merchant rules but **not** the KNOWN CONTEXT clause. Options
+   minted on that path are ungated today, which nobody notices while every option
+   is a mood. The moment `ask-lore` exists, that path can invent a faction. The
+   clause has to be added there too.
 5. **Wire and UI.** Options already ship as `{tone, text}`; add `kind`. Add the
    field to the wire-field contract test with its client read site. Render the
    **kind** in the button's label slot and drop the tone label — the portrait
    already conveys the emotion, so a two-part `[skeptical · ask-lore]` label is
-   both redundant and cramped at phone width. Text, not colour.
+   both redundant and cramped at phone width. Text, not colour, and **plain, not
+   tinted** (maintainer decision, 2026-09-17).
+6. **The player never sees the machine name.** `ask-lore` and `ask-npc` are
+   schema vocabulary; the button shows player-facing copy. The wire keeps the
+   machine name and the frontend owns a `KIND_LABELS` map beside the other
+   conversation vocabulary in `utils/conversationSegment.js` — display copy is a
+   presentation concern and belongs on the client, not in a route or serializer.
+
+   | kind | label |
+   |---|---|
+   | `reply` | Answer |
+   | `follow-up` | Press further |
+   | `ask-lore` | Ask about the world |
+   | `ask-npc` | Ask about *{NPC name}* |
+   | `challenge` | Push back |
+   | `redirect` | Change the subject |
+   | `confide` | Share something |
+
+   `ask-npc` interpolates the NPC's display name, which the panel already holds —
+   "Ask about Mara" costs nothing on the wire. Doing the same for `ask-lore`
+   ("Ask about the Warden") would need the model to emit a `subject` field, and
+   is deliberately **not** proposed: rule 4 already makes the option text name
+   its subject, so the label would restate the sentence directly above it.
+
+   This map needs the guard the tone table used to have. A kind added to
+   `JEAN_KINDS` with no entry in `KIND_LABELS` renders an unlabelled button, so
+   the contract test that pins `EMOTIONS` against `JEAN_TONES` gains a sibling
+   pinning `KIND_LABELS`' keys against `JEAN_KINDS`.
 
 ### Implementation traps
 
@@ -149,25 +200,18 @@ confirming any failure 3× on each side.
 
 ## Open questions for the maintainer
 
-- **`ask-lore` gating.** Rule 4 leans on `allowed_proper_nouns`, which is a
-  single world-level list (`ai/llm_client.py:3033`), not per-NPC. As written, any
-  NPC can be asked about any noun in the world — the rule prevents invented lore
-  but not a blacksmith being asked about a faction they have never heard of. The
-  honest fix is per-NPC `known_facts`, which is authored content across every
-  conversational NPC and belongs in its own issue. Ship with the world-level list
-  and accept the looseness, or gate non-reply options on the NPC's own last two
-  lines only?
-- **`challenge` and `redirect`** are proposed, not requested. Keep, or start with
-  `reply` / `follow-up` / `ask-lore` / `ask-npc` alone?
-- **`confide`** — a kind that lets Jean volunteer something of his own — is
-  deferred rather than rejected. It wants per-chapter authored beats to avoid
-  generic confession, so it is story-content work. The pool is designed to make
-  it a one-line addition later.
-- **Field naming.** `tone` now carries emotion values, and
-  `src/api/services/game_service.py` already calls this concept `emotion` for
-  staged conversation segments. Renaming the wire key to `emotion` is more honest
-  but touches the route contract and the citation guards; keeping `tone` is
-  cheaper. Recommend keeping `tone` unless the inconsistency grates.
+- **Does the pool want more kinds?** Seven is the adopted set. Three candidates
+  were weighed and none is adopted: `offer-help` (Jean offers something — the
+  only kind that can open a diegetic route into a quest, which is why it ranks
+  first), `ask-guidance` (Jean asks what he should do — the receiving half of
+  `confide`, and the one most tied to pillar 2), and `ask-way` (directions and
+  routes — serves pillar 4, but overlaps the map UI). Each costs a gloss line in
+  the system prompt on every call forever, and every addition thins how often any
+  one kind is picked into the three slots. Adding all three is not recommended.
+- **Should the prompt discourage repeating the previous round's kinds?** With
+  seven kinds and three slots the model will have a favourite trio. A one-line
+  nudge is cheap; whether it is worth the prompt text is a judgement call best
+  made against a measured round rather than in advance.
 
 ## What changed in revision 2
 
@@ -184,6 +228,16 @@ confirming any failure 3× on each side.
   'guarded'") that comment was written to close. The count stays at three.
 - Uniqueness moved from the tone axis to the kind axis, and tone widened to the
   full portrait emotion set.
+
+## Settled in revision 3 (mockup review, 2026-09-17)
+
+- Kind labels are plain, not tinted.
+- `challenge`, `redirect` and `confide` all ship in the starting pool.
+- `ask-lore` gates on natural logic rather than a noun allow-list, and an NPC may
+  answer "I wouldn't know" — which is new prompt text, not existing behaviour.
+- The wire key stays `tone` although it now carries emotion values.
+- The player-facing label layer (`KIND_LABELS`) was added after review found the
+  raw schema names too obscure on the button.
 
 ## Out of scope
 
