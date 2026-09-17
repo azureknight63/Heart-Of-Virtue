@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 const hold = (ms) => {
-    fireEvent.mouseDown(screen.getByRole('button'));
+    fireEvent.pointerDown(screen.getByRole('button'), { button: 0, pointerId: 1 });
     act(() => {
         for (let elapsed = 0; elapsed <= ms; elapsed += 16) {
             now += 16;
@@ -61,8 +61,8 @@ describe('AbortMoveControl', () => {
     it('does not abort on a click — the hold has to complete', () => {
         const onAbort = vi.fn();
         render(<AbortMoveControl abortable={abortable} onAbort={onAbort} />);
-        fireEvent.mouseDown(screen.getByRole('button'));
-        fireEvent.mouseUp(screen.getByRole('button'));
+        fireEvent.pointerDown(screen.getByRole('button'), { button: 0, pointerId: 1 });
+        fireEvent.pointerUp(screen.getByRole('button'), { pointerId: 1 });
         act(() => { now += HOLD_MS * 2; vi.advanceTimersByTime(HOLD_MS * 2); });
         expect(onAbort).not.toHaveBeenCalled();
     });
@@ -77,9 +77,10 @@ describe('AbortMoveControl', () => {
     it('abandoning the hold part-way does not abort', () => {
         const onAbort = vi.fn();
         render(<AbortMoveControl abortable={abortable} onAbort={onAbort} />);
-        fireEvent.mouseDown(screen.getByRole('button'));
+        fireEvent.pointerDown(screen.getByRole('button'), { button: 0, pointerId: 1 });
         act(() => { now += HOLD_MS / 3; vi.advanceTimersByTime(HOLD_MS / 3); });
-        fireEvent.mouseLeave(screen.getByRole('button'));
+        fireEvent.pointerUp(screen.getByRole('button'), { pointerId: 1 });
+        fireEvent.lostPointerCapture(screen.getByRole('button'), { pointerId: 1 });
         act(() => { now += HOLD_MS * 2; vi.advanceTimersByTime(HOLD_MS * 2); });
         expect(onAbort).not.toHaveBeenCalled();
     });
@@ -88,7 +89,7 @@ describe('AbortMoveControl', () => {
         render(<AbortMoveControl abortable={abortable} onAbort={vi.fn()} />);
         const fill = () => screen.getByTestId('abort-hold-fill').style.width;
         expect(fill()).toBe('0%');
-        fireEvent.mouseDown(screen.getByRole('button'));
+        fireEvent.pointerDown(screen.getByRole('button'), { button: 0, pointerId: 1 });
         act(() => { now += HOLD_MS / 2; vi.advanceTimersByTime(HOLD_MS / 2); });
         const mid = parseFloat(fill());
         expect(mid).toBeGreaterThan(10);
@@ -100,7 +101,7 @@ describe('AbortMoveControl', () => {
         // move that no longer exists — and the server would reject it anyway.
         const onAbort = vi.fn();
         const { rerender } = render(<AbortMoveControl abortable={abortable} onAbort={onAbort} />);
-        fireEvent.mouseDown(screen.getByRole('button'));
+        fireEvent.pointerDown(screen.getByRole('button'), { button: 0, pointerId: 1 });
         act(() => { now += HOLD_MS / 3; vi.advanceTimersByTime(HOLD_MS / 3); });
         rerender(<AbortMoveControl abortable={null} onAbort={onAbort} />);
         act(() => { now += HOLD_MS * 2; vi.advanceTimersByTime(HOLD_MS * 2); });

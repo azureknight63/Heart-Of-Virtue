@@ -51,14 +51,22 @@ const settle = (ms, times = 12) => {
     for (let i = 0; i < times; i += 1) tick(ms);
 };
 
-const holdOut = (button) => {
-    fireEvent.mouseDown(button);
+/** Begin a primary-button press on the hold control. */
+const pressSkip = (button) => fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+
+/** Run the gauge's clock past a full hold, one frame at a time. */
+const elapseHold = () => {
     act(() => {
         for (let elapsed = 0; elapsed <= DEFAULT_HOLD_MS + 32; elapsed += 16) {
             now += 16;
             vi.advanceTimersByTime(16);
         }
     });
+};
+
+const holdOut = (button) => {
+    pressSkip(button);
+    elapseHold();
 };
 
 const SEGMENTS = [
@@ -229,8 +237,8 @@ describe('SKIP SCENE (issue #538 item 1)', () => {
         tick(BASE_MS_PER_CHAR * 20); // beat one types itself out
 
         // A full click, so a regression to a plain onClick control is caught.
-        fireEvent.mouseDown(skipButton());
-        fireEvent.mouseUp(skipButton());
+        fireEvent.pointerDown(skipButton(), { button: 0, pointerId: 1 });
+        fireEvent.pointerUp(skipButton(), { pointerId: 1 });
         fireEvent.click(skipButton());
         tick(100);
 
@@ -243,6 +251,24 @@ describe('SKIP SCENE (issue #538 item 1)', () => {
     it('lands on the final beat, whole, and ends the scene', () => {
         renderDialog();
         holdOut(skipButton());
+
+        expect(screen.getByText('Beat three, the last.')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^CLOSE$/ })).toBeInTheDocument();
+    });
+
+    it('completes the hold even though the typing scene moves the button out from under the pointer (issue #583)', () => {
+        // The dialog is vertically centred and grows upward as each line
+        // types out, so a pointer that never moves ends up outside the button
+        // within a few frames. The gesture must ride that out: it is only
+        // offered while the scene is typing, which is exactly when it moves.
+        renderDialog();
+        const button = skipButton();
+
+        pressSkip(button);
+        tick(DEFAULT_HOLD_MS / 3);
+        fireEvent.mouseLeave(button);
+        fireEvent.pointerLeave(button, { pointerId: 1 });
+        elapseHold();
 
         expect(screen.getByText('Beat three, the last.')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /^CLOSE$/ })).toBeInTheDocument();
@@ -266,17 +292,13 @@ describe('SKIP SCENE (issue #538 item 1)', () => {
     });
 
     it('keeps focus inside the dialog when the skip control goes dead', () => {
-        // Staged on a needs_input event on purpose: BaseDialog hides its ✕
-        // while an event needs an answer, so the skip control really is the
-        // first focusable node and the focus trap really does park focus on
-        // it. On a needs_input:false event the ✕ takes focus first and this
-        // assertion would hold with the hand-back deleted.
-        renderDialog({
-            ...stagedEvent,
-            needs_input: true,
-            input_type: 'choice',
-            input_options: [{ label: 'Go on', value: 'go' }],
-        });
+        // The focus trap no longer parks initial focus on the skip control
+        // (issue #584), so this stages what a keyboard user does: Tab onto
+        // the button, then hold it. jsdom does not move focus on Tab, so the
+        // focus() call stands in for the keystroke.
+        renderDialog(stagedEvent);
+        expect(document.activeElement).toBe(document.querySelector('.modal-content'));
+        act(() => skipButton().focus());
         expect(document.activeElement).toBe(skipButton());
 
         holdOut(skipButton());
@@ -287,6 +309,86 @@ describe('SKIP SCENE (issue #538 item 1)', () => {
         // those is still *contained* by the dialog, so a containment check
         // could not tell the fix from its absence.
         expect(document.activeElement).toBe(document.querySelector('.modal-content'));
+    });
+
+    it('does not close the dialog on the click that ends the skip hold, even if it lands on the body (issue #583)', () => {
+        // The gesture is press → hold → release, and the release still
+        // produces a click. If the layout has shifted by then the browser
+        // can retarget that click to the dialog body, whose handler dismisses
+        // a completed event — so skipping a scene would close it. The press
+        // began on the skip control, so the click it ends with is not a
+        // "continue" gesture, wherever it lands.
+        const onClose = vi.fn();
+        renderDialog(stagedEvent, { onClose });
+        holdOut(skipButton());
+        expect(screen.getByText('Beat three, the last.')).toBeInTheDocument();
+        const body = document.querySelector('.event-dialog-body');
+
+        fireEvent.click(body);
+        expect(onClose).not.toHaveBeenCalled();
+
+        // The next, genuine click on the body is still a dismissal.
+        fireEvent.pointerDown(body, { button: 0, pointerId: 1 });
+        fireEvent.click(body);
+        expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('swallows only the click that ends the hold; the next click on the body, with no press of its own, still dismisses', () => {
+        // The press-origin record is consumed by the click it was made for.
+        // Left latched, every later click on the body would be swallowed until
+        // some other pointerdown happened to overwrite it — including a click
+        // synthesised without one (assistive tech, a keyboard-driven click).
+        const onClose = vi.fn();
+        renderDialog(stagedEvent, { onClose });
+        holdOut(skipButton());
+        const body = document.querySelector('.event-dialog-body');
+
+        fireEvent.click(body);
+        expect(onClose).not.toHaveBeenCalled();
+
+        fireEvent.click(body);
+        expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('forgets a press that began on the controls row once the engine hands over the next stage', () => {
+        // A hold whose click never arrived (a touch the browser cancelled)
+        // leaves the record set. The next stage is a new scene: its first
+        // genuine click on the body must not be paid for by the last one's.
+        const onClose = vi.fn();
+        const { rerender } = renderDialog(
+            {
+                ...stagedEvent,
+                needs_input: true,
+                input_type: 'choice',
+                input_options: [{ label: 'Go on', value: 'go' }],
+            },
+            { onClose }
+        );
+        holdOut(skipButton());
+        expect(screen.getByText('Go on')).toBeInTheDocument();
+
+        rerender(
+            <EventDialog
+                event={{
+                    ...stagedEvent,
+                    event_id: 'skip-2',
+                    output_text: 'Stage two.',
+                    segments: [{ text: 'Stage two.', in_conversation: false }],
+                }}
+                onClose={onClose}
+                onSubmitInput={vi.fn()}
+                history={[]}
+            />
+        );
+        // Walk stage two to its end from the keyboard: the key path never
+        // touches the click handler, so nothing here can consume the record
+        // by accident.
+        fireEvent.keyDown(document.activeElement, { key: 'Enter' }); // finish typing
+        fireEvent.keyDown(document.activeElement, { key: 'Enter' }); // complete the stage
+        expect(screen.getByRole('button', { name: /^CLOSE$/ })).toBeInTheDocument();
+
+        fireEvent.click(document.querySelector('.event-dialog-body'));
+        expect(onClose).toHaveBeenCalledTimes(1);
     });
 
     it('does not close the dialog when the controls row is clicked', () => {

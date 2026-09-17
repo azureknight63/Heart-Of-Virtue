@@ -1,3 +1,5 @@
+import { lookupOr } from './lookup';
+
 const STAGE_LABELS = {
   0: 'Preparing',
   1: 'Using',
@@ -76,6 +78,103 @@ export function formatCombatMoveStatus(move, stage, displayName) {
 export function displayNameOf(value) {
   if (!value) return null;
   return typeof value === 'string' ? value : (value.display_name || value.name);
+}
+
+/**
+ * The glyph that marks a heavy or deadly enemy wind-up wherever one is
+ * shown. One constant so no surface can drift from another; a glyph rather
+ * than a colour because state is never conveyed by colour alone (pillar 5).
+ */
+export const TELEGRAPH_GLYPH = '⚠';
+
+/**
+ * The closed vocabulary of `Move.telegraph_severity` (src/moves/_base.py,
+ * issue #586). A wire value outside it is not a severity the client knows;
+ * `telegraphSeverity` folds it back to 'normal' rather than passing an
+ * arbitrary string on to a lookup.
+ */
+export const TELEGRAPH_SEVERITIES = new Set(['normal', 'heavy', 'deadly']);
+
+// Labels for the non-default severities: the sentence for tooltips and
+// accessible names, and the one-word form for cramped surfaces (a token
+// badge, a timeline marker, an enemies-list line). Both read with `lookupOr`,
+// not a bracket: the key comes off the wire, and a bracket read finds
+// `constructor`/`toString` truthy on any object literal, which would pass an
+// Object.prototype name through as a severity.
+const TELEGRAPH_LABELS = {
+  heavy: 'Heavy move',
+  deadly: 'Deadly move',
+};
+const TELEGRAPH_SHORT_LABELS = {
+  heavy: 'HEAVY',
+  deadly: 'DEADLY',
+};
+
+/**
+ * The move's declared `telegraph_severity` — 'normal' | 'heavy' | 'deadly'
+ * (issue #586). A passthrough of `Move.telegraph_severity`
+ * (src/moves/_base.py), which the move itself opts into; nothing is derived
+ * from the damage multiplier here.
+ *
+ * Defaults to 'normal' when absent — the pre-#586 payload, a legacy string
+ * move, or no move at all — so an older server degrades to the plain
+ * telegraph rather than throwing.
+ */
+export function telegraphSeverity(move) {
+  if (!move || typeof move === 'string') return 'normal';
+  const severity = move.telegraph_severity;
+  return TELEGRAPH_SEVERITIES.has(severity) ? severity : 'normal';
+}
+
+/**
+ * Human label for a non-default severity ('Heavy move' / 'Deadly move'), or
+ * null for 'normal' and anything outside the vocabulary.
+ */
+export function telegraphLabel(severity) {
+  return lookupOr(TELEGRAPH_LABELS, severity, null);
+}
+
+/**
+ * One-word label for a non-default severity ('HEAVY' / 'DEADLY'), or null.
+ * The visible companion to the glyph on surfaces with no room for the
+ * sentence — and the reason the glyph can be read on touch, where there is
+ * no hover to reveal the tooltip.
+ */
+export function telegraphShortLabel(severity) {
+  return lookupOr(TELEGRAPH_SHORT_LABELS, severity, null);
+}
+
+/**
+ * The warning a pending heavy move earns, or null when there is none.
+ *
+ * Gated on `isMovePending` like every other telegraph: a Tidal Surge in
+ * recoil is history, and a warning on a spent move would be exactly the
+ * "cooldown looks like a wind-up" mistake `isMovePending` exists to stop.
+ * This is severity alone; `hostileTelegraphWarning` adds the WHO.
+ *
+ * @returns {?{severity: string, label: string, shortLabel: string}}
+ */
+export function telegraphWarning(move) {
+  if (!isMovePending(move)) return null;
+  const severity = telegraphSeverity(move);
+  if (severity === 'normal') return null;
+  return { severity, label: telegraphLabel(severity), shortLabel: telegraphShortLabel(severity) };
+}
+
+/**
+ * `telegraphWarning`, but only for a hostile combatant's move.
+ *
+ * The glyph is a threat cue for Jean: an enemy's heavy wind-up is something
+ * to block, close on or get clear of, while an ally's big hit is good news
+ * and must not read as danger. Every surface that shows both sides — the
+ * battlefield tokens, the beat timeline — applies the rule through this one
+ * function rather than each carrying its own "enemies only" branch.
+ *
+ * @param {Object} move the combatant's `current_move`
+ * @param {boolean} isHostile whether the combatant is an enemy of Jean
+ */
+export function hostileTelegraphWarning(move, isHostile) {
+  return isHostile ? telegraphWarning(move) : null;
 }
 
 /**

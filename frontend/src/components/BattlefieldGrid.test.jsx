@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import BattlefieldGrid from './BattlefieldGrid';
+import BattlefieldGrid, { VIEW_SIZE, splitPanAxis, panCellBounds } from './BattlefieldGrid';
 import { getAnimationDuration } from '../utils/animationConfigs';
 import { CATEGORY_GROUPS, MOVE_CATEGORY_COLOR, MOVE_CATEGORY_GLOW } from '../utils/categories';
 import { setFlag, resetFlags } from '../utils/featureFlags';
@@ -17,6 +17,17 @@ const { mockPlaySFX } = vi.hoisted(() => ({ mockPlaySFX: vi.fn() }));
 vi.mock('../context/AudioContext', () => ({
     useAudio: () => ({ playSFX: mockPlaySFX })
 }));
+
+/** Background cells painted as on-map (the light fill; off-map cells are dimmer). */
+const onMapCells = (container) =>
+    container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]').length;
+
+/** A left-button mouse drag from `from` to `to` (screen px), released over the window. */
+const drag = (gridEl, from, to) => {
+    fireEvent.mouseDown(gridEl, { button: 0, clientX: from[0], clientY: from[1] });
+    fireEvent.mouseMove(window, { clientX: to[0], clientY: to[1] });
+    fireEvent.mouseUp(window);
+};
 
 describe('BattlefieldGrid', () => {
     const mockCombat = {
@@ -46,6 +57,12 @@ describe('BattlefieldGrid', () => {
             }
         ]
     };
+    // A 40x40 arena with two combatants 24 cells apart: fit framing has to
+    // grow past the follow-mode window (to 32 columns, which is compact).
+    const spreadCombat = {
+        player: { ...mockCombat.player, position: { x: 5, y: 5 } },
+        enemies: [{ id: 'e-far', name: 'Archer', hp: 10, max_hp: 10, position: { x: 29, y: 5 } }],
+    };
 
     it('renders grid and combatants in normal mode', () => {
         const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
@@ -57,9 +74,8 @@ describe('BattlefieldGrid', () => {
 
         // Normal mode always renders a 13x13 viewport regardless of map size.
         // On-map cells use a light gray background, off-map cells are dimmer.
-        const onMap = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
         const offMap = container.querySelectorAll('[style*="background-color: rgba(0, 0, 0, 0.35)"]');
-        expect(onMap.length + offMap.length).toBe(169);
+        expect(onMapCells(container) + offMap.length).toBe(VIEW_SIZE * VIEW_SIZE);
     });
 
     it('frames the combatants, not the whole arena, in fit mode', () => {
@@ -76,10 +92,6 @@ describe('BattlefieldGrid', () => {
     it('scales the fit framing up when combatants are far apart', () => {
         // A 40x40 arena with two combatants 24 cells apart: the framing must
         // grow to contain both rather than stay at the follow-mode window.
-        const spreadCombat = {
-            player: { ...mockCombat.player, position: { x: 5, y: 5 } },
-            enemies: [{ id: 'e-far', name: 'Archer', hp: 10, max_hp: 10, position: { x: 29, y: 5 } }],
-        };
         const { container } = render(
             <BattlefieldGrid combat={spreadCombat} tab="overview" zoom="fit" mapSize={40} />
         );
@@ -107,10 +119,6 @@ describe('BattlefieldGrid', () => {
     });
 
     it('keeps the fit framing stable while combatants stay inside it', () => {
-        const spreadCombat = {
-            player: { ...mockCombat.player, position: { x: 5, y: 5 } },
-            enemies: [{ id: 'e-far', name: 'Archer', hp: 10, max_hp: 10, position: { x: 29, y: 5 } }],
-        };
         const { container, rerender } = render(
             <BattlefieldGrid combat={spreadCombat} tab="overview" zoom="fit" mapSize={40} />
         );
@@ -171,6 +179,69 @@ describe('BattlefieldGrid', () => {
             expect(screen.queryByLabelText(/Move resolves in/)).toBeNull();
         });
 
+        // Issue #586: King Slime's Tidal Surge (a full-to-dead hit) wound up
+        // behind the same badge and glow as a routine NpcAttack, because both
+        // are "Offensive". The wire's telegraph_severity now drives a glyph,
+        // a heavier ring and a labelled countdown — none of it colour-only.
+        describe('heavy-move telegraph', () => {
+            const surge = {
+                name: 'Tidal Surge', display_name: 'Tidal Surge', category: 'Offensive',
+                current_stage: 0, beats_left: 2, beats_until_resolve: 7, telegraph_severity: 'deadly',
+            };
+            const withEnemyMove = (current_move) => ({
+                ...mockCombat,
+                enemies: [{ ...mockCombat.enemies[0], name: 'King Slime', current_move }],
+            });
+
+            it.each([
+                ['heavy', 'Heavy move', 'HEAVY'],
+                ['deadly', 'Deadly move', 'DEADLY'],
+            ])('labels a %s enemy countdown by severity, on the badge and in the enemies list', (severity, label, short) => {
+                const combat = withEnemyMove({ ...surge, telegraph_severity: severity });
+                const { rerender } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+                const badge = screen.getByLabelText(`${label} — resolves in 7 beats`);
+                expect(badge.textContent).toContain('⚠');
+                expect(badge.textContent).toContain('7');
+                expect(screen.queryByLabelText('Move resolves in 7 beats')).toBeNull();
+
+                rerender(<BattlefieldGrid combat={combat} tab="enemies" zoom={1} />);
+                expect(
+                    screen.getByText(new RegExp(`⚠ ${short} — Preparing: Tidal Surge`)).textContent
+                ).toMatch(/resolves in 7 beats/);
+            });
+
+            it('makes the token ring visibly heavier, not just a different colour', () => {
+                render(<BattlefieldGrid combat={withEnemyMove(surge)} tab="overview" zoom={1} />);
+                const marker = screen.getByLabelText('King Slime: 50/50 HP');
+                expect(marker.style.borderStyle).toBe('dashed');
+                expect(marker.style.borderWidth).toBe('4px');
+            });
+
+            it('uses the plain label and ring for a routine wind-up (negative control)', () => {
+                render(<BattlefieldGrid combat={withEnemyMove(pendingMove)} tab="overview" zoom={1} />);
+                const badge = screen.getByLabelText('Move resolves in 7 beats');
+                expect(badge.textContent).not.toContain('⚠');
+                const marker = screen.getByLabelText('King Slime: 50/50 HP');
+                expect(marker.style.borderStyle).toBe('');
+                expect(screen.queryByLabelText(/Deadly move|Heavy move/)).toBeNull();
+            });
+
+            it('does not warn about a friendly heavy move — the cue is a threat to Jean', () => {
+                const combat = {
+                    ...mockCombat,
+                    player: { ...mockCombat.player, current_move: { ...surge, telegraph_severity: 'heavy' } },
+                };
+                render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+                expect(screen.getByLabelText('Move resolves in 7 beats')).toBeInTheDocument();
+                expect(screen.queryByLabelText(/Heavy move/)).toBeNull();
+            });
+
+            it('keeps the enemies-list line plain for a routine wind-up', () => {
+                render(<BattlefieldGrid combat={withEnemyMove(pendingMove)} tab="enemies" zoom={1} />);
+                expect(screen.getByText(/Preparing: Reap/).textContent).not.toContain('⚠');
+            });
+        });
+
         it('marks off-screen enemies with an edge chevron and their distance', () => {
             const combat = {
                 ...mockCombat,
@@ -201,7 +272,7 @@ describe('BattlefieldGrid', () => {
             render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
 
             const goblin = screen.getByText('G');
-            fireEvent.mouseEnter(goblin.closest('div[style*="position: absolute"]'));
+            fireEvent.mouseEnter(goblin.closest('[data-testid="battlefield-token"]'));
             expect(screen.getByText('4 ft')).toBeInTheDocument();
 
             fireEvent.click(goblin);
@@ -219,29 +290,149 @@ describe('BattlefieldGrid', () => {
             render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
 
             fireEvent.click(screen.getByText('G'));
-            fireEvent.mouseEnter(screen.getByText('R').closest('div[style*="position: absolute"]'));
+            fireEvent.mouseEnter(screen.getByText('R').closest('[data-testid="battlefield-token"]'));
 
             // Previously any selection suppressed every tooltip on the field.
             expect(screen.getByText('9 ft')).toBeInTheDocument();
         });
 
-        it('surfaces an HP number for every combatant on the default map view, not just the target picker or a hover/click (issue #536)', () => {
-            // Before this fix, the map view's only HP signal was a colored SVG
-            // torus with no text anywhere — the hover tooltip and the
-            // click-to-select panel both required an interaction, so a player
-            // who never hovered or clicked saw no HP number at all for Jean,
-            // an ally, or an enemy.
+        describe('HP on the token (issue #536 -> #602)', () => {
+            // #536 made the map view's only HP signal (a coloured SVG torus)
+            // legible by printing the numeral on every token, always. #602 is
+            // the maintainer's revision: the NUMERAL reveals on interaction
+            // (hover on desktop, tap on mobile), the aria-label stays put for
+            // assistive tech, and a partial-fill bar whose LENGTH carries the
+            // fraction stays on the token so a player who never interacts
+            // still has a non-colour cue.
             const combat = {
                 ...mockCombat,
                 player: { ...mockCombat.player, name: 'Jean' },
                 enemies: [{ ...mockCombat.enemies[0], name: 'Goblin', hp: 30, max_hp: 50 }],
             };
-            render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+            const tokenWrapper = (token) => token.closest('[data-testid="battlefield-token"]');
+            const numeralOf = (token) => token.querySelector('[data-testid="token-hp-numeral"]');
+            const barOf = (token) => token.querySelector('[data-testid="token-hp-bar"]');
+            const fillOf = (bar) => bar.querySelector('[data-testid="token-hp-bar-fill"]').style.width;
 
-            expect(screen.getByLabelText('Jean: 100/100 HP')).toBeInTheDocument();
-            expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
-            // A visible number, not just an aria-label buried off-screen.
-            expect(screen.getByText('30/50')).toBeInTheDocument();
+            it('keeps the HP aria-label on every token but does not render the numeral until asked', () => {
+                render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+                const jean = screen.getByLabelText('Jean: 100/100 HP');
+                const goblin = screen.getByLabelText('Goblin: 30/50 HP');
+                expect(jean).toBeInTheDocument();
+                expect(goblin).toBeInTheDocument();
+                // Not hidden-by-class: not in the DOM at all.
+                expect(numeralOf(jean)).toBeNull();
+                expect(numeralOf(goblin)).toBeNull();
+                expect(screen.queryByText('30/50')).toBeNull();
+            });
+
+            it('reveals the numeral while the token is hovered and removes it on leave', () => {
+                render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+                const goblin = screen.getByLabelText('Goblin: 30/50 HP');
+
+                fireEvent.mouseEnter(tokenWrapper(goblin));
+                expect(numeralOf(goblin)).toHaveTextContent('30/50');
+                // The aria-label is not the hover state's to take away.
+                expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
+
+                fireEvent.mouseLeave(tokenWrapper(goblin));
+                expect(numeralOf(goblin)).toBeNull();
+                expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
+            });
+
+            it('toggles the numeral on tap: one tap shows it, a second tap on the same token hides it', () => {
+                // Touch has no hover, so the tap reuses the existing selection
+                // state rather than adding a second mechanism; a repeat tap
+                // deselects (and so closes the selected-entity panel too).
+                render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+                const goblin = screen.getByLabelText('Goblin: 30/50 HP');
+
+                // Touch browsers emulate mouseenter on the tap and never fire
+                // mouseleave until another element is tapped — so the test
+                // taps the way a finger does, hover included.
+                fireEvent.mouseEnter(tokenWrapper(goblin));
+                fireEvent.click(goblin);
+                expect(numeralOf(goblin)).toHaveTextContent('30/50');
+                expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
+
+                fireEvent.click(goblin);
+                // Gone despite the stale emulated hover: deselecting clears it.
+                expect(numeralOf(goblin)).toBeNull();
+                expect(screen.queryByText('INTEGRITY (HP)')).toBeNull();
+                expect(screen.getByLabelText('Goblin: 30/50 HP')).toBeInTheDocument();
+            });
+
+            it('always renders an HP bar whose fill length is the HP fraction, not a colour', () => {
+                const { rerender } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+                const goblinBar = barOf(screen.getByLabelText('Goblin: 30/50 HP'));
+                expect(goblinBar).not.toBeNull();
+                expect(goblinBar.getAttribute('data-hp-pct')).toBe('60');
+                expect(fillOf(goblinBar)).toBe('60%');
+
+                const jeanBar = barOf(screen.getByLabelText('Jean: 100/100 HP'));
+                expect(jeanBar.getAttribute('data-hp-pct')).toBe('100');
+                expect(fillOf(jeanBar)).toBe('100%');
+
+                // Length tracks the fraction as it changes; the numeral is still
+                // not part of the always-visible layer.
+                rerender(
+                    <BattlefieldGrid
+                        combat={{ ...combat, enemies: [{ ...combat.enemies[0], hp: 5 }] }}
+                        tab="overview"
+                        zoom={1}
+                    />
+                );
+                const wounded = screen.getByLabelText('Goblin: 5/50 HP');
+                expect(barOf(wounded).getAttribute('data-hp-pct')).toBe('10');
+                expect(fillOf(barOf(wounded))).toBe('10%');
+                expect(numeralOf(wounded)).toBeNull();
+            });
+
+            it('never rounds a living combatant down to an empty bar or torus', () => {
+                // 1/500 HP is 0.2%, which rounds to 0 — an empty bar and an
+                // empty torus for a combatant who is still standing, i.e. the
+                // same picture as dead. A sliver is the floor while hp > 0;
+                // 0 is reserved for actually dead.
+                const sliver = { ...combat, enemies: [{ ...combat.enemies[0], hp: 1, max_hp: 500 }] };
+                const { rerender } = render(<BattlefieldGrid combat={sliver} tab="overview" zoom={1} />);
+                const marker = screen.getByLabelText('Goblin: 1/500 HP');
+                const bar = barOf(marker);
+                expect(bar.getAttribute('data-hp-pct')).toBe('1');
+                expect(fillOf(bar)).toBe('1%');
+                const arc = marker.querySelector('path[stroke-dasharray]');
+                expect(parseFloat(arc.getAttribute('stroke-dasharray'))).toBeGreaterThan(0);
+
+                // Jean, because a dead enemy leaves the roster while Jean's
+                // token is always drawn.
+                rerender(
+                    <BattlefieldGrid
+                        combat={{ ...combat, player: { ...combat.player, hp: 0, max_hp: 500 } }}
+                        tab="overview"
+                        zoom={1}
+                    />
+                );
+                const dead = screen.getByLabelText('Jean: 0/500 HP');
+                expect(barOf(dead).getAttribute('data-hp-pct')).toBe('0');
+                expect(fillOf(barOf(dead))).toBe('0%');
+                expect(parseFloat(dead.querySelector('path[stroke-dasharray]').getAttribute('stroke-dasharray'))).toBe(0);
+            });
+
+            it('skips both the bar and the numeral in compact mode, where the token is too small for either', () => {
+                // The spread fixture's framing (compact), with this describe's
+                // Goblin standing in for its archer.
+                const spread = {
+                    ...spreadCombat,
+                    enemies: [{ ...combat.enemies[0], position: spreadCombat.enemies[0].position }],
+                };
+                render(<BattlefieldGrid combat={spread} tab="overview" zoom="fit" mapSize={40} />);
+                const goblin = screen.getByLabelText('Goblin: 30/50 HP');
+
+                expect(barOf(goblin)).toBeNull();
+                fireEvent.mouseEnter(tokenWrapper(goblin));
+                expect(numeralOf(goblin)).toBeNull();
+            });
         });
 
         it('clears the selection when the map background is clicked', () => {
@@ -1658,8 +1849,7 @@ describe('BattlefieldGrid', () => {
         // corner, so the 13x13 frame is clamped back inside the arena and every
         // cell is on-map: 169 lit. (A 9x9 arena — the floor, i.e. a failure to
         // derive the size from positions — would leave only 81 lit.)
-        const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
-        expect(cells.length).toBe(169);
+        expect(onMapCells(container)).toBe(VIEW_SIZE * VIEW_SIZE);
     });
 
     // -------------------------------------------------------------------------
@@ -1723,13 +1913,11 @@ describe('BattlefieldGrid', () => {
                 <BattlefieldGrid combat={cornerFight} tab="overview" zoom="fit" mapSize={BOUND} />
             );
 
-            const lit = container.querySelectorAll(
-                '[style*="background-color: rgba(255, 255, 255, 0.03)"]'
-            );
+            const lit = onMapCells(container);
             expect(
-                lit.length,
+                lit,
                 'BattlefieldGrid.jsx resolvedMapSize/gridBgCells: the on-map region is '
-                + `${Math.sqrt(lit.length)} cells wide, but src/positions.py makes a `
+                + `${Math.sqrt(lit)} cells wide, but src/positions.py makes a `
                 + `map_size of ${BOUND} ${columns} cells wide -- the last legal column `
                 + 'renders as off-map'
             ).toBe(columns * columns);
@@ -1776,8 +1964,7 @@ describe('BattlefieldGrid', () => {
             <BattlefieldGrid combat={cornerCombat} tab="overview" zoom="fit" mapSize={40} />
         );
 
-        const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
-        expect(cells.length).toBe(13 * 13);
+        expect(onMapCells(container)).toBe(VIEW_SIZE * VIEW_SIZE);
     });
 
     describe('touch and mouse panning', () => {
@@ -1805,14 +1992,310 @@ describe('BattlefieldGrid', () => {
                 .map((d) => d.style.transform)
                 .find((t) => t && t.startsWith('translate(') && t.includes('px'));
 
-        const renderPannableGrid = (props = {}) => {
-            const result = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} {...props} />);
-            const gridEl = result.container.firstChild;
-            gridEl.getBoundingClientRect = () => ({ width: 400, height: 400, top: 0, left: 0, right: 400, bottom: 400 });
-            // The pan layer sits inside the viewport box, which is itself
-            // inside the grid container.
-            return { ...result, gridEl, panLayer: result.getByTestId('battlefield-viewport').firstChild };
+        // Jean mid-arena on a 41-column map, so the window can legally move
+        // in every direction. With the default 9x9 fixture the 13-cell window
+        // already covers the whole arena and the pan clamp collapses to zero.
+        const pannableCombat = {
+            ...mockCombat,
+            player: { ...mockCombat.player, position: { x: 20, y: 20, facing: 'N' } },
+            enemies: [{ ...mockCombat.enemies[0], position: { x: 22, y: 20, facing: 'S' } }],
         };
+        // One follow-mode cell in the 400px stub box. A drag shorter than this
+        // is all remainder (a translate); anything past it steps the window.
+        const CELL = 400 / VIEW_SIZE;
+        const translate = (x, y) => `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+        const AT_REST = translate(0, 0);
+
+        /** The rect every pannable render measures against: a square 400px box. */
+        const STUB_BOX = { width: 400, height: 400 };
+        /**
+         * Give the grid container and the pan layer a real rect. The pan
+         * layer sits inside the viewport box, which is itself inside the grid
+         * container; the cell size a drag converts px through is measured off
+         * the pan layer, so it needs the rect too: 400px / 13 cells ≈ 30.8px
+         * per cell in follow mode.
+         */
+        const stubPanRects = (gridEl, panLayer, box = STUB_BOX) => {
+            const rect = () => ({ ...box, top: 0, left: 0, right: box.width, bottom: box.height });
+            gridEl.getBoundingClientRect = rect;
+            panLayer.getBoundingClientRect = rect;
+        };
+
+        const renderPannableGrid = (props = {}, box = STUB_BOX) => {
+            const result = render(
+                <BattlefieldGrid combat={pannableCombat} tab="overview" zoom={1} mapSize={40} {...props} />
+            );
+            const gridEl = result.container.firstChild;
+            const panLayer = result.getByTestId('battlefield-viewport').firstChild;
+            stubPanRects(gridEl, panLayer, box);
+            return { ...result, gridEl, panLayer };
+        };
+
+        // A drag has to move the camera WINDOW, not just slide the rendered
+        // cells: the old pan was a CSS translate of the 13x13 that was already
+        // on screen, clamped to 40% of the box, so it never revealed anything
+        // (#592). Whole cells of travel shift leftX/topY; only the sub-cell
+        // remainder is a translate.
+        describe('drag-to-pan moves the camera window (#592)', () => {
+            describe('splitPanAxis', () => {
+                it('splits travel into whole cells and a same-signed remainder', () => {
+                    expect(splitPanAxis(-100, 30, -10, 10)).toEqual({ cells: -3, residual: -10 });
+                    expect(splitPanAxis(100, 30, -10, 10)).toEqual({ cells: 3, residual: 10 });
+                });
+
+                it('clamps the px total before splitting, so a stopped edge has no remainder', () => {
+                    expect(splitPanAxis(-1000, 30, -2, 5)).toEqual({ cells: -2, residual: 0 });
+                    expect(splitPanAxis(1000, 30, -2, 5)).toEqual({ cells: 5, residual: 0 });
+                });
+
+                it('lands exactly on the bound for a cell size that does not divide its own multiple', () => {
+                    // A real measured cell size (box.width / gridCols) is rarely
+                    // a clean float. Clamping in px and dividing back gave
+                    // 2.9999999999999996 here, which truncated to 2 cells plus
+                    // a remainder of one whole cell — a full cell of void
+                    // hanging off the stopped edge. Clamping in CELL units
+                    // makes the bound itself the result.
+                    const cellPx = 31.999999999999993;
+                    expect(splitPanAxis(1000, cellPx, -3, 3)).toEqual({ cells: 3, residual: 0 });
+                    expect(splitPanAxis(-1000, cellPx, -3, 3)).toEqual({ cells: -3, residual: 0 });
+                });
+
+                it('moves nothing without a measurable cell size', () => {
+                    expect(splitPanAxis(-100, 0, -10, 10)).toEqual({ cells: 0, residual: 0 });
+                    expect(splitPanAxis(-100, NaN, -10, 10)).toEqual({ cells: 0, residual: 0 });
+                });
+            });
+
+            describe('panCellBounds', () => {
+                it('lets a window inside the arena slide to either edge', () => {
+                    // 13 cells at 7..19 on a 41-cell arena: 7 back to 0, 21 on to 28.
+                    expect(panCellBounds(7, 13, 41)).toEqual({ min: -7, max: 21 });
+                });
+
+                it('never carries the window further off the arena than it already is', () => {
+                    // Already hanging 6 cells off the low edge: can come back in, not go further out.
+                    expect(panCellBounds(-6, 13, 41)).toEqual({ min: 0, max: 34 });
+                    // Already past the high edge (30..42 on 0..40): can come back to 28, not go further.
+                    expect(panCellBounds(30, 13, 41)).toEqual({ min: -30, max: 0 });
+                });
+
+                it('collapses when the window already covers the whole arena', () => {
+                    expect(panCellBounds(0, 21, 21)).toEqual({ min: 0, max: 0 });
+                    // Follow window wider than a 9-cell arena, centred at -2.
+                    expect(panCellBounds(-2, 13, 9)).toEqual({ min: 0, max: 0 });
+                });
+            });
+
+            const archerAt = (x, y) => ({
+                ...mockCombat,
+                enemies: [{
+                    id: 'enemy_archer', name: 'Archer', hp: 10, max_hp: 10,
+                    distance: 7, position: { x, y },
+                }],
+            });
+            /** Residual translate in px, parsed off the pan layer. */
+            const residualOf = (panLayer) =>
+                panLayer.style.transform.match(/-?\d+(\.\d+)?/g).map(Number);
+
+            it('reveals a combatant just beyond the window after dragging toward them', () => {
+                // Jean at (6,6) frames columns 0..12; the archer at x=13 is one
+                // column past the edge.
+                const { gridEl } = renderPannableGrid({ combat: archerAt(13, 6) });
+                expect(screen.queryByText('A')).toBeNull();
+                expect(screen.getByLabelText('Archer off-screen, 7 feet away')).toBeInTheDocument();
+
+                // 100px leftward ≈ 3.25 cells: the window slides three columns
+                // east (to 3..15) and the archer's token is rendered.
+                drag(gridEl, [200, 200], [100, 200]);
+
+                expect(screen.getByText('A')).toBeInTheDocument();
+                expect(screen.queryByLabelText(/off-screen/)).toBeNull();
+            });
+
+            it('carries only the sub-cell remainder as a translate', () => {
+                const { gridEl, panLayer } = renderPannableGrid({ combat: archerAt(13, 6) });
+                drag(gridEl, [200, 200], [100, 200]);
+
+                // 100px = 3 cells (92.3px) + 7.7px of remainder.
+                const [tx, ty] = residualOf(panLayer);
+                expect(tx).toBeCloseTo(-7.7, 0);
+                expect(ty).toBe(0);
+                expect(Math.abs(tx)).toBeLessThan(400 / 13);
+            });
+
+            it('pans on the y axis too: dragging down reveals rows above', () => {
+                // Window rows 12..0; the archer at y=13 is one row above it.
+                const { gridEl } = renderPannableGrid({ combat: archerAt(6, 13) });
+                expect(screen.queryByText('A')).toBeNull();
+
+                drag(gridEl, [200, 100], [200, 200]);
+
+                expect(screen.getByText('A')).toBeInTheDocument();
+            });
+
+            it('measures rows against the box HEIGHT when the viewport is not square', () => {
+                // With `squareBattlefieldCells` off (the default) the viewport
+                // fills the panel, so a cell is 1/gridCols of the box's width
+                // AND of its height — two different sizes in a 400x600 panel.
+                // The gesture used to measure one cell size off the width and
+                // apply it to both axes, so a vertical drag stepped rows at
+                // the wrong pitch.
+                const TALL_BOX = { width: 400, height: 600 };
+                const CELL_H = TALL_BOX.height / VIEW_SIZE;
+                const CELL_W = TALL_BOX.width / VIEW_SIZE;
+
+                // Dragging down by one cell WIDTH is under a cell height, so
+                // the row must not step: all remainder, the archer still above
+                // the window.
+                const short = renderPannableGrid({ combat: archerAt(6, 13) }, TALL_BOX);
+                drag(short.gridEl, [200, 100], [200, 100 + CELL_W]);
+                expect(screen.queryByText('A')).toBeNull();
+                expect(residualOf(short.panLayer)[1]).toBeCloseTo(CELL_W, 0);
+                cleanup();
+
+                // Dragging down by exactly one cell HEIGHT steps one row and
+                // leaves no remainder.
+                const exact = renderPannableGrid({ combat: archerAt(6, 13) }, TALL_BOX);
+                drag(exact.gridEl, [200, 100], [200, 100 + CELL_H]);
+                expect(screen.getByText('A')).toBeInTheDocument();
+                expect(residualOf(exact.panLayer)[1]).toBe(0);
+            });
+
+            it('re-clamps the window shift when Jean moves while panned, so the window never leaves the arena', () => {
+                // Jean at (6,6) on a 41-column arena, an archer on the last
+                // column. Pan all the way east: the window sits on 28..40.
+                const combat = archerAt(40, 6);
+                const { container, gridEl, rerender } = renderPannableGrid({ combat });
+                drag(gridEl, [390, 200], [-4000, 200]);
+                expect(screen.getByText('A')).toBeInTheDocument();
+                expect(onMapCells(container)).toBe(VIEW_SIZE * VIEW_SIZE);
+
+                // Jean jumps 14 cells east (past HALF_VIEW, so the camera
+                // snaps): the unpanned window is now 14..26, and the shift
+                // chosen against the old window would carry it to 42..54 —
+                // entirely off the arena. The shift must be re-clamped
+                // against the fresh window (to 14), keeping the window on
+                // 28..40 with the archer in view.
+                rerender(
+                    <BattlefieldGrid
+                        combat={{ ...combat, player: { ...combat.player, position: { x: 20, y: 6, facing: 'N' } } }}
+                        tab="overview"
+                        zoom={1}
+                        mapSize={40}
+                    />
+                );
+                expect(onMapCells(container)).toBe(VIEW_SIZE * VIEW_SIZE);
+                expect(screen.getByText('A')).toBeInTheDocument();
+            });
+
+            it('cannot drag the map out of view: the window stops at the arena edge', () => {
+                // Jean at (6,6) on a 41-column arena, an archer on the last
+                // column. A huge leftward drag must stop with the window's
+                // right edge on column 40 — the whole window still on the map
+                // — rather than sliding on into the void.
+                const { container, gridEl, panLayer } = renderPannableGrid({ combat: archerAt(40, 6) });
+                expect(onMapCells(container)).toBe(VIEW_SIZE * VIEW_SIZE);
+
+                drag(gridEl, [390, 200], [-4000, 200]);
+
+                expect(screen.getByText('A')).toBeInTheDocument();
+                expect(screen.queryByText('J')).toBeNull();
+                expect(onMapCells(container)).toBe(VIEW_SIZE * VIEW_SIZE);
+                // The remainder is clamped along with the cells — no
+                // half-cell of void hangs off the stopped edge.
+                expect(panLayer.style.transform).toBe(AT_REST);
+            });
+
+            it('does not pan past an edge the window is already touching', () => {
+                // Jean at (6,6) frames columns 0..12 and rows 12..0: the west
+                // and south edges of the arena are already on screen, so a
+                // drag right/up (which would reveal x<0 / y<0) is a no-op.
+                const { container, gridEl, panLayer } = renderPannableGrid({ combat: archerAt(13, 6) });
+
+                drag(gridEl, [10, 300], [390, 10]);
+
+                expect(panLayer.style.transform).toBe(AT_REST);
+                expect(onMapCells(container)).toBe(VIEW_SIZE * VIEW_SIZE);
+                expect(screen.queryByText('A')).toBeNull();
+                expect(screen.queryByTitle('Recenter the map')).toBeNull();
+            });
+
+            it('collapses to nothing in fit mode when the frame is the whole arena', () => {
+                // (0,0) and (20,20) on a 21-column arena: the fit frame is at
+                // least the arena wide (size >= mapSize), so its clamp
+                // collapses to [0, 0] and there is nothing a pan could reveal.
+                const combat = {
+                    ...mockCombat,
+                    player: { ...mockCombat.player, position: { x: 0, y: 0 } },
+                    enemies: [{ id: 'enemy_far', name: 'Xeno', hp: 10, max_hp: 10, position: { x: 20, y: 20 } }],
+                };
+                const { container, gridEl, panLayer } = renderPannableGrid({ combat, zoom: 'fit', mapSize: 20 });
+                expect(onMapCells(container)).toBe(21 * 21);
+
+                drag(gridEl, [200, 200], [50, 350]);
+
+                expect(onMapCells(container)).toBe(21 * 21);
+                expect(panLayer.style.transform).toBe(AT_REST);
+                expect(screen.getByText('J')).toBeInTheDocument();
+                expect(screen.getByText('X')).toBeInTheDocument();
+            });
+
+            it('resets the window shift when the view mode changes', () => {
+                const combat = archerAt(13, 6);
+                const { gridEl, rerender } = renderPannableGrid({ combat });
+                drag(gridEl, [200, 200], [100, 200]);
+                expect(screen.getByText('A')).toBeInTheDocument();
+
+                rerender(<BattlefieldGrid combat={combat} tab="overview" zoom="fit" mapSize={40} />);
+                rerender(<BattlefieldGrid combat={combat} tab="overview" zoom={1} mapSize={40} />);
+
+                // Back in follow mode the camera is Jean-centred again, so
+                // the archer is once more just past the edge.
+                expect(screen.queryByText('A')).toBeNull();
+                expect(screen.getByLabelText(/off-screen/)).toBeInTheDocument();
+            });
+
+            it('recenter zeroes the window shift as well as the remainder', () => {
+                const { gridEl, panLayer } = renderPannableGrid({ combat: archerAt(13, 6) });
+                drag(gridEl, [200, 200], [100, 200]);
+                expect(screen.getByText('A')).toBeInTheDocument();
+
+                act(() => { fireEvent.click(screen.getByTitle('Recenter the map')); vi.advanceTimersByTime(1000); });
+
+                expect(panLayer.style.transform).toBe(AT_REST);
+                expect(screen.queryByText('A')).toBeNull();
+                expect(screen.queryByTitle('Recenter the map')).toBeNull();
+            });
+
+            it('keeps the window shift across a same-fight reinit and drops it for a new fight', () => {
+                const combat = archerAt(13, 6);
+                const { gridEl, rerender } = renderPannableGrid({
+                    combat, combatId: 'fight-0001', combatActive: true,
+                });
+                drag(gridEl, [200, 200], [100, 200]);
+                expect(screen.getByText('A')).toBeInTheDocument();
+
+                rerender(<BattlefieldGrid combat={{ ...combat }} tab="overview" zoom={1} mapSize={40} combatId="fight-0001" combatActive />);
+                expect(screen.getByText('A')).toBeInTheDocument();
+
+                rerender(<BattlefieldGrid combat={combat} tab="overview" zoom={1} mapSize={40} combatId="fight-0002" combatActive />);
+                expect(screen.queryByText('A')).toBeNull();
+            });
+
+            it('does nothing but stays quiet when the viewport has no measurable size', () => {
+                // jsdom's default rect is 0x0. With no cell size to convert
+                // through, a drag must neither throw nor produce NaN
+                // transforms — it just cannot move anything.
+                const { container } = render(
+                    <BattlefieldGrid combat={archerAt(13, 6)} tab="overview" zoom={1} mapSize={40} />
+                );
+                const gridEl = container.firstChild;
+                drag(gridEl, [200, 200], [100, 200]);
+
+                expect(panTransform(container)).toBe(AT_REST);
+                expect(screen.queryByText('A')).toBeNull();
+            });
+        });
 
         it('keeps a touch pan where the player left it instead of springing back', () => {
             const { gridEl, panLayer } = renderPannableGrid();
@@ -1820,27 +2303,27 @@ describe('BattlefieldGrid', () => {
             fireEvent.touchStart(gridEl, { touches: [{ clientX: 100, clientY: 100 }] });
             fireEvent.touchMove(gridEl, { touches: [{ clientX: 60, clientY: 80 }] });
             fireEvent.touchEnd(gridEl);
-            expect(panLayer.style.transform).toBe('translate(-40.0px, -20.0px)');
+            // -40px on x is one whole cell of window shift plus the remainder
+            // as a translate; -20px on y is under a cell, so all remainder.
+            expect(panLayer.style.transform).toBe(translate(-40 + CELL, -20));
 
             // The old behaviour decayed the offset to zero on release, which
             // made the advertised "drag to pan" affordance do nothing at all.
             act(() => vi.advanceTimersByTime(1000));
-            expect(panLayer.style.transform).toBe('translate(-40.0px, -20.0px)');
+            expect(panLayer.style.transform).toBe(translate(-40 + CELL, -20));
         });
 
         it('offers a recenter control once panned, and it returns the map to center', () => {
             const { gridEl, panLayer } = renderPannableGrid();
             expect(screen.queryByTitle('Recenter the map')).toBeNull();
 
-            fireEvent.mouseDown(gridEl, { button: 0, clientX: 100, clientY: 100 });
-            fireEvent.mouseMove(window, { clientX: 60, clientY: 80 });
-            fireEvent.mouseUp(window);
-            expect(panLayer.style.transform).toBe('translate(-40.0px, -20.0px)');
+            drag(gridEl, [100, 100], [60, 80]);
+            expect(panLayer.style.transform).toBe(translate(-40 + CELL, -20));
 
             const recenter = screen.getByTitle('Recenter the map');
             act(() => { fireEvent.click(recenter); vi.advanceTimersByTime(1000); });
 
-            expect(panLayer.style.transform).toBe('translate(0.0px, 0.0px)');
+            expect(panLayer.style.transform).toBe(AT_REST);
             expect(screen.queryByTitle('Recenter the map')).toBeNull();
         });
 
@@ -1851,20 +2334,19 @@ describe('BattlefieldGrid', () => {
             // on the detached node and panning is dead for the rest of the
             // session — with nothing on screen to suggest why.
             const { rerender, getByTestId } = render(
-                <BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />
+                <BattlefieldGrid combat={pannableCombat} tab="overview" zoom={1} mapSize={40} />
             );
-            rerender(<BattlefieldGrid combat={mockCombat} tab="enemies" zoom={1} />);
-            rerender(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+            rerender(<BattlefieldGrid combat={pannableCombat} tab="enemies" zoom={1} mapSize={40} />);
+            rerender(<BattlefieldGrid combat={pannableCombat} tab="overview" zoom={1} mapSize={40} />);
 
             const gridEl = document.querySelector('[style*="cursor: grab"]');
-            gridEl.getBoundingClientRect = () => ({ width: 400, height: 400, top: 0, left: 0, right: 400, bottom: 400 });
             const panLayer = getByTestId('battlefield-viewport').firstChild;
+            stubPanRects(gridEl, panLayer);
 
-            fireEvent.mouseDown(gridEl, { button: 0, clientX: 100, clientY: 100 });
-            fireEvent.mouseMove(window, { clientX: 70, clientY: 90 });
-            fireEvent.mouseUp(window);
+            drag(gridEl, [100, 100], [70, 90]);
 
-            expect(panLayer.style.transform).toBe('translate(-30.0px, -10.0px)');
+            // Both under one cell, so the whole drag is remainder.
+            expect(panLayer.style.transform).toBe(translate(-30, -10));
         });
 
         it('does not clear the selected combatant when a drag ends over the map', () => {
@@ -1875,9 +2357,7 @@ describe('BattlefieldGrid', () => {
 
             // A drag also fires a click on mouseup; that must not be read as a
             // background click dismissing the panel.
-            fireEvent.mouseDown(gridEl, { button: 0, clientX: 100, clientY: 100 });
-            fireEvent.mouseMove(window, { clientX: 60, clientY: 80 });
-            fireEvent.mouseUp(window);
+            drag(gridEl, [100, 100], [60, 80]);
             fireEvent.click(gridEl);
 
             expect(screen.getByText('INTEGRITY (HP)')).toBeInTheDocument();
@@ -1885,7 +2365,6 @@ describe('BattlefieldGrid', () => {
 
         it('ignores multi-touch gestures and secondary mouse buttons', () => {
             const { container, gridEl } = renderPannableGrid();
-            const atRest = 'translate(0.0px, 0.0px)';
 
             // A two-finger gesture (pinch/zoom) must not be treated as a pan.
             fireEvent.touchStart(gridEl, {
@@ -1894,12 +2373,12 @@ describe('BattlefieldGrid', () => {
             fireEvent.touchMove(gridEl, {
                 touches: [{ clientX: 50, clientY: 50 }, { clientX: 60, clientY: 60 }],
             });
-            expect(panTransform(container)).toBe(atRest);
+            expect(panTransform(container)).toBe(AT_REST);
 
             // Right-click drag must not pan either (it opens a context menu).
             fireEvent.mouseDown(gridEl, { button: 2, clientX: 0, clientY: 0 });
             fireEvent.mouseMove(window, { clientX: 50, clientY: 50 });
-            expect(panTransform(container)).toBe(atRest);
+            expect(panTransform(container)).toBe(AT_REST);
             fireEvent.mouseUp(window);
         });
 
@@ -1908,11 +2387,10 @@ describe('BattlefieldGrid', () => {
         // changes only when a genuinely new combat starts. The camera reset is
         // keyed on it, so both halves have to hold.
         describe('pan reset keyed on combat_id', () => {
+            const panned = translate(-40 + CELL, -20);
             const panTo = (container, gridEl) => {
-                fireEvent.mouseDown(gridEl, { button: 0, clientX: 100, clientY: 100 });
-                fireEvent.mouseMove(window, { clientX: 60, clientY: 80 });
-                fireEvent.mouseUp(window);
-                expect(panTransform(container)).toBe('translate(-40.0px, -20.0px)');
+                drag(gridEl, [100, 100], [60, 80]);
+                expect(panTransform(container)).toBe(panned);
             };
 
             it('keeps the pan across a reinit that reuses the same combat_id', () => {
@@ -1925,14 +2403,15 @@ describe('BattlefieldGrid', () => {
                 // A wave transition: new enemies, SAME fight, same combat_id.
                 rerender(
                     <BattlefieldGrid
-                        combat={{ ...mockCombat, enemies: [...mockCombat.enemies] }}
+                        combat={{ ...pannableCombat, enemies: [...pannableCombat.enemies] }}
                         tab="overview"
                         zoom={1}
+                        mapSize={40}
                         combatId="fight-0001"
                         combatActive
                     />
                 );
-                expect(panTransform(container)).toBe('translate(-40.0px, -20.0px)');
+                expect(panTransform(container)).toBe(panned);
             });
 
             it('recentres the camera when a genuinely new fight starts', () => {
@@ -1944,33 +2423,48 @@ describe('BattlefieldGrid', () => {
 
                 rerender(
                     <BattlefieldGrid
-                        combat={mockCombat}
+                        combat={pannableCombat}
                         tab="overview"
                         zoom={1}
+                        mapSize={40}
                         combatId="fight-0002"
                         combatActive
                     />
                 );
-                expect(panTransform(container)).toBe('translate(0.0px, 0.0px)');
+                expect(panTransform(container)).toBe(AT_REST);
             });
 
             it('recentres the camera when combat ends', () => {
+                // Jean at (6,6) frames columns 0..12; the archer at x=13 is one
+                // column past the edge, so its token is the visible evidence of
+                // the window shift — and of its reset.
+                const combat = {
+                    ...mockCombat,
+                    enemies: [{ id: 'enemy_archer', name: 'Archer', hp: 10, max_hp: 10, distance: 7, position: { x: 13, y: 6 } }],
+                };
                 const { container, gridEl, rerender } = renderPannableGrid({
+                    combat,
                     combatId: 'fight-0001',
                     combatActive: true,
                 });
-                panTo(container, gridEl);
+                drag(gridEl, [200, 200], [100, 200]);
+                expect(screen.getByText('A')).toBeInTheDocument();
 
                 rerender(
                     <BattlefieldGrid
-                        combat={mockCombat}
+                        combat={combat}
                         tab="overview"
                         zoom={1}
+                        mapSize={40}
                         combatId="fight-0001"
                         combatActive={false}
                     />
                 );
-                expect(panTransform(container)).toBe('translate(0.0px, 0.0px)');
+                expect(panTransform(container)).toBe(AT_REST);
+                // The window shift is gone too, not just the remainder: the
+                // archer is back past the edge.
+                expect(screen.queryByText('A')).toBeNull();
+                expect(screen.getByLabelText(/off-screen/)).toBeInTheDocument();
             });
         });
     });

@@ -27,7 +27,14 @@ _SPECIAL_FIELDS = {
     "coordinate_grid_size": ("77, 88", (77, 88)),
     "starting_story_flags": ("alpha, beta=2", ["alpha", "beta=2"]),
     "starting_party_members": ("Gorran, Votha", ["Gorran", "Votha"]),
+    # Only one policy exists today (issue #581), so the round trip proves the
+    # case-normalisation rather than a distinct value; see _SINGLE_VALUED.
+    "starting_level_allocation": ("EVEN", "even"),
 }
+
+#: Fields whose only valid value IS the default. They still round-trip above,
+#: but the "differs from the default" sanity check cannot apply to them.
+_SINGLE_VALUED = {"starting_level_allocation"}
 
 
 def _field_sections():
@@ -380,7 +387,7 @@ def test_every_field_round_trips_from_ini(tmp_path):
     # otherwise the comparison above could pass on untouched defaults.
     unchanged = [
         name for name, want in expected.items()
-        if want == getattr(defaults, name)
+        if want == getattr(defaults, name) and name not in _SINGLE_VALUED
     ]
     assert unchanged == [], f"round-trip values equal to defaults: {unchanged}"
 
@@ -402,3 +409,86 @@ def test_boolean_spellings(tmp_path, section, field, raw, expected):
     path.write_text(f"[{section}]\n{field} = {raw}\n")
     config = ConfigManager(str(path)).load()
     assert getattr(config, field) is expected
+
+
+# ---------------------------------------------------------------------------
+# starting_level / starting_level_allocation (issue #581)
+# ---------------------------------------------------------------------------
+
+
+def test_starting_level_defaults():
+    config = GameConfig()
+    assert config.starting_level == 1
+    assert config.starting_level_allocation == "even"
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("3", 3),
+        ("1", 1),
+        ("100", 100),
+        ("0", 1),        # below the floor -> clamped to 1
+        ("-4", 1),
+        ("250", 100),    # above the level cap -> clamped to 100
+        ("three", 1),    # unparseable -> default
+    ],
+)
+def test_starting_level_is_parsed_and_clamped(tmp_path, raw, expected):
+    path = tmp_path / "lvl.ini"
+    path.write_text(f"[game]\nstarting_level = {raw}\n")
+    assert ConfigManager(str(path)).load().starting_level == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("even", "even"),
+        (" EVEN ", "even"),        # case/whitespace-insensitive
+        ("combat-heavy", "even"),  # unknown policy -> default, with a warning
+        ("", "even"),
+    ],
+)
+def test_starting_level_allocation_is_validated(tmp_path, raw, expected, caplog):
+    path = tmp_path / "alloc.ini"
+    path.write_text(f"[game]\nstarting_level_allocation = {raw}\n")
+    with caplog.at_level("WARNING", logger="src.config_manager"):
+        config = ConfigManager(str(path)).load()
+    assert config.starting_level_allocation == expected
+    warned = [r for r in caplog.records if "starting_level_allocation" in r.message]
+    if raw.strip().lower() in ("", "even"):
+        assert warned == []
+    else:
+        assert warned, "an unknown policy must be reported, not silently replaced"
+
+
+def test_starting_level_allocation_vocabulary_comes_from_the_engine():
+    """The config validates against the engine's policy registry, not a
+    second list of its own -- a policy added to the engine is accepted here
+    the day it lands."""
+    from src.config_manager import starting_level_vocabulary
+    from src.player._leveling import LEVEL_CAP, STARTING_LEVEL_ALLOCATIONS
+
+    level_cap, policies = starting_level_vocabulary()
+    assert policies is STARTING_LEVEL_ALLOCATIONS
+    assert level_cap is LEVEL_CAP
+
+
+def test_config_manager_stays_a_leaf_module():
+    """session_manager imports config_manager at module load and defers its
+    own src.player import until a session is built (falling back to
+    MinimalPlayer). Importing config_manager must not drag the player
+    package in ahead of that, or the fallback can never engage."""
+    import subprocess
+    import sys
+
+    probe = (
+        "import sys; import src.config_manager; "
+        "print(sorted(m for m in sys.modules if m.startswith('src.player')))"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True, text=True, check=True,
+        cwd=str(_CONFIG_MANAGER_SRC.parent.parent),
+    ).stdout.strip()
+    assert out == "[]", out

@@ -48,12 +48,31 @@ describe('HoldButton', () => {
         expect(screen.getByRole('button', { name: /Hold to skip/i })).toBeInTheDocument();
     });
 
+    it('forwards host attributes, but a forwarded prop cannot override its own contract', () => {
+        // Hosts spread placement attributes onto it (BaseDialog's
+        // SKIP_INITIAL_FOCUS_PROPS). A stray `type` must not turn a hold into
+        // a form submit, and a caller's own pointer handler must not displace
+        // the gauge's.
+        const onPointerDown = vi.fn();
+        renderButton({ type: 'submit', 'data-host-marker': 'placed', onPointerDown });
+        const button = screen.getByRole('button', { name: /Hold to skip/i });
+
+        expect(button).toHaveAttribute('data-host-marker', 'placed');
+        expect(button.type).toBe('button');
+
+        fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+        expect(onPointerDown).not.toHaveBeenCalled();
+        expect(button).toHaveTextContent('hold to skip scene'); // gauge armed, not yet painted
+        advance(16);
+        expect(button).toHaveTextContent('keep holding…');
+    });
+
     describe('pointer', () => {
         it('confirms only once the hold elapses', () => {
             const onConfirm = vi.fn();
             renderButton({ onConfirm });
 
-            fireEvent.mouseDown(screen.getByRole('button'));
+            fireEvent.pointerDown(screen.getByRole('button'), { button: 0, pointerId: 1 });
             advance(DEFAULT_HOLD_MS / 3);
             expect(onConfirm).not.toHaveBeenCalled();
 
@@ -66,25 +85,80 @@ describe('HoldButton', () => {
             renderButton({ onConfirm });
             const button = screen.getByRole('button');
 
-            fireEvent.mouseDown(button);
+            fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
             advance(DEFAULT_HOLD_MS / 3);
-            fireEvent.mouseUp(button);
+            fireEvent.pointerUp(button, { pointerId: 1 });
             advance(DEFAULT_HOLD_MS * 2);
             expect(onConfirm).not.toHaveBeenCalled();
 
-            fireEvent.mouseDown(button);
+            fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
             advance(DEFAULT_HOLD_MS + 32);
             expect(onConfirm).toHaveBeenCalledTimes(1);
         });
 
-        it('cancels when the pointer leaves the button mid-hold', () => {
+        it('still confirms when the button moves out from under a stationary pointer (issue #583)', () => {
+            // The story dialog is vertically centred and grows upward with
+            // every typed line, so the skip button slides out from under a
+            // pointer that never moved. That produces mouseleave/pointerleave
+            // on the button. A hold cancelled by that could never complete:
+            // the button is only enabled while the scene is typing, which is
+            // exactly when it moves. Pointer capture keeps the gesture alive
+            // until the pointer is actually released.
             const onConfirm = vi.fn();
             renderButton({ onConfirm });
             const button = screen.getByRole('button');
 
-            fireEvent.mouseDown(button);
+            fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
             advance(DEFAULT_HOLD_MS / 3);
             fireEvent.mouseLeave(button);
+            fireEvent.pointerLeave(button, { pointerId: 1 });
+            advance(DEFAULT_HOLD_MS);
+            expect(onConfirm).toHaveBeenCalledTimes(1);
+        });
+
+        it('cancels when the pointer is released, even away from the button', () => {
+            // With capture, the release reaches the button wherever the
+            // pointer ended up; the browser then reports the capture lost.
+            const onConfirm = vi.fn();
+            renderButton({ onConfirm });
+            const button = screen.getByRole('button');
+
+            fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+            advance(DEFAULT_HOLD_MS / 3);
+            fireEvent.pointerUp(button, { pointerId: 1 });
+            fireEvent.lostPointerCapture(button, { pointerId: 1 });
+            advance(DEFAULT_HOLD_MS * 2);
+            expect(onConfirm).not.toHaveBeenCalled();
+        });
+
+        it('cancels when the browser takes the capture away (pointercancel / lostpointercapture)', () => {
+            // A touch that turns into a scroll, or a pen leaving range, ends
+            // the interaction without a pointerup; both must reset the gauge.
+            const onConfirm = vi.fn();
+            renderButton({ onConfirm });
+            const button = screen.getByRole('button');
+
+            fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+            advance(DEFAULT_HOLD_MS / 3);
+            fireEvent.pointerCancel(button, { pointerId: 1 });
+            advance(DEFAULT_HOLD_MS * 2);
+            expect(onConfirm).not.toHaveBeenCalled();
+
+            fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+            advance(DEFAULT_HOLD_MS / 3);
+            fireEvent.lostPointerCapture(button, { pointerId: 1 });
+            advance(DEFAULT_HOLD_MS * 2);
+            expect(onConfirm).not.toHaveBeenCalled();
+        });
+
+        it('ignores a bare mousedown', () => {
+            // The gesture is driven by pointer events only, so a synthetic
+            // or compatibility mousedown with no pointerdown behind it does
+            // not arm the gauge.
+            const onConfirm = vi.fn();
+            renderButton({ onConfirm });
+
+            fireEvent.mouseDown(screen.getByRole('button'));
             advance(DEFAULT_HOLD_MS * 2);
             expect(onConfirm).not.toHaveBeenCalled();
         });
@@ -162,7 +236,7 @@ describe('HoldButton', () => {
             const onConfirm = vi.fn();
             renderButton({ onConfirm });
 
-            fireEvent.mouseDown(screen.getByRole('button'), { button: 2 });
+            fireEvent.pointerDown(screen.getByRole('button'), { button: 2, pointerId: 1 });
             advance(DEFAULT_HOLD_MS * 2);
             expect(onConfirm).not.toHaveBeenCalled();
         });
@@ -193,7 +267,7 @@ describe('HoldButton', () => {
         const onConfirm = vi.fn();
         renderButton({ onConfirm, disabled: true });
 
-        fireEvent.mouseDown(screen.getByRole('button'));
+        fireEvent.pointerDown(screen.getByRole('button'), { button: 0, pointerId: 1 });
         advance(DEFAULT_HOLD_MS * 2);
         expect(onConfirm).not.toHaveBeenCalled();
     });
@@ -202,7 +276,7 @@ describe('HoldButton', () => {
         const onConfirm = vi.fn();
         const { rerender } = renderButton({ onConfirm });
 
-        fireEvent.mouseDown(screen.getByRole('button'));
+        fireEvent.pointerDown(screen.getByRole('button'), { button: 0, pointerId: 1 });
         advance(DEFAULT_HOLD_MS / 3);
         rerender(
             <HoldButton
@@ -221,7 +295,7 @@ describe('HoldButton', () => {
         const onConfirm = vi.fn();
         const { unmount } = renderButton({ onConfirm });
 
-        fireEvent.mouseDown(screen.getByRole('button'));
+        fireEvent.pointerDown(screen.getByRole('button'), { button: 0, pointerId: 1 });
         advance(DEFAULT_HOLD_MS / 3);
         unmount();
         advance(DEFAULT_HOLD_MS * 2);
@@ -235,13 +309,13 @@ describe('HoldButton', () => {
             const fill = () => screen.getByTestId('hold-fill').style.width;
             expect(fill()).toBe('0%');
 
-            fireEvent.mouseDown(screen.getByRole('button'));
+            fireEvent.pointerDown(screen.getByRole('button'), { button: 0, pointerId: 1 });
             advance(DEFAULT_HOLD_MS / 2);
             const midway = parseFloat(fill());
             expect(midway).toBeGreaterThan(0);
             expect(midway).toBeLessThan(100);
 
-            fireEvent.mouseUp(screen.getByRole('button'));
+            fireEvent.pointerUp(screen.getByRole('button'), { pointerId: 1 });
             expect(fill()).toBe('0%');
         });
 
@@ -249,14 +323,14 @@ describe('HoldButton', () => {
             renderButton();
             expect(screen.getByRole('button').textContent).toContain('hold to skip scene');
 
-            fireEvent.mouseDown(screen.getByRole('button'));
+            fireEvent.pointerDown(screen.getByRole('button'), { button: 0, pointerId: 1 });
             advance(DEFAULT_HOLD_MS / 3);
             expect(screen.getByRole('button').textContent).toContain('keep holding');
         });
 
         it('keeps the resting label when no holding label is supplied', () => {
             renderButton({ holdingLabel: undefined });
-            fireEvent.mouseDown(screen.getByRole('button'));
+            fireEvent.pointerDown(screen.getByRole('button'), { button: 0, pointerId: 1 });
             advance(DEFAULT_HOLD_MS / 3);
             expect(screen.getByRole('button').textContent).toContain('hold to skip scene');
         });

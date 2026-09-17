@@ -1882,9 +1882,11 @@ class TestInventorySerializer:
         assert "Damage +5" in result["reason"]
 
     def test_item_comparison_downgrade_between_real_weapons(self):
-        from src.items import Longsword, RustedDagger
+        # Both slashing: a Longsword vs RustedDagger pair would be
+        # `different_type` since #571, which is a different verdict entirely.
+        from src.items import Longsword, Shortsword
 
-        current, candidate = Longsword(), RustedDagger()
+        current, candidate = Longsword(), Shortsword()
         result = self.ItemComparisonSerializer.serialize(current, candidate)
 
         assert result["recommendation"] == "downgrade"

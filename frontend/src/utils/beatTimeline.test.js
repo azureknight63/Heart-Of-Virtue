@@ -147,3 +147,25 @@ describe('buildBeatTimelineColumns', () => {
     ]);
   });
 });
+
+// Issue #586: the strip must be able to tell a Tidal Surge column apart from
+// a routine NpcAttack column, so entries carry the move's heavy/deadly
+// warning — already gated to enemies, since the glyph is a threat cue for
+// Jean and an ally's big hit is not one.
+describe('entry warning', () => {
+  it("carries an enemy's heavy-move warning, and none for a routine or friendly move", () => {
+    const combat = {
+      player: { id: 'player', name: 'Jean', hp: 10, current_move: pendingMove({ beats_until_resolve: 1, telegraph_severity: 'deadly' }) },
+      enemies: [
+        { id: 'enemy_1', name: 'King Slime', hp: 400, current_move: pendingMove({ beats_until_resolve: 7, telegraph_severity: 'deadly' }) },
+        { id: 'enemy_2', name: 'Slime', hp: 5, current_move: pendingMove({ beats_until_resolve: 2 }) },
+      ],
+    };
+    const byName = Object.fromEntries(getBeatTimelineEntries(combat).map((e) => [e.name, e.warning]));
+    expect(byName).toEqual({
+      Jean: null,
+      'King Slime': { severity: 'deadly', label: 'Deadly move', shortLabel: 'DEADLY' },
+      Slime: null,
+    });
+  });
+});

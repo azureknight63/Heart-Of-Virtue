@@ -1,6 +1,6 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import InteractPanel, { actionKeywords } from './InteractPanel';
+import InteractPanel, { actionKeywords, TARGET_CATEGORIES } from './InteractPanel';
 import apiEndpoints from '../api/endpoints';
 import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds';
 import { colors, accessibility } from '../styles/theme';
@@ -1635,6 +1635,175 @@ describe('InteractPanel', () => {
       fireEvent.scroll(historyEl);
 
       expect(historyEl.parentElement.querySelector('[style*="position: absolute"]')).not.toBeNull();
+    });
+  });
+
+  // The target list used to be one flat run of rows — npcs, then objects,
+  // then items — with nothing to say where one kind ended and the next
+  // began. Each kind now sits under its own header, which is a real
+  // <button> (touch target, aria-expanded) that hides its rows on a tap.
+  describe('collapsible target categories (issue #596)', () => {
+    // A header's accessible name is "<label> (<count>)" — the ▾/▸ glyph is
+    // aria-hidden (aria-expanded carries that state for AT). Anchored on the
+    // full shape so "📦 Take All Items" cannot match the Items header.
+    const header = (label) => screen.getByRole('button', { name: new RegExp(`^${label} \\(\\d+\\)$`) });
+
+    it('renders one header per category, carrying that category\'s row count', () => {
+      const location = {
+        ...mockLocation,
+        items: [
+          ...mockLocation.items,
+          { id: 'item2', name: 'Rusty Key', description: 'An old key.', keywords: ['Take'] },
+        ],
+      };
+      render(<InteractPanel location={location} onClose={mockOnClose} />);
+
+      // The count is in the header's own text, not conveyed by anything the
+      // player has to expand to discover.
+      expect(header('NPCs').textContent).toMatch(/NPCs.*\(1\)/);
+      expect(header('Objects').textContent).toMatch(/Objects.*\(1\)/);
+      expect(header('Items').textContent).toMatch(/Items.*\(2\)/);
+    });
+
+    it('lists categories in the fixed NPC / Object / Item order', () => {
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+      const headers = screen.getAllByRole('button', { expanded: true });
+      expect(headers.map((h) => h.textContent)).toEqual([
+        expect.stringMatching(/NPCs/),
+        expect.stringMatching(/Objects/),
+        expect.stringMatching(/Items/),
+      ]);
+    });
+
+    it('gives each header a 44px touch target and an aria-expanded state', () => {
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+      // Driven by the component's own taxonomy so a category added to the
+      // table is covered here without a second list to keep in step.
+      for (const { label } of TARGET_CATEGORIES) {
+        const h = header(label);
+        expect(h.tagName).toBe('BUTTON');
+        expect(h.style.minHeight).toBe(accessibility.touchTarget);
+        expect(h).toHaveAttribute('aria-expanded', 'true');
+      }
+    });
+
+    it('starts every category expanded, with every row in the DOM', () => {
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+      expect(screen.getByRole('button', { name: /Guard/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Chest/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Gold Coin/ })).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { expanded: true })).toHaveLength(3);
+      expect(screen.queryAllByRole('button', { expanded: false })).toHaveLength(0);
+    });
+
+    it('collapses a category on click — its rows leave the DOM — and expands it again on the next click', () => {
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+
+      fireEvent.click(header('Objects'));
+      expect(header('Objects')).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByRole('button', { name: /Chest/ })).toBeNull();
+      expect(screen.queryByText('A wooden chest.')).toBeNull();
+      // Only the clicked category collapsed; its neighbours are untouched.
+      expect(screen.getByRole('button', { name: /Guard/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Gold Coin/ })).toBeInTheDocument();
+      // The count survives the collapse so a closed header still says what it hides.
+      expect(header('Objects').textContent).toMatch(/\(1\)/);
+
+      fireEvent.click(header('Objects'));
+      expect(header('Objects')).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('button', { name: /Chest/ })).toBeInTheDocument();
+    });
+
+    it('marks the expanded/collapsed state with a text glyph, not only a colour or an attribute', () => {
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+      // Same ▾/▸ pair HeatMeter uses; the glyph is the sighted reader's
+      // state marker, aria-expanded the assistive tech's.
+      expect(header('Items').textContent.trim()).toMatch(/^▾/);
+      fireEvent.click(header('Items'));
+      expect(header('Items').textContent.trim()).toMatch(/^▸/);
+    });
+
+    it('renders two targets of one category inside that category\'s rows, in payload order', () => {
+      const location = {
+        ...mockLocation,
+        items: [
+          ...mockLocation.items,
+          { id: 'item2', name: 'Rusty Key', description: 'An old key.', keywords: ['Take'] },
+        ],
+      };
+      render(<InteractPanel location={location} onClose={mockOnClose} />);
+
+      // The header's aria-controls names the rows container; both items must
+      // live inside it (not just somewhere in the list) and keep the order
+      // the payload listed them in.
+      const itemsHeader = header('Items');
+      const rows = within(document.getElementById(itemsHeader.getAttribute('aria-controls')));
+      expect(rows.getAllByRole('button').map((b) => b.textContent)).toEqual([
+        expect.stringMatching(/Gold Coin/),
+        expect.stringMatching(/Rusty Key/),
+      ]);
+      // ...and nothing from another category leaked in.
+      expect(rows.queryByRole('button', { name: /Guard/ })).toBeNull();
+    });
+
+    it('does not render a header for a category with no targets', () => {
+      const location = { ...mockLocation, npcs: [], objects: [] };
+      render(<InteractPanel location={location} onClose={mockOnClose} />);
+      expect(screen.queryByRole('button', { name: /^NPCs \(\d+\)$/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Objects \(\d+\)$/ })).toBeNull();
+      expect(header('Items')).toBeInTheDocument();
+    });
+
+    it('does not count a hidden target toward its category header', () => {
+      const location = {
+        ...mockLocation,
+        objects: [
+          ...mockLocation.objects,
+          { id: 'obj2', name: 'Trapdoor', description: 'Unseen.', keywords: ['Open'], hidden: true },
+        ],
+      };
+      render(<InteractPanel location={location} onClose={mockOnClose} />);
+      expect(header('Objects').textContent).toMatch(/\(1\)/);
+      expect(screen.queryByText('Trapdoor')).toBeNull();
+    });
+
+    it('remembers a collapsed category across a room refresh within the session', () => {
+      const { rerender } = render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+      fireEvent.click(header('Items'));
+      expect(header('Items')).toHaveAttribute('aria-expanded', 'false');
+
+      // A refetch hands the panel a fresh `location` object with the same rows.
+      rerender(<InteractPanel location={{ ...mockLocation }} onClose={mockOnClose} />);
+      expect(header('Items')).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByRole('button', { name: /Gold Coin/ })).toBeNull();
+    });
+
+    it('still selects a target from inside an expanded category', () => {
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+      expect(header('NPCs')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Guard/ }));
+      expect(screen.getByText('✨ Guard')).toBeInTheDocument();
+      // The headers belong to the list view and go with it.
+      expect(screen.queryByRole('button', { name: /^NPCs \(\d+\)$/ })).toBeNull();
+    });
+
+    it('re-measures the target list scroll geometry when a category is collapsed', () => {
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+      const listEl = screen.getByTestId('interact-target-list');
+
+      // Overflowing while everything is expanded...
+      Object.defineProperty(listEl, 'scrollHeight', { value: 500, configurable: true });
+      Object.defineProperty(listEl, 'clientHeight', { value: 100, configurable: true });
+      Object.defineProperty(listEl, 'scrollTop', { value: 0, configurable: true });
+      fireEvent.scroll(listEl);
+      expect(listEl.parentElement.querySelector('[style*="position: absolute"]')).not.toBeNull();
+
+      // ...and no longer overflowing once a category is folded away. The
+      // container's own box never resizes, so only an explicit re-check
+      // (not the ResizeObserver) can clear the indicator.
+      Object.defineProperty(listEl, 'scrollHeight', { value: 80, configurable: true });
+      fireEvent.click(header('Items'));
+      expect(listEl.parentElement.querySelector('[style*="position: absolute"]')).toBeNull();
     });
   });
 });

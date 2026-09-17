@@ -733,6 +733,32 @@ class SessionManager:
                 f"[SessionManager] [ERROR] Error applying starting equipment: {e}",
             )
 
+    def _apply_starting_level(self, player) -> None:
+        """Climb Jean to ``starting_level`` with every point pre-spent (issue #581).
+
+        Delegates to ``Player.apply_starting_level``; a ``starting_level`` of
+        1 (the default) is a no-op. Failures degrade this one feature and are
+        logged, the same contract as ``starting_exp`` (issue #361): the
+        fully-built player is never discarded for a MinimalPlayer over it.
+        """
+        if not self.game_config:
+            return
+        try:
+            target = int(getattr(self.game_config, "starting_level", 1) or 1)
+            if target <= 1:
+                return
+            allocation = getattr(
+                self.game_config, "starting_level_allocation", "even"
+            )
+            player.apply_starting_level(target, allocation=allocation)
+            print(
+                f"[SessionManager] [OK] Applied starting_level {target} "
+                f"({allocation} allocation); level is now {getattr(player, 'level', '?')}",
+                flush=True,
+            )
+        except Exception as e:
+            _warn(f"[SessionManager] [ERROR] apply_starting_level failed: {e}")
+
     def _apply_starting_party_members(self, player) -> None:
         """Spawn configured starting_party_members and add them to combat_list_allies.
 
@@ -936,6 +962,12 @@ class SessionManager:
             # Apply player stats from config BEFORE party members: allies
             # level-sync to Jean on join, so his configured level must be set first.
             self._apply_player_stats_from_config(player)
+
+            # Pre-allocated starting level (issue #581), also before party
+            # members for the same reason. After the [player] stats so an
+            # explicit `level = N` there is respected (the climb is a no-op
+            # once Jean is already at or above the target).
+            self._apply_starting_level(player)
 
             # Apply starting party members (e.g. Gorran) from config
             self._apply_starting_party_members(player)

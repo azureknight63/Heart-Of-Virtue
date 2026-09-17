@@ -23,6 +23,13 @@ import { accessibility, colors } from '../styles/theme';
  * @param {string}   [fillColor] - progress fill colour
  * @param {string}   [testId] - data-testid for the fill element
  * @param {Object}   [style] - style overrides, merged last
+ * @param {...*}     rest - every other prop, spread onto the <button> FIRST
+ *                          (data-/aria- attributes a host dialog uses to place
+ *                          it, e.g. BaseDialog's SKIP_INITIAL_FOCUS_PROPS).
+ *                          It never overrides `type`, `aria-label`, `disabled`
+ *                          or the hold's own handlers, and a prop named like
+ *                          one of those handlers (onPointerDown, onKeyDown,
+ *                          onBlur, ...) is not forwarded at all.
  */
 export default function HoldButton({
     label,
@@ -35,11 +42,13 @@ export default function HoldButton({
     fillColor = colors.alpha.secondary[30],
     testId = 'hold-fill',
     style = {},
+    ...rest
 }) {
     const { progress, isHolding, handlers } = useHoldToConfirm(onConfirm, { holdMs, disabled });
 
     return (
         <button
+            {...rest}
             type="button"
             aria-label={ariaLabel}
             disabled={disabled}

@@ -15,7 +15,11 @@ from src.api.constants import ITEM_USE_RANGE
 from src.api.serializers.inventory import _BONUS_ATTRS, _collect_equipped_items
 from src.combatant import combatant_handle, move_in_progress
 from src.moves import attacker_accuracy
-from src.moves._base import display_name_of
+from src.moves._base import (
+    display_name_of,
+    TELEGRAPH_SEVERITIES,
+    TELEGRAPH_SEVERITY_NORMAL,
+)
 
 if TYPE_CHECKING:
     from src.player import Player
@@ -485,8 +489,27 @@ class CombatantSerializer:
                 "damage_multiplier": (
                     CombatantSerializer._serialize_damage_multiplier(move)
                 ),
+                # TELEGRAPH_SEVERITIES — declared on Move (src/moves/_base.py)
+                # and read off it here so the badge, enemies list and beat
+                # timeline (telegraphSeverity in combatMoveStatus.js) share
+                # one owner. The default is only the degraded-object guard:
+                # a legacy placeholder restored from a save carries none of
+                # Move's attributes. An out-of-vocabulary value folds to
+                # normal as well, so the wire never carries a severity the
+                # client's label table cannot name.
+                "telegraph_severity": (
+                    CombatantSerializer._serialize_telegraph_severity(move)
+                ),
             }
         return None
+
+    @staticmethod
+    def _serialize_telegraph_severity(move: Any) -> str:
+        """``move.telegraph_severity``, folded to normal when absent or odd."""
+        severity = getattr(move, "telegraph_severity", TELEGRAPH_SEVERITY_NORMAL)
+        if severity not in TELEGRAPH_SEVERITIES:
+            return TELEGRAPH_SEVERITY_NORMAL
+        return severity
 
     @staticmethod
     def _move_method(move: Any, name: str):

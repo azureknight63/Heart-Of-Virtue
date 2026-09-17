@@ -382,13 +382,15 @@ class LootEvent(Event):
         self._rebuild_options()
 
     def _rebuild_options(self):
+        from src.items import stack_base_name
+
         self.input_options = []
         if not hasattr(self.container, "inventory") or not self.container.inventory:
             self.input_options.append({"value": "exit", "label": "Close (Empty)"})
             return
 
         for i, item in enumerate(self.container.inventory):
-            label = f"Take {item.name}"
+            label = f"Take {stack_base_name(item)}"
             if hasattr(item, "count") and item.count > 1:
                 label += f" ({item.count})"
             self.input_options.append({"value": str(i), "label": label})
@@ -402,17 +404,21 @@ class LootEvent(Event):
             self.needs_input = False
             return {"success": True, "message": "Interaction ended."}
 
+        # Method-local imports are this file's convention for engine helpers
+        # (see the other Event subclasses); there is no import cycle to dodge.
         from src.narration import cprint
-
         from src.inventory_utils import transfer_item
+        from src.items import stack_sentence_label
 
         if user_input == "all":
             snapshot = list(self.container.inventory)
             taken_names = []
             for item in snapshot:
                 qty = getattr(item, "count", 1)
+                # Label before the transfer: it can rewrite name/count.
+                label = stack_sentence_label(item, qty)
                 transfer_item(self.container, self.player, item, qty)
-                taken_names.append(item.name)
+                taken_names.append(label)
 
             if taken_names:
                 cprint(f"Jean takes everything: {', '.join(taken_names)}", "green")
@@ -432,8 +438,12 @@ class LootEvent(Event):
             if 0 <= idx < len(self.container.inventory):
                 item = self.container.inventory[idx]
                 qty = getattr(item, "count", 1)
+                label = stack_sentence_label(item, qty)
                 transfer_item(self.container, self.player, item, qty)
-                cprint(f"Jean takes the {item.name}.", "green")
+                # "the" reads wrong before a quantity ("the 2× Sap"), so it is
+                # only used for a single item.
+                article = "" if qty > 1 else "the "
+                cprint(f"Jean takes {article}{label}.", "green")
 
                 if hasattr(self.container, "refresh_description"):
                     self.container.refresh_description()

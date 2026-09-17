@@ -2,6 +2,7 @@
 
 import random
 
+from src import functions
 from src.combatant import exp_needed_for_level  # type: ignore
 from src.narration import cprint
 
@@ -28,6 +29,36 @@ LEVEL_UP_ATTRIBUTES = (
 
 #: Just the attribute names, for callers that do not want the labels.
 LEVEL_UP_ATTRIBUTE_NAMES = tuple(name for name, _label in LEVEL_UP_ATTRIBUTES)
+
+#: Highest level ``gain_exp`` will climb to; ``apply_starting_level`` honours it.
+LEVEL_CAP = 100
+
+
+def _even_allocation(points, names):
+    """Split ``points`` round-robin across ``names`` in the engine's order.
+
+    Every attribute gets ``points // len(names)``; the remainder goes one
+    point each to the FIRST attributes in ``LEVEL_UP_ATTRIBUTES`` order, so
+    the outcome is reproducible for a given point total.
+    """
+    share, extra = divmod(points, len(names))
+    return {
+        name: share + (1 if index < extra else 0)
+        for index, name in enumerate(names)
+    }
+
+
+#: Named policies for spending a pre-allocated starting level's points
+#: (issue #581). Each maps ``(points, attribute_names) -> {name: amount}``
+#: with the amounts summing to ``points``. Add a "combat-heavy" entry here
+#: and ``config_manager`` accepts it the same day -- the config validates
+#: against this registry, not a list of its own.
+STARTING_LEVEL_ALLOCATION_POLICIES = {
+    "even": _even_allocation,
+}
+
+#: The policy names ``starting_level_allocation`` may take.
+STARTING_LEVEL_ALLOCATIONS = tuple(STARTING_LEVEL_ALLOCATION_POLICIES)
 
 
 class PlayerLevelingMixin:
@@ -71,14 +102,14 @@ class PlayerLevelingMixin:
                     )
                 break
 
-        if self.level < 100:
+        if self.level < LEVEL_CAP:
             self.exp += amt
 
         # Web-only: always level up via the non-blocking API path (the terminal
         # stat-allocation prompt has been removed). `api_mode` is retained for
         # caller compatibility.
         events = []
-        while self.level < 100 and self.exp >= self.exp_to_level:
+        while self.level < LEVEL_CAP and self.exp >= self.exp_to_level:
             events.append(self._level_up_api())
         return events
 
@@ -116,6 +147,82 @@ class PlayerLevelingMixin:
             "points_awarded": int(points),
             "bonuses": bonuses,
         }
+
+    def apply_starting_level(self, target_level, allocation="even"):
+        """Climb to ``target_level`` and pre-spend every attribute point.
+
+        The config-driven counterpart of ``starting_exp`` for a level-N start
+        (issue #581). ``starting_exp`` cannot open a session at a higher level
+        cleanly: each crossed boundary leaves 6-9 ``pending_attribute_points``
+        and the client blocks on a LEVEL UP modal until they are spent. This
+        path climbs through the same ``_level_up_api`` loop -- so the random
+        per-level stat bonuses land exactly as they would in play -- then
+        spends the points itself with the named ``allocation`` policy (see
+        ``STARTING_LEVEL_ALLOCATION_POLICIES``), clears any pending level-up
+        records, recomputes derived stats the way a manual allocation would,
+        and starts Jean at full health and fatigue.
+
+        Progress toward the next level (``exp``) is preserved rather than
+        debited, so a ``starting_exp`` below the first boundary still counts.
+        Skill-tree exp is untouched: learnable skills are ``starting_exp``'s
+        job. A target at or below the current level, or one that is not a
+        positive integer, is a no-op that returns ``[]``.
+
+        Returns the list of level-up event dicts, as ``gain_exp`` does.
+        """
+        policy_name = str(allocation or "").strip().lower()
+        policy = STARTING_LEVEL_ALLOCATION_POLICIES.get(policy_name)
+        if policy is None:
+            raise ValueError(
+                f"Unknown starting_level_allocation {allocation!r}; "
+                f"expected one of {STARTING_LEVEL_ALLOCATIONS}"
+            )
+        try:
+            target = int(target_level)
+        except (TypeError, ValueError):
+            return []
+        target = min(target, LEVEL_CAP)
+
+        exp_before = int(getattr(self, "exp", 0) or 0)
+        events = []
+        while int(getattr(self, "level", 1) or 1) < target:
+            events.append(self._level_up_api())
+        if not events:
+            return []
+        # _level_up_api debits exp_to_level per level; nothing was earned
+        # here, so restore the pool rather than leave it negative.
+        self.exp = exp_before
+
+        self._spend_pending_attribute_points(policy)
+        if getattr(self, "pending_level_ups", None):
+            self.pending_level_ups = []
+
+        functions.refresh_stat_bonuses(self)
+        self.hp = self.maxhp
+        self.fatigue = self.maxfatigue
+        return events
+
+    def _spend_pending_attribute_points(self, policy):
+        """Spend every pending point via ``policy`` (see the registry above).
+
+        Mirrors the explicit branch of ``GameService.allocate_level_up_points``
+        -- the ``*_base`` attribute is raised and the pending pool debited --
+        without the per-request validation. The caller refreshes stat bonuses.
+        Returns ``{attribute: amount}`` for what was spent.
+        """
+        points = int(getattr(self, "pending_attribute_points", 0) or 0)
+        if points <= 0:
+            return {}
+        shares = policy(points, LEVEL_UP_ATTRIBUTE_NAMES)
+        spent = {}
+        for name, amount in shares.items():
+            amount = int(amount)
+            if amount <= 0:
+                continue
+            setattr(self, name, int(getattr(self, name, 0) or 0) + amount)
+            spent[name] = amount
+        self.pending_attribute_points = 0
+        return spent
 
     def learn_skill(self, skill):
         """Add skill to known_moves if not already known. Returns the skill."""

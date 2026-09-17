@@ -112,6 +112,22 @@ from src.narration import capture_narration
 from src.combatant import wire_handle
 
 
+def _serialize_mid_cast(move_cls, enemy_cls, reference=None, beats_left=2):
+    """A real ``move_cls`` mid-cast on a real ``enemy_cls``, serialized.
+
+    ``reference`` is the Jean the enemy is targeting and the payload is
+    rendered relative to; a bare ``Player()`` when the test has no fixture.
+    """
+    player = reference if reference is not None else Player()
+    enemy = enemy_cls()
+    enemy.target = player
+    move = move_cls(enemy)
+    move.current_stage = 0
+    move.beats_left = beats_left
+    enemy.current_move = move
+    return CombatantSerializer.serialize_combatant(enemy, reference=player)
+
+
 def _describe(why):
     """Render one contract value for a failure message.
 
@@ -693,6 +709,13 @@ ACTIVE_MOVE_CONTRACT = {
     "damage_multiplier": Read(
         "ai/combat_strategist.py", 'get("damage_multiplier"'
     ),
+    # Issue #586. telegraphSeverity() marks a heavy/deadly wind-up with a
+    # glyph on the countdown badge, the enemies list and the beat timeline —
+    # the non-colour cue that tells a Tidal Surge apart from a routine
+    # NpcAttack, which are otherwise both "Offensive". Absent on the wire,
+    # the helper defaults to "normal" and the whole warning silently
+    # disappears, which is the drift class this file exists to catch.
+    "telegraph_severity": Read("combatMoveStatus.js", "move.telegraph_severity"),
 }
 
 # StatusEffectsIconPanel.jsx renders each element of status_effects/passives.
@@ -1098,15 +1121,7 @@ class TestCombatantWireContract:
         """
         from src.moves import SlimeVolley
 
-        player = Player()
-        enemy = Slime()
-        enemy.target = player
-        move = SlimeVolley(enemy)
-        move.current_stage = 0
-        move.beats_left = 2
-        enemy.current_move = move
-
-        payload = CombatantSerializer.serialize_combatant(enemy, reference=player)
+        payload = _serialize_mid_cast(SlimeVolley, Slime)
         wire = payload["current_move"]["damage_multiplier"]
         assert wire == pytest.approx(SlimeVolley._DAMAGE_MULTIPLIER), (
             f"wire damage_multiplier is {wire} but SlimeVolley declares "
@@ -1116,6 +1131,28 @@ class TestCombatantWireContract:
             "fixture is degenerate: this move must declare a NON-default "
             "multiplier or the test cannot distinguish carried from defaulted"
         )
+
+    def test_telegraph_severity_carries_the_moves_own_declaration(self):
+        """Presence is not enough here either: "normal" is a valid severity
+        AND the serializer's default, so a renamed ``Move.telegraph_severity``
+        would degrade the #586 warning to nothing without a missing key."""
+        from src.moves import TidalSurge
+        from src.npc._enemies import KingSlime
+
+        payload = _serialize_mid_cast(TidalSurge, KingSlime)
+        assert payload["current_move"]["telegraph_severity"] == "deadly"
+        assert TidalSurge.telegraph_severity != "normal", (
+            "fixture is degenerate: this move must declare a NON-default "
+            "severity or the test cannot distinguish carried from defaulted"
+        )
+
+    def test_a_routine_windup_serializes_as_normal(self):
+        """Negative control: the generic NPC swing must NOT earn the warning,
+        or the glyph marks every enemy and warns of nothing."""
+        from src.moves import NpcAttack
+
+        payload = _serialize_mid_cast(NpcAttack, Slime)
+        assert payload["current_move"]["telegraph_severity"] == "normal"
 
     def test_tactical_mechanics_carries_the_states_own_summary(self):
         """Same shape of guard for the status half of the combat prompt.
@@ -1666,8 +1703,8 @@ ROOM_NPC_CONTRACT = {
     # key={`${target.id}-${idx}`}
     "id": Read("InteractPanel.jsx", "target.id"),
     "name": Read("RoomContents.jsx", "entity.name"),
-    # npc_class: n.type -> NpcChatPanel npcId
-    "type": Read("InteractPanel.jsx", "n.type"),
+    # npc_class: row.type -> NpcChatPanel npcId (InteractPanel demotes the wire type to npc_class)
+    "type": Read("InteractPanel.jsx", "npc_class: row.type"),
     # NPCs and objects describe themselves identically (an `idle_message`
     # or nothing), so `pushIdleLines` reads BOTH shapes -- which is why
     # this anchor and the object contract's are the same literal.
@@ -1881,6 +1918,27 @@ class TestInventoryWireContract:
             "damage_diff", "protection_diff", "weight_diff", "value_diff",
             "bonus_diffs", "resistance_diffs", "status_resistance_diffs",
         }
+        # Both sides are ItemDetailSerializer output; for weapons they carry
+        # the base damage type and subtype so a `different_type` verdict (#571)
+        # can be explained on the client, not just asserted.
+        for side in ("current", "candidate"):
+            assert comparison[side]["damage_type"] == "slashing", side
+            assert comparison[side]["subtype"] == "Sword", side
+
+    def test_comparison_verdict_vocabulary(self):
+        """ItemDetailDialog's REC_LABELS/REC_COLORS key off `recommendation`;
+        every verdict the serializer can emit must be in that vocabulary."""
+        from src.api.serializers.inventory import ItemComparisonSerializer
+        from src.items import IronCuirass, LeatherArmor, Longsword, RustedIronMace, Shortsword
+
+        verdicts = {
+            ItemComparisonSerializer.serialize(None, Longsword())["recommendation"],
+            ItemComparisonSerializer.serialize(Shortsword(), Longsword())["recommendation"],
+            ItemComparisonSerializer.serialize(Longsword(), Shortsword())["recommendation"],
+            ItemComparisonSerializer.serialize(Shortsword(), RustedIronMace())["recommendation"],
+            ItemComparisonSerializer.serialize(LeatherArmor(), IronCuirass())["recommendation"],
+        }
+        assert verdicts == {"upgrade", "downgrade", "different_type"}
 
 
 # ============================================================================
@@ -2622,6 +2680,24 @@ class TestThePayloadBuildersMatchTheWire:
 
         _assert_builder_matches_the_wire(
             "makeCombatant", combatant, "serialize_combatant"
+        )
+
+    def test_the_active_move_fixture_carries_exactly_the_keys_the_serializer_emits(
+        self, real_combat_player
+    ):
+        """``makeActiveMove`` -- the ``current_move`` a combatant carries
+        mid-cast. Every battlefield-telegraph test (countdown badge, enemies
+        list, beat timeline, #586 severity glyph) is built on it, so a key the
+        serializer sends and the fixture omits sends all of them down a
+        fallback no real payload takes."""
+        from src.moves import NpcAttack
+
+        active = _serialize_mid_cast(
+            NpcAttack, Slime, reference=real_combat_player, beats_left=1
+        )["current_move"]
+
+        _assert_builder_matches_the_wire(
+            "makeActiveMove", active, "_serialize_active_move"
         )
 
     @pytest.mark.parametrize(

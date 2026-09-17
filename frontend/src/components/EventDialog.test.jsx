@@ -1255,4 +1255,124 @@ describe('EventDialog', () => {
       expect(screen.queryByText(/Please select an option/i)).toBeNull();
     });
   });
+
+  /**
+   * Issue #584. Every staged scene renders the hold-to-skip control, and it is
+   * the first focusable element in the dialog, so BaseDialog's focus trap
+   * parked initial focus on it. Its keydown handler preventDefault()s and
+   * stopPropagation()s Enter/Space — deliberately, that IS the hold gesture —
+   * so a tap of either key never reached ConversationStage's document-level
+   * advance listener: it did nothing, and a 600 ms hold skipped the whole
+   * scene instead. The keydown here is fired from `document.activeElement`,
+   * where a real press originates, not from a node chosen to make it pass.
+   */
+  describe('Enter/Space advance a staged scene from the real focus target (issue #584)', () => {
+    const stagedEvent = {
+      event_id: 'mem-1',
+      name: 'Ch01_Memory_Amelia',
+      output_text: 'Beat one.',
+      needs_input: false,
+      segments: [
+        { text: 'Beat one.', speaker: 'Amelia', emotion: 'happy', in_conversation: true },
+        { text: 'Beat two.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+      ],
+      conversation: {
+        cast: [
+          { id: 'Jean', name: 'Jean', side: 'left', emotion: 'neutral' },
+          { id: 'Amelia', name: 'Amelia', side: 'right', emotion: 'happy' },
+        ],
+      },
+    };
+
+    /** Speaker shown on the dialogue card: Amelia = beat one, Jean = beat two. */
+    const currentSpeaker = () => document.querySelector('.conversation-stage__dialogue span').textContent;
+
+    const openOnBeatOne = () => {
+      renderDialog(stagedEvent);
+      fireEvent.click(screen.getByTestId('conversation-stage')); // finish beat one's typewriter
+      expect(screen.getByText('Beat one.')).toBeInTheDocument();
+      expect(currentSpeaker()).toBe('Amelia');
+    };
+
+    it('does not park initial focus on the hold-to-skip button', () => {
+      renderDialog(stagedEvent);
+      const skip = screen.getByRole('button', { name: /hold to skip/i });
+      expect(document.activeElement).not.toBe(skip);
+      expect(document.activeElement).toBe(document.querySelector('.modal-content'));
+      // Still reachable: only the STARTING position changes.
+      expect(skip).not.toBeDisabled();
+      expect(skip.tabIndex).toBe(0);
+    });
+
+    it('does not park initial focus on the LOG button either, on a chained event', () => {
+      // A chained event mounts with `history.length > 1`, so the LOG button
+      // renders beside the skip control and is the next focusable after it.
+      // Enter/Space on a focused button is a click, so once the stage
+      // completed the scene's advance keys toggled the history view instead.
+      renderDialog(stagedEvent, { history: ['one', 'two'] });
+      const log = screen.getByRole('button', { name: /Log \(2\)/i });
+      expect(document.activeElement).not.toBe(log);
+      expect(document.activeElement).toBe(document.querySelector('.modal-content'));
+      // Still reachable by Tab: only the STARTING position changes.
+      expect(log.tabIndex).toBe(0);
+
+      fireEvent.click(screen.getByTestId('conversation-stage')); // finish beat one
+      fireEvent.keyDown(document.activeElement, { key: 'Enter' });
+      expect(currentSpeaker()).toBe('Jean');
+    });
+
+    it.each([['Enter'], [' ']])('a tap of %j from document.activeElement advances to beat two', (key) => {
+      openOnBeatOne();
+
+      const focused = document.activeElement;
+      fireEvent.keyDown(focused, { key });
+      fireEvent.keyUp(focused, { key });
+
+      expect(currentSpeaker()).toBe('Jean');
+    });
+
+    it('CONTROL: the tap advances when the stage node holds focus (after a mouse click on the prose)', () => {
+      openOnBeatOne();
+      const stage = screen.getByTestId('conversation-stage');
+      act(() => stage.focus());
+      expect(document.activeElement).toBe(stage);
+      fireEvent.keyDown(stage, { key: 'Enter' });
+      expect(currentSpeaker()).toBe('Jean');
+    });
+
+    it('CONTROL: the tap advances from <body> (focus stranded after a control unmounts)', () => {
+      openOnBeatOne();
+      act(() => document.activeElement.blur());
+      expect(document.activeElement).toBe(document.body);
+      fireEvent.keyDown(document.body, { key: 'Enter' });
+      expect(currentSpeaker()).toBe('Jean');
+    });
+
+    it('a held key on the Tab-focused skip button still runs the hold, not the advance', () => {
+      // The gesture is unchanged for a keyboard user who Tabs onto the button:
+      // Enter there starts the hold and does NOT walk the scene forward.
+      // Fake timers for this one test only: the hold gauge paints itself on
+      // requestAnimationFrame, and "the hold runs" has to be seen, not
+      // inferred from the scene standing still (which it also does when the
+      // key is simply ignored).
+      vi.useFakeTimers();
+      try {
+        openOnBeatOne();
+        const skip = screen.getByRole('button', { name: /hold to skip/i });
+        act(() => skip.focus());
+        fireEvent.keyDown(skip, { key: 'Enter' });
+        expect(currentSpeaker()).toBe('Amelia');
+
+        act(() => vi.advanceTimersByTime(32)); // one or two gauge frames
+        expect(skip).toHaveTextContent('keep holding…');
+        expect(screen.getByTestId('skip-scene-fill').style.width).not.toBe('0%');
+        expect(currentSpeaker()).toBe('Amelia');
+
+        fireEvent.keyUp(skip, { key: 'Enter' });
+        expect(skip).toHaveTextContent('hold to skip scene');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });

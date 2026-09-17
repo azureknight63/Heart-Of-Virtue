@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import CombatLog, { LOG_ENTRY_COLORS } from './CombatLog';
 import { colors } from '../styles/theme';
 
@@ -290,11 +290,53 @@ describe('CombatLog', () => {
       }
       expect(appends, 'found no direct combat_log appends to read').toBeGreaterThan(0);
 
+      // Types minted by CombatOutputCapture.write rather than passed to
+      // _add_log_entry as a literal are declared as `*_LOG_TYPE = "..."`
+      // module constants in combat_adapter.py (issue #586 added the first,
+      // TELEGRAPH_LOG_TYPE), which is the shape this clause reads.
+      let declared = 0;
+      for (const match of adapter.matchAll(/^[A-Z_]+_LOG_TYPE\s*=\s*["'](\w+)["']/gm)) {
+        declared += 1;
+        types.add(match[1]);
+      }
+      expect(declared, 'found no *_LOG_TYPE declarations to read').toBeGreaterThan(0);
+
       return types;
     };
+    // Read once per file, not once per test: the scan opens three engine
+    // sources and walks every call, and the vocabulary cannot change mid-run.
+    let engineTypes;
+    beforeAll(() => { engineTypes = engineEntryTypes(); });
+
+    // Issue #586: the wind-up line of a heavy enemy move is minted
+    // "telegraph" so it can read differently from the body of the fight —
+    // and not by colour alone (pillar 5), hence a glyph with an accessible
+    // name.
+    describe('the telegraph type', () => {
+      it('is one of the engine types this table colours', () => {
+        expect([...engineTypes]).toContain('telegraph');
+        expect(LOG_ENTRY_COLORS).toHaveProperty('telegraph');
+      });
+
+      it('prefixes a warning glyph a screen reader can name', () => {
+        render(<CombatLog log={[
+          { type: 'combat', message: 'The slime coils.', timestamp: '12:00:00' },
+          { type: 'telegraph', message: 'It is about to surge.', timestamp: '12:00:01' },
+        ]} />);
+        const list = screen.getByTestId('combat-log-entries');
+        const warning = within(list).getByRole('img', { name: 'Warning' });
+        expect(warning.textContent).toBe('⚠');
+        expect(warning.closest('div').textContent).toContain('It is about to surge.');
+        // Negative control: the ordinary line carries no glyph.
+        const routine = [...list.querySelectorAll('div')]
+          .find((el) => el.textContent.includes('The slime coils.'));
+        expect(routine.textContent).not.toContain('⚠');
+        expect(within(list).getAllByRole('img', { name: 'Warning' })).toHaveLength(1);
+      });
+    });
 
     it('colours exactly the types the engine can send, minus the one it hides', () => {
-      const engine = engineEntryTypes();
+      const engine = engineTypes;
       // Non-vacuity, and a check that the scan reached both mints.
       expect(engine.size).toBeGreaterThan(3);
       expect(engine).toContain('combat');
@@ -318,7 +360,7 @@ describe('CombatLog', () => {
       // Keys alone would pass for a table whose values were never wired up.
       // Every engine type is driven through the real render and read back off
       // the DOM.
-      const engine = [...engineEntryTypes()].filter((type) => type !== 'animation');
+      const engine = [...engineTypes].filter((type) => type !== 'animation');
       const log = engine.map((type, i) => ({
         type, message: `line ${type}`, timestamp: `12:00:0${i}`,
       }));
@@ -366,6 +408,37 @@ describe('CombatLog', () => {
    * whole log is re-read on every append, and on a beat scrub the list is
    * replaced wholesale.
    */
+  describe('rendered markup is sanitised to the same allow-list the announcer uses', () => {
+    // The list renders each message through dangerouslySetInnerHTML. With
+    // DOMPurify's DEFAULT config an <img src> survives and its subresource is
+    // fetched on parse — a log line can beacon out — and a style attribute
+    // survives, so `position: fixed` can paint over the whole page. The
+    // spoken-text path already passed an explicit allow-list; the render
+    // path must use the same hardened config.
+    it('drops <img> and style attributes from a rendered log line', () => {
+      render(<CombatLog log={[{
+        type: 'combat',
+        timestamp: '12:00:01',
+        message: 'Jean <b>strikes</b> <img src="https://evil.example/x"><span style="position:fixed">the slime</span>',
+      }]} />);
+      const list = screen.getByTestId('combat-log-entries');
+      expect(list.querySelector('img')).toBeNull();
+      expect(list.querySelector('[style*="fixed"]')).toBeNull();
+      // Inline emphasis the engine legitimately emits still renders.
+      expect(list.querySelector('b')).not.toBeNull();
+      expect(list.textContent).toContain('Jean strikes the slime');
+    });
+
+    it('renders a non-string message as text rather than throwing', () => {
+      render(<CombatLog log={[
+        { type: 'combat', timestamp: '12:00:01', message: null },
+        { type: 'combat', timestamp: '12:00:02', message: 42 },
+      ]} />);
+      const list = screen.getByTestId('combat-log-entries');
+      expect(list.textContent).toContain('42');
+    });
+  });
+
   describe('screen-reader announcements', () => {
     const announcer = () => screen.getByTestId('combat-log-announcer');
 

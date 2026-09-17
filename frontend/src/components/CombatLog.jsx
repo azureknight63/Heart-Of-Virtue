@@ -5,6 +5,7 @@ import GameText from './GameText'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
 import { lookupOr } from '../utils/lookup'
+import { TELEGRAPH_GLYPH } from '../utils/combatMoveStatus'
 import LiveAnnouncer from './LiveAnnouncer'
 
 /**
@@ -28,15 +29,59 @@ import LiveAnnouncer from './LiveAnnouncer'
  *   animation      bookkeeping for the battlefield, never rendered — filtered
  *                  out of `visibleEntries` below, which is why it is the one
  *                  engine type with no colour here.
+ *   telegraph      the wind-up line of a hostile heavy/deadly move
+ *                  (`TELEGRAPH_LOG_TYPE`, minted by the adapter's
+ *                  CombatOutputCapture — issue #586). The one line the
+ *                  player must act on, so it gets the warning colour AND a
+ *                  ⚠ glyph below: colour alone conveys nothing (pillar 5).
  *
  * CombatLog.test.jsx derives that list from the Python and fails if this table
  * and the engine stop agreeing in either direction.
  */
+/** The one entry type that carries the warning glyph — see `LOG_ENTRY_COLORS`. */
+const TELEGRAPH_TYPE = 'telegraph'
+
+/**
+ * The word a telegraph line is marked with for anyone who cannot see the
+ * glyph's colour: the announcer's spoken prefix and the glyph's accessible
+ * name, so a screen-reader user hears the same cue once, not two different
+ * ones.
+ */
+const TELEGRAPH_SPOKEN_LABEL = 'Warning'
+
 export const LOG_ENTRY_COLORS = {
   combat: colors.text.main,
   player_action: colors.primary,
   system: colors.gold,
-  info: colors.text.muted
+  info: colors.text.muted,
+  [TELEGRAPH_TYPE]: colors.secondary
+}
+
+/**
+ * The markup a log line may carry into the DOM: inline emphasis and a line
+ * break, no attributes. Every element the engine could legitimately want is
+ * here; nothing that fetches (`<img src>`, `<source>`, `<video poster>`) or
+ * repositions (`style`) is.
+ */
+const LOG_HTML_ALLOWED_TAGS = ['b', 'i', 'em', 'strong', 'span', 'br']
+
+/**
+ * One log entry's message, reduced to `LOG_HTML_ALLOWED_TAGS` and nothing
+ * else. THE sanitiser for log text — both the rendered line and the spoken
+ * one go through it, so the two cannot disagree about what is safe.
+ *
+ * The allow-list is passed EXPLICITLY. DOMPurify's default config keeps
+ * `<img src>`, `<source>` and `<video poster>`, whose subresources are fetched
+ * the moment the string is parsed — so a log line could beacon out, whether it
+ * was being rendered or merely read for the announcer (which runs even while
+ * the log is collapsed and rendering nothing). It also keeps `style`, which
+ * lets a line paint itself `position: fixed` over the whole page.
+ */
+function sanitizeLogHtml(html) {
+  return DOMPurify.sanitize(String(html ?? ''), {
+    ALLOWED_TAGS: LOG_HTML_ALLOWED_TAGS,
+    ALLOWED_ATTR: [],
+  })
 }
 
 /**
@@ -51,15 +96,7 @@ export const LOG_ENTRY_COLORS = {
  */
 function spokenText(message) {
   const scratch = document.createElement('div')
-  // The empty allow-list is passed EXPLICITLY. Without it DOMPurify's default
-  // config keeps <img src>, <source> and <video poster>, and parsing those into
-  // this div fetches their subresources even though only textContent is read --
-  // so a log line could beacon out, and LogAnnouncer runs even while the log is
-  // collapsed and rendering nothing.
-  scratch.innerHTML = DOMPurify.sanitize(String(message ?? ''), {
-    ALLOWED_TAGS: [],
-    ALLOWED_ATTR: [],
-  })
+  scratch.innerHTML = sanitizeLogHtml(message)
   return scratch.textContent || ''
 }
 
@@ -95,7 +132,13 @@ function spokenText(message) {
  */
 function LogAnnouncer({ entries }) {
   const latest = entries[entries.length - 1]
-  const spoken = useMemo(() => (latest ? spokenText(latest.message) : ''), [latest])
+  // A telegraph line is spoken with the same "Warning" the sighted player
+  // gets from the glyph, so the cue is not lost on the way to the reader.
+  const spoken = useMemo(() => {
+    if (!latest) return ''
+    const text = spokenText(latest.message)
+    return latest.type === TELEGRAPH_TYPE ? `${TELEGRAPH_SPOKEN_LABEL}: ${text}` : text
+  }, [latest])
 
   return <LiveAnnouncer text={spoken} seq={entries.length} testId="combat-log-announcer" />
 }
@@ -238,15 +281,21 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
               )}
               {visibleEntries.map((entry, idx) => {
                 const textColor = lookupOr(LOG_ENTRY_COLORS, entry.type, colors.text.main)
+                const isTelegraph = entry.type === TELEGRAPH_TYPE
 
                 return (
                   <div key={entry.id ?? `${entry.timestamp}-${idx}`} style={{ fontSize: '13px', lineHeight: '1.4' }}>
                     <span style={{ opacity: 0.5, marginRight: spacing.sm, color: colors.text.muted, fontSize: '11px' }}>
                       [{entry.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}]
                     </span>
+                    {isTelegraph && (
+                      <span role="img" aria-label={TELEGRAPH_SPOKEN_LABEL} style={{ color: textColor, marginRight: spacing.xs, fontWeight: 'bold' }}>
+                        {TELEGRAPH_GLYPH}
+                      </span>
+                    )}
                     <span
-                      style={{ color: textColor }}
-                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(entry.message) }}
+                      style={{ color: textColor, fontWeight: isTelegraph ? 'bold' : undefined }}
+                      dangerouslySetInnerHTML={{ __html: sanitizeLogHtml(entry.message) }}
                     />
                   </div>
                 )

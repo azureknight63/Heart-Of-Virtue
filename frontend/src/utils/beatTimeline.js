@@ -1,4 +1,4 @@
-import { isMovePending, beatsUntilResolve, displayNameOf } from './combatMoveStatus';
+import { isMovePending, beatsUntilResolve, displayNameOf, hostileTelegraphWarning } from './combatMoveStatus';
 import { isLiving } from './combatEntities';
 
 /** Default column cap — "the next ~10 beats" from the design brief. Exported
@@ -45,6 +45,10 @@ function collectPending(combat) {
       beat,
       moveName: displayNameOf(move) || move.name || 'Move',
       category: move.category || 'Miscellaneous',
+      // The heavy/deadly warning (issue #586), already gated on WHO: only an
+      // enemy's heavy move is a threat cue, and that rule lives in
+      // `hostileTelegraphWarning`, not here or in the marker.
+      warning: hostileTelegraphWarning(move, alignment === 'enemy'),
       alignment,
       isPlayer,
     });

@@ -14,7 +14,7 @@ import logging
 import random
 from datetime import datetime
 from types import SimpleNamespace
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Set, Tuple, TYPE_CHECKING
 
 import src.positions as positions  # type: ignore
 import src.moves as moves  # type: ignore
@@ -44,7 +44,11 @@ from src.combatant import (
     combatant_handle,
     find_by_handle,
 )
-from src.moves._base import select_weighted_target, display_name_of
+from src.moves._base import (
+    select_weighted_target,
+    display_name_of,
+    TELEGRAPH_SEVERITY_NORMAL,
+)
 from src.events import purge_orphaned_combat_events
 from src.story import gorran_flavor
 
@@ -544,6 +548,88 @@ def _take_resolution(pending: dict, beat: Optional[int] = None) -> dict:
     return animation
 
 
+#: Log-entry ``type`` of a hostile heavy move's wind-up line (issue #586).
+#:
+#: Every NPC line used to reach the client as ``"combat"``, the body-text
+#: type, so King Slime's Tidal Surge announcement — the one line the player
+#: has to act on — was indistinguishable from the swing before it. The
+#: move's inline ``colored(..., "yellow")`` never helps: ``narrate`` honours
+#: only its ``color=`` keyword and the API does not forward narration colour
+#: anyway; CombatLog.jsx colours by ``entry.type`` alone. Minting the line
+#: as its own type is what lets ``LOG_ENTRY_COLORS`` there paint it and
+#: prefix a ⚠ glyph. CombatLog.test.jsx derives the engine's type
+#: vocabulary from this module and reads ``*_LOG_TYPE`` declarations like
+#: this one, so a new type belongs in a constant of this shape.
+TELEGRAPH_LOG_TYPE = "telegraph"
+
+#: The body-text type every ordinary engine line carries, and the default
+#: ``_add_log_entry`` falls back to. (That signature keeps the literal
+#: ``"combat"`` rather than this name: CombatLog.test.jsx reads the default
+#: by regex off the ``entry_type: str = "..."`` shape, and
+#: tests/test_combat_telegraph_log.py holds the two equal.)
+COMBAT_LOG_TYPE = "combat"
+
+#: Jean's own accepted-move lines ("Jean prepares Dodge.").
+PLAYER_ACTION_LOG_TYPE = "player_action"
+
+#: Types that feed ``player.last_move_summary`` — the wire's
+#: ``last_move_outcome`` and the strategist prompt's ``last_move``. A type
+#: left off this list is dropped from both: ``animation`` deliberately,
+#: since it is bookkeeping, and ``telegraph`` would have been by accident.
+SUMMARY_LOG_TYPES = (COMBAT_LOG_TYPE, PLAYER_ACTION_LOG_TYPE, TELEGRAPH_LOG_TYPE)
+
+#: How many of those lines the summary keeps.
+SUMMARY_LOG_LINES = 5
+
+
+def summarize_recent_log(log: List[dict]) -> str:
+    """The last :data:`SUMMARY_LOG_LINES` readable lines of ``log``, joined.
+
+    Walks from the newest entry back and stops as soon as the summary is
+    full, so a long fight's log is not scanned end to end on every beat.
+    """
+    lines = []
+    for entry in reversed(log):
+        if entry.get("type") not in SUMMARY_LOG_TYPES:
+            continue
+        message = entry.get("message", "")
+        if not message:
+            continue
+        lines.append(message)
+        if len(lines) >= SUMMARY_LOG_LINES:
+            break
+    lines.reverse()
+    return " ".join(lines)
+
+
+def _is_hostile_heavy_windup(entity, player) -> bool:
+    """Whether a line ``entity`` narrates right now is a heavy-move telegraph.
+
+    Three conditions, each load-bearing:
+
+    * ``entity`` is an ENEMY. The type is a threat cue for Jean; an ally
+      charging a heavy blow is not something the player must get clear of.
+      Jean has no ``friend`` flag of his own, hence the identity check.
+    * the in-progress move declares a non-"normal" ``telegraph_severity``
+      (src/moves/_base.py) — the move opts in, the adapter does not guess
+      from the multiplier.
+    * the move is in its WIND-UP stage. ``Move.cast`` sets ``current_stage``
+      to 0 before it narrates the prep announcement, and ``Move.advance``
+      has already stepped to stage 1 by the time ``execute`` narrates the
+      hit, so this marks the moment the player can still react and not
+      the blow itself.
+    """
+    if entity is None or entity is player or getattr(entity, "friend", False):
+        return False
+    move = getattr(entity, "current_move", None)
+    if move is None or getattr(move, "current_stage", None) != 0:
+        return False
+    return (
+        getattr(move, "telegraph_severity", TELEGRAPH_SEVERITY_NORMAL)
+        != TELEGRAPH_SEVERITY_NORMAL
+    )
+
+
 class CombatOutputCapture:
     """Captures print statements and stores them in a combat log."""
 
@@ -603,10 +689,17 @@ class CombatOutputCapture:
                             pending, getattr(self.player, "combat_beat", None)
                         )
 
+                # The same `entity` decides the type: a hostile heavy move's
+                # wind-up line is TELEGRAPH_LOG_TYPE, everything else is the
+                # body-text type `_add_log_entry` defaults to.
                 entry = {
                     "round": self.current_round,
                     "message": clean_text,
-                    "type": "combat",
+                    "type": (
+                        TELEGRAPH_LOG_TYPE
+                        if _is_hostile_heavy_windup(entity, self.player)
+                        else COMBAT_LOG_TYPE
+                    ),
                     "timestamp": datetime.now().strftime("%H:%M:%S"),
                 }
                 if trigger_anim_data:
@@ -645,6 +738,9 @@ class ApiCombatAdapter:
     _log_key_source = None
     _log_key_count = None
     _log_trimmed_since_beat = 0
+    # The suggestion worker handle refresh_suggestions keeps for join(); a
+    # bare instance has never started one.
+    _suggestion_thread = None
 
     def _reset_log_index_state(self):
         """The single definition of the dedup-index/trim-counter baseline.
@@ -738,6 +834,18 @@ class ApiCombatAdapter:
         # resume=True) on the move the first thread is still advancing, two
         # threads mutating one move's current_stage/beats_left — the state
         # corruption behind the livelock this branch fixed.
+        #
+        # The status poll is not the only other thread. refresh_suggestions
+        # starts a daemon worker at the end of initialize_combat and of every
+        # _execute_move_inner; that worker takes NO lock, and it must not
+        # need one: it receives a context snapshot built on the calling
+        # thread (under this lock) and only calls the strategist and writes
+        # player.suggested_moves / suggestions_loading, and those two writes
+        # sit under _suggestion_lock together with the generation check that
+        # decides whether they still apply. Building the snapshot on the
+        # worker put _get_available_moves -> Move._viable_for on that thread,
+        # swapping move.target per candidate under a request mid-execute
+        # (#569).
         #
         # Not pickled: game_service.save_game pops _combat_adapter off the
         # player before serializing (the adapter already held a threading.Lock
@@ -1116,7 +1224,7 @@ class ApiCombatAdapter:
         self,
         round_num: int,
         message: str,
-        entry_type: str = "combat",
+        entry_type: str = "combat",  # == COMBAT_LOG_TYPE; literal for CombatLog.test.jsx
         beat_index: int = 0,
         animation_data: dict = None,
         timestamp: str = None,
@@ -1718,8 +1826,9 @@ class ApiCombatAdapter:
             self.awaiting_input = True
             self.input_type = "move_selection"
             self.available_options = self._get_available_moves()
-            # Start async suggestion fetch (non-blocking)
-            self.refresh_suggestions()
+            # Start async suggestion fetch (non-blocking), off the list just
+            # built rather than a second walk of it.
+            self.refresh_suggestions(self.available_options)
 
             result = self.get_combat_state()
 
@@ -1770,7 +1879,17 @@ class ApiCombatAdapter:
         Returns:
             Updated combat state
         """
+        # Held for the WHOLE command, not just the _execute_move it ends in.
+        # The handlers write move.target / target_direction / duration and
+        # walk _get_available_targets (-> Move._viable_for, which swaps
+        # move.target per candidate) BEFORE they reach _execute_move's lock,
+        # and the status poll walks the same move instances from its own
+        # thread (#569). Reentrant, so the nested _execute_move still takes it.
+        with self._beat_lock:
+            return self._process_command_locked(command)
 
+    def _process_command_locked(self, command: Dict[str, Any]) -> Dict[str, Any]:
+        """Body of :meth:`process_command`. Call only with ``_beat_lock`` held."""
         if not isinstance(command, dict):
             return {"error": "Invalid command: expected an object"}
 
@@ -2505,14 +2624,7 @@ class ApiCombatAdapter:
                     break
 
         # Capture last move summary from the log entries of this move
-        move_logs = [
-            s["message"]
-            for s in self.player.combat_log
-            if s.get("type") in ("combat", "player_action")
-        ][
-            -5:
-        ]  # Last 5 relevant entries
-        self.player.last_move_summary = " ".join(move_logs)
+        self.player.last_move_summary = summarize_recent_log(self.player.combat_log)
 
         self._flush_pending_animations()
 
@@ -2638,8 +2750,9 @@ class ApiCombatAdapter:
             self.input_type = "move_selection"
             self.available_options = self._get_available_moves()
             self.pending_move_index = None
-            # Start async suggestion fetch (non-blocking)
-            self.refresh_suggestions()
+            # Start async suggestion fetch (non-blocking), off the list just
+            # built rather than a second walk of it.
+            self.refresh_suggestions(self.available_options)
         else:
             # Events just fired (e.g., reinforcement wave spawned). Clear stale
             # pending-move state so when the player dismisses events and returns
@@ -3088,23 +3201,45 @@ class ApiCombatAdapter:
                 amt = 0.001
             self.player.heat -= amt
 
-    def refresh_suggestions(self):
-        """Fetch tactical suggestions asynchronously without blocking combat."""
-        import logging
+    def refresh_suggestions(self, all_moves=None):
+        """Fetch tactical suggestions asynchronously without blocking combat.
 
-        logger = logging.getLogger(__name__)
+        The strategist context is built HERE, on the calling thread, and the
+        worker receives a finished snapshot. The adapter's own callers
+        (``initialize_combat`` and ``_execute_move_inner``) hold
+        ``_beat_lock``; ``game_service.get_combat_status`` calls this from the
+        status poll's resume and move-selection branches without it, which is
+        fine because the one engine walk the snapshot needs
+        (``_get_available_moves``) is self-locking. The worker then does
+        exactly two things: call ``strategist.get_suggestions`` and write
+        ``player.suggested_moves`` under ``_suggestion_lock``. It never reads
+        or writes engine state.
 
+        ``all_moves`` is the option list a caller has just built with
+        ``_get_available_moves``; passing it saves the snapshot a second walk
+        of every move and candidate. Anything that is not a list is ignored
+        and the walk is redone.
+
+        It used to build the context itself, and that walk
+        (``_get_available_moves`` -> ``_build_target_entry`` ->
+        ``Move._viable_for``) swaps ``move.target`` in and out per candidate
+        on the player's REAL move instances. A worker still running from the
+        previous beat could therefore flip a target the request thread had
+        just committed, mid-``execute`` -- and did, in
+        ``test_valid_in_range_enemy_still_resolves`` (#569).
+        """
         if getattr(self.player, "suggestions_paused", False):
             return
 
-        # Set loading state
-        self.player.suggestions_loading = True
-        self.player.suggested_moves = []  # Clear previous suggestions while loading
-
-        # Increment generation counter to invalidate any in-flight requests
+        # Bump the generation to invalidate any in-flight worker and enter
+        # the loading state in the same critical section, so a worker that
+        # has just passed its own generation check cannot land a stale
+        # answer between the two.
         with self._suggestion_lock:
             self._suggestion_generation += 1
             current_gen = self._suggestion_generation
+            self._reset_suggestions()
+            self.player.suggestions_loading = True
 
         # Get flask app to pass to the thread
         try:
@@ -3118,6 +3253,22 @@ class ApiCombatAdapter:
             logger.warning(f"Failed to capture flask app context: {e}")
             flask_app = None
 
+        try:
+            # Snapshot under the beat lock (reentrant, so the adapter's own
+            # callers nest freely): the poll path reaches here with no lock
+            # of its own, and the serializers read live combatant state.
+            with self._beat_lock:
+                count = self._suggestion_count()
+                ctx, available_move_names = self._build_strategist_context(all_moves)
+        except Exception as e:
+            logger.error(f"Error building strategist context: {e}", exc_info=True)
+            with self._suggestion_lock:
+                self._reset_suggestions()
+            self._suggestion_thread = None
+            return
+
+        logger.debug(f"Combat context keys: {list(ctx.keys())}")
+
         # Create and start a new thread for fetching suggestions
         def fetch_suggestions_worker():
             logger.debug(f"Suggestion worker started (Gen: {current_gen})")
@@ -3125,119 +3276,32 @@ class ApiCombatAdapter:
             def run_with_context():
                 logger.debug(f"Suggestion fetch started (Gen: {current_gen})")
                 try:
-                    # Calculate allowed suggestions count
-                    count = getattr(self.player, "base_suggested_move_count", 1)
-                    for m in self.player.known_moves:
-                        if m.name in ["Strategic Insight", "Master Tactician"]:
-                            count += 1
-
-                    # Ensure combat_log exists
-                    if not hasattr(self.player, "combat_log"):
-                        self.player.combat_log = []
-
-                    logger.debug(
-                        f"Preparing strategist context: {len(self.player.combat_list)} enemies, {len(self.available_options)} available moves"
-                    )
-                    # Gather context
-                    all_moves = self._get_available_moves()
-                    ctx = {
-                        "player": {
-                            **CombatantSerializer.serialize_combatant(self.player),
-                            # serialize_combatant carries no consumables key, so
-                            # without this the tactical prompt renders
-                            # "Consumables: [None]" on every turn while telling the
-                            # model to prefer UseItem. Same list the combat state
-                            # sends to the client as `player_consumables`.
-                            "consumables": CombatStateSerializer._get_consumables(
-                                self.player
-                            ),
-                        },
-                        "enemies": [
-                            CombatantSerializer.serialize_combatant(
-                                e, reference=self.player
-                            )
-                            for e in self.player.combat_list
-                        ],
-                        # Allies in combat (friendly NPCs); empty list when fighting solo
-                        "allies": [
-                            CombatantSerializer.serialize_combatant(
-                                a, reference=self.player
-                            )
-                            for a in getattr(self.player, "combat_list_allies", [])
-                            if a is not self.player and getattr(a, "friend", False)
-                        ],
-                        "history": [
-                            entry["message"] for entry in self.player.combat_log[-20:]
-                        ],
-                        "last_move": getattr(self.player, "last_move_summary", "None"),
-                        # Only send moves that are available AND (if targeted) have
-                        # at least one viable target — prevents TA from suggesting
-                        # attacks that cannot resolve at execution time.
-                        "available_moves": [
-                            m
-                            for m in all_moves
-                            if isinstance(m, dict)
-                            and m.get("available", True)
-                            and (
-                                not m.get("targeted")
-                                or len(m.get("viable_targets", [])) > 0
-                            )
-                        ],
-                        # Cooldown ETAs for key defensive moves that are currently
-                        # unavailable — lets the LLM reason about whether to wait.
-                        "defensive_cooldowns": {
-                            m["name"]: m["cooldown_remaining"]
-                            for m in all_moves
-                            if isinstance(m, dict)
-                            and not m.get("available", True)
-                            and m.get("name") in ("Dodge", "Parry", "Withdraw")
-                            and m.get("cooldown_remaining", 0) > 0
-                        },
-                        # Moves Jean cannot pay for at this fatigue. The
-                        # strategist needs the *reason* offense is missing:
-                        # priced out (only Rest changes that) reads very
-                        # differently from out of range (Advance does). The
-                        # test is affordability, not the `reason` string —
-                        # a move that is both on cooldown and unaffordable
-                        # is reported by `reason` as the cooldown only.
-                        "fatigue_locked_moves": [
-                            {
-                                "name": m.get("name"),
-                                "category": m.get("category"),
-                                "fatigue_cost": m.get("fatigue_cost", 0),
-                            }
-                            for m in all_moves
-                            if isinstance(m, dict)
-                            and not m.get("available", True)
-                            and (m.get("fatigue_cost") or 0) > self.player.fatigue
-                        ],
-                    }
-
-                    logger.debug(f"Combat context keys: {list(ctx.keys())}")
-
                     # Fetch from strategist (this is the slow part)
                     suggestions = self.strategist.get_suggestions(
                         ctx, max_suggestions=count
                     )
 
-                    # Filter out suggestions for moves that are not currently available
-                    available_move_names = {
-                        m["name"]
-                        for m in self._get_available_moves()
-                        if m.get("available", True)
-                    }
+                    # Drop suggestions for moves the snapshot said were
+                    # unavailable. Any selection is re-validated against the
+                    # live engine by the adapter anyway; re-querying here
+                    # would put engine reads back on this thread.
                     suggestions = [
                         s
                         for s in suggestions
                         if s.get("move_name") in available_move_names
                     ]
 
-                    # Store results (only if this generation is still current)
+                    # Store results only if this generation is still
+                    # current -- check and write under one lock hold, or a
+                    # refresh that bumps the generation between them gets
+                    # its fresh loading state overwritten by this stale
+                    # answer.
                     with self._suggestion_lock:
                         is_current = current_gen == self._suggestion_generation
+                        if is_current:
+                            self.player.suggested_moves = suggestions
+                            self.player.suggestions_loading = False
                     if is_current:
-                        self.player.suggested_moves = suggestions
-                        self.player.suggestions_loading = False
                         logger.debug(
                             f"Suggestion fetch complete (Gen: {current_gen}, {len(suggestions)} suggestions)"
                         )
@@ -3280,9 +3344,9 @@ class ApiCombatAdapter:
                     logger.error(f"Error in async suggestion fetch: {e}", exc_info=True)
                     with self._suggestion_lock:
                         is_current = current_gen == self._suggestion_generation
+                        if is_current:
+                            self._reset_suggestions()
                     if is_current:
-                        self.player.suggested_moves = []
-                        self.player.suggestions_loading = False
                         logger.info(
                             f"DEBUG: Reset suggestions_loading after error (Gen: {current_gen})"
                         )
@@ -3293,9 +3357,122 @@ class ApiCombatAdapter:
             else:
                 run_with_context()
 
-        import threading
+        # The handle is kept so tests and teardown paths can join() the
+        # worker instead of guessing when it has settled.
+        self._suggestion_thread = threading.Thread(
+            target=fetch_suggestions_worker, daemon=True
+        )
+        self._suggestion_thread.start()
 
-        threading.Thread(target=fetch_suggestions_worker, daemon=True).start()
+    def _reset_suggestions(self):
+        """Clear the advisor's answer and leave the loading state.
+
+        Call with ``_suggestion_lock`` held: the request thread and the
+        worker both write these two fields, and the generation check that
+        decides whose write applies lives under the same lock.
+        """
+        self.player.suggested_moves = []
+        self.player.suggestions_loading = False
+
+    def _suggestion_count(self) -> int:
+        """How many suggestions the strategist may return for this player."""
+        count = getattr(self.player, "base_suggested_move_count", 1)
+        for m in self.player.known_moves:
+            if m.name in ["Strategic Insight", "Master Tactician"]:
+                count += 1
+        return count
+
+    def _build_strategist_context(
+        self, all_moves=None
+    ) -> Tuple[Dict[str, Any], Set[str]]:
+        """Snapshot the fight for the strategist, on the caller's thread.
+
+        Returns ``(ctx, available_move_names)``: the context dict the
+        strategist prompt is rendered from, and the names of every move the
+        snapshot considered available, used to filter the strategist's answer
+        without touching the engine again. Must run on the request thread --
+        see :meth:`refresh_suggestions`. ``all_moves`` is a freshly built
+        ``_get_available_moves`` list to reuse; when it is anything else
+        (``None``, or the dict / direction list ``available_options`` holds
+        for the other input types) the walk is done here.
+        """
+        # Ensure combat_log exists
+        if not hasattr(self.player, "combat_log"):
+            self.player.combat_log = []
+
+        # Gather context
+        if not isinstance(all_moves, list):
+            all_moves = self._get_available_moves()
+        logger.debug(
+            f"Preparing strategist context: {len(self.player.combat_list)} enemies, {len(all_moves)} moves considered"
+        )
+        ctx = {
+            "player": {
+                **CombatantSerializer.serialize_combatant(self.player),
+                # serialize_combatant carries no consumables key, so
+                # without this the tactical prompt renders
+                # "Consumables: [None]" on every turn while telling the
+                # model to prefer UseItem. Same list the combat state
+                # sends to the client as `player_consumables`.
+                "consumables": CombatStateSerializer._get_consumables(self.player),
+            },
+            "enemies": [
+                CombatantSerializer.serialize_combatant(e, reference=self.player)
+                for e in self.player.combat_list
+            ],
+            # Allies in combat (friendly NPCs); empty list when fighting solo
+            "allies": [
+                CombatantSerializer.serialize_combatant(a, reference=self.player)
+                for a in getattr(self.player, "combat_list_allies", [])
+                if a is not self.player and getattr(a, "friend", False)
+            ],
+            "history": [entry["message"] for entry in self.player.combat_log[-20:]],
+            "last_move": getattr(self.player, "last_move_summary", "None"),
+            # Only send moves that are available AND (if targeted) have
+            # at least one viable target — prevents TA from suggesting
+            # attacks that cannot resolve at execution time.
+            "available_moves": [
+                m
+                for m in all_moves
+                if isinstance(m, dict)
+                and m.get("available", True)
+                and (not m.get("targeted") or len(m.get("viable_targets", [])) > 0)
+            ],
+            # Cooldown ETAs for key defensive moves that are currently
+            # unavailable — lets the LLM reason about whether to wait.
+            "defensive_cooldowns": {
+                m["name"]: m["cooldown_remaining"]
+                for m in all_moves
+                if isinstance(m, dict)
+                and not m.get("available", True)
+                and m.get("name") in ("Dodge", "Parry", "Withdraw")
+                and m.get("cooldown_remaining", 0) > 0
+            },
+            # Moves Jean cannot pay for at this fatigue. The
+            # strategist needs the *reason* offense is missing:
+            # priced out (only Rest changes that) reads very
+            # differently from out of range (Advance does). The
+            # test is affordability, not the `reason` string —
+            # a move that is both on cooldown and unaffordable
+            # is reported by `reason` as the cooldown only.
+            "fatigue_locked_moves": [
+                {
+                    "name": m.get("name"),
+                    "category": m.get("category"),
+                    "fatigue_cost": m.get("fatigue_cost", 0),
+                }
+                for m in all_moves
+                if isinstance(m, dict)
+                and not m.get("available", True)
+                and (m.get("fatigue_cost") or 0) > self.player.fatigue
+            ],
+        }
+        available_move_names = {
+            m["name"]
+            for m in all_moves
+            if isinstance(m, dict) and m.get("available", True)
+        }
+        return ctx, available_move_names
 
     def settle_defeat(self, beat_states=None) -> Dict[str, Any]:
         """End the fight in defeat, publish the terminal stream, and return it.
@@ -3826,7 +4003,23 @@ class ApiCombatAdapter:
         return int(reach)
 
     def _get_available_moves(self) -> List[Dict[str, Any]]:
-        """Get list of all moves for the player with availability status."""
+        """Get list of all moves for the player with availability status.
+
+        Self-locking: the walk below reaches ``Move._viable_for``, which swaps
+        ``move.target`` in and out per candidate on the player's REAL move
+        instances, and it is called from threads that hold no lock of their
+        own -- ``get_combat_state`` on the status poll and
+        ``game_service.get_combat_status``'s resume and move-selection
+        branches. Unlocked, a poll landing under a ``select_move_and_target``
+        restored a stale target over the one the command had just committed
+        (#569). ``_beat_lock`` is reentrant, so the move loop and
+        ``initialize_combat``, which already hold it, nest here freely.
+        """
+        with self._beat_lock:
+            return self._get_available_moves_locked()
+
+    def _get_available_moves_locked(self) -> List[Dict[str, Any]]:
+        """Body of :meth:`_get_available_moves`. Call only with ``_beat_lock`` held."""
         moves = []
 
         # Get all known moves, not just viable ones
@@ -4183,10 +4376,12 @@ class ApiCombatAdapter:
         if new_entries:
             current_beat = getattr(self.player, "combat_beat", 0)
             for entry in new_entries:
+                # The type is decided where the acting entity is known —
+                # CombatOutputCapture.write — and carried through here.
                 self._add_log_entry(
                     current_beat,
                     entry["message"],
-                    "combat",
+                    entry.get("type", COMBAT_LOG_TYPE),
                     self.current_beat_state_index,
                     timestamp=entry.get("timestamp"),
                 )

@@ -393,6 +393,9 @@ class TelegraphedSurge(NpcAttack):
                                      (src/moves/_base.py); evaluate() below
                                      scales NpcAttack's rolled power by it
         _EXTRA_PREP_BEATS   int    — extra beats added to prep phase (dodge window)
+        telegraph_severity  str    — "heavy" for the whole family (set here);
+                                     a boss-tier member overrides to "deadly".
+                                     Documented on ``Move``.
         _prep_text(npc)     str    — yellow telegraph line shown during wind-up
         _hit_text(npc, target_name)  str  — red line shown on impact
         _recoil_text(npc)   str    — plain line shown after surge
@@ -400,6 +403,10 @@ class TelegraphedSurge(NpcAttack):
     display_name = 'Telegraphed Surge'
 
     web_animation = "shockwave"
+
+    # Every surge is a heavy blow behind a long wind-up — that is the point of
+    # the family — so the opt-in is made once here and inherited.
+    telegraph_severity = "heavy"
 
     _EXTRA_PREP_BEATS = 0
 
@@ -470,15 +477,25 @@ class SlimeVolley(TelegraphedSurge):
 class TidalSurge(TelegraphedSurge):
     """
     Boss-tier telegraphed surge used by KingSlime. Same two-turn structure as
-    SlimeVolley but with dramatically higher damage multiplier and longer prep.
+    SlimeVolley but with a boss's damage stat behind it and longer prep.
     The sheer volume of the surge makes coating the target almost certain.
     """
     display_name = 'Tidal Surge'
 
     web_animation = "shockwave"
 
-    _DAMAGE_MULTIPLIER = 2.5
+    # 1.8x of King Slime's 50 damage, rolled through NpcAttack's 0.8-1.2 band,
+    # is 72-108 raw (~52-88 landed through the beta's leather set): still the
+    # hardest hit in the game, but one a full-HP Jean at the level the beta
+    # reaches the arena (level 3, ~100 HP) survives on the worst roll. It was
+    # 2.5x -- 100-150 raw, 84-134 landed against a 114 HP Jean -- a
+    # full-to-dead hit no warning could make fair, so #586 part B retuned the
+    # number once part A had made the wind-up legible. The "deadly" severity
+    # stays: it is still the one blow the player must answer when it winds up.
+    # tests/test_tidal_surge_balance.py derives the survivability guard.
+    _DAMAGE_MULTIPLIER = 1.8
     _EXTRA_PREP_BEATS = 5
+    telegraph_severity = "deadly"
 
     def __init__(self, npc):
         super().__init__(npc)
@@ -515,11 +532,14 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
     # The TelegraphedSurge multipliers above are midpoints on this same scale,
     # not exact factors: NpcAttack.evaluate has already rolled power through
     # its own band by the time TelegraphedSurge.evaluate multiplies by them, so
-    # 2.2/2.5/1.8 centre the hit on the user's damage exactly as this midpoint
+    # 2.2/1.8/1.8 centre the hit on the user's damage exactly as this midpoint
     # does. Every declaration in this module means the same thing.
     _POWER_ROLL_MIN = 1.5
     _POWER_ROLL_MAX = 3.0
     _DAMAGE_MULTIPLIER = (_POWER_ROLL_MIN + _POWER_ROLL_MAX) / 2
+    # A 2.25x blow outside the TelegraphedSurge family — the case the #586
+    # audit walks every exported move for, rather than one base class.
+    telegraph_severity = "heavy"
 
     def __init__(self, npc):
         description = ""

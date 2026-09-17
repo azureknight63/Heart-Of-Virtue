@@ -19,7 +19,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.story.ch02 import ATRIUM_COORDS, CLEANSED_CHANNEL_DESCRIPTIONS
+from src.story.ch02 import ATRIUM_COORDS, CLEANSED_CHANNEL_DESCRIPTIONS, find_pools_map
 from tests._ch02_fixtures import (
     CHANNEL_COORD,
     CORRUPTED_AUTHORED_TEXT,
@@ -413,6 +413,19 @@ class TestAfterDefeatingKingSlimeProcess:
 
         return AfterDefeatingKingSlime(player=self.player, tile=self.tile)
 
+    def _gorran_in_the_atrium(self):
+        """A Gorran waiting on a Mock atrium tile, in a pools map registered
+        as the universe's -- where ``Ch02GorranAtPools`` leaves him. The
+        atrium is found through the universe's pools map (#577), as that
+        event already finds it -- not through ``player.map``. Returns
+        ``(gorran, atrium_tile)``."""
+        gorran = Gorran()
+        gorran.tile = None
+        atrium_tile = Mock()
+        atrium_tile.npcs_here = [gorran]
+        self.player.universe.maps = [make_pools_map({ATRIUM_COORDS: atrium_tile})]
+        return gorran, atrium_tile
+
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
     def test_process_already_defeated_returns_early(self, mock_print, mock_sleep):
@@ -460,13 +473,7 @@ class TestAfterDefeatingKingSlimeProcess:
     @patch("src.story.ch02.print_slow")
     def test_process_with_gorran_in_atrium(self, mock_print, mock_sleep):
         """Gorran found in atrium tile should be moved to arena tile."""
-        gorran = Gorran()
-        gorran.tile = None
-
-        atrium_tile = Mock()
-        atrium_tile.npcs_here = [gorran]
-
-        self.player.map = {ATRIUM_COORDS: atrium_tile}
+        gorran, atrium_tile = self._gorran_in_the_atrium()
         evt = self._make_event()
         evt.process()
 
@@ -492,6 +499,59 @@ class TestAfterDefeatingKingSlimeProcess:
         # And he LEAVES the tile he was on: without this, dropping the removal
         # in ch02 puts Gorran on two tiles and the suite stays green.
         assert gorran not in old_tile.npcs_here
+
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
+    def test_gorran_from_the_atrium_rejoins_the_party(self, mock_print, mock_sleep):
+        """#577: Ch02GorranAtPools takes Gorran OUT of ``combat_list_allies``
+        while he waits in the atrium; the aftermath must put him back --
+        that list is what the status party, battle allies and tile-following
+        all read -- behind the player at index 0, flagged a friend, and
+        levelled up to Jean the way the ch01 join does."""
+        gorran, _atrium_tile = self._gorran_in_the_atrium()
+        gorran.sync_level = Mock()
+        self.player.combat_list_allies = [self.player]
+        self.player.level = 3
+
+        self._make_event().process()
+
+        assert self.player.combat_list_allies == [self.player, gorran]
+        assert gorran.friend is True
+        gorran.sync_level.assert_called_once_with(3)
+
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
+    def test_gorran_already_in_the_party_is_not_added_twice(self, mock_print, mock_sleep):
+        """A Gorran who never left the party -- no atrium wait, found through
+        ``combat_list_allies`` -- keeps his one place in it: the rejoin must
+        not append a second entry."""
+        gorran = Gorran()
+        gorran.tile = None
+        self.player.combat_list_allies = [self.player, gorran]
+
+        self._make_event().process()
+
+        assert self.player.combat_list_allies == [self.player, gorran]
+        assert gorran.friend is True
+
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
+    def test_the_atrium_is_found_through_the_pools_map_when_player_map_is_elsewhere(
+        self, mock_print, mock_sleep
+    ):
+        """After a flee ``player.map`` can point at a combat arena; the
+        atrium must still be found, through ``find_pools_map`` as
+        ``Ch02GorranAtPools`` already does, or Gorran is left behind."""
+        gorran, atrium_tile = self._gorran_in_the_atrium()
+        self.player.map = {"name": "some-arena"}
+        self.player.combat_list_allies = [self.player]
+
+        self._make_event().process()
+
+        assert gorran not in atrium_tile.npcs_here
+        assert gorran in self.tile.npcs_here
+        assert gorran.tile == self.tile
+        assert self.player.combat_list_allies == [self.player, gorran]
 
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
@@ -525,10 +585,13 @@ class TestCleansePoolTiles:
         self.player = _make_player()
         self.tile = _make_tile()
 
-    def _make_event(self):
+    def _cleanse(self):
+        """Run the cleanse the way ``process()`` runs it: over the pools map
+        the universe holds, resolved once through ``find_pools_map``."""
         from src.story.ch02 import AfterDefeatingKingSlime
 
-        return AfterDefeatingKingSlime(player=self.player, tile=self.tile)
+        evt = AfterDefeatingKingSlime(player=self.player, tile=self.tile)
+        evt._cleanse_pool_tiles(find_pools_map(self.player))
 
     def test_cleanse_pool_tiles_overwrites_in_place_and_leaves_an_off_map_tile(self):
         """Every tile the pools map authors, plus one it does not, each a Mock
@@ -543,7 +606,7 @@ class TestCleansePoolTiles:
         tiles = {coord: _seeded_tile() for coord in (*coords, OFF_MAP_COORD)}
         self.player.universe.maps = [make_pools_map(tiles)]
 
-        self._make_event()._cleanse_pool_tiles()
+        self._cleanse()
 
         rewritten = assert_replaced_or_left(tiles)
         assert rewritten, "the cleanse rewrote no tile"
@@ -555,10 +618,9 @@ class TestCleansePoolTiles:
         is read from the map, not from the absence of a traceback."""
         channel_tile = _seeded_tile()
         pools_map = make_pools_map({CHANNEL_COORD: channel_tile})
-
-        evt = self._make_event()
         self.player.universe.maps = [pools_map]
-        evt._cleanse_pool_tiles()
+
+        self._cleanse()
 
         assert_description_overwritten(
             channel_tile, authored_text=CORRUPTED_AUTHORED_TEXT
@@ -575,7 +637,7 @@ class TestCleansePoolTiles:
         self.player.universe.maps = []
         self.tile.description = CORRUPTED_AUTHORED_TEXT
 
-        self._make_event()._cleanse_pool_tiles()
+        self._cleanse()
 
         assert_description_untouched(self.tile, authored_text=CORRUPTED_AUTHORED_TEXT)
 
@@ -583,10 +645,38 @@ class TestCleansePoolTiles:
         """A pools map holding no tiles at all is a silent no-op."""
         pools_map = make_pools_map()
         self.player.universe.maps = [pools_map]
-        evt = self._make_event()
-        evt._cleanse_pool_tiles()
+        self._cleanse()
         # No tiles were invented and the map is untouched.
         assert pools_map == make_pools_map()
+
+
+class TestForgetCombatant:
+    """``_forget_combatant`` drops a swept NPC from Jean's enemy bookkeeping
+    -- unless a fight is somehow live, in which case that bookkeeping is the
+    combat engine's and is left alone."""
+
+    def setup_method(self):
+        self.player = _make_player()
+        self.npc = Mock()
+        self.player.combat_list = [self.npc]
+        self.player.combat_proximity = {self.npc: 3}
+        from src.story.ch02 import AfterDefeatingKingSlime
+
+        self.evt = AfterDefeatingKingSlime(player=self.player, tile=_make_tile())
+
+    def test_a_swept_npc_is_dropped_from_the_enemy_bookkeeping(self):
+        self.evt._forget_combatant(self.npc)
+
+        assert self.player.combat_list == []
+        assert self.player.combat_proximity == {}
+
+    def test_a_live_fight_keeps_its_bookkeeping(self):
+        self.player.in_combat = True
+
+        self.evt._forget_combatant(self.npc)
+
+        assert self.player.combat_list == [self.npc]
+        assert self.player.combat_proximity == {self.npc: 3}
 
 
 class TestTheReplaceOrLeaveContractCheck:

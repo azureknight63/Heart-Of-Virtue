@@ -16,14 +16,17 @@ the placement moved.
 
 import ast
 import functools
+import inspect
 import json
+from typing import NamedTuple
 from unittest.mock import Mock
 
 import src.items as items
 import src.npc as npc
 from src.story.ch02 import AfterDefeatingKingSlime, CLEANSED_CHANNEL_DESCRIPTIONS
+from src.story.effects import NPCSpawnerEvent
 from tests._gs_fixtures import make_tile
-from tests._map_scan import event_placements, map_data, tiles
+from tests._map_scan import event_placements, map_data, resolve_class, tiles
 from tests._source_scan import MAP_DIR, ROOT
 
 POOLS_MAP = MAP_DIR / "grondelith-mineral-pools.json"
@@ -70,6 +73,12 @@ Lurker = type(npc.Lurker.__name__, (), {})
 #: standing for a real old save the day either is renamed.
 PRE_572_PROSE_FILE = ROOT / "tests" / "fixtures" / "pre_572_cleansed_prose.json"
 
+#: The channel tiles the cleanse gained AFTER #572 -- #594's crevice -- so
+#: no pre-#572 save ever carried cleansed prose there for the repair to
+#: fold. ``pre_572_cleansed_prose`` holds the frozen channels to exactly the
+#: engine's table minus these.
+POST_572_ONLY_TILES = frozenset({(1, 2)})
+
 
 def pools_map_data():
     """The decoded pools map, from the shared once-per-worker parse.
@@ -103,12 +112,27 @@ def make_pools_map(tiles_by_coord=()):
     return {"name": POOLS_MAP_NAME, **dict(tiles_by_coord)}
 
 
+def coordinate_tiles(pools_map):
+    """``[(coord, tile), ...]`` for the tile entries of a runtime pools map --
+    the ``(x, y)``-keyed ones; ``"name"`` is no tile. The tests' own walk,
+    kept apart from ``ch02``'s so it cannot agree with a broken one."""
+    return [(coord, tile) for coord, tile in pools_map.items() if isinstance(coord, tuple)]
+
+
+def pools_event_placements():
+    """Every event the shipped pools map authors, as ``tests._map_scan``
+    placements."""
+    return tuple(
+        placement for placement in event_placements()
+        if placement.map_name == POOLS_MAP.name
+    )
+
+
 def arena_coord():
     """The tile the shipped pools map authors ``AfterDefeatingKingSlime`` onto."""
     placements = [
-        placement for placement in event_placements()
-        if placement.map_name == POOLS_MAP.name
-        and placement.class_name == CLEANSING_EVENT
+        placement for placement in pools_event_placements()
+        if placement.class_name == CLEANSING_EVENT
     ]
     assert len(placements) == 1, (
         f"{POOLS_MAP.name} authors {CLEANSING_EVENT} on {len(placements)} tiles; "
@@ -133,11 +157,14 @@ def pre_572_cleansed_prose():
     channels = document["channels"]
     # The frozen channels ARE the population every legacy test asserts over:
     # thinned to nothing, each of those tests would pass on the arena alone.
-    # Held to the engine's own table, which is what the old code cleansed.
+    # Held to the engine's own table, which is what the old code cleansed,
+    # less the tiles that joined the cleanse afterwards (``POST_572_ONLY_TILES``)
+    # and so never had legacy prose for the repair to fold.
     prose = {ast.literal_eval(key): text for key, text in channels.items()}
-    assert prose.keys() == set(CLEANSED_CHANNEL_DESCRIPTIONS), (
-        "the frozen pre-#572 channels no longer match the tiles the event "
-        f"cleanses: {sorted(set(CLEANSED_CHANNEL_DESCRIPTIONS) ^ prose.keys())}"
+    expected = set(CLEANSED_CHANNEL_DESCRIPTIONS) - POST_572_ONLY_TILES
+    assert prose.keys() == expected, (
+        "the frozen pre-#572 channels no longer match the tiles the old code "
+        f"cleansed: {sorted(prose.keys() ^ expected)}"
     )
     arena = arena_coord()
     assert arena not in prose, f"the frozen channel prose already names the arena {arena}"
@@ -222,3 +249,61 @@ def assert_description_untouched(tile, *, authored_text):
     spawned on it, and its description still that text."""
     tile.spawn_object.assert_not_called()
     assert tile.description == authored_text, tile.description
+
+
+class SpawnerPlacement(NamedTuple):
+    """One enemy spawner the pools map authors: where, which event class the
+    loader resolves it to, and the props it is authored with."""
+
+    coord: tuple
+    event_cls: type
+    props: dict
+
+
+@functools.lru_cache(maxsize=1)
+def pools_spawner_placements():
+    """Every ``NPCSpawnerEvent`` -- by inheritance, so the ``PulsingGlandEvent``
+    glands count -- the pools map authors, as ``SpawnerPlacement`` tuples.
+
+    Derived from the shipped map, never typed: the map places no static NPC,
+    so this IS the map's enemy population, and the #594 sweep is asserted
+    over it. Resolved through the engine's own class gate, so a placement the
+    game would refuse to load fails here rather than silently dropping out of
+    the population. The props are the shared parse: read, never mutate.
+    """
+    found = []
+    for placement in pools_event_placements():
+        event_cls = resolve_class(placement)
+        if issubclass(event_cls, NPCSpawnerEvent):
+            found.append(
+                SpawnerPlacement(ast.literal_eval(placement.coord), event_cls, placement.props)
+            )
+    return tuple(found)
+
+
+#: Constructor parameters the map loader supplies at runtime rather than
+#: reading off the authored props (they are authored null), so the builder
+#: passes them explicitly.
+_RUNTIME_CTOR_PARAMS = frozenset({"self", "player", "tile"})
+
+
+def build_authored_spawner(placement, player, tile):
+    """The spawner ``placement`` describes, constructed the way the map loader
+    constructs it, armed on ``tile`` (appended to its ``events_here``).
+
+    The kwargs are the authored props filtered to what the constructor takes
+    by name -- read off ``inspect.signature``, as ``Universe.
+    _deserialize_saved_instance`` reads it, rather than typed: a hand-typed
+    list silently dropped ``params``, which the spawners read their NPC class
+    and count from when those are not authored on their own.
+
+    ``npc_cls`` is passed in its authored shape -- the ``{"__class_type__":
+    "npc:Slime"}`` marker for the plain spawners, a bare name for the glands
+    -- so the event resolves it through the same path it does in the game.
+    """
+    accepted = set(inspect.signature(placement.event_cls.__init__).parameters)
+    accepted -= _RUNTIME_CTOR_PARAMS
+    kwargs = {k: v for k, v in placement.props.items() if k in accepted}
+    event = placement.event_cls(player=player, tile=tile, **kwargs)
+    tile.events_here.append(event)
+    return event

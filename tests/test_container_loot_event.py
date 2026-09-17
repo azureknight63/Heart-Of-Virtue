@@ -33,9 +33,14 @@ LOOT_VERBS = ["loot", "check", "view", "examine", "inspect", "peruse"]
 _ITEM_TYPES = [Restorative, Antidote, Draught]
 
 
-def _make_container(num_items=2, start_open=True):
-    """A real, opened Container holding `num_items` distinct single items."""
-    items = [_ITEM_TYPES[i](count=1) for i in range(num_items)]
+def _make_container(num_items=2, start_open=True, items=None):
+    """A real, opened Container holding `num_items` distinct single items.
+
+    Pass `items` to seed an explicit inventory instead (e.g. two of the same
+    stackable so `Container.stack_items()` merges them).
+    """
+    if items is None:
+        items = [_ITEM_TYPES[i](count=1) for i in range(num_items)]
     return Container(
         name="Old Chest",
         nickname="old chest",
@@ -257,3 +262,115 @@ class TestBothInteractionArmsShipTheSameEventShape:
         events = result.get("events_triggered") or []
         assert len(events) == 1, events
         assert events[0].get("event_id") in session_data.get("pending_events", {})
+
+
+# ---------------------------------------------------------------------------
+# Stacked items are counted once in engine-side labels (#565 engine half)
+# ---------------------------------------------------------------------------
+
+def _make_stacked_sap_container():
+    """An opened Container whose two DriedCrystalSap merge into one x2 stack."""
+    from src.items import DriedCrystalSap
+
+    container = _make_container(items=[DriedCrystalSap(), DriedCrystalSap()])
+    # Precondition: stack_items() merged them and stack_grammar baked the count.
+    assert len(container.inventory) == 1
+    assert container.inventory[0].count == 2
+    assert container.inventory[0].name == "Dried Crystal Sap x2"
+    return container
+
+
+class TestStackedItemLabelsCountOnce:
+    def test_take_all_narration_names_stack_once(self, narrated):
+        container = _make_stacked_sap_container()
+        player, _ = _make_player_on_tile(container)
+
+        messages = narrated(container.take_all, player)
+        texts = [m.get("text", "") for m in messages]
+        takes = [t for t in texts if t.startswith("Jean takes")]
+
+        assert takes == ["Jean takes 2× Dried Crystal Sap."]
+        assert "x2" not in takes[0]
+
+    def test_loot_event_option_label_counts_once(self):
+        container = _make_stacked_sap_container()
+        player, _ = _make_player_on_tile(container)
+
+        event = LootEvent("loot", player, None, container)
+        labels = [o["label"] for o in event.input_options]
+
+        assert labels[0] == "Take Dried Crystal Sap (2)"
+        assert "x2" not in labels[0]
+
+    def test_unstacked_item_labels_unchanged(self, narrated):
+        # Negative control: a single item carries no suffix and gets no count.
+        container = _make_container(num_items=1)
+        player, _ = _make_player_on_tile(container)
+        name = container.inventory[0].name
+        assert " x" not in name
+
+        event = LootEvent("loot", player, None, container)
+        assert event.input_options[0]["label"] == f"Take {name}"
+
+        messages = narrated(container.take_all, player)
+        takes = [m.get("text", "") for m in messages if m.get("text", "").startswith("Jean takes")]
+        assert takes == [f"Jean takes {name}."]
+
+    def test_loot_event_take_all_narrates_stack_once(self, narrated):
+        # Same sentence form as Container.take_all: "2× Dried Crystal Sap",
+        # not the baked "Dried Crystal Sap x2" (the two paths diverged).
+        container = _make_stacked_sap_container()
+        player, _ = _make_player_on_tile(container)
+        event = LootEvent("loot", player, None, container)
+
+        messages = narrated(event.process, "all")
+        takes = [m.get("text", "") for m in messages if m.get("text", "").startswith("Jean takes")]
+
+        assert takes == ["Jean takes everything: 2× Dried Crystal Sap"]
+
+    def test_loot_event_single_take_narrates_stack_once(self, narrated):
+        container = _make_stacked_sap_container()
+        player, _ = _make_player_on_tile(container)
+        event = LootEvent("loot", player, None, container)
+
+        messages = narrated(event.process, "0")
+        takes = [m.get("text", "") for m in messages if m.get("text", "").startswith("Jean takes")]
+
+        assert takes == ["Jean takes 2× Dried Crystal Sap."]
+
+    def test_stack_sentence_label_matches_take_all_form(self):
+        from src.items import stack_sentence_label
+
+        sap = SimpleNamespace(name="Dried Crystal Sap x2", count=2)
+        assert stack_sentence_label(sap, 2) == "2× Dried Crystal Sap"
+        single = SimpleNamespace(name="Rusty Key", count=1)
+        assert stack_sentence_label(single, 1) == "Rusty Key"
+
+    def test_stack_base_name_huge_digit_run_does_not_raise(self):
+        # py3.11 caps int() parsing at 4300 digits (CVE-2020-10735); the
+        # suffix is compared as a string so an absurd name degrades to
+        # "keep the name" instead of raising into the loot dialog.
+        from src.items import stack_base_name
+
+        huge = "Potion x" + "9" * 5000
+        assert stack_base_name(SimpleNamespace(name=huge, count=2)) == huge
+
+    def test_stack_base_name_keeps_zero_padded_suffix(self):
+        # Intended: stack_grammar() never zero-pads, so "x02" is part of the
+        # item's own name rather than a baked count, even at stack size 2.
+        from src.items import stack_base_name
+
+        padded = SimpleNamespace(name="Potion x02", count=2)
+        assert stack_base_name(padded) == "Potion x02"
+
+    def test_stack_base_name_helper_is_conservative(self):
+        from src.items import stack_base_name
+
+        sap = SimpleNamespace(name="Dried Crystal Sap x3", count=3)
+        assert stack_base_name(sap) == "Dried Crystal Sap"
+        # Suffix that does not match the stack size is part of the name.
+        odd = SimpleNamespace(name="Potion x3", count=2)
+        assert stack_base_name(odd) == "Potion x3"
+        # No count attribute at all: name passes through.
+        plain = SimpleNamespace(name="Rusty Key")
+        assert stack_base_name(plain) == "Rusty Key"

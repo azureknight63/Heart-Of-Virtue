@@ -219,7 +219,16 @@ class JamboHealsU(ConversationalNPCMixin, Merchant):
     one without prompting another agent's authored config. ``talk`` stays as
     the deterministic fallback for when the chat is unavailable, and the
     shop (buy/sell/trade) is unchanged.
+
+    Unlike the generic nomads, Jambo is a named character: ``_chat_keep_name``
+    keeps the speaker label and the system prompt on "Jambo" whatever
+    ``given_name`` the generated (or LLM-off fallback) seed carries -- the
+    portrait is keyed on the class, and issue #599 was Jambo's portrait over
+    "Mara's" dialogue. ``_chat_generic_role`` is what the prompt calls him.
     """
+
+    _chat_keep_name = True
+    _chat_generic_role = "a nomad healer and potion merchant"
 
     def __init__(self):
         # Starter inventory so shop works before first restock

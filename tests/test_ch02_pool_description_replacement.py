@@ -46,17 +46,28 @@ import pytest
 
 from src.events import gate_is_set
 from src.objects import TileDescription
-from src.story.ch02 import AfterDefeatingKingSlime, fold_legacy_cleansed_descriptions
+from src.story.ch02 import (
+    ATRIUM_COORDS,
+    AfterDefeatingKingSlime,
+    fold_legacy_cleansed_descriptions,
+)
+from src.story.effects import NPCSpawnerEvent
 from tests._ch02_fixtures import (
     POOLS_MAP,
+    KingSlime,
+    SpawnerPlacement,
     arena_coord,
     assert_text_replaced,
+    build_authored_spawner,
+    coordinate_tiles,
     make_pools_map,
     mark_king_slime_defeated,
     plant_legacy_cleansed_object,
+    pools_spawner_placements,
     pools_tiles,
     pre_572_cleansed_prose,
     pre_572_story_gate,
+    real_arena_tile,
 )
 from tests._gs_fixtures import make_tile
 
@@ -84,12 +95,15 @@ def _authored_descriptions():
 
 
 def _mock_player():
-    """A Mock player with an empty story and no allies, on no map."""
+    """A Mock player with an empty story and no allies, on no map, at
+    level 1 (a joining ally is levelled up to Jean, and ``int(Mock)`` is
+    not a level)."""
     player = Mock()
     player.universe = Mock()
     player.universe.story = {}
     player.map = {}
     player.combat_list_allies = []
+    player.level = 1
     return player
 
 
@@ -129,7 +143,7 @@ def cleansed(player):
     with patch("src.story.ch02.print_slow"):
         AfterDefeatingKingSlime(player=player, tile=pools_map[arena]).process()
 
-    pool_tiles = {coord: tile for coord, tile in pools_map.items() if isinstance(coord, tuple)}
+    pool_tiles = dict(coordinate_tiles(pools_map))
     touched = {
         coord: tile for coord, tile in pool_tiles.items()
         if tile.description != authored[coord]
@@ -313,3 +327,172 @@ class TestALegacySaveIsRepaired:
         legacy_save.player.universe.maps = []
 
         assert fold_legacy_cleansed_descriptions(legacy_save.player) == 0
+
+
+#: The crevice west of the channel entry (issue #594). Its authored text is
+#: present-tense live corruption, so the cleanse must rewrite it too; the
+#: coordinate is typed here and checked against the map in the test.
+CREVICE_COORD = (1, 2)
+
+#: The present-tense claim the crevice's authored text makes about the
+#: corruption -- what must not survive the cleanse. A positive control below
+#: holds the shipped map to still authoring it, so a reworded map fails
+#: there, naming the cause, rather than passing this vacuously.
+CREVICE_LIVE_CORRUPTION_TEXT = "the corruption has not reached it"
+
+
+class TestTheCreviceIsRewritten:
+    """#594: the crevice at (1, 2) read as live corruption after the cleanse."""
+
+    def test_the_map_still_authors_live_corruption_at_the_crevice(self):
+        authored = _authored_descriptions()
+        assert CREVICE_COORD in authored, f"the pools map authors no tile at {CREVICE_COORD}"
+        assert CREVICE_LIVE_CORRUPTION_TEXT in authored[CREVICE_COORD]
+
+    def test_the_crevice_no_longer_reads_as_live_corruption(self, cleansed):
+        assert CREVICE_COORD in cleansed.touched, "the crevice was not rewritten"
+        description = cleansed.pool_tiles[CREVICE_COORD].description
+        assert_text_replaced(
+            description, _authored_descriptions()[CREVICE_COORD], where=f"tile {CREVICE_COORD}"
+        )
+        assert CREVICE_LIVE_CORRUPTION_TEXT not in description
+
+
+#: An authored ``params`` list in the shape ``NPCSpawnerEvent.__init__``
+#: reads: the NPC class name, then the count.
+AUTHORED_SPAWNER_PARAMS = ["Slime", 2]
+
+
+class TestBuildAuthoredSpawner:
+    """The fixture constructs a placement the way the map loader does --
+    every authored prop the constructor takes by name reaches it. A
+    hand-typed prop list silently dropped ``params``, so a placement
+    authored through them stood up nothing and the sweep tests passed
+    vacuously over it."""
+
+    def test_an_authored_params_reaches_the_spawner(self, player):
+        tile = real_arena_tile()
+        placement = SpawnerPlacement(
+            arena_coord(),
+            NPCSpawnerEvent,
+            {"name": NPCSpawnerEvent.__name__, "params": list(AUTHORED_SPAWNER_PARAMS)},
+        )
+
+        event = build_authored_spawner(placement, player, tile)
+
+        assert event.params == AUTHORED_SPAWNER_PARAMS
+        # Consumed by the constructor, not merely attached: the count is
+        # read off ``params`` when it is not authored on its own.
+        assert event.count == AUTHORED_SPAWNER_PARAMS[1]
+        assert tile.events_here == [event]
+
+
+def _hostiles(tile):
+    """The NPCs on ``tile`` the engine treats as enemies: ``npc.friend`` is
+    the only friend/foe flag (``src/npc/_base.py``)."""
+    return [n for n in tile.npcs_here if not getattr(n, "friend", False)]
+
+
+class Swept(NamedTuple):
+    """The populated pools map after King Slime fell and the event ran."""
+
+    pools_map: dict
+    #: The spawner instances that were still unfired at arena time -- the
+    #: glands, which fire only on tile entry.
+    unfired: list
+    gorran: object
+    narrate: Mock
+
+
+@pytest.fixture(scope="class")
+def swept():
+    """The pools map as the game has it when King Slime falls -- every
+    authored spawner armed on its tile, map entry evaluated so the plain
+    spawners have stood their NPCs up and the glands have not, King Slime
+    slain, Gorran waiting in the atrium -- then the event run once.
+
+    The population is the shipped map's: ``pools_spawner_placements`` is
+    derived from the JSON, and a map that spawned nothing, or left nothing
+    unfired, fails the positive controls here instead of passing vacuously.
+
+    Built once per class: the tests read the swept map and never mutate it,
+    and standing the whole population up is the dearest setup in the file.
+    Its player is its own for the same reason -- the function-scoped
+    ``player`` fixture cannot serve a class-scoped one.
+    """
+    placements = pools_spawner_placements()
+    assert placements, "the pools map authors no enemy spawner"
+    player = _mock_player()
+    pools_map = _authored_pools_map(player)
+    # ``NPCSpawnerEvent.evaluate_for_map_entry`` fires when the spawn tile's
+    # map IS the player's map (identity, not equality).
+    player.map = pools_map
+    spawners = [
+        build_authored_spawner(placement, player, pools_map[placement.coord])
+        for placement in placements
+    ]
+    # What ``Universe._evaluate_map_entry_spawners`` does the moment Jean
+    # enters the pools.
+    for spawner in spawners:
+        spawner.evaluate_for_map_entry(player)
+    fired = [spawner for spawner in spawners if spawner.has_run]
+    unfired = [spawner for spawner in spawners if not spawner.has_run]
+    assert fired, "no spawner fired on map entry -- the sweep has nothing to clear"
+    assert unfired, "every spawner fired on map entry -- the gland half of the sweep is untested"
+    assert all(_hostiles(spawner.tile) for spawner in fired), (
+        "a fired spawner stood up no hostile on its tile"
+    )
+
+    arena = pools_map[arena_coord()]
+    assert any(type(n).__name__ == KingSlime.__name__ for n in arena.npcs_here), (
+        "the arena's spawner did not stand King Slime up"
+    )
+    # King Slime falls; the event's own check_conditions reads his absence.
+    arena.npcs_here = [n for n in arena.npcs_here if type(n).__name__ != KingSlime.__name__]
+    gorran = pools_map[ATRIUM_COORDS].spawn_npc("Gorran")
+    assert getattr(gorran, "friend", False) is True, "Gorran is not flagged a friend"
+
+    with patch("src.story.ch02.print_slow"), patch("src.story.ch02.narrate") as narrate:
+        AfterDefeatingKingSlime(player=player, tile=arena).process()
+
+    return Swept(pools_map, unfired, gorran, narrate)
+
+
+class TestTheRemainingEnemiesAreCleared:
+    """#594: once King Slime falls, every enemy still standing in the pools
+    goes with him, and every gland that would have burst a fresh slime on
+    the walk out is spent -- allies stay."""
+
+    def test_no_hostile_stands_anywhere_in_the_pools(self, swept):
+        left = {
+            coord: [type(n).__name__ for n in hostiles]
+            for coord, tile in coordinate_tiles(swept.pools_map)
+            if (hostiles := _hostiles(tile))
+        }
+        assert left == {}, f"hostiles still standing after the cleanse: {left}"
+
+    def test_gorran_is_kept(self, swept):
+        assert any(
+            swept.gorran in tile.npcs_here for _coord, tile in coordinate_tiles(swept.pools_map)
+        ), "Gorran was swept out with the enemies"
+
+    def test_every_unfired_gland_is_spent(self, swept):
+        assert all(spawner.has_run for spawner in swept.unfired), [
+            spawner.name for spawner in swept.unfired if not spawner.has_run
+        ]
+
+    def test_no_spawner_is_left_on_any_tile(self, swept):
+        left = {
+            coord: [ev.name for ev in tile.events_here if isinstance(ev, NPCSpawnerEvent)]
+            for coord, tile in coordinate_tiles(swept.pools_map)
+            if any(isinstance(ev, NPCSpawnerEvent) for ev in tile.events_here)
+        }
+        assert left == {}, f"spawners still armed after the cleanse: {left}"
+
+    def test_the_sweep_is_narrated(self, swept):
+        """The player is told the channels are clear; the conversation stage
+        is closed by then, so it goes through ``narrate``."""
+        assert swept.narrate.called, "the clearing of the channels was not narrated"
+        assert any(
+            str(arg).strip() for call in swept.narrate.call_args_list for arg in call.args
+        )

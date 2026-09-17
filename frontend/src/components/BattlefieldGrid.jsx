@@ -14,7 +14,14 @@ import useBattlefieldAnimations, {
   takeAnimationBatch,
   removeBatchByIdentity,
 } from '../hooks/useBattlefieldAnimations';
-import { formatCombatMoveStatus, isMovePending, beatsUntilResolve } from '../utils/combatMoveStatus';
+import {
+  formatCombatMoveStatus,
+  isMovePending,
+  beatsUntilResolve,
+  telegraphWarning,
+  hostileTelegraphWarning,
+  TELEGRAPH_GLYPH,
+} from '../utils/combatMoveStatus';
 import { useFeatureFlag } from '../utils/featureFlags';
 import { isLiving } from '../utils/combatEntities';
 
@@ -56,6 +63,66 @@ export const VIEW_MODE_FIT = 'fit';
 // Pointer travel above which a mouseup is treated as the end of a pan gesture
 // rather than a click on the map.
 const DRAG_CLICK_THRESHOLD_PX = 6;
+
+const clampNumber = (value, min, max) => Math.max(min, Math.min(max, value));
+
+/**
+ * Split one axis of drag travel into whole cells of camera-window shift and
+ * a sub-cell remainder, clamped so the window never leaves the arena.
+ *
+ * `totalPx` is the gesture's cumulative screen-space travel on this axis;
+ * `[minCells, maxCells]` is the legal window shift in the same screen sense
+ * (always contains 0 — see panCellBounds). The clamp is applied before the
+ * split, so a stopped edge has no half-cell of void hanging off it: the
+ * remainder is 0 there, not "whatever was left over".
+ *
+ * A zero or unmeasurable cell size (jsdom, a collapsed panel) yields no
+ * movement at all rather than NaN in a transform.
+ */
+export const splitPanAxis = (totalPx, cellPx, minCells, maxCells) => {
+  if (!Number.isFinite(cellPx) || cellPx <= 0) return { cells: 0, residual: 0 };
+  // Clamped in CELL units, not px: a measured cell size is rarely a clean
+  // float, and `(maxCells * cellPx) / cellPx` can come back as 2.9999…, which
+  // truncated to one cell short of the bound with a whole cell of remainder.
+  // Clamping the ratio makes the bound itself the result at a stopped edge.
+  const travelCells = clampNumber(totalPx / cellPx, minCells, maxCells);
+  // trunc, not floor: the remainder keeps the sign of the travel, so a
+  // leftward drag reads as "-3 cells and -7px", never "-4 cells and +23px".
+  const cells = Math.trunc(travelCells);
+  // A whole-cell result (the integer bounds, or travel that lands exactly on
+  // a cell) has no remainder by definition; otherwise it is measured in px
+  // off the travel, which keeps it exact rather than a product of two floats.
+  const residual = travelCells === cells ? 0 : totalPx - cells * cellPx;
+  return { cells, residual };
+};
+
+/**
+ * How far the camera window may be shifted, in cells, on one axis.
+ *
+ * The window's low edge sits at `lowEdge` and spans `size` cells over an arena
+ * of `mapSize` cells (legal coordinates `0 .. mapSize - 1`). The shift may
+ * bring the window onto the arena but never carry it further off: the low
+ * bound is "no further into the void than 0, or than the window already
+ * is", the high bound the mirror of that on the far edge. Both always admit 0,
+ * so the unpanned camera is legal wherever it starts, and when the window
+ * already covers the whole arena (fit mode framing every cell, or a small
+ * arena inside the follow window) the range collapses to `[0, 0]`.
+ */
+export const panCellBounds = (lowEdge, size, mapSize) => ({
+  min: Math.min(lowEdge, 0) - lowEdge,
+  max: Math.max(lowEdge, mapSize - size) - lowEdge,
+});
+
+/**
+ * Both axes' legal window shifts, in world cells: `x` shifts leftX, `y`
+ * shifts topY. The window's low edge on y is its BOTTOM row
+ * (topY - gridCols + 1); a shift of that edge is a shift of topY, so the
+ * bounds come back in topY's sense directly.
+ */
+const windowPanBounds = ({ leftX, topY, gridCols, mapSize }) => ({
+  x: panCellBounds(leftX, gridCols, mapSize),
+  y: panCellBounds(topY - gridCols + 1, gridCols, mapSize),
+});
 
 // Arena ceiling, mirroring get_dynamic_grid_size's clamp in
 // src/coordinate_config.py. Bounds a gridCols^2 loop and DOM-node count.
@@ -268,6 +335,30 @@ function resolveEntityStats(entity) {
 // ---------------------------------------------------------------------------
 const FACING_MAP = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
 
+// Token ring widths, px. The heavier ring is the heavy-move wind-up's cue
+// (#586) — a change of weight, not of colour.
+const TOKEN_RING_PX = 3;
+const TELEGRAPH_RING_PX = 4;
+
+// Length of one HP/fatigue semi-circle in the torus's 100x100 viewBox
+// (half the circumference of r=45), i.e. a full arc's dash length.
+const TORUS_HALF_ARC = 141.4;
+
+// The two token badges — HP numeral (bottom-left) and beat countdown
+// (bottom-right) — share one pill; each overrides only its side, font size
+// and colours.
+const TOKEN_BADGE_CLASS = 'absolute pointer-events-none select-none z-20 flex items-center justify-center rounded-full';
+const TOKEN_BADGE_STYLE = {
+  bottom: '-5px',
+  minWidth: '15px',
+  height: '15px',
+  padding: '0 3px',
+  lineHeight: 1,
+  fontWeight: 'bold',
+  fontFamily: 'monospace',
+  textShadow: 'none',
+};
+
 const CombatantMarker = React.memo(({
   entity,
   // True for Jean AND for every ally — this is side, not identity. Named
@@ -290,6 +381,16 @@ const CombatantMarker = React.memo(({
   const pendingGlowColor = moveCategory ? categoryGlowOrNull(moveCategory) : null;
   const pendingBorderColor = moveCategory ? categoryColorOrNull(moveCategory) : null;
   const beatsToResolve = beatsUntilResolve(move);
+  // Issue #586: a heavy/deadly ENEMY wind-up earns a glyph, a heavier ring
+  // and a labelled countdown, so a Tidal Surge no longer looks like a
+  // routine NpcAttack (both "Offensive").
+  const warning = hostileTelegraphWarning(move, !isFriendly);
+  // One sentence for the countdown badge's title AND accessible name.
+  const countdownLabel = beatsToResolve === null
+    ? null
+    : warning
+      ? `${warning.label} — resolves ${formatBeatCountdown(beatsToResolve)}`
+      : `Move resolves ${formatBeatCountdown(beatsToResolve)}`;
   const [isHoveredEffect, setIsHoveredEffect] = useState(false);
 
   // Alignment border: lime for friend/player, red for enemy. When a pending
@@ -308,6 +409,13 @@ const CombatantMarker = React.memo(({
 
   // HP / Fatigue stats
   const { hp, maxHp, hpPct, fatPct } = resolveEntityStats(entity);
+  // Whole percent for the bar's width and its data attribute — one rounding,
+  // so the two can never disagree. Floored at 1 while alive: 1/500 HP rounds
+  // to 0, which draws the same empty bar as dead. 0 is reserved for dead.
+  const hpPctInt = hp > 0 ? Math.max(1, Math.round(hpPct * 100)) : 0;
+  // The torus takes the same floor, so it never empties on a living
+  // combatant either — in compact mode it is the token's only HP cue.
+  const hpArcFraction = Math.max(hpPct, hpPctInt / 100);
 
   const content = displaySymbol || entity.battle_symbol || (entity.name && entity.name[0]) || '?';
 
@@ -333,12 +441,19 @@ const CombatantMarker = React.memo(({
       // torus's colour — no text anywhere, so a player who never hovered or
       // clicked a token (and the SELECT TARGET sub-dialog was the only place
       // HP appeared at all) had no way to read it. aria-label carries it to
-      // assistive tech; the badge below carries it to sighted players too.
+      // assistive tech ALWAYS — it is not gated on the hover/selection that
+      // reveals the numeral below (#602); the HP bar below is the sighted
+      // player's always-on cue.
       aria-label={`${entity.name}: ${hp}/${maxHp} HP`}
-      className={`relative w-[75%] h-[75%] rounded-full transition-all duration-300 transform-gpu border-[3px]${
+      className={`relative w-[75%] h-[75%] rounded-full transition-all duration-300 transform-gpu${
         pendingGlowColor ? ' battlefield-pending-glow' : ''
       }${targetShake ? ' battlefield-target-shake' : ''}`}
       style={{
+        // Heavy-move wind-up (#586): a thicker, dashed ring — a change of
+        // weight and pattern, not of colour, so it survives the palette and
+        // reads on the compact map where the badge below is not drawn.
+        borderWidth: `${warning ? TELEGRAPH_RING_PX : TOKEN_RING_PX}px`,
+        ...(warning ? { borderStyle: 'dashed' } : {}),
         // Slightly lighter than panelDeep so the pulsing glow reads through the
         // token edge. panelHeavy keeps the marker legible without muddying the glow.
         backgroundColor: colors.bg.panelHeavy,
@@ -382,7 +497,7 @@ const CombatantMarker = React.memo(({
           fill="none"
           stroke="#ff4444"
           strokeWidth="8"
-          strokeDasharray={`${hpPct * 141.4} 141.4`}
+          strokeDasharray={`${hpArcFraction * TORUS_HALF_ARC} ${TORUS_HALF_ARC}`}
           strokeLinecap="butt"
           style={{ transition: 'stroke-dasharray 0.5s ease-in-out' }}
         />
@@ -393,7 +508,7 @@ const CombatantMarker = React.memo(({
           fill="none"
           stroke="#f59e0b"
           strokeWidth="8"
-          strokeDasharray={`${fatPct * 141.4} 141.4`}
+          strokeDasharray={`${fatPct * TORUS_HALF_ARC} ${TORUS_HALF_ARC}`}
           strokeLinecap="butt"
           style={{ transition: 'stroke-dasharray 0.5s ease-in-out' }}
         />
@@ -428,28 +543,60 @@ const CombatantMarker = React.memo(({
         </div>
       )}
 
-      {/* HP badge — a visible number alongside the torus's colour, so sighted
-          players get the same value the aria-label above gives assistive
-          tech, with no hover/click/tab required. Skipped in compact mode:
-          the marker itself is too small there for legible text (matches the
-          precedent set by the beat-countdown badge and status icons below). */}
+      {/* HP bar — the always-visible, non-colour HP cue (issue #602). Its
+          fill LENGTH is the fraction, so a sighted player who never hovers or
+          taps still reads HP without depending on the torus's colour. The
+          numeral below is interaction-gated; this bar is what stays.
+          Decorative for assistive tech: the aria-label above already carries
+          the exact value, and a progressbar per token would read it twice.
+          Skipped in compact mode, like every other token adornment: the
+          marker is too small there for a 3px bar to register. */}
       {!isCompact && (
         <div
-          className="absolute pointer-events-none select-none z-20 flex items-center justify-center rounded-full"
+          data-testid="token-hp-bar"
+          data-hp-pct={hpPctInt}
+          aria-hidden="true"
+          className="absolute pointer-events-none z-20 overflow-hidden"
           style={{
-            bottom: '-5px',
+            bottom: '-6px',
+            left: '10%',
+            width: '80%',
+            height: '3px',
+            backgroundColor: colors.bg.panelDeep,
+            border: `1px solid ${colors.alpha.danger[60]}`,
+            borderRadius: '2px',
+          }}
+        >
+          <div
+            data-testid="token-hp-bar-fill"
+            style={{
+              width: `${hpPctInt}%`,
+              height: '100%',
+              backgroundColor: colors.danger,
+              transition: 'width 0.5s ease-in-out',
+            }}
+          />
+        </div>
+      )}
+
+      {/* HP numeral — revealed on interaction only (issue #602): hover on
+          desktop, tap on touch, where "tap" is the same selection the
+          SelectedEntityPanel already keys on, so one mechanism serves both
+          and a repeat tap clears it. #536 rendered this always-on; the
+          maintainer reverted that to keep the field uncluttered, keeping the
+          aria-label above (always present, never hover-gated) for assistive
+          tech and the bar above for everyone else. */}
+      {!isCompact && (isHovered || isSelected) && (
+        <div
+          data-testid="token-hp-numeral"
+          className={TOKEN_BADGE_CLASS}
+          style={{
+            ...TOKEN_BADGE_STYLE,
             left: '-7px',
-            minWidth: '15px',
-            height: '15px',
-            padding: '0 3px',
             fontSize: '9px',
-            lineHeight: 1,
-            fontWeight: 'bold',
-            fontFamily: 'monospace',
-            color: '#fff',
-            backgroundColor: 'rgba(0,0,0,0.75)',
-            border: '1px solid #ff4444',
-            textShadow: 'none',
+            color: colors.text.bright,
+            backgroundColor: colors.bg.overlay,
+            border: `1px solid ${colors.danger}`,
           }}
         >
           {hp}/{maxHp}
@@ -462,26 +609,19 @@ const CombatantMarker = React.memo(({
           decide between blocking, closing distance, or getting clear. */}
       {!isCompact && beatsToResolve !== null && (
         <div
-          className="absolute pointer-events-none select-none z-20 flex items-center justify-center rounded-full"
+          className={TOKEN_BADGE_CLASS}
           style={{
-            bottom: '-5px',
+            ...TOKEN_BADGE_STYLE,
             right: '-7px',
-            minWidth: '15px',
-            height: '15px',
-            padding: '0 3px',
             fontSize: '10px',
-            lineHeight: 1,
-            fontWeight: 'bold',
-            fontFamily: 'monospace',
-            color: '#000',
+            color: colors.text.inverse,
             backgroundColor: pendingBorderColor || colors.secondary,
-            border: '1px solid rgba(0,0,0,0.6)',
-            textShadow: 'none',
+            border: `1px solid ${colors.bg.panelHeavy}`,
           }}
-          title={`Resolves ${formatBeatCountdown(beatsToResolve)}`}
-          aria-label={`Move resolves ${formatBeatCountdown(beatsToResolve)}`}
+          title={countdownLabel}
+          aria-label={countdownLabel}
         >
-          {beatsToResolve}
+          {warning ? `${TELEGRAPH_GLYPH}${beatsToResolve}` : beatsToResolve}
         </div>
       )}
 
@@ -561,6 +701,8 @@ const EnemiesList = React.memo(({ enemies }) => (
         const category = isMovePending(move) ? (move.category || 'Miscellaneous') : null;
         const moveColor = category ? categoryColorOrNull(category) : null;
         const beatsToResolve = beatsUntilResolve(move);
+        // #586: this list is enemies only, so no alignment gate is needed.
+        const warning = telegraphWarning(move);
         return (
           <div
             key={enemy.id ?? `${enemy.name}-${idx}`}
@@ -588,8 +730,17 @@ const EnemiesList = React.memo(({ enemies }) => (
                     earns a line — it just loses the category color that marks
                     live intent, and the countdown. */}
                 {move && (
-                  <GameText size="xs" style={{ marginTop: spacing.xs, color: moveColor || colors.text.muted }}>
-                    ◆ {formatCombatMoveStatus(move)}
+                  <GameText
+                    size="xs"
+                    style={{
+                      marginTop: spacing.xs,
+                      color: moveColor || colors.text.muted,
+                      fontWeight: warning ? 'bold' : undefined,
+                    }}
+                  >
+                    {/* Plain text nodes, not a nested span: the severity prefix
+                        and the stage label must read as one line. */}
+                    ◆ {warning ? `${TELEGRAPH_GLYPH} ${warning.shortLabel} — ` : ''}{formatCombatMoveStatus(move)}
                     {category && <span style={{ opacity: 0.6 }}> ({category})</span>}
                     {beatsToResolve !== null && (
                       <span style={{ opacity: 0.85 }}> — resolves {formatBeatCountdown(beatsToResolve)}</span>
@@ -766,6 +917,7 @@ const EntityLayer = React.memo(({
       return (
         <div
           key={`${entityId ?? idx}-${item.isFriendly ? 'friend' : 'enemy'}`}
+          data-testid="battlefield-token"
           onMouseEnter={() => onHoverEntity(item.entity)}
           onMouseLeave={onClearHover}
           onClick={(e) => { e.stopPropagation(); onSelectEntity(item.entity); }}
@@ -1729,6 +1881,28 @@ function BattlefieldGrid({
     (entity) => setSelectedEntityId(entity?.id ?? null),
     []
   );
+  // Tapping a token toggles its selection: a repeat tap on the already-selected
+  // token deselects it. Touch has no hover-leave, so without this the HP
+  // numeral (#602) — and the panel — could only be dismissed via the
+  // background, Escape or the ✕. The deselecting tap also clears the hover:
+  // touch browsers emulate mouseenter on tap and hold it until another
+  // element is tapped, so the numeral would otherwise stay pinned by a hover
+  // that no finger is providing.
+  //
+  // A functional updater with no deps, so the callback — and with it the
+  // memoised entity layer's props — stays stable across selections. Clearing
+  // the hover inside the updater is an idempotent set on this same component,
+  // so StrictMode's double invocation of the updater is harmless.
+  const toggleSelectedEntity = useCallback((entity) => {
+    const id = entity?.id ?? null;
+    setSelectedEntityId((prev) => {
+      if (id != null && id === prev) {
+        setHoveredEntity(null);
+        return null;
+      }
+      return id;
+    });
+  }, []);
 
   // Notify parent when animation busy-state changes so end-of-combat timing
   // can wait for the death animation to finish before starting the grace timer.
@@ -1783,14 +1957,35 @@ function BattlefieldGrid({
   // so panning doesn't interfere with the smooth camera animation.
   const panLayerRef = useRef(null);
   const gridContainerRef = useRef(null);
-  const touchPanRef = useRef({ x: 0, y: 0 }); // current pan offset in pixels
+  // The pan is two quantities. Whole cells of travel shift the camera WINDOW
+  // (`panCells`, in world cells: leftX += x, topY += y), which is what lets a
+  // drag reveal map area the render had culled. What is left over after the
+  // whole cells (`touchPanRef`, screen px, always under one cell) is a CSS
+  // translate on the pan layer, so the motion stays smooth between cell steps.
+  // Before #592 the pan was translate-only, clamped to 40% of the box, and
+  // could never show anything the 13x13 window had not already rendered.
+  const touchPanRef = useRef({ x: 0, y: 0 }); // sub-cell remainder, screen px
+  const panCellsRef = useRef({ x: 0, y: 0 }); // authoritative copy for the handlers
+  const [panCells, setPanCells] = useState(panCellsRef.current); // render copy
+  const commitPanCells = useCallback((x, y) => {
+    const cur = panCellsRef.current;
+    if (cur.x === x && cur.y === y) return;
+    panCellsRef.current = { x, y };
+    setPanCells(panCellsRef.current);
+  }, []);
+  // The unpanned window, mirrored for the drag handlers. Those live in one
+  // effect whose deps must not include the window (rebinding mid-gesture drops
+  // the drag), and the window is derived further down the render anyway, so
+  // the render writes it here and applyDelta reads it.
+  const viewRef = useRef({ leftX: 0, topY: 0, gridCols: VIEW_SIZE, mapSize: 0 });
   const touchStartRef = useRef(null);           // { x, y } of last touch point
   const panDecayRafRef = useRef(null);
   // Accumulated pointer travel for the current drag. A drag that ends over the
   // map background also fires a click; without this the gesture would clear
   // the selected-combatant panel every time the player panned.
   const dragTravelRef = useRef(0);
-  // Pan clamp bounds, captured at gesture start — see applyDelta.
+  // Per-gesture measurements (cell size, clamp range), captured at gesture
+  // start — see applyDelta.
   const dragBoundsRef = useRef(null);
   // Mirrors "pan is non-zero" into React so the recenter affordance can render.
   // Panning is sticky (it used to spring back to center the instant you let
@@ -1840,51 +2035,97 @@ function BattlefieldGrid({
     }
     // React bails out when the value is unchanged, so calling this per frame
     // during a drag costs nothing beyond the comparison.
-    const panned = Math.abs(x) > 2 || Math.abs(y) > 2;
+    const cells = panCellsRef.current;
+    const panned = cells.x !== 0 || cells.y !== 0 || Math.abs(x) > 2 || Math.abs(y) > 2;
     setIsPanned((prev) => (prev === panned ? prev : panned));
   }, []);
 
+  /** Stop an in-flight recenter ease, if any. */
+  const cancelPanDecay = useCallback(() => {
+    if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
+  }, []);
+
+  /** Drop both halves of the pan at once — the window shift and the remainder. */
+  const resetPan = useCallback(() => {
+    cancelPanDecay();
+    touchPanRef.current = { x: 0, y: 0 };
+    commitPanCells(0, 0);
+    applyPanTransform();
+  }, [cancelPanDecay, commitPanCells, applyPanTransform]);
+
   /** Ease the pan offset back to zero (the recenter affordance). */
   const recenterPan = useCallback(() => {
+    // The cell shift drops in one step — it is a re-render, not a transform,
+    // and easing it would mean a React commit per frame. The remainder eases.
+    commitPanCells(0, 0);
     const pan = touchPanRef.current;
     if (Math.abs(pan.x) < 0.5 && Math.abs(pan.y) < 0.5) {
-      touchPanRef.current = { x: 0, y: 0 };
-      applyPanTransform();
-      panDecayRafRef.current = null;
+      resetPan();
       return;
     }
     touchPanRef.current = { x: pan.x * 0.82, y: pan.y * 0.82 };
     applyPanTransform();
     panDecayRafRef.current = requestAnimationFrame(recenterPan);
-  }, [applyPanTransform]);
+  }, [applyPanTransform, commitPanCells, resetPan]);
 
   useEffect(() => {
     const el = gridContainerRef.current;
     if (!el) return;
 
-    const applyDelta = (dx, dy) => {
-      // Bounds are captured once per gesture, not per move: the container is
-      // 100% of the panel and cannot resize mid-drag, and reading the rect on
-      // every pointer move (60-120/s) forces a synchronous layout flush over a
-      // subtree holding up to thousands of grid cells. Lazily initialised so a
-      // synthetic move with no preceding down-event still clamps.
-      if (!dragBoundsRef.current) {
-        const { width, height } = el.getBoundingClientRect();
-        dragBoundsRef.current = { maxX: width * 0.4, maxY: height * 0.4 };
-      }
-      const { maxX, maxY } = dragBoundsRef.current;
-      dragTravelRef.current += Math.abs(dx) + Math.abs(dy);
-      touchPanRef.current = {
-        x: Math.max(-maxX, Math.min(maxX, touchPanRef.current.x + dx)),
-        y: Math.max(-maxY, Math.min(maxY, touchPanRef.current.y + dy)),
+    // Cell size and clamp range are captured once per gesture, not per move:
+    // the viewport cannot resize mid-drag, and reading the rect on every
+    // pointer move (60-120/s) forces a synchronous layout flush over a
+    // subtree holding up to thousands of grid cells. The pan layer is the
+    // box the cells are laid out in (the viewport box, letterboxed square
+    // when that flag is on), so its width and height over gridCols are the
+    // two sides of one cell. It is mounted in the same tree as `el`, so it
+    // is set whenever this runs.
+    const measureGesture = () => {
+      const view = viewRef.current;
+      const box = panLayerRef.current.getBoundingClientRect();
+      const { x, y } = windowPanBounds(view);
+      dragBoundsRef.current = {
+        // One cell size PER AXIS. With `squareBattlefieldCells` off (the
+        // default) the box fills the panel, so a cell is 1/gridCols of the
+        // width and 1/gridCols of the height — two different numbers, the
+        // same two `getEntityStyle` sizes tokens with. Measuring one off the
+        // width and using it for both axes stepped rows at the column pitch.
+        cellPxX: box.width / view.gridCols,
+        cellPxY: box.height / view.gridCols,
+        // Screen-space ranges. Dragging right (+px) reveals lower x, so the
+        // screen shift is the negation of the leftX shift; dragging down
+        // (+px) reveals higher y, the same sense as the topY shift.
+        minX: -x.max, maxX: -x.min,
+        minY: y.min, maxY: y.max,
       };
+    };
+
+    const applyDelta = (dx, dy) => {
+      // Lazily initialised so a synthetic move with no preceding down-event
+      // still clamps.
+      if (!dragBoundsRef.current) measureGesture();
+      const { cellPxX, cellPxY, minX, maxX, minY, maxY } = dragBoundsRef.current;
+      dragTravelRef.current += Math.abs(dx) + Math.abs(dy);
+
+      // Rebuild the gesture's screen-space total from the committed cells
+      // plus the remainder, add the move, and split it again — one clamp,
+      // one rounding rule, for both the cells and the px they leave behind.
+      // Screen x runs opposite to the leftX shift (see measureGesture); that
+      // one sign flip is applied here and undone once on the commit below.
+      const cells = panCellsRef.current;
+      const rem = touchPanRef.current;
+      const screenTravelX = -cells.x * cellPxX + rem.x + dx;
+      const screenTravelY = cells.y * cellPxY + rem.y + dy;
+      const sx = splitPanAxis(screenTravelX, cellPxX, minX, maxX);
+      const sy = splitPanAxis(screenTravelY, cellPxY, minY, maxY);
+      touchPanRef.current = { x: sx.residual, y: sy.residual };
+      commitPanCells(-sx.cells, sy.cells);
       applyPanTransform();
     };
 
     const beginDrag = (x, y) => {
-      if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
-      const { width, height } = el.getBoundingClientRect();
-      dragBoundsRef.current = { maxX: width * 0.4, maxY: height * 0.4 };
+      cancelPanDecay();
+      measureGesture();
       dragTravelRef.current = 0;
       touchStartRef.current = { x, y };
     };
@@ -1941,13 +2182,17 @@ function BattlefieldGrid({
       el.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
-      if (panDecayRafRef.current) cancelAnimationFrame(panDecayRafRef.current);
+      cancelPanDecay();
     };
     // `tab` is load-bearing: the enemies tab early-returns a different tree, so
     // the container this effect binds to unmounts and a NEW one mounts on the
     // way back. Without re-running, the listeners stay attached to the detached
     // node and panning is silently dead for the rest of the session.
-  }, [applyPanTransform, tab]);
+    //
+    // The window (leftX/topY/gridCols) is deliberately NOT a dep: it changes
+    // every time the camera steps a cell, and rebinding the listeners
+    // mid-gesture drops the drag. It reaches the handlers through viewRef.
+  }, [applyPanTransform, commitPanCells, cancelPanDecay, tab]);
 
   // Reset the touch-pan offset when the fight identity changes, so a new fight
   // does not open with the camera parked where the last one left it.
@@ -1962,11 +2207,13 @@ function BattlefieldGrid({
   // serialize_combat_state emits neither field, so reading them off it made
   // this dep flip uuid <-> undefined every time displayState alternated shape,
   // resetting the camera mid-fight.
+  //
+  // Also keyed on the view mode: the cell shift is relative to whichever
+  // window the mode produces, and a shift chosen against a 13-cell follow
+  // window means nothing against a fit frame (or vice versa).
   useEffect(() => {
-    if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
-    touchPanRef.current = { x: 0, y: 0 };
-    applyPanTransform();
-  }, [combatId, combatActive, applyPanTransform]);
+    resetPan();
+  }, [combatId, combatActive, isFitMode, resetPan]);
 
   // Clicking the map background clears the selection — as the panel's own
   // close-button tooltip promised. The previous `e.target === e.currentTarget`
@@ -2185,6 +2432,44 @@ function BattlefieldGrid({
     leftX = playerPos.x - HALF_VIEW;
     topY  = playerPos.y + HALF_VIEW;
   }
+
+  // Drag-to-pan, applied after the mode has produced its window so the shift
+  // is camera-relative: in follow mode it rides along with Jean, in fit mode
+  // it offsets the frame. Every consumer below — cellOf (the sole visibility
+  // test), the background cells, the arena-bounds rectangle, the off-screen
+  // markers — reads the panned window, so nothing can disagree about what is
+  // on screen.
+  //
+  // The viewRef write must stay BEFORE the panCells shift: the drag handlers
+  // clamp the shift against the UNPANNED window (why they read a ref at all
+  // is on its declaration), and a mirror of the panned window would let each
+  // gesture clamp against the last one's result.
+  const unpannedLeftX = leftX;
+  const unpannedTopY = topY;
+  viewRef.current = { leftX, topY, gridCols, mapSize: resolvedMapSize };
+  leftX += panCells.x;
+  topY += panCells.y;
+
+  // The shift is clamped at gesture start against the window of that moment,
+  // and the window moves on its own: Jean steps while the player is panned
+  // (follow mode), or the fit frame re-derives. Re-clamp against the fresh
+  // window so the shift can never carry it past the arena edge in the beats
+  // before the next drag happens to fix it. Keyed on the UNPANNED window; a
+  // shift that is already legal is a no-op, so this cannot fight a drag.
+  useEffect(() => {
+    const { x, y } = windowPanBounds({
+      leftX: unpannedLeftX, topY: unpannedTopY, gridCols, mapSize: resolvedMapSize,
+    });
+    const cur = panCellsRef.current;
+    const clampedX = clampNumber(cur.x, x.min, x.max);
+    const clampedY = clampNumber(cur.y, y.min, y.max);
+    if (clampedX === cur.x && clampedY === cur.y) return;
+    // A window pushed back onto the arena is a stopped edge, and a stopped
+    // edge has no remainder (see splitPanAxis) — clear the translate too.
+    touchPanRef.current = { x: 0, y: 0 };
+    commitPanCells(clampedX, clampedY);
+    applyPanTransform();
+  }, [unpannedLeftX, unpannedTopY, gridCols, resolvedMapSize, commitPanCells, applyPanTransform]);
 
   // Tokens shrink with the viewport, so the detail a marker can carry is a
   // function of cell size, not of which mode produced it — fit mode is
@@ -2452,7 +2737,7 @@ function BattlefieldGrid({
           isCompact={isCompact}
           onHoverEntity={setHoveredEntity}
           onClearHover={handleClearHover}
-          onSelectEntity={setSelectedEntity}
+          onSelectEntity={toggleSelectedEntity}
         />
 
         <EffectsLayer
@@ -2468,14 +2753,9 @@ function BattlefieldGrid({
       {/* Edge markers for enemies outside the viewport. Outside panLayerRef so
           they stay pinned to the visible border while the map is panned, but
           inside the viewport box so they hug the map edge rather than the
-          panel edge when the map is letterboxed.
-
-          Known limitation: the on/off-screen test uses the unpanned
-          leftX/topY, so after a drag (capped at 40% of the box, ~5 cells) the
-          marker set can disagree with what is actually visible by a few
-          columns. Do NOT "fix" this by adding touchPanRef to the memo deps —
-          it is a ref precisely so dragging does not re-render per frame, so
-          that edit would compile, look right, and do nothing. */}
+          panel edge when the map is letterboxed. leftX/topY already carry the
+          drag's whole-cell shift, so the marker set tracks the panned window;
+          the sub-cell remainder is a translate no marker needs to know about. */}
       <OffScreenMarkers
         enemies={livingEnemies}
         leftX={leftX}

@@ -129,32 +129,43 @@ const FOCUSABLE_SELECTOR =
     'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 /**
- * Marks the ✕ so INITIAL focus can step over it. Issue #563 item 3.
+ * Marks a focusable that INITIAL focus should step over. Issue #563 item 3,
+ * generalised for issue #584.
  *
- * The title bar precedes `children` in DOM order, so the first focusable
- * element in every dialog in the app was the dismiss button — a keyboard
- * user's reflexive first Enter closed whatever they had just opened. An
- * attribute rather than a positional assumption ("skip index 0"), which would
- * also skip a real control in the dialogs that pass `showCloseButton={false}`.
+ * First carried by the ✕: the title bar precedes `children` in DOM order, so
+ * the first focusable element in every dialog in the app was the dismiss
+ * button — a keyboard user's reflexive first Enter closed whatever they had
+ * just opened. An attribute rather than a positional assumption ("skip index
+ * 0"), which would also skip a real control in the dialogs that pass
+ * `showCloseButton={false}`.
  *
- * Only the STARTING position changes. The button stays in `FOCUSABLE_SELECTOR`
- * and so stays in the Tab cycle, where it has to be.
+ * Exported so a dialog can mark its own controls. The story dialog's
+ * hold-to-skip button is the case: it consumes Enter/Space itself (that is
+ * the hold gesture), so parking focus on it silently ate the app-wide
+ * advance keys — a tap did nothing, and a held key skipped the whole scene.
+ *
+ * Only the STARTING position changes. A marked element stays in
+ * `FOCUSABLE_SELECTOR` and so stays in the Tab cycle, where it has to be.
  */
-const DISMISS_ATTR = 'data-dialog-dismiss'
+export const SKIP_INITIAL_FOCUS_ATTR = 'data-dialog-skip-initial-focus'
+
+/** Spread onto a control to mark it with `SKIP_INITIAL_FOCUS_ATTR`. */
+export const SKIP_INITIAL_FOCUS_PROPS = Object.freeze({ [SKIP_INITIAL_FOCUS_ATTR]: 'true' })
 
 /**
  * Where focus should land when a dialog opens.
  *
- * The first focusable that is not the dismiss button, or `null` to say "the
- * container itself" — which is what the staged Event Result dialog already did
- * correctly by accident: it hides the ✕ for a `needs_input` frame, leaves
- * nothing else focusable, and fell through to `container.focus()`. A dialog
- * whose only control is "close" gets the same treatment deliberately, rather
- * than arming Enter to dismiss it on arrival.
+ * The first focusable not marked `SKIP_INITIAL_FOCUS_ATTR` (the ✕, a hold
+ * control), or `null` to say "the container itself" — which is what the
+ * staged Event Result dialog already did correctly by accident: it hides the
+ * ✕ for a `needs_input` frame, leaves nothing else focusable, and fell
+ * through to `container.focus()`. A dialog whose only control is "close"
+ * gets the same treatment deliberately, rather than arming Enter to dismiss
+ * it on arrival.
  */
 function initialFocusTarget(container) {
     const focusables = getFocusableElements(container)
-    return focusables.find((el) => !el.hasAttribute(DISMISS_ATTR)) || null
+    return focusables.find((el) => !el.hasAttribute(SKIP_INITIAL_FOCUS_ATTR)) || null
 }
 
 /**
@@ -532,7 +543,7 @@ export default function BaseDialog({
                         {showCloseButton && (
                             <button
                                 onClick={onClose}
-                                {...{ [DISMISS_ATTR]: 'true' }}
+                                {...SKIP_INITIAL_FOCUS_PROPS}
                                 style={{
                                     background: 'none',
                                     border: 'none',

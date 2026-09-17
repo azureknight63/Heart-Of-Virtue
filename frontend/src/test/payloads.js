@@ -214,6 +214,38 @@ export function makeCombatant(overrides = {}) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Active move -- a combatant's `current_move` mid-cast, as
+// CombatantSerializer._serialize_active_move builds it
+// (src/api/serializers/combat.py). Every battlefield telegraph (countdown
+// badge, enemies list, beat timeline, #586 severity glyph) reads this shape.
+// tests/test_wire_field_contract.py holds these keys to the serializer's.
+// ---------------------------------------------------------------------------
+// Defaults are a routine NpcAttack wind-up: stage 0, resolving in two beats
+// (`beats_until_resolve: 2`), 1.0x,
+// `telegraph_severity: 'normal'`. A test wanting the #586 warning overrides
+// the severity to 'heavy' or 'deadly' -- the engine's closed vocabulary.
+export function makeActiveMove(overrides = {}) {
+  return merge(
+    {
+      name: 'NPC_Attack',
+      display_name: 'Attack',
+      category: 'Offensive',
+      description: '',
+      current_stage: 0,
+      beats_left: 1,
+      total_beats: 1,
+      beats_until_resolve: 2,
+      target_id: 'player',
+      mvrange: { min: 0, max: 5 },
+      falloff: null,
+      damage_multiplier: 1.0,
+      telegraph_severity: 'normal',
+    },
+    overrides
+  )
+}
+
 /**
  * A combatant id in the shape `CombatantSerializer.stream_id` emits. The
  * scheme is three-way -- `player`, `ally_<handle>`, `enemy_<handle>` -- and
