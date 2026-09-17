@@ -1197,6 +1197,102 @@ def test_create_player_starting_experience_error_is_caught(monkeypatch):
     assert sum(isinstance(i, _FakeGold) for i in player.inventory) == 2
 
 
+def _party_player_and_tile():
+    """A mock player standing on a mock tile whose spawn yields a mock ally."""
+    player = _make_player()
+    player.combat_list_allies = []
+    ally = MagicMock()
+    tile = MagicMock()
+    tile.spawn_npc.return_value = ally
+    game_map = {(1, 1): tile, "name": "test-map"}
+    return player, tile, ally, game_map
+
+
+def test_create_player_applies_starting_level_before_party_sync(monkeypatch):
+    """Issue #581: Gorran's sync_level must see the configured level, not 1."""
+    mgr = _bare_manager(monkeypatch)
+    mgr.game_config = _make_game_config(
+        starting_level=3,
+        starting_level_allocation="even",
+        starting_party_members=["Gorran"],
+    )
+    mgr.starting_map_name = "test-map"
+    mgr.start_x, mgr.start_y = 1, 1
+    player, tile, ally, game_map = _party_player_and_tile()
+    universe = _make_universe([game_map], default=game_map)
+
+    def _climb(target, allocation="even"):
+        player.level = target
+        return []
+
+    player.apply_starting_level.side_effect = _climb
+
+    with _fake_modules(player, universe):
+        result = mgr._create_player_for_session("gwen")
+
+    assert result is player
+    player.apply_starting_level.assert_called_once_with(3, allocation="even")
+    tile.spawn_npc.assert_called_once_with("Gorran", delay=0)
+    ally.sync_level.assert_called_once_with(3)
+
+
+def test_create_player_starting_level_one_is_not_applied(monkeypatch):
+    mgr = _bare_manager(monkeypatch)
+    mgr.game_config = _make_game_config(starting_level=1)
+    mgr.starting_map_name = "test-map"
+    mgr.start_x, mgr.start_y = 1, 1
+    player, tile, ally, game_map = _party_player_and_tile()
+    universe = _make_universe([game_map], default=game_map)
+
+    with _fake_modules(player, universe):
+        result = mgr._create_player_for_session("hank")
+
+    assert result is player
+    player.apply_starting_level.assert_not_called()
+
+
+def test_create_player_starting_level_error_is_caught(monkeypatch):
+    """Same contract as starting_exp (issue #361): a failure degrades that one
+    feature, it does not discard the fully-built player for a MinimalPlayer."""
+    mgr = _bare_manager(monkeypatch)
+    mgr.game_config = _make_game_config(
+        starting_level=3, starting_party_members=["Gorran"]
+    )
+    mgr.starting_map_name = "test-map"
+    mgr.start_x, mgr.start_y = 1, 1
+    player, tile, ally, game_map = _party_player_and_tile()
+    player.level = 1
+    player.apply_starting_level.side_effect = RuntimeError("boom")
+    universe = _make_universe([game_map], default=game_map)
+
+    with _fake_modules(player, universe):
+        result = mgr._create_player_for_session("ivy")
+
+    assert result is player
+    player.apply_starting_level.assert_called_once_with(3, allocation="even")
+    # The party step still ran, against whatever level Jean actually has.
+    ally.sync_level.assert_called_once_with(1)
+
+
+def test_create_player_unparseable_starting_level_is_caught(monkeypatch):
+    """The int() of the config value sits INSIDE the try: a hand-built config
+    carrying a non-numeric starting_level must degrade this one feature, not
+    escape to the outer handler and swap the player for a MinimalPlayer."""
+    mgr = _bare_manager(monkeypatch)
+    mgr.game_config = _make_game_config(starting_level="three")
+    mgr.starting_map_name = "test-map"
+    mgr.start_x, mgr.start_y = 1, 1
+    player, tile, ally, game_map = _party_player_and_tile()
+    universe = _make_universe([game_map], default=game_map)
+
+    with _fake_modules(player, universe):
+        result = mgr._create_player_for_session("jill")
+
+    assert result is player
+    assert not isinstance(result, MinimalPlayer)
+    player.apply_starting_level.assert_not_called()
+
+
 def test_create_player_god_mode_error_is_caught(monkeypatch):
     """supersaiyan() is wrapped in its own try/except (issue #361): a failing
     god_mode step must not discard the fully-built player for a MinimalPlayer."""
