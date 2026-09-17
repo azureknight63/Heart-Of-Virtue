@@ -132,6 +132,15 @@ DELIBERATELY_ABSENT = {
         "docs/qa-reports/qa-happy-path-2026-03-20.md",
         "src/moves.py",
     ): "Dated QA report. Accurate when written; editing it would falsify the record.",
+    (
+        "docs/qa/beta-live-test-2026-09-17/tester-reports/T1.md",
+        ".../src/components/CombatLog.jsx",
+    ): (
+        "Inside a verbatim browser stack trace quoted as evidence, where Chrome prints "
+        "the path relative to the Vite root. The report's own prose names the real file, "
+        "frontend/src/components/CombatLog.jsx. Rewriting quoted console output would "
+        "falsify the evidence."
+    ),
     # --- design docs for content that is not built yet ---
     (
         "docs/lore/enemies/rock_rumbler.md",
