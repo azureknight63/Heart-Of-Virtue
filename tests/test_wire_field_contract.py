@@ -1703,8 +1703,8 @@ ROOM_NPC_CONTRACT = {
     # key={`${target.id}-${idx}`}
     "id": Read("InteractPanel.jsx", "target.id"),
     "name": Read("RoomContents.jsx", "entity.name"),
-    # npc_class: n.type -> NpcChatPanel npcId
-    "type": Read("InteractPanel.jsx", "n.type"),
+    # npc_class: row.type -> NpcChatPanel npcId (InteractPanel demotes the wire type to npc_class)
+    "type": Read("InteractPanel.jsx", "npc_class: row.type"),
     # NPCs and objects describe themselves identically (an `idle_message`
     # or nothing), so `pushIdleLines` reads BOTH shapes -- which is why
     # this anchor and the object contract's are the same literal.
