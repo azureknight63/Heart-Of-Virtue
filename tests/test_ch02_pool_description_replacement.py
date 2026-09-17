@@ -54,9 +54,12 @@ from src.story.ch02 import (
 from src.story.effects import NPCSpawnerEvent
 from tests._ch02_fixtures import (
     POOLS_MAP,
+    KingSlime,
+    SpawnerPlacement,
     arena_coord,
     assert_text_replaced,
     build_authored_spawner,
+    coordinate_tiles,
     make_pools_map,
     mark_king_slime_defeated,
     plant_legacy_cleansed_object,
@@ -64,6 +67,7 @@ from tests._ch02_fixtures import (
     pools_tiles,
     pre_572_cleansed_prose,
     pre_572_story_gate,
+    real_arena_tile,
 )
 from tests._gs_fixtures import make_tile
 
@@ -139,7 +143,7 @@ def cleansed(player):
     with patch("src.story.ch02.print_slow"):
         AfterDefeatingKingSlime(player=player, tile=pools_map[arena]).process()
 
-    pool_tiles = {coord: tile for coord, tile in pools_map.items() if isinstance(coord, tuple)}
+    pool_tiles = dict(coordinate_tiles(pools_map))
     touched = {
         coord: tile for coord, tile in pool_tiles.items()
         if tile.description != authored[coord]
@@ -354,6 +358,35 @@ class TestTheCreviceIsRewritten:
         assert CREVICE_LIVE_CORRUPTION_TEXT not in description
 
 
+#: An authored ``params`` list in the shape ``NPCSpawnerEvent.__init__``
+#: reads: the NPC class name, then the count.
+AUTHORED_SPAWNER_PARAMS = ["Slime", 2]
+
+
+class TestBuildAuthoredSpawner:
+    """The fixture constructs a placement the way the map loader does --
+    every authored prop the constructor takes by name reaches it. A
+    hand-typed prop list silently dropped ``params``, so a placement
+    authored through them stood up nothing and the sweep tests passed
+    vacuously over it."""
+
+    def test_an_authored_params_reaches_the_spawner(self, player):
+        tile = real_arena_tile()
+        placement = SpawnerPlacement(
+            arena_coord(),
+            NPCSpawnerEvent,
+            {"name": NPCSpawnerEvent.__name__, "params": list(AUTHORED_SPAWNER_PARAMS)},
+        )
+
+        event = build_authored_spawner(placement, player, tile)
+
+        assert event.params == AUTHORED_SPAWNER_PARAMS
+        # Consumed by the constructor, not merely attached: the count is
+        # read off ``params`` when it is not authored on its own.
+        assert event.count == AUTHORED_SPAWNER_PARAMS[1]
+        assert tile.events_here == [event]
+
+
 def _hostiles(tile):
     """The NPCs on ``tile`` the engine treats as enemies: ``npc.friend`` is
     the only friend/foe flag (``src/npc/_base.py``)."""
@@ -371,8 +404,8 @@ class Swept(NamedTuple):
     narrate: Mock
 
 
-@pytest.fixture
-def swept(player):
+@pytest.fixture(scope="class")
+def swept():
     """The pools map as the game has it when King Slime falls -- every
     authored spawner armed on its tile, map entry evaluated so the plain
     spawners have stood their NPCs up and the glands have not, King Slime
@@ -381,9 +414,15 @@ def swept(player):
     The population is the shipped map's: ``pools_spawner_placements`` is
     derived from the JSON, and a map that spawned nothing, or left nothing
     unfired, fails the positive controls here instead of passing vacuously.
+
+    Built once per class: the tests read the swept map and never mutate it,
+    and standing the whole population up is the dearest setup in the file.
+    Its player is its own for the same reason -- the function-scoped
+    ``player`` fixture cannot serve a class-scoped one.
     """
     placements = pools_spawner_placements()
     assert placements, "the pools map authors no enemy spawner"
+    player = _mock_player()
     pools_map = _authored_pools_map(player)
     # ``NPCSpawnerEvent.evaluate_for_map_entry`` fires when the spawn tile's
     # map IS the player's map (identity, not equality).
@@ -405,11 +444,11 @@ def swept(player):
     )
 
     arena = pools_map[arena_coord()]
-    assert any(n.__class__.__name__ == "KingSlime" for n in arena.npcs_here), (
+    assert any(type(n).__name__ == KingSlime.__name__ for n in arena.npcs_here), (
         "the arena's spawner did not stand King Slime up"
     )
     # King Slime falls; the event's own check_conditions reads his absence.
-    arena.npcs_here = [n for n in arena.npcs_here if n.__class__.__name__ != "KingSlime"]
+    arena.npcs_here = [n for n in arena.npcs_here if type(n).__name__ != KingSlime.__name__]
     gorran = pools_map[ATRIUM_COORDS].spawn_npc("Gorran")
     assert getattr(gorran, "friend", False) is True, "Gorran is not flagged a friend"
 
@@ -426,17 +465,15 @@ class TestTheRemainingEnemiesAreCleared:
 
     def test_no_hostile_stands_anywhere_in_the_pools(self, swept):
         left = {
-            coord: [type(n).__name__ for n in _hostiles(tile)]
-            for coord, tile in swept.pools_map.items()
-            if isinstance(coord, tuple) and _hostiles(tile)
+            coord: [type(n).__name__ for n in hostiles]
+            for coord, tile in coordinate_tiles(swept.pools_map)
+            if (hostiles := _hostiles(tile))
         }
         assert left == {}, f"hostiles still standing after the cleanse: {left}"
 
     def test_gorran_is_kept(self, swept):
         assert any(
-            swept.gorran in tile.npcs_here
-            for coord, tile in swept.pools_map.items()
-            if isinstance(coord, tuple)
+            swept.gorran in tile.npcs_here for _coord, tile in coordinate_tiles(swept.pools_map)
         ), "Gorran was swept out with the enemies"
 
     def test_every_unfired_gland_is_spent(self, swept):
@@ -447,9 +484,8 @@ class TestTheRemainingEnemiesAreCleared:
     def test_no_spawner_is_left_on_any_tile(self, swept):
         left = {
             coord: [ev.name for ev in tile.events_here if isinstance(ev, NPCSpawnerEvent)]
-            for coord, tile in swept.pools_map.items()
-            if isinstance(coord, tuple)
-            and any(isinstance(ev, NPCSpawnerEvent) for ev in tile.events_here)
+            for coord, tile in coordinate_tiles(swept.pools_map)
+            if any(isinstance(ev, NPCSpawnerEvent) for ev in tile.events_here)
         }
         assert left == {}, f"spawners still armed after the cleanse: {left}"
 
