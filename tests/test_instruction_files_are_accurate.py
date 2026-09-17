@@ -203,6 +203,14 @@ def _repo_path_index(root=None):
     That is the fail-open direction: the guard quietly stops catching the
     broken doc references it exists to catch, and its own self-tests are the
     only thing that notices. No tracked path has a ``worktrees`` component.
+
+    The ignore check runs on each path *relative to* ``root``, not on the
+    absolute path. When pytest itself runs from inside a nested worktree
+    (``<repo>/.claude/worktrees/agent-xxx/``), every absolute path -- including
+    ``root`` itself -- contains a ``worktrees`` component; filtering on the
+    absolute parts would make the whole tree look ignored and leave the index
+    empty, which is a fail-*closed* bug distinct from the one above but just as
+    silent (see ``TestPathIndexIgnoresNestedWorktrees``).
     """
     root = REPO_ROOT if root is None else root
     ignored = {
@@ -221,11 +229,12 @@ def _repo_path_index(root=None):
     }
     suffixes = set()
     for path in root.rglob("*"):
-        if any(part in ignored for part in path.parts):
+        rel_parts = path.relative_to(root).parts
+        if any(part in ignored for part in rel_parts):
             continue
         if not path.is_file():
             continue
-        parts = path.relative_to(root).as_posix().split("/")
+        parts = "/".join(rel_parts).split("/")
         for start in range(len(parts)):
             suffixes.add("/".join(parts[start:]))
     return frozenset(suffixes)
@@ -551,6 +560,27 @@ class TestPathIndexIgnoresNestedWorktrees:
         """The same two properties against the real repo index."""
         assert len(PATH_INDEX) > 1000, len(PATH_INDEX)
         assert not [s for s in PATH_INDEX if s.startswith(".claude/worktrees/")]
+
+    def test_a_root_located_under_a_directory_named_worktrees_is_still_indexed(
+        self, tmp_path
+    ):
+        """The ignore must key off the path *relative to root*, not the absolute path.
+
+        When pytest itself runs from inside a nested worktree
+        (``<repo>/.claude/worktrees/agent-xxx/``), every file's absolute path
+        contains a ``worktrees`` component -- including the root being walked.
+        Filtering on ``path.parts`` (absolute) rather than
+        ``path.relative_to(root).parts`` would make the *entire* tree look
+        ignored, leaving ``PATH_INDEX`` empty and every accuracy test failing
+        for a reason that has nothing to do with the instruction files they
+        check.
+        """
+        root = tmp_path / "worktrees" / "agent-xxx"
+        (root / "src").mkdir(parents=True)
+        (root / "src" / "real.py").write_text("# tracked", encoding="utf-8")
+        index = _repo_path_index(root=root)
+        assert "src/real.py" in index
+        assert "real.py" in index
 
 
 if __name__ == "__main__":
