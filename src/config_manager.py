@@ -5,10 +5,28 @@ Provides structured access to all game settings.
 """
 
 import math
+import logging
 import configparser
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Tuple
+
+_log = logging.getLogger(__name__)
+
+
+def starting_level_vocabulary():
+    """``(LEVEL_CAP, STARTING_LEVEL_ALLOCATIONS)`` as the engine defines them.
+
+    The starting-level vocabulary is the engine's (issue #581): the level cap
+    and the allocation-policy names are read from the leveling mixin so this
+    module never keeps a copy that can drift. Imported lazily so this module
+    stays a leaf -- ``session_manager`` imports it at module load and
+    deliberately defers its own ``src.player`` import until a session is
+    built, degrading to ``MinimalPlayer`` if that fails.
+    """
+    from src.player._leveling import LEVEL_CAP, STARTING_LEVEL_ALLOCATIONS
+
+    return LEVEL_CAP, STARTING_LEVEL_ALLOCATIONS
 
 
 def _safe_get(section, key, fallback):
@@ -65,6 +83,18 @@ class GameConfig:
     enable_animations: bool = True
     animation_speed: float = 1.0
     starting_exp: int = 0
+
+    # === [game] section: Pre-allocated starting level (issue #581) ===
+    # Level Jean opens the session at, 1..100. Unlike starting_exp, which
+    # leaves 6-9 unspent points per crossed level and opens the session on
+    # a blocking LEVEL UP modal, this climbs through the real level-up loop
+    # and spends every point itself (Player.apply_starting_level).
+    starting_level: int = 1
+    # How those points are spent. Must name a policy in the engine registry
+    # src.player._leveling.STARTING_LEVEL_ALLOCATION_POLICIES ("even" today:
+    # round-robin across the level-up attributes in engine order). Unknown
+    # names fall back to "even" with a warning.
+    starting_level_allocation: str = "even"
 
     # === [game] section: Debug settings ===
     debug_mode: bool = False
@@ -275,6 +305,24 @@ class ConfigManager:
         )
         self.config.animation_speed = _safe_getfloat(section, "animation_speed", 1.0)
         self.config.starting_exp = _safe_getint(section, "starting_exp", 0)
+
+        # Pre-allocated starting level (issue #581): clamp to the engine's
+        # level range and validate the policy name against the engine registry.
+        level_cap, allocation_policies = starting_level_vocabulary()
+        self.config.starting_level = max(
+            1, min(level_cap, _safe_getint(section, "starting_level", 1))
+        )
+        raw_allocation = _safe_get(section, "starting_level_allocation", "even")
+        allocation = (raw_allocation or "").strip().lower() or "even"
+        if allocation not in allocation_policies:
+            _log.warning(
+                "Unknown starting_level_allocation %r; expected one of %s -- "
+                "falling back to 'even'",
+                raw_allocation,
+                allocation_policies,
+            )
+            allocation = "even"
+        self.config.starting_level_allocation = allocation
 
         # Story flag pre-seeding: parse comma-separated "flag" or "flag=value" tokens
         raw_flags = _safe_get(section, "starting_story_flags", "")

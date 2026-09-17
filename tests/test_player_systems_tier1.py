@@ -955,3 +955,109 @@ class TestPlayerMerchandiseHandling:
 
         # Merchandise should be dropped to the tile
         assert merch in tile.items_here or merch not in player.inventory
+
+
+class TestApplyStartingLevel:
+    """Issue #581: a config-driven level-N start that pre-allocates its points.
+
+    ``starting_exp`` cannot do this -- every crossed level boundary awards
+    6-9 ``pending_attribute_points`` and the client opens a blocking LEVEL UP
+    modal until they are spent. ``apply_starting_level`` climbs through the
+    same ``_level_up_api`` loop (so bonuses behave like real level-ups) and
+    then spends every point itself, leaving nothing for the modal to block on.
+    """
+
+    @pytest.fixture
+    def player(self, player):
+        player.game_config = MagicMock()
+        player.game_config.starting_exp = 0
+        return player
+
+    def _spendable(self):
+        from src.player._leveling import LEVEL_UP_ATTRIBUTE_NAMES
+
+        assert len(LEVEL_UP_ATTRIBUTE_NAMES) > 0
+        return LEVEL_UP_ATTRIBUTE_NAMES
+
+    def test_even_allocation_reaches_level_with_no_points_left(self, player):
+        import random
+
+        random.seed(581)
+        names = self._spendable()
+        before = {n: getattr(player, n) for n in names}
+
+        events = player.apply_starting_level(3)
+
+        assert player.level == 3
+        assert player.pending_attribute_points == 0
+        assert list(getattr(player, "pending_level_ups", []) or []) == []
+        # Two real level-ups happened, through the same path gain_exp uses.
+        assert [e["new_level"] for e in events] == [2, 3]
+        points = sum(int(e["points_awarded"]) for e in events)
+        bonuses = sum(sum(e["bonuses"].values()) for e in events)
+        assert points >= 12  # 2 levels x at least 6 points each
+        growth = {n: getattr(player, n) - before[n] for n in names}
+        # Every spendable attribute received at least the even share of the
+        # points; the random 0-2 per-level bonuses only ever add on top.
+        share = points // len(names)
+        assert share >= 1
+        for name, delta in growth.items():
+            assert delta >= share, (name, delta, share, growth)
+        # Nothing was lost and nothing was invented.
+        assert sum(growth.values()) == points + bonuses
+        # A level-N start begins at full health and fatigue, like a level-1 one.
+        assert player.hp == player.maxhp
+        assert player.fatigue == player.maxfatigue
+
+    def test_even_allocation_is_round_robin_in_engine_order(self, player):
+        """The remainder (points mod attributes) goes to the FIRST attributes
+        in ``LEVEL_UP_ATTRIBUTES`` order, so the policy is reproducible."""
+        names = self._spendable()
+        player.level = 2
+        player.pending_attribute_points = 0
+
+        # Neutralise the random level-up bonuses so only the spend is visible:
+        # one 0 per attribute bonus roll, then 9 for the points roll.
+        with patch(
+            "src.player._leveling.random.randint",
+            side_effect=[0] * len(names) + [9],
+        ):
+            before = {n: getattr(player, n) for n in names}
+            player.apply_starting_level(3)
+
+        growth = [getattr(player, n) - before[n] for n in names]
+        base, extra = divmod(9, len(names))
+        assert growth == [base + 1] * extra + [base] * (len(names) - extra)
+
+    def test_target_of_one_is_a_no_op(self, player):
+        names = self._spendable()
+        before = {n: getattr(player, n) for n in names}
+
+        events = player.apply_starting_level(1)
+
+        assert events == []
+        assert player.level == 1
+        assert player.pending_attribute_points == 0
+        assert {n: getattr(player, n) for n in names} == before
+
+    @pytest.mark.parametrize("target", [0, -3, "junk", None])
+    def test_invalid_targets_are_no_ops(self, player, target):
+        assert player.apply_starting_level(target) == []
+        assert player.level == 1
+
+    def test_target_at_or_below_current_level_is_a_no_op(self, player):
+        player.level = 5
+        assert player.apply_starting_level(3) == []
+        assert player.level == 5
+
+    def test_unknown_allocation_policy_is_rejected_before_levelling(self, player):
+        """A typo'd policy must not half-apply: no level-up, no points."""
+        with pytest.raises(ValueError):
+            player.apply_starting_level(3, allocation="combat-heavy")
+        assert player.level == 1
+        assert player.pending_attribute_points == 0
+
+    def test_policy_registry_is_the_engine_authority(self):
+        from src.player._leveling import STARTING_LEVEL_ALLOCATIONS
+
+        assert "even" in STARTING_LEVEL_ALLOCATIONS
