@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 import pytest
+from src.moves import TELEGRAPH_SEVERITIES
 from src.player import Player
 
 
@@ -2446,6 +2447,24 @@ class TestWailStrikeEdgeCases:
 # ---------------------------------------------------------------------------
 
 
+def _exported_move_classes():
+    """Every exported ``Move`` subclass, ``Move`` itself excluded.
+
+    The one enumerator both audits below share: the multiplier declaration
+    audit and the telegraph-severity audit must walk the same population, or
+    a move one of them misses is a move the other cannot vouch for.
+    """
+    import src.moves as moves
+    from src.moves import Move
+
+    found = {}
+    for name in moves.__all__:
+        obj = getattr(moves, name, None)
+        if inspect.isclass(obj) and issubclass(obj, Move) and obj is not Move:
+            found[obj.__name__] = obj
+    return found
+
+
 def _classes_overriding_damage_multiplier():
     """Every exported ``Move`` subclass that declares its own ``_DAMAGE_MULTIPLIER``.
 
@@ -2454,19 +2473,11 @@ def _classes_overriding_damage_multiplier():
     game. ``Move`` itself is excluded for the same reason — its 1.0 is the
     default the overrides are measured against.
     """
-    import src.moves as moves
-    from src.moves import Move
-
-    found = {}
-    for name in moves.__all__:
-        obj = getattr(moves, name, None)
-        if not (inspect.isclass(obj) and issubclass(obj, Move)):
-            continue
-        if obj is Move:
-            continue
-        if "_DAMAGE_MULTIPLIER" in obj.__dict__:
-            found[obj.__name__] = obj
-    return found
+    return {
+        name: cls
+        for name, cls in _exported_move_classes().items()
+        if "_DAMAGE_MULTIPLIER" in cls.__dict__
+    }
 
 
 class TestDeclaredDamageMultiplier:
@@ -2579,27 +2590,20 @@ class TestDeclaredDamageMultiplier:
 # serializer, the battlefield and the log all read one owner.
 # ---------------------------------------------------------------------------
 
-#: The closed vocabulary ``Move.telegraph_severity`` may take. Mirrored by
-#: ``telegraphSeverity`` in frontend/src/utils/combatMoveStatus.js.
-TELEGRAPH_SEVERITIES = ("normal", "heavy", "deadly")
+# The closed vocabulary ``Move.telegraph_severity`` may take is
+# ``TELEGRAPH_SEVERITIES``, imported from the engine at the top of this module
+# rather than redeclared here. ``TELEGRAPH_LABELS`` in
+# frontend/src/utils/combatMoveStatus.js mirrors it.
 
 #: A move that CENTRES its hit at this multiple of its user's damage or more
 #: must say so — a heavy blow that leaves the default "normal" is the #586
 #: defect restored.
 HEAVY_MULTIPLIER_FLOOR = 2.0
 
-
-def _exported_move_classes():
-    """Every exported ``Move`` subclass, ``Move`` itself excluded."""
-    import src.moves as moves
-    from src.moves import Move
-
-    found = {}
-    for name in moves.__all__:
-        obj = getattr(moves, name, None)
-        if inspect.isclass(obj) and issubclass(obj, Move) and obj is not Move:
-            found[obj.__name__] = obj
-    return found
+#: Moves known to sit at or above the floor today. The reflection below must
+#: find at least these, or an enumerator that silently returns nothing (a
+#: renamed ``__all__``, a moved multiplier) would make the audit vacuous.
+KNOWN_HEAVY_HITTERS = {"SlimeVolley", "TidalSurge", "GorranClub"}
 
 
 def _heavy_hitters():
@@ -2637,7 +2641,8 @@ class TestTelegraphSeverity:
 
     def test_reflection_actually_finds_heavy_hitters(self):
         """Floor: an empty population would make the audit below vacuous."""
-        assert len(_heavy_hitters()) >= 3, sorted(_heavy_hitters())
+        heavy = _heavy_hitters()
+        assert KNOWN_HEAVY_HITTERS <= set(heavy), sorted(heavy)
 
     def test_every_heavy_hitter_opts_in(self):
         silent = sorted(
