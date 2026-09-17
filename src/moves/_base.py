@@ -1269,6 +1269,14 @@ default_animations = {
 }
 
 
+#: The closed vocabulary ``Move.telegraph_severity`` may take (issue #586).
+#: Mirrored by ``TELEGRAPH_LABELS`` in frontend/src/utils/combatMoveStatus.js,
+#: which folds anything else back to normal.
+TELEGRAPH_SEVERITIES = ("normal", "heavy", "deadly")
+#: The quiet default; the serializer folds an out-of-vocabulary value to it.
+TELEGRAPH_SEVERITY_NORMAL = TELEGRAPH_SEVERITIES[0]
+
+
 class Move:  # master class for all moves
     # Animation type the web client plays for this move ("attack", "pulse",
     # "pierce", "projectile", ...). Subclasses declare their type as a class
@@ -1316,31 +1324,20 @@ class Move:  # master class for all moves
     _DAMAGE_MULTIPLIER: float = 1.0
 
     # How loudly this move's wind-up should be telegraphed (issue #586).
-    #
-    # Closed vocabulary — "normal" | "heavy" | "deadly":
-    #   normal  the default; a routine swing, marked by nothing beyond the
-    #           category glow and countdown every pending move already gets.
-    #   heavy   a blow that CENTRES at roughly twice the user's damage or
-    #           more. The battlefield badge, enemies list and beat timeline
-    #           add a ⚠ glyph and the wind-up line is minted as its own log
-    #           type ("telegraph", src/api/combat_adapter.py) so it reads
-    #           differently from the body of the fight.
-    #   deadly  boss-tier: a hit that can take Jean from full to dead. Same
-    #           cues, labelled DEADLY.
-    #
-    # Heavy moves OPT IN by overriding this; the default stays quiet so the
-    # hundreds of ordinary moves say nothing. It is declared here, beside
-    # `_DAMAGE_MULTIPLIER`, for the same reason that one is: the serializer
-    # reads it off the move (`telegraph_severity` on the wire) and a value
-    # merely probed for with getattr would silently degrade to "normal" if
-    # it were ever renamed. `tests/test_npc_moves_coverage.py::
-    # TestTelegraphSeverity` walks every exported move and fails any at
-    # `_DAMAGE_MULTIPLIER >= 2.0` that is still "normal", so a new heavy
-    # move cannot ship as a routine wind-up. It is deliberately NOT derived
-    # from the multiplier: 2.0x of a Slime is a scratch and 1.8x of a boss
-    # is a wound, so the author names the threat rather than a threshold
-    # guessing it.
-    telegraph_severity: str = "normal"
+    # Closed vocabulary, TELEGRAPH_SEVERITIES: "normal" is a routine swing;
+    # "heavy" centres at roughly twice the user's damage or more and earns a
+    # ⚠ glyph on the battlefield plus its own log type ("telegraph",
+    # src/api/combat_adapter.py); "deadly" is boss-tier, a hit that can take
+    # Jean from full to dead, labelled DEADLY. Heavy moves OPT IN by
+    # overriding this; the author names the threat rather than a threshold
+    # guessing it (2.0x of a Slime is a scratch, 1.8x of a boss a wound).
+    # The serializer reads it off the move with a getattr default, so a
+    # rename would degrade every warning to "normal" without a missing key;
+    # tests/test_wire_field_contract.py::
+    # test_telegraph_severity_carries_the_moves_own_declaration is the guard
+    # for that, and tests/test_npc_moves_coverage.py::TestTelegraphSeverity
+    # fails any move at `_DAMAGE_MULTIPLIER >= 2.0` still left "normal".
+    telegraph_severity: str = TELEGRAPH_SEVERITY_NORMAL
 
     # Heat multipliers the shared outcome handlers below (parry/hit/miss)
     # apply to Jean's combat heat. `Player.change_heat(mult)` multiplies the

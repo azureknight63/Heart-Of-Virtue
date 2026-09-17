@@ -221,7 +221,8 @@ export function makeCombatant(overrides = {}) {
 // badge, enemies list, beat timeline, #586 severity glyph) reads this shape.
 // tests/test_wire_field_contract.py holds these keys to the serializer's.
 // ---------------------------------------------------------------------------
-// Defaults are a routine NpcAttack wind-up: stage 0, one beat to land, 1.0x,
+// Defaults are a routine NpcAttack wind-up: stage 0, resolving in two beats
+// (`beats_until_resolve: 2`), 1.0x,
 // `telegraph_severity: 'normal'`. A test wanting the #586 warning overrides
 // the severity to 'heavy' or 'deadly' -- the engine's closed vocabulary.
 export function makeActiveMove(overrides = {}) {

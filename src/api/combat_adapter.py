@@ -14,7 +14,7 @@ import logging
 import random
 from datetime import datetime
 from types import SimpleNamespace
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Set, Tuple, TYPE_CHECKING
 
 import src.positions as positions  # type: ignore
 import src.moves as moves  # type: ignore
@@ -44,7 +44,11 @@ from src.combatant import (
     combatant_handle,
     find_by_handle,
 )
-from src.moves._base import select_weighted_target, display_name_of
+from src.moves._base import (
+    select_weighted_target,
+    display_name_of,
+    TELEGRAPH_SEVERITY_NORMAL,
+)
 from src.events import purge_orphaned_combat_events
 from src.story import gorran_flavor
 
@@ -558,25 +562,47 @@ def _take_resolution(pending: dict, beat: Optional[int] = None) -> dict:
 #: this one, so a new type belongs in a constant of this shape.
 TELEGRAPH_LOG_TYPE = "telegraph"
 
+#: The body-text type every ordinary engine line carries, and the default
+#: ``_add_log_entry`` falls back to. (That signature keeps the literal
+#: ``"combat"`` rather than this name: CombatLog.test.jsx reads the default
+#: by regex off the ``entry_type: str = "..."`` shape, and
+#: tests/test_combat_telegraph_log.py holds the two equal.)
+COMBAT_LOG_TYPE = "combat"
+
+#: Jean's own accepted-move lines ("Jean prepares Dodge.").
+PLAYER_ACTION_LOG_TYPE = "player_action"
+
 #: Types that feed ``player.last_move_summary`` — the wire's
 #: ``last_move_outcome`` and the strategist prompt's ``last_move``. A type
 #: left off this list is dropped from both: ``animation`` deliberately,
 #: since it is bookkeeping, and ``telegraph`` would have been by accident.
-SUMMARY_LOG_TYPES = ("combat", "player_action", TELEGRAPH_LOG_TYPE)
+SUMMARY_LOG_TYPES = (COMBAT_LOG_TYPE, PLAYER_ACTION_LOG_TYPE, TELEGRAPH_LOG_TYPE)
 
 #: How many of those lines the summary keeps.
 SUMMARY_LOG_LINES = 5
 
 
-def summarize_recent_log(log):
-    """The last :data:`SUMMARY_LOG_LINES` readable lines of ``log``, joined."""
-    lines = [
-        entry["message"] for entry in log if entry.get("type") in SUMMARY_LOG_TYPES
-    ]
-    return " ".join(lines[-SUMMARY_LOG_LINES:])
+def summarize_recent_log(log: List[dict]) -> str:
+    """The last :data:`SUMMARY_LOG_LINES` readable lines of ``log``, joined.
+
+    Walks from the newest entry back and stops as soon as the summary is
+    full, so a long fight's log is not scanned end to end on every beat.
+    """
+    lines = []
+    for entry in reversed(log):
+        if entry.get("type") not in SUMMARY_LOG_TYPES:
+            continue
+        message = entry.get("message", "")
+        if not message:
+            continue
+        lines.append(message)
+        if len(lines) >= SUMMARY_LOG_LINES:
+            break
+    lines.reverse()
+    return " ".join(lines)
 
 
-def _is_hostile_heavy_windup(entity, player):
+def _is_hostile_heavy_windup(entity, player) -> bool:
     """Whether a line ``entity`` narrates right now is a heavy-move telegraph.
 
     Three conditions, each load-bearing:
@@ -598,7 +624,10 @@ def _is_hostile_heavy_windup(entity, player):
     move = getattr(entity, "current_move", None)
     if move is None or getattr(move, "current_stage", None) != 0:
         return False
-    return getattr(move, "telegraph_severity", "normal") != "normal"
+    return (
+        getattr(move, "telegraph_severity", TELEGRAPH_SEVERITY_NORMAL)
+        != TELEGRAPH_SEVERITY_NORMAL
+    )
 
 
 class CombatOutputCapture:
@@ -669,7 +698,7 @@ class CombatOutputCapture:
                     "type": (
                         TELEGRAPH_LOG_TYPE
                         if _is_hostile_heavy_windup(entity, self.player)
-                        else "combat"
+                        else COMBAT_LOG_TYPE
                     ),
                     "timestamp": datetime.now().strftime("%H:%M:%S"),
                 }
@@ -709,6 +738,9 @@ class ApiCombatAdapter:
     _log_key_source = None
     _log_key_count = None
     _log_trimmed_since_beat = 0
+    # The suggestion worker handle refresh_suggestions keeps for join(); a
+    # bare instance has never started one.
+    _suggestion_thread = None
 
     def _reset_log_index_state(self):
         """The single definition of the dedup-index/trim-counter baseline.
@@ -808,9 +840,12 @@ class ApiCombatAdapter:
         # _execute_move_inner; that worker takes NO lock, and it must not
         # need one: it receives a context snapshot built on the calling
         # thread (under this lock) and only calls the strategist and writes
-        # player.suggested_moves. Building the snapshot on the worker put
-        # _get_available_moves -> Move._viable_for on that thread, swapping
-        # move.target per candidate under a request mid-execute (#569).
+        # player.suggested_moves / suggestions_loading, and those two writes
+        # sit under _suggestion_lock together with the generation check that
+        # decides whether they still apply. Building the snapshot on the
+        # worker put _get_available_moves -> Move._viable_for on that thread,
+        # swapping move.target per candidate under a request mid-execute
+        # (#569).
         #
         # Not pickled: game_service.save_game pops _combat_adapter off the
         # player before serializing (the adapter already held a threading.Lock
@@ -1189,7 +1224,7 @@ class ApiCombatAdapter:
         self,
         round_num: int,
         message: str,
-        entry_type: str = "combat",
+        entry_type: str = "combat",  # == COMBAT_LOG_TYPE; literal for CombatLog.test.jsx
         beat_index: int = 0,
         animation_data: dict = None,
         timestamp: str = None,
@@ -3172,21 +3207,18 @@ class ApiCombatAdapter:
         just committed, mid-``execute`` -- and did, in
         ``test_valid_in_range_enemy_still_resolves`` (#569).
         """
-        import logging
-
-        logger = logging.getLogger(__name__)
-
         if getattr(self.player, "suggestions_paused", False):
             return
 
-        # Set loading state
-        self.player.suggestions_loading = True
-        self.player.suggested_moves = []  # Clear previous suggestions while loading
-
-        # Increment generation counter to invalidate any in-flight requests
+        # Bump the generation to invalidate any in-flight worker and enter
+        # the loading state in the same critical section, so a worker that
+        # has just passed its own generation check cannot land a stale
+        # answer between the two.
         with self._suggestion_lock:
             self._suggestion_generation += 1
             current_gen = self._suggestion_generation
+            self._reset_suggestions()
+            self.player.suggestions_loading = True
 
         # Get flask app to pass to the thread
         try:
@@ -3205,8 +3237,9 @@ class ApiCombatAdapter:
             ctx, available_move_names = self._build_strategist_context()
         except Exception as e:
             logger.error(f"Error building strategist context: {e}", exc_info=True)
-            self.player.suggested_moves = []
-            self.player.suggestions_loading = False
+            with self._suggestion_lock:
+                self._reset_suggestions()
+            self._suggestion_thread = None
             return
 
         logger.debug(f"Combat context keys: {list(ctx.keys())}")
@@ -3233,12 +3266,17 @@ class ApiCombatAdapter:
                         if s.get("move_name") in available_move_names
                     ]
 
-                    # Store results (only if this generation is still current)
+                    # Store results only if this generation is still
+                    # current -- check and write under one lock hold, or a
+                    # refresh that bumps the generation between them gets
+                    # its fresh loading state overwritten by this stale
+                    # answer.
                     with self._suggestion_lock:
                         is_current = current_gen == self._suggestion_generation
+                        if is_current:
+                            self.player.suggested_moves = suggestions
+                            self.player.suggestions_loading = False
                     if is_current:
-                        self.player.suggested_moves = suggestions
-                        self.player.suggestions_loading = False
                         logger.debug(
                             f"Suggestion fetch complete (Gen: {current_gen}, {len(suggestions)} suggestions)"
                         )
@@ -3281,9 +3319,9 @@ class ApiCombatAdapter:
                     logger.error(f"Error in async suggestion fetch: {e}", exc_info=True)
                     with self._suggestion_lock:
                         is_current = current_gen == self._suggestion_generation
+                        if is_current:
+                            self._reset_suggestions()
                     if is_current:
-                        self.player.suggested_moves = []
-                        self.player.suggestions_loading = False
                         logger.info(
                             f"DEBUG: Reset suggestions_loading after error (Gen: {current_gen})"
                         )
@@ -3301,7 +3339,17 @@ class ApiCombatAdapter:
         )
         self._suggestion_thread.start()
 
-    def _suggestion_count(self):
+    def _reset_suggestions(self):
+        """Clear the advisor's answer and leave the loading state.
+
+        Call with ``_suggestion_lock`` held: the request thread and the
+        worker both write these two fields, and the generation check that
+        decides whose write applies lives under the same lock.
+        """
+        self.player.suggested_moves = []
+        self.player.suggestions_loading = False
+
+    def _suggestion_count(self) -> int:
         """How many suggestions the strategist may return for this player."""
         count = getattr(self.player, "base_suggested_move_count", 1)
         for m in self.player.known_moves:
@@ -3309,7 +3357,7 @@ class ApiCombatAdapter:
                 count += 1
         return count
 
-    def _build_strategist_context(self):
+    def _build_strategist_context(self) -> Tuple[Dict[str, Any], Set[str]]:
         """Snapshot the fight for the strategist, on the caller's thread.
 
         Returns ``(ctx, available_move_names)``: the context dict the
@@ -3318,19 +3366,15 @@ class ApiCombatAdapter:
         without touching the engine again. Must run on the request thread
         under ``_beat_lock`` -- see :meth:`refresh_suggestions`.
         """
-        import logging
-
-        logger = logging.getLogger(__name__)
-
         # Ensure combat_log exists
         if not hasattr(self.player, "combat_log"):
             self.player.combat_log = []
 
-        logger.debug(
-            f"Preparing strategist context: {len(self.player.combat_list)} enemies, {len(self.available_options)} available moves"
-        )
         # Gather context
         all_moves = self._get_available_moves()
+        logger.debug(
+            f"Preparing strategist context: {len(self.player.combat_list)} enemies, {len(all_moves)} moves considered"
+        )
         ctx = {
             "player": {
                 **CombatantSerializer.serialize_combatant(self.player),
@@ -4290,7 +4334,7 @@ class ApiCombatAdapter:
                 self._add_log_entry(
                     current_beat,
                     entry["message"],
-                    entry["type"],
+                    entry.get("type", COMBAT_LOG_TYPE),
                     self.current_beat_state_index,
                     timestamp=entry.get("timestamp"),
                 )

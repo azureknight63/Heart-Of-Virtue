@@ -112,6 +112,22 @@ from src.narration import capture_narration
 from src.combatant import wire_handle
 
 
+def _serialize_mid_cast(move_cls, enemy_cls, reference=None, beats_left=2):
+    """A real ``move_cls`` mid-cast on a real ``enemy_cls``, serialized.
+
+    ``reference`` is the Jean the enemy is targeting and the payload is
+    rendered relative to; a bare ``Player()`` when the test has no fixture.
+    """
+    player = reference if reference is not None else Player()
+    enemy = enemy_cls()
+    enemy.target = player
+    move = move_cls(enemy)
+    move.current_stage = 0
+    move.beats_left = beats_left
+    enemy.current_move = move
+    return CombatantSerializer.serialize_combatant(enemy, reference=player)
+
+
 def _describe(why):
     """Render one contract value for a failure message.
 
@@ -1105,15 +1121,7 @@ class TestCombatantWireContract:
         """
         from src.moves import SlimeVolley
 
-        player = Player()
-        enemy = Slime()
-        enemy.target = player
-        move = SlimeVolley(enemy)
-        move.current_stage = 0
-        move.beats_left = 2
-        enemy.current_move = move
-
-        payload = CombatantSerializer.serialize_combatant(enemy, reference=player)
+        payload = _serialize_mid_cast(SlimeVolley, Slime)
         wire = payload["current_move"]["damage_multiplier"]
         assert wire == pytest.approx(SlimeVolley._DAMAGE_MULTIPLIER), (
             f"wire damage_multiplier is {wire} but SlimeVolley declares "
@@ -1124,18 +1132,6 @@ class TestCombatantWireContract:
             "multiplier or the test cannot distinguish carried from defaulted"
         )
 
-    @staticmethod
-    def _serialize_mid_cast(move_cls, enemy_cls):
-        """A real ``move_cls`` mid-cast on a real ``enemy_cls``, serialized."""
-        player = Player()
-        enemy = enemy_cls()
-        enemy.target = player
-        move = move_cls(enemy)
-        move.current_stage = 0
-        move.beats_left = 2
-        enemy.current_move = move
-        return CombatantSerializer.serialize_combatant(enemy, reference=player)
-
     def test_telegraph_severity_carries_the_moves_own_declaration(self):
         """Presence is not enough here either: "normal" is a valid severity
         AND the serializer's default, so a renamed ``Move.telegraph_severity``
@@ -1143,7 +1139,7 @@ class TestCombatantWireContract:
         from src.moves import TidalSurge
         from src.npc._enemies import KingSlime
 
-        payload = self._serialize_mid_cast(TidalSurge, KingSlime)
+        payload = _serialize_mid_cast(TidalSurge, KingSlime)
         assert payload["current_move"]["telegraph_severity"] == "deadly"
         assert TidalSurge.telegraph_severity != "normal", (
             "fixture is degenerate: this move must declare a NON-default "
@@ -1155,7 +1151,7 @@ class TestCombatantWireContract:
         or the glyph marks every enemy and warns of nothing."""
         from src.moves import NpcAttack
 
-        payload = self._serialize_mid_cast(NpcAttack, Slime)
+        payload = _serialize_mid_cast(NpcAttack, Slime)
         assert payload["current_move"]["telegraph_severity"] == "normal"
 
     def test_tactical_mechanics_carries_the_states_own_summary(self):
@@ -2696,15 +2692,8 @@ class TestThePayloadBuildersMatchTheWire:
         fallback no real payload takes."""
         from src.moves import NpcAttack
 
-        enemy = Slime()
-        enemy.target = real_combat_player
-        move = NpcAttack(enemy)
-        move.current_stage = 0
-        move.beats_left = 1
-        enemy.current_move = move
-
-        active = CombatantSerializer.serialize_combatant(
-            enemy, real_combat_player
+        active = _serialize_mid_cast(
+            NpcAttack, Slime, reference=real_combat_player, beats_left=1
         )["current_move"]
 
         _assert_builder_matches_the_wire(

@@ -107,6 +107,23 @@ def fight():
     return _build()
 
 
+def _commit_disrupt_on(fight):
+    """Send the pending ``Disrupt`` at ``near`` with the to-hit roll forced."""
+    adapter, near = fight["adapter"], fight["near"]
+    with forced_roll(**_ALWAYS_HITS):
+        result = adapter.process_command(
+            {"type": "select_target", "target_id": CombatantSerializer.stream_id(near)}
+        )
+    assert "error" not in result
+    return result
+
+
+def _select_disrupt_on(fight):
+    """Select ``Disrupt`` and land it on ``near``: the legitimate happy path."""
+    fight["adapter"].process_command({"type": "select_move", "move_index": 0})
+    return _commit_disrupt_on(fight)
+
+
 def _snapshot(adapter, fight):
     """The state that must survive a rejected target selection untouched."""
     return {
@@ -237,12 +254,8 @@ def test_client_can_retry_with_a_legal_target_after_rejection(fight):
         {"type": "select_target", "target_id": CombatantSerializer.stream_id(far)}
     )
 
-    with forced_roll(**_ALWAYS_HITS):
-        result = adapter.process_command(
-            {"type": "select_target", "target_id": CombatantSerializer.stream_id(near)}
-        )
+    _commit_disrupt_on(fight)
 
-    assert "error" not in result
     assert fight["move"].target is near
     assert near.hp < 100
     assert adapter.pending_move_index is None
@@ -254,15 +267,10 @@ def test_client_can_retry_with_a_legal_target_after_rejection(fight):
 
 
 def test_valid_in_range_enemy_still_resolves(fight):
-    adapter, near = fight["adapter"], fight["near"]
-    adapter.process_command({"type": "select_move", "move_index": 0})
+    near = fight["near"]
 
-    with forced_roll(**_ALWAYS_HITS):
-        result = adapter.process_command(
-            {"type": "select_target", "target_id": CombatantSerializer.stream_id(near)}
-        )
+    _select_disrupt_on(fight)
 
-    assert "error" not in result
     assert fight["move"].target is near
     assert near.hp < 100
 
@@ -424,7 +432,7 @@ def test_ready_move_still_works_through_both_entry_points(command):
 
 
 # ---------------------------------------------------------------------------
-# Issue #569: the tactical-advisor worker must never touch engine move state
+# Issue #569:the tactical-advisor worker must never touch engine move state
 # ---------------------------------------------------------------------------
 #
 # ``refresh_suggestions`` runs at the end of ``initialize_combat`` and of every
@@ -436,6 +444,20 @@ def test_ready_move_still_works_through_both_entry_points(command):
 # above sampled ``fight["move"].target`` while that was happening (~1% flake);
 # in a live game the same swap can land under ``Disrupt.execute``.
 
+#: How many times the race pin rebuilds the fight and samples the target.
+#: Every attempt widens the worker's window by ``_WORKER_STALL_S`` per
+#: viability check, and the pre-fix defect showed on nearly every attempt.
+_RACE_ATTEMPTS = 5
+#: How long an off-thread viability check is stalled, and how often the
+#: sampler reads the target meanwhile. The stall must exceed the poll
+#: interval or the sampler could never land a read inside a swapped window.
+_WORKER_STALL_S = 0.002
+_POLL_S = 0.0005
+#: How long the sampler keeps reading while any worker is alive.
+_SETTLE_DEADLINE_S = 1.0
+#: Total budget for joining every tracked worker on block exit.
+_JOIN_DEADLINE_S = 5.0
+
 
 @contextmanager
 def _tracked_threads():
@@ -443,6 +465,10 @@ def _tracked_threads():
 
     Joining ``threading.enumerate()`` is not an option: under xdist the worker
     process owns execnet IO threads that never finish.
+
+    The join runs on every exit, so a worker never outlives the patches the
+    block's body installed; the liveness assertion runs only on the normal
+    exit, so it cannot mask the body's own failure.
     """
     started = []
     real_thread = threading.Thread
@@ -456,19 +482,10 @@ def _tracked_threads():
         try:
             yield started
         finally:
+            deadline = time.monotonic() + _JOIN_DEADLINE_S
             for thread in started:
-                thread.join(timeout=5)
-            assert not any(t.is_alive() for t in started), "worker did not settle"
-
-
-def _select_disrupt_on(fight):
-    adapter, near = fight["adapter"], fight["near"]
-    adapter.process_command({"type": "select_move", "move_index": 0})
-    with forced_roll(**_ALWAYS_HITS):
-        result = adapter.process_command(
-            {"type": "select_target", "target_id": CombatantSerializer.stream_id(near)}
-        )
-    assert "error" not in result
+                thread.join(max(0, deadline - time.monotonic()))
+    assert not any(t.is_alive() for t in started), "worker did not settle"
 
 
 def test_suggestion_worker_never_touches_engine_move_state():
@@ -486,13 +503,17 @@ def test_suggestion_worker_never_touches_engine_move_state():
         callers.append(threading.current_thread())
         return real_viable(self)
 
+    # A with-tuple exits right to left, so the thread tracker goes LAST: its
+    # join then happens while the recorders are still installed, and a
+    # worker that finishes late is still seen.
     with (
-        _tracked_threads(),
         patch.object(moves.Move, "_viable_for", recording_viable_for),
         patch.object(moves.Disrupt, "viable", recording_viable),
+        _tracked_threads() as started,
     ):
         fight = _build()
         _select_disrupt_on(fight)
+        assert started, "no suggestion worker started"
 
     assert callers, "recorder saw no viability checks at all"
     off_thread = [t.name for t in callers if t is not request_thread]
@@ -513,22 +534,23 @@ def test_move_target_survives_a_still_running_suggestion_worker():
 
     def slow_off_thread(self):
         if threading.current_thread() is not request_thread:
-            time.sleep(0.002)
+            time.sleep(_WORKER_STALL_S)
         return real_viable(self)
 
     with patch.object(moves.Disrupt, "viable", slow_off_thread):
-        for attempt in range(10):
+        for attempt in range(_RACE_ATTEMPTS):
             with _tracked_threads() as started:
                 fight = _build()
                 _select_disrupt_on(fight)
+                assert started, "no suggestion worker started"
                 # The committed target must be stable from the moment the
                 # command returns until the next command -- sample it at once,
                 # then keep sampling while any worker is still alive.
                 observed = {fight["move"].target}
-                deadline = time.monotonic() + 1.0
+                deadline = time.monotonic() + _SETTLE_DEADLINE_S
                 while any(t.is_alive() for t in started) and time.monotonic() < deadline:
                     observed.add(fight["move"].target)
-                    time.sleep(0.0005)
+                    time.sleep(_POLL_S)
                 names = {getattr(t, "name", t) for t in observed}
                 assert names == {"NearEnemy"}, (
                     f"attempt {attempt}: move.target drifted through {names}"
@@ -551,7 +573,7 @@ def test_suggestions_still_populate_from_the_snapshot_context():
             adapter.refresh_suggestions()
             thread = adapter._suggestion_thread
             assert thread is started[-1]
-            thread.join(timeout=5)
+            thread.join(timeout=_JOIN_DEADLINE_S)
 
     assert player.suggested_moves == stub
     assert player.suggestions_loading is False

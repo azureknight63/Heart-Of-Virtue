@@ -34,6 +34,8 @@ from ._base import (
     display_name_of,
     resolve_damage,
     damage_bounds,
+    TELEGRAPH_SEVERITIES,
+    TELEGRAPH_SEVERITY_NORMAL,
 )
 from ._utility import (
     StrategicInsight,
@@ -132,6 +134,9 @@ __all__ = [
     # The canonical damage expression and its preview half
     "resolve_damage",
     "damage_bounds",
+    # The telegraph vocabulary (issue #586) the serializer and tests read
+    "TELEGRAPH_SEVERITIES",
+    "TELEGRAPH_SEVERITY_NORMAL",
     # Utility
     "StrategicInsight",
     "MasterTactician",
