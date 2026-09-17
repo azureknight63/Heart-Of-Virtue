@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import BeatTimeline from './BeatTimeline';
 
@@ -122,6 +122,23 @@ describe('BeatTimeline', () => {
       expect(marker.title).toMatch(/Deadly move/);
       expect(screen.getByLabelText('Deadly move')).toBeInTheDocument();
       expect(marker.textContent).toContain('⚠');
+      // The severity WORD is visible, not only in the title/aria-label: on
+      // touch there is no hover, and the glyph alone cannot tell a heavy
+      // wind-up from a deadly one.
+      expect(within(marker).getByText(/DEADLY/)).toBeInTheDocument();
+    });
+
+    it('spells out HEAVY for a heavy enemy wind-up', () => {
+      const combat = {
+        enemies: [{
+          id: 'enemy_1', name: 'Gorgon', hp: 40,
+          current_move: pendingMove({ display_name: 'Crush', beats_until_resolve: 3, telegraph_severity: 'heavy' }),
+        }],
+      };
+      render(<BeatTimeline combat={combat} />);
+      const marker = screen.getByTitle(/Gorgon — Crush/);
+      expect(within(marker).getByText(/HEAVY/)).toBeInTheDocument();
+      expect(within(marker).queryByText(/DEADLY/)).toBeNull();
     });
 
     it('leaves a routine wind-up unmarked (negative control)', () => {

@@ -19,6 +19,7 @@ import {
   isMovePending,
   beatsUntilResolve,
   telegraphWarning,
+  hostileTelegraphWarning,
   TELEGRAPH_GLYPH,
 } from '../utils/combatMoveStatus';
 import { useFeatureFlag } from '../utils/featureFlags';
@@ -63,26 +64,36 @@ export const VIEW_MODE_FIT = 'fit';
 // rather than a click on the map.
 const DRAG_CLICK_THRESHOLD_PX = 6;
 
+const clampNumber = (value, min, max) => Math.max(min, Math.min(max, value));
+
 /**
  * Split one axis of drag travel into whole cells of camera-window shift and
  * a sub-cell remainder, clamped so the window never leaves the arena.
  *
  * `totalPx` is the gesture's cumulative screen-space travel on this axis;
  * `[minCells, maxCells]` is the legal window shift in the same screen sense
- * (always contains 0 — see panCellBounds). The clamp is applied to the px
- * total before the split, so a stopped edge has no half-cell of void hanging
- * off it: the remainder is 0 there, not "whatever was left over".
+ * (always contains 0 — see panCellBounds). The clamp is applied before the
+ * split, so a stopped edge has no half-cell of void hanging off it: the
+ * remainder is 0 there, not "whatever was left over".
  *
  * A zero or unmeasurable cell size (jsdom, a collapsed panel) yields no
  * movement at all rather than NaN in a transform.
  */
 export const splitPanAxis = (totalPx, cellPx, minCells, maxCells) => {
-  if (!(cellPx > 0)) return { cells: 0, residual: 0 };
-  const clamped = Math.max(minCells * cellPx, Math.min(maxCells * cellPx, totalPx));
+  if (!Number.isFinite(cellPx) || cellPx <= 0) return { cells: 0, residual: 0 };
+  // Clamped in CELL units, not px: a measured cell size is rarely a clean
+  // float, and `(maxCells * cellPx) / cellPx` can come back as 2.9999…, which
+  // truncated to one cell short of the bound with a whole cell of remainder.
+  // Clamping the ratio makes the bound itself the result at a stopped edge.
+  const travelCells = clampNumber(totalPx / cellPx, minCells, maxCells);
   // trunc, not floor: the remainder keeps the sign of the travel, so a
   // leftward drag reads as "-3 cells and -7px", never "-4 cells and +23px".
-  const cells = Math.trunc(clamped / cellPx);
-  return { cells, residual: clamped - cells * cellPx };
+  const cells = Math.trunc(travelCells);
+  // A whole-cell result (the integer bounds, or travel that lands exactly on
+  // a cell) has no remainder by definition; otherwise it is measured in px
+  // off the travel, which keeps it exact rather than a product of two floats.
+  const residual = travelCells === cells ? 0 : totalPx - cells * cellPx;
+  return { cells, residual };
 };
 
 /**
@@ -100,6 +111,17 @@ export const splitPanAxis = (totalPx, cellPx, minCells, maxCells) => {
 export const panCellBounds = (lowEdge, size, mapSize) => ({
   min: Math.min(lowEdge, 0) - lowEdge,
   max: Math.max(lowEdge, mapSize - size) - lowEdge,
+});
+
+/**
+ * Both axes' legal window shifts, in world cells: `x` shifts leftX, `y`
+ * shifts topY. The window's low edge on y is its BOTTOM row
+ * (topY - gridCols + 1); a shift of that edge is a shift of topY, so the
+ * bounds come back in topY's sense directly.
+ */
+const windowPanBounds = ({ leftX, topY, gridCols, mapSize }) => ({
+  x: panCellBounds(leftX, gridCols, mapSize),
+  y: panCellBounds(topY - gridCols + 1, gridCols, mapSize),
 });
 
 // Arena ceiling, mirroring get_dynamic_grid_size's clamp in
@@ -313,6 +335,30 @@ function resolveEntityStats(entity) {
 // ---------------------------------------------------------------------------
 const FACING_MAP = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
 
+// Token ring widths, px. The heavier ring is the heavy-move wind-up's cue
+// (#586) — a change of weight, not of colour.
+const TOKEN_RING_PX = 3;
+const TELEGRAPH_RING_PX = 4;
+
+// Length of one HP/fatigue semi-circle in the torus's 100x100 viewBox
+// (half the circumference of r=45), i.e. a full arc's dash length.
+const TORUS_HALF_ARC = 141.4;
+
+// The two token badges — HP numeral (bottom-left) and beat countdown
+// (bottom-right) — share one pill; each overrides only its side, font size
+// and colours.
+const TOKEN_BADGE_CLASS = 'absolute pointer-events-none select-none z-20 flex items-center justify-center rounded-full';
+const TOKEN_BADGE_STYLE = {
+  bottom: '-5px',
+  minWidth: '15px',
+  height: '15px',
+  padding: '0 3px',
+  lineHeight: 1,
+  fontWeight: 'bold',
+  fontFamily: 'monospace',
+  textShadow: 'none',
+};
+
 const CombatantMarker = React.memo(({
   entity,
   // True for Jean AND for every ally — this is side, not identity. Named
@@ -337,9 +383,14 @@ const CombatantMarker = React.memo(({
   const beatsToResolve = beatsUntilResolve(move);
   // Issue #586: a heavy/deadly ENEMY wind-up earns a glyph, a heavier ring
   // and a labelled countdown, so a Tidal Surge no longer looks like a
-  // routine NpcAttack (both "Offensive"). Enemies only — the cue is a
-  // threat to Jean, not a note on an ally's big hit.
-  const warning = isFriendly ? null : telegraphWarning(move);
+  // routine NpcAttack (both "Offensive").
+  const warning = hostileTelegraphWarning(move, !isFriendly);
+  // One sentence for the countdown badge's title AND accessible name.
+  const countdownLabel = beatsToResolve === null
+    ? null
+    : warning
+      ? `${warning.label} — resolves ${formatBeatCountdown(beatsToResolve)}`
+      : `Move resolves ${formatBeatCountdown(beatsToResolve)}`;
   const [isHoveredEffect, setIsHoveredEffect] = useState(false);
 
   // Alignment border: lime for friend/player, red for enemy. When a pending
@@ -359,8 +410,12 @@ const CombatantMarker = React.memo(({
   // HP / Fatigue stats
   const { hp, maxHp, hpPct, fatPct } = resolveEntityStats(entity);
   // Whole percent for the bar's width and its data attribute — one rounding,
-  // so the two can never disagree.
-  const hpPctInt = Math.round(hpPct * 100);
+  // so the two can never disagree. Floored at 1 while alive: 1/500 HP rounds
+  // to 0, which draws the same empty bar as dead. 0 is reserved for dead.
+  const hpPctInt = hp > 0 ? Math.max(1, Math.round(hpPct * 100)) : 0;
+  // The torus takes the same floor, so it never empties on a living
+  // combatant either — in compact mode it is the token's only HP cue.
+  const hpArcFraction = Math.max(hpPct, hpPctInt / 100);
 
   const content = displaySymbol || entity.battle_symbol || (entity.name && entity.name[0]) || '?';
 
@@ -390,10 +445,15 @@ const CombatantMarker = React.memo(({
       // reveals the numeral below (#602); the HP bar below is the sighted
       // player's always-on cue.
       aria-label={`${entity.name}: ${hp}/${maxHp} HP`}
-      className={`relative w-[75%] h-[75%] rounded-full transition-all duration-300 transform-gpu border-[3px]${
+      className={`relative w-[75%] h-[75%] rounded-full transition-all duration-300 transform-gpu${
         pendingGlowColor ? ' battlefield-pending-glow' : ''
       }${targetShake ? ' battlefield-target-shake' : ''}`}
       style={{
+        // Heavy-move wind-up (#586): a thicker, dashed ring — a change of
+        // weight and pattern, not of colour, so it survives the palette and
+        // reads on the compact map where the badge below is not drawn.
+        borderWidth: `${warning ? TELEGRAPH_RING_PX : TOKEN_RING_PX}px`,
+        ...(warning ? { borderStyle: 'dashed' } : {}),
         // Slightly lighter than panelDeep so the pulsing glow reads through the
         // token edge. panelHeavy keeps the marker legible without muddying the glow.
         backgroundColor: colors.bg.panelHeavy,
@@ -413,10 +473,6 @@ const CombatantMarker = React.memo(({
         boxShadow: pendingGlowColor
           ? undefined
           : `0 0 6px 1px ${isFriendly ? colors.alpha.primary[40] : colors.alpha.danger[40]}`,
-        // Heavy-move wind-up (#586): a thicker, dashed ring — a change of
-        // weight and pattern, not of colour, so it survives the palette and
-        // reads on the compact map where the badge below is not drawn.
-        ...(warning ? { borderWidth: '4px', borderStyle: 'dashed' } : {}),
         // Spread last so an active animation's backgroundColor/boxShadow/transform
         // (hit flash, parry/block flash, debuff/drain glow, per-phase source glow)
         // actually take effect instead of being clobbered by the defaults above.
@@ -441,7 +497,7 @@ const CombatantMarker = React.memo(({
           fill="none"
           stroke="#ff4444"
           strokeWidth="8"
-          strokeDasharray={`${hpPct * 141.4} 141.4`}
+          strokeDasharray={`${hpArcFraction * TORUS_HALF_ARC} ${TORUS_HALF_ARC}`}
           strokeLinecap="butt"
           style={{ transition: 'stroke-dasharray 0.5s ease-in-out' }}
         />
@@ -452,7 +508,7 @@ const CombatantMarker = React.memo(({
           fill="none"
           stroke="#f59e0b"
           strokeWidth="8"
-          strokeDasharray={`${fatPct * 141.4} 141.4`}
+          strokeDasharray={`${fatPct * TORUS_HALF_ARC} ${TORUS_HALF_ARC}`}
           strokeLinecap="butt"
           style={{ transition: 'stroke-dasharray 0.5s ease-in-out' }}
         />
@@ -533,21 +589,14 @@ const CombatantMarker = React.memo(({
       {!isCompact && (isHovered || isSelected) && (
         <div
           data-testid="token-hp-numeral"
-          className="absolute pointer-events-none select-none z-20 flex items-center justify-center rounded-full"
+          className={TOKEN_BADGE_CLASS}
           style={{
-            bottom: '-5px',
+            ...TOKEN_BADGE_STYLE,
             left: '-7px',
-            minWidth: '15px',
-            height: '15px',
-            padding: '0 3px',
             fontSize: '9px',
-            lineHeight: 1,
-            fontWeight: 'bold',
-            fontFamily: 'monospace',
             color: colors.text.bright,
             backgroundColor: colors.bg.overlay,
             border: `1px solid ${colors.danger}`,
-            textShadow: 'none',
           }}
         >
           {hp}/{maxHp}
@@ -560,28 +609,17 @@ const CombatantMarker = React.memo(({
           decide between blocking, closing distance, or getting clear. */}
       {!isCompact && beatsToResolve !== null && (
         <div
-          className="absolute pointer-events-none select-none z-20 flex items-center justify-center rounded-full"
+          className={TOKEN_BADGE_CLASS}
           style={{
-            bottom: '-5px',
+            ...TOKEN_BADGE_STYLE,
             right: '-7px',
-            minWidth: '15px',
-            height: '15px',
-            padding: '0 3px',
             fontSize: '10px',
-            lineHeight: 1,
-            fontWeight: 'bold',
-            fontFamily: 'monospace',
-            color: '#000',
+            color: colors.text.inverse,
             backgroundColor: pendingBorderColor || colors.secondary,
-            border: '1px solid rgba(0,0,0,0.6)',
-            textShadow: 'none',
+            border: `1px solid ${colors.bg.panelHeavy}`,
           }}
-          title={`${warning ? warning.label : 'Move'} — resolves ${formatBeatCountdown(beatsToResolve)}`}
-          aria-label={
-            warning
-              ? `${warning.label} — resolves ${formatBeatCountdown(beatsToResolve)}`
-              : `Move resolves ${formatBeatCountdown(beatsToResolve)}`
-          }
+          title={countdownLabel}
+          aria-label={countdownLabel}
         >
           {warning ? `${TELEGRAPH_GLYPH}${beatsToResolve}` : beatsToResolve}
         </div>
@@ -692,10 +730,17 @@ const EnemiesList = React.memo(({ enemies }) => (
                     earns a line — it just loses the category color that marks
                     live intent, and the countdown. */}
                 {move && (
-                  <GameText size="xs" style={{ marginTop: spacing.xs, color: moveColor || colors.text.muted, fontWeight: warning ? 'bold' : undefined }}>
+                  <GameText
+                    size="xs"
+                    style={{
+                      marginTop: spacing.xs,
+                      color: moveColor || colors.text.muted,
+                      fontWeight: warning ? 'bold' : undefined,
+                    }}
+                  >
                     {/* Plain text nodes, not a nested span: the severity prefix
                         and the stage label must read as one line. */}
-                    ◆ {warning ? `${TELEGRAPH_GLYPH} ${warning.severity.toUpperCase()} — ` : ''}{formatCombatMoveStatus(move)}
+                    ◆ {warning ? `${TELEGRAPH_GLYPH} ${warning.shortLabel} — ` : ''}{formatCombatMoveStatus(move)}
                     {category && <span style={{ opacity: 0.6 }}> ({category})</span>}
                     {beatsToResolve !== null && (
                       <span style={{ opacity: 0.85 }}> — resolves {formatBeatCountdown(beatsToResolve)}</span>
@@ -872,6 +917,7 @@ const EntityLayer = React.memo(({
       return (
         <div
           key={`${entityId ?? idx}-${item.isFriendly ? 'friend' : 'enemy'}`}
+          data-testid="battlefield-token"
           onMouseEnter={() => onHoverEntity(item.entity)}
           onMouseLeave={onClearHover}
           onClick={(e) => { e.stopPropagation(); onSelectEntity(item.entity); }}
@@ -1842,15 +1888,21 @@ function BattlefieldGrid({
   // touch browsers emulate mouseenter on tap and hold it until another
   // element is tapped, so the numeral would otherwise stay pinned by a hover
   // that no finger is providing.
+  //
+  // A functional updater with no deps, so the callback — and with it the
+  // memoised entity layer's props — stays stable across selections. Clearing
+  // the hover inside the updater is an idempotent set on this same component,
+  // so StrictMode's double invocation of the updater is harmless.
   const toggleSelectedEntity = useCallback((entity) => {
     const id = entity?.id ?? null;
-    if (id != null && id === selectedEntityId) {
-      setSelectedEntityId(null);
-      setHoveredEntity(null);
-    } else {
-      setSelectedEntityId(id);
-    }
-  }, [selectedEntityId]);
+    setSelectedEntityId((prev) => {
+      if (id != null && id === prev) {
+        setHoveredEntity(null);
+        return null;
+      }
+      return id;
+    });
+  }, []);
 
   // Notify parent when animation busy-state changes so end-of-combat timing
   // can wait for the death animation to finish before starting the grace timer.
@@ -1988,6 +2040,19 @@ function BattlefieldGrid({
     setIsPanned((prev) => (prev === panned ? prev : panned));
   }, []);
 
+  /** Stop an in-flight recenter ease, if any. */
+  const cancelPanDecay = useCallback(() => {
+    if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
+  }, []);
+
+  /** Drop both halves of the pan at once — the window shift and the remainder. */
+  const resetPan = useCallback(() => {
+    cancelPanDecay();
+    touchPanRef.current = { x: 0, y: 0 };
+    commitPanCells(0, 0);
+    applyPanTransform();
+  }, [cancelPanDecay, commitPanCells, applyPanTransform]);
+
   /** Ease the pan offset back to zero (the recenter affordance). */
   const recenterPan = useCallback(() => {
     // The cell shift drops in one step — it is a re-render, not a transform,
@@ -1995,15 +2060,13 @@ function BattlefieldGrid({
     commitPanCells(0, 0);
     const pan = touchPanRef.current;
     if (Math.abs(pan.x) < 0.5 && Math.abs(pan.y) < 0.5) {
-      touchPanRef.current = { x: 0, y: 0 };
-      applyPanTransform();
-      panDecayRafRef.current = null;
+      resetPan();
       return;
     }
     touchPanRef.current = { x: pan.x * 0.82, y: pan.y * 0.82 };
     applyPanTransform();
     panDecayRafRef.current = requestAnimationFrame(recenterPan);
-  }, [applyPanTransform, commitPanCells]);
+  }, [applyPanTransform, commitPanCells, resetPan]);
 
   useEffect(() => {
     const el = gridContainerRef.current;
@@ -2014,17 +2077,21 @@ function BattlefieldGrid({
     // pointer move (60-120/s) forces a synchronous layout flush over a
     // subtree holding up to thousands of grid cells. The pan layer is the
     // box the cells are laid out in (the viewport box, letterboxed square
-    // when that flag is on), so its width over gridCols is one cell. It is
-    // mounted in the same tree as `el`, so it is set whenever this runs.
+    // when that flag is on), so its width and height over gridCols are the
+    // two sides of one cell. It is mounted in the same tree as `el`, so it
+    // is set whenever this runs.
     const measureGesture = () => {
-      const { leftX, topY, gridCols, mapSize } = viewRef.current;
+      const view = viewRef.current;
       const box = panLayerRef.current.getBoundingClientRect();
-      const x = panCellBounds(leftX, gridCols, mapSize);
-      // The window's low edge on y is its BOTTOM row (topY - gridCols + 1);
-      // the bounds come back as shifts of that edge, which are shifts of topY.
-      const y = panCellBounds(topY - gridCols + 1, gridCols, mapSize);
+      const { x, y } = windowPanBounds(view);
       dragBoundsRef.current = {
-        cellPx: box.width / gridCols,
+        // One cell size PER AXIS. With `squareBattlefieldCells` off (the
+        // default) the box fills the panel, so a cell is 1/gridCols of the
+        // width and 1/gridCols of the height — two different numbers, the
+        // same two `getEntityStyle` sizes tokens with. Measuring one off the
+        // width and using it for both axes stepped rows at the column pitch.
+        cellPxX: box.width / view.gridCols,
+        cellPxY: box.height / view.gridCols,
         // Screen-space ranges. Dragging right (+px) reveals lower x, so the
         // screen shift is the negation of the leftX shift; dragging down
         // (+px) reveals higher y, the same sense as the topY shift.
@@ -2037,23 +2104,27 @@ function BattlefieldGrid({
       // Lazily initialised so a synthetic move with no preceding down-event
       // still clamps.
       if (!dragBoundsRef.current) measureGesture();
-      const { cellPx, minX, maxX, minY, maxY } = dragBoundsRef.current;
+      const { cellPxX, cellPxY, minX, maxX, minY, maxY } = dragBoundsRef.current;
       dragTravelRef.current += Math.abs(dx) + Math.abs(dy);
 
       // Rebuild the gesture's screen-space total from the committed cells
       // plus the remainder, add the move, and split it again — one clamp,
       // one rounding rule, for both the cells and the px they leave behind.
+      // Screen x runs opposite to the leftX shift (see measureGesture); that
+      // one sign flip is applied here and undone once on the commit below.
       const cells = panCellsRef.current;
       const rem = touchPanRef.current;
-      const sx = splitPanAxis(-cells.x * cellPx + rem.x + dx, cellPx, minX, maxX);
-      const sy = splitPanAxis(cells.y * cellPx + rem.y + dy, cellPx, minY, maxY);
+      const screenTravelX = -cells.x * cellPxX + rem.x + dx;
+      const screenTravelY = cells.y * cellPxY + rem.y + dy;
+      const sx = splitPanAxis(screenTravelX, cellPxX, minX, maxX);
+      const sy = splitPanAxis(screenTravelY, cellPxY, minY, maxY);
       touchPanRef.current = { x: sx.residual, y: sy.residual };
       commitPanCells(-sx.cells, sy.cells);
       applyPanTransform();
     };
 
     const beginDrag = (x, y) => {
-      if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
+      cancelPanDecay();
       measureGesture();
       dragTravelRef.current = 0;
       touchStartRef.current = { x, y };
@@ -2111,7 +2182,7 @@ function BattlefieldGrid({
       el.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
-      if (panDecayRafRef.current) cancelAnimationFrame(panDecayRafRef.current);
+      cancelPanDecay();
     };
     // `tab` is load-bearing: the enemies tab early-returns a different tree, so
     // the container this effect binds to unmounts and a NEW one mounts on the
@@ -2121,7 +2192,7 @@ function BattlefieldGrid({
     // The window (leftX/topY/gridCols) is deliberately NOT a dep: it changes
     // every time the camera steps a cell, and rebinding the listeners
     // mid-gesture drops the drag. It reaches the handlers through viewRef.
-  }, [applyPanTransform, commitPanCells, tab]);
+  }, [applyPanTransform, commitPanCells, cancelPanDecay, tab]);
 
   // Reset the touch-pan offset when the fight identity changes, so a new fight
   // does not open with the camera parked where the last one left it.
@@ -2141,11 +2212,8 @@ function BattlefieldGrid({
   // window the mode produces, and a shift chosen against a 13-cell follow
   // window means nothing against a fit frame (or vice versa).
   useEffect(() => {
-    if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
-    touchPanRef.current = { x: 0, y: 0 };
-    commitPanCells(0, 0);
-    applyPanTransform();
-  }, [combatId, combatActive, isFitMode, applyPanTransform, commitPanCells]);
+    resetPan();
+  }, [combatId, combatActive, isFitMode, resetPan]);
 
   // Clicking the map background clears the selection — as the panel's own
   // close-button tooltip promised. The previous `e.target === e.currentTarget`
@@ -2370,10 +2438,38 @@ function BattlefieldGrid({
   // it offsets the frame. Every consumer below — cellOf (the sole visibility
   // test), the background cells, the arena-bounds rectangle, the off-screen
   // markers — reads the panned window, so nothing can disagree about what is
-  // on screen. The unpanned window is mirrored for the drag handlers' clamp.
+  // on screen.
+  //
+  // The viewRef write must stay BEFORE the panCells shift: the drag handlers
+  // clamp the shift against the UNPANNED window (why they read a ref at all
+  // is on its declaration), and a mirror of the panned window would let each
+  // gesture clamp against the last one's result.
+  const unpannedLeftX = leftX;
+  const unpannedTopY = topY;
   viewRef.current = { leftX, topY, gridCols, mapSize: resolvedMapSize };
   leftX += panCells.x;
   topY += panCells.y;
+
+  // The shift is clamped at gesture start against the window of that moment,
+  // and the window moves on its own: Jean steps while the player is panned
+  // (follow mode), or the fit frame re-derives. Re-clamp against the fresh
+  // window so the shift can never carry it past the arena edge in the beats
+  // before the next drag happens to fix it. Keyed on the UNPANNED window; a
+  // shift that is already legal is a no-op, so this cannot fight a drag.
+  useEffect(() => {
+    const { x, y } = windowPanBounds({
+      leftX: unpannedLeftX, topY: unpannedTopY, gridCols, mapSize: resolvedMapSize,
+    });
+    const cur = panCellsRef.current;
+    const clampedX = clampNumber(cur.x, x.min, x.max);
+    const clampedY = clampNumber(cur.y, y.min, y.max);
+    if (clampedX === cur.x && clampedY === cur.y) return;
+    // A window pushed back onto the arena is a stopped edge, and a stopped
+    // edge has no remainder (see splitPanAxis) — clear the translate too.
+    touchPanRef.current = { x: 0, y: 0 };
+    commitPanCells(clampedX, clampedY);
+    applyPanTransform();
+  }, [unpannedLeftX, unpannedTopY, gridCols, resolvedMapSize, commitPanCells, applyPanTransform]);
 
   // Tokens shrink with the viewport, so the detail a marker can carry is a
   // function of cell size, not of which mode produced it — fit mode is

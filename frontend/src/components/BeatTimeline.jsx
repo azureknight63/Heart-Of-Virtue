@@ -4,7 +4,7 @@ import { beatUnit } from '../utils/moveCommitment'
 import { colors, spacing } from '../styles/theme';
 import { categoryIcon } from '../utils/categories';
 import { buildBeatTimelineColumns, DEFAULT_MAX_COLUMNS } from '../utils/beatTimeline';
-import { telegraphLabel, TELEGRAPH_GLYPH } from '../utils/combatMoveStatus';
+import { TELEGRAPH_GLYPH } from '../utils/combatMoveStatus';
 
 /**
  * Horizontal beat-timeline strip — a schedule of what resolves when, shown
@@ -85,16 +85,15 @@ function TimelineMarker({ entry }) {
   const baseColor = isFriendly ? colors.primary : colors.danger;
   const bg = isFriendly ? colors.alpha.primary[20] : colors.alpha.danger[20];
   // Issue #586: an enemy's heavy/deadly wind-up gets a glyph and a name so
-  // a Tidal Surge column reads differently from a routine swing. Enemies
-  // only — the cue is a threat to Jean, not a note on an ally's big hit.
-  const warning = isFriendly ? null : telegraphLabel(entry.severity);
+  // a Tidal Surge column reads differently from a routine swing. The util
+  // has already applied the enemies-only rule (`hostileTelegraphWarning`).
+  const { warning } = entry;
+  const tooltip = `${entry.name} — ${entry.moveName} (lands in ${entry.beat} ${beatUnit(entry.beat)})`
+    + (warning ? ` — ${warning.label}` : '');
 
   return (
     <div
-      title={
-        `${entry.name} — ${entry.moveName} (lands in ${entry.beat} ${beatUnit(entry.beat)})`
-        + (warning ? ` — ${warning}` : '')
-      }
+      title={tooltip}
       style={{
         display: 'flex', alignItems: 'center', gap: '4px',
         padding: entry.isPlayer ? '4px 8px' : '2px 6px',
@@ -112,9 +111,12 @@ function TimelineMarker({ entry }) {
         fontFamily: 'monospace',
       }}
     >
+      {/* The severity WORD is visible beside the glyph, not only in the
+          title/aria-label: on touch there is no hover, and the glyph alone
+          cannot tell a heavy wind-up from a deadly one. */}
       {warning && (
-        <span role="img" aria-label={warning} style={{ color: colors.secondary }}>
-          {TELEGRAPH_GLYPH}
+        <span role="img" aria-label={warning.label} style={{ color: colors.secondary, fontWeight: 'bold' }}>
+          {TELEGRAPH_GLYPH} {warning.shortLabel}
         </span>
       )}
       <span aria-hidden="true">{categoryIcon(entry.category)}</span>

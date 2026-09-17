@@ -120,9 +120,10 @@ describe('CombatLog', () => {
 
   it('sanitizes markup in a log message instead of executing it', () => {
     render(<CombatLog log={[entry({ message: '<img src=x onerror="alert(1)">bit by a bat' })]} />)
-    const img = document.querySelector('img')
-    // DOMPurify keeps the element but strips the event-handler attribute.
-    expect(img?.getAttribute('onerror')).toBeNull()
+    // The log's allow-list (CombatLog.jsx `sanitizeLogHtml`) admits inline
+    // emphasis only: the <img> is dropped outright, not kept with its
+    // handler stripped -- an <img src> would fetch on parse.
+    expect(document.querySelector('img')).toBeNull()
     expect(entries().getByText(/bit by a bat/)).toBeInTheDocument()
   })
 
