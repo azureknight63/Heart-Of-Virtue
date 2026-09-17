@@ -3254,8 +3254,12 @@ class ApiCombatAdapter:
             flask_app = None
 
         try:
-            count = self._suggestion_count()
-            ctx, available_move_names = self._build_strategist_context(all_moves)
+            # Snapshot under the beat lock (reentrant, so the adapter's own
+            # callers nest freely): the poll path reaches here with no lock
+            # of its own, and the serializers read live combatant state.
+            with self._beat_lock:
+                count = self._suggestion_count()
+                ctx, available_move_names = self._build_strategist_context(all_moves)
         except Exception as e:
             logger.error(f"Error building strategist context: {e}", exc_info=True)
             with self._suggestion_lock:
