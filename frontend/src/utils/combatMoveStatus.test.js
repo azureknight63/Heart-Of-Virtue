@@ -7,7 +7,10 @@ import {
   moveAvailability,
   moveDamagePreview,
   telegraphSeverity,
+  telegraphShortLabel,
   telegraphWarning,
+  hostileTelegraphWarning,
+  TELEGRAPH_SEVERITIES,
   NO_REACHABLE_TARGET_REASON,
 } from './combatMoveStatus';
 
@@ -55,13 +58,32 @@ describe('telegraphWarning', () => {
     expect(telegraphWarning(null)).toBeNull();
   });
 
-  it('names a heavy and a deadly wind-up', () => {
-    expect(telegraphWarning(pending('heavy'))).toEqual({ severity: 'heavy', label: 'Heavy move' });
-    expect(telegraphWarning(pending('deadly'))).toEqual({ severity: 'deadly', label: 'Deadly move' });
+  it('names a heavy and a deadly wind-up, in sentence and one-word form', () => {
+    expect(telegraphWarning(pending('heavy'))).toEqual({ severity: 'heavy', label: 'Heavy move', shortLabel: 'HEAVY' });
+    expect(telegraphWarning(pending('deadly'))).toEqual({ severity: 'deadly', label: 'Deadly move', shortLabel: 'DEADLY' });
   });
 
   it('is null once the move has resolved — a spent surge is not a threat', () => {
     expect(telegraphWarning({ ...pending('deadly'), current_stage: 3 })).toBeNull();
+  });
+
+  it('closes the vocabulary explicitly, normal included', () => {
+    expect([...TELEGRAPH_SEVERITIES].sort()).toEqual(['deadly', 'heavy', 'normal']);
+    expect(telegraphShortLabel('normal')).toBeNull();
+    expect(telegraphShortLabel('constructor')).toBeNull();
+  });
+});
+
+describe('hostileTelegraphWarning', () => {
+  const surge = { name: 'Tidal Surge', current_stage: 0, beats_until_resolve: 7, telegraph_severity: 'deadly' };
+
+  it("warns for an enemy's heavy move and not for an ally's — the glyph is a threat cue for Jean", () => {
+    expect(hostileTelegraphWarning(surge, true)).toEqual(telegraphWarning(surge));
+    expect(hostileTelegraphWarning(surge, false)).toBeNull();
+  });
+
+  it('still gates on the move being pending', () => {
+    expect(hostileTelegraphWarning({ ...surge, current_stage: 2 }, true)).toBeNull();
   });
 });
 
