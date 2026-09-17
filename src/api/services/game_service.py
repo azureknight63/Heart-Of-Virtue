@@ -3604,9 +3604,12 @@ class GameService:
                 player._combat_adapter.available_options = (
                     player._combat_adapter._get_available_moves()
                 )
-                # Kick off suggestions once for the re-initialized adapter
+                # Kick off suggestions once for the re-initialized adapter,
+                # off the list just built rather than a second walk of it.
                 if not getattr(player, "suggestions_loading", False):
-                    player._combat_adapter.refresh_suggestions()
+                    player._combat_adapter.refresh_suggestions(
+                        player._combat_adapter.available_options
+                    )
             else:
                 return {
                     "combat_active": getattr(player, "in_combat", False),
@@ -3650,9 +3653,11 @@ class GameService:
                         adapter.available_options = adapter._get_available_moves()
                         if session_id:
                             adapter.session_id = session_id
-                        # Only start a suggestion fetch if one isn't already running
+                        # Only start a suggestion fetch if one isn't already
+                        # running, off the list just built rather than a
+                        # second walk of it.
                         if not getattr(player, "suggestions_loading", False):
-                            adapter.refresh_suggestions()
+                            adapter.refresh_suggestions(adapter.available_options)
 
             # Refresh available_options if we're in move selection mode.
             # This ensures viable_targets are updated when enemies are added/removed mid-combat.
@@ -3669,7 +3674,7 @@ class GameService:
                 if not getattr(player, "suggestions_loading", False) and not getattr(
                     player, "suggested_moves", []
                 ):
-                    adapter.refresh_suggestions()
+                    adapter.refresh_suggestions(adapter.available_options)
 
         # After combat ends, surface any post-combat tile events (e.g.
         # AfterDefeatingKingSlime) through the standard trigger_tile_events
