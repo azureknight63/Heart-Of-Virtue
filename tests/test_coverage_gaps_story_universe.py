@@ -23,7 +23,7 @@ if "tkinter" not in sys.modules:
     sys.modules["tkinter.font"] = MagicMock()
 
 from src.narration import capture_narration  # noqa: E402
-from src.story.ch02 import ATRIUM_COORDS  # noqa: E402
+from src.story.ch02 import THRESHOLD_COORDS  # noqa: E402
 from tests._ch02_fixtures import (  # noqa: E402
     CHANNEL_COORD,
     CORRUPTED_AUTHORED_TEXT,
@@ -1177,20 +1177,20 @@ class TestAfterDefeatingKingSlime:
             ev.process()
         assert_description_overwritten(tile, authored_text=CORRUPTED_AUTHORED_TEXT)
 
-    def test_process_teleports_gorran_from_atrium(self):
+    def test_process_teleports_gorran_from_the_threshold(self):
         ev, player, tile = self._make()
         gorran = Gorran()
-        atrium_tile = Mock()
-        atrium_tile.npcs_here = [gorran]
-        # The atrium is found through the universe's pools map (#577), as
-        # Ch02GorranAtPools already finds it -- not through player.map.
-        player.universe.maps = [make_pools_map({ATRIUM_COORDS: atrium_tile})]
+        wait_tile = Mock()
+        wait_tile.npcs_here = [gorran]
+        # The tile he waits on (#613) is found through the universe's pools
+        # map (#577) -- not through player.map, which a flee can repoint.
+        player.universe.maps = [make_pools_map({THRESHOLD_COORDS: wait_tile})]
         with (
             patch("src.story.ch02.print_slow"),
             patch("src.story.ch02.time.sleep"),
         ):
             ev.process()
-        assert gorran not in atrium_tile.npcs_here
+        assert gorran not in wait_tile.npcs_here
         assert gorran in tile.npcs_here
 
     def test_process_finds_gorran_in_ally_list(self):
