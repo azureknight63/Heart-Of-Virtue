@@ -54,7 +54,7 @@ python -m pytest -q                                   # backend default suite (e
 python -m pytest --cov=src --cov=ai --cov-report=term-missing --cov-fail-under=85 -q   # what CI enforces
 cd frontend && npm test -- --run                      # frontend; add --coverage for the 95% thresholds in vite.config.js
 python -m flake8 --extend-ignore=E501 src/          # the whole Python style gate; no autoformatter
-python tools/bug_hunt.py [--scenario NAME] [--headless --output bugs.json]   # in-process API harness, 22 scenarios
+python tools/bug_hunt.py [--scenario NAME] [--headless --output bugs.json]   # in-process API harness; scenarios registered in tools/harness/scenarios/__init__.py
 python tools/inquisitor.py --headless --output tools/browser_findings.json   # real-browser QA; setup in docs/qa/inquisitor.md
 python tools/logcat.py --tail                         # merged backend+browser JSONL feed; --json (agents), --errors, --grep, --since, --session, --src be|fe
 ```
