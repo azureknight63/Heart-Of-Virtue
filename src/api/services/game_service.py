@@ -2604,10 +2604,38 @@ class GameService:
         # those meant confirming it ran `_commit_teleport` -- which now ends
         # the demo instead of crossing, but with `beta_end` never set, so the
         # player got the closing beat and the story gate and no BetaEndDialog.
+        #
+        # The verb test is #620. This arm used to key off the TYPE alone and
+        # never look at `handler`, so every verb on
+        # `_ALLOWED_INTERACTION_VERBS` armed a crossing confirmation on any
+        # ordinary passageway -- LOOT a city gate and
+        # `_queue_passageway_confirmation` ran `drop_merchandise_items()` and
+        # every `events_before` BEFORE the player was asked anything. Two
+        # conditions, because neither alone is right:
+        #
+        # * `is_crossing_handler` is the engine's own answer to "does this
+        #   verb use it" (the same gate `_is_demo_end_crossing` asks), and it
+        #   covers `enter`, the three delegators and the name-word aliases.
+        # * `action in target.keywords` readmits the crossing verbs a
+        #   placement authors that its NAME does not contain: the alias loop
+        #   in `Passageway.__init__` binds words of the name only, so
+        #   grondia (11, 5) `inside`, grondia (15, 5) `east` and
+        #   eastern-descent (0, 2) `west` resolve to nothing and worked purely
+        #   because this arm ignored the handler. An authored keyword is the
+        #   author saying "this verb uses it", which `_verb_refusal` already
+        #   treats as authoritative.
+        #
+        # What is excluded is exactly the hole: an allow-list verb the
+        # placement never advertised. Those fall to the generic arm and are
+        # refused in fiction.
         elif (
             isinstance(target, Passageway)
             and not _is_demo_end_passageway(target)
             and session_data is not None
+            and (
+                target.is_crossing_handler(handler)
+                or action in getattr(target, "keywords", ())
+            )
         ):
             events_triggered.extend(
                 self._queue_passageway_confirmation(request)
