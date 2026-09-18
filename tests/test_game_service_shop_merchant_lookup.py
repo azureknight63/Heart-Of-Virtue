@@ -23,10 +23,21 @@ integration tests pollute — see CLAUDE.md, "Running Tests".
 import pytest
 
 from src.api.serializers.shop_serializer import ShopSerializer
-from src.items import Gold, Restorative, RustedDagger
+from src.items import (
+    DriedCrystalSap,
+    Gold,
+    MineralPowder,
+    Restorative,
+    RustedDagger,
+)
 from src.npc import NPC
 from src.npc._merchants import JamboHealsU, Merchant, MiloCurioDealer
-from tests._gs_fixtures import get_player_gold, live_world, set_player_gold
+from tests._gs_fixtures import (
+    get_player_gold,
+    live_shop,
+    live_world,
+    set_player_gold,
+)
 from src.combatant import wire_handle
 
 MERCHANT_STOCK_GOLD = 2000
@@ -188,3 +199,90 @@ class TestShopRoutesReachRealMerchant:
 
         assert result["success"] is False
         assert "Merchant not found" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# Buyback survives a partial sell of a count-baking stack (#624)
+# ---------------------------------------------------------------------------
+
+#: The two item classes whose ``stack_grammar()`` used to rewrite ``self.name``
+#: to carry the stack size ("Mineral Powder x3"). Every other ``stack_grammar``
+#: in ``src/items.py`` only ever touched ``description``/``announce``/``value``.
+NAME_BAKING_STACKABLES = [MineralPowder, DriedCrystalSap]
+
+
+def _stack_of(item_cls, count, merchandise=False):
+    """One ``item_cls`` stack of ``count``, with its grammar applied."""
+    item = item_cls()
+    item.count = count
+    item.merchandise = merchandise
+    item.stack_grammar()
+    return item
+
+
+class TestPartialSellOfStackableKeepsBuybackRedeemable:
+    """A partial sell into a merchant's existing stack must stay buyable back.
+
+    ``shop_sell`` records the item's name pre-transfer, because
+    ``stack_inv_items`` dissolves the sold object into the merchant's
+    pre-existing same-name stack and the handle dies with it. That name is the
+    only surviving link, so ``stack_grammar()`` rewriting ``name`` on the
+    surviving master renamed the row's target out from under the ledger and
+    ``find_stock_by_name`` matched nothing.
+
+    The 1 / 5 / sell-2 numbers are deliberate: the merged stack (3) differs
+    from the seller's pre-sale count (5), so a stale baked name cannot match by
+    coincidence. Merchant 3 / player 5 / sell 2 would leave the master at "x5"
+    and pass for the wrong reason.
+    """
+
+    @pytest.mark.parametrize("item_cls", NAME_BAKING_STACKABLES)
+    def test_buyback_succeeds_after_partial_sell(self, game_service, item_cls):
+        player, _game_map, merchant = live_shop(
+            stock=[
+                Gold(amt=MERCHANT_STOCK_GOLD),
+                _stack_of(item_cls, 1, merchandise=True),
+            ],
+            player_gold=PLAYER_PURSE_GOLD,
+        )
+        sellable = _stack_of(item_cls, 5)
+        player.inventory.append(sellable)
+
+        sell_result = game_service.shop_sell(
+            player, wire_handle(merchant), wire_handle(sellable), 2
+        )
+        assert sell_result["success"] is True, sell_result.get("error")
+
+        ledger = merchant._buyback_ledger
+        assert len(ledger) == 1
+        buyback_result = game_service.shop_buyback(
+            player, wire_handle(merchant), wire_handle(ledger[0])
+        )
+
+        assert buyback_result["success"] is True, buyback_result.get("error")
+        assert merchant._buyback_ledger == []
+
+    @pytest.mark.parametrize("item_cls", NAME_BAKING_STACKABLES)
+    def test_sell_confirmation_names_the_item_once(self, game_service, item_cls):
+        """The same mutation double-counted the stack in the sale message.
+
+        The quantity is already spelled by ``shop_sell``'s own ``{quantity}x``
+        prefix, so a baked name produced "Sold 2x Mineral Powder x5" -- and the
+        x5 was the *seller's* pre-sale count, not anything the player sold.
+        """
+        player, _game_map, merchant = live_shop(
+            stock=[Gold(amt=MERCHANT_STOCK_GOLD)],
+            player_gold=PLAYER_PURSE_GOLD,
+        )
+        sellable = _stack_of(item_cls, 5)
+        player.inventory.append(sellable)
+
+        result = game_service.shop_sell(
+            player, wire_handle(merchant), wire_handle(sellable), 2
+        )
+
+        assert result["success"] is True, result.get("error")
+        expected = "Sold 2× {} for {} gold.".format(
+            item_cls().name, result["gold_gained"]
+        )
+        assert result["message"] == expected

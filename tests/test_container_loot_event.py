@@ -273,10 +273,12 @@ def _make_stacked_sap_container():
     from src.items import DriedCrystalSap
 
     container = _make_container(items=[DriedCrystalSap(), DriedCrystalSap()])
-    # Precondition: stack_items() merged them and stack_grammar baked the count.
+    # Precondition: stack_items() merged them into a single count-2 stack. The
+    # name stays unadorned -- stack_grammar() no longer bakes the count into it
+    # (#624), which is what the labels below must supply exactly once.
     assert len(container.inventory) == 1
     assert container.inventory[0].count == 2
-    assert container.inventory[0].name == "Dried Crystal Sap x2"
+    assert container.inventory[0].name == "Dried Crystal Sap"
     return container
 
 
