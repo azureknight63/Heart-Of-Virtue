@@ -16,7 +16,8 @@ Events exercised (in story order):
                                    via check_conditions; called directly
   7.  Ch02KingSlimeMemoryFlash  — fires once the fragment is in inventory
   8.  AfterKingSlimeReturn      — 7-stage fragment handoff to Votha Krr
-  9.  Ch02GorranAtPools         — spawns Gorran onto the pools atrium tile
+  9.  Ch02GorranAtPools         — seats Gorran on its own (threshold) tile
+                                   and takes him out of the party (#613)
 
 Prerequisites: session player must have been initialised with a full Universe
 (the harness creates one via SessionManager._create_player_for_session).
@@ -89,14 +90,15 @@ class Ch02EventsScenario(Scenario):
                 Ch02KingSlimeMemoryFlash,  # noqa: F401 (queued dynamically by AfterDefeatingKingSlime)
                 AfterKingSlimeReturn,
             )
+            from src.npc import Gorran
         except Exception as exc:
             bugs.append(self._bug(
-                title=f"ch02_events: failed to import story modules: {exc}",
+                title=f"ch02_events: failed to import story or NPC modules: {exc}",
                 severity=BugSeverity.HIGH,
                 category=BugCategory.CRASH,
                 endpoint="import",
                 method="IMPORT",
-                expected="Clean import of src.story.ch02",
+                expected="Clean import of src.story.ch02 and src.npc",
                 actual=str(exc),
             ))
             return bugs
@@ -398,14 +400,48 @@ class Ch02EventsScenario(Scenario):
             ))
 
         # ==================================================================
-        # 9. Ch02GorranAtPools (spawns Gorran onto the pools atrium tile)
+        # 9. Ch02GorranAtPools (seats Gorran on its own tile -- the threshold, #613)
         # ==================================================================
-        tile.events_here = [Ch02GorranAtPools(player, tile, repeat=False)]
+        # Arrive with him in the party, as the real passage does: the beat
+        # must take him OUT of it and leave him on its own tile, or he walks
+        # the pools behind Jean -- or waits a room further in than the scene
+        # that seats him beside Jean says (#613). In play the scene comes
+        # BEFORE the King Slime falls, and it deliberately leaves Gorran with
+        # Jean once the boss is dead -- so step 5's gate is lifted for this
+        # step, as the real order has it, and put back afterwards.
+        boss_gate = story.pop(AfterDefeatingKingSlime.GATE_KEY, None)
+        try:
+            party_gorran = next(
+                (a for a in player.combat_list_allies if isinstance(a, Gorran)), None
+            )
+            if party_gorran is None:
+                party_gorran = Gorran()
+                player.combat_list_allies.append(party_gorran)
+            tile.events_here = [Ch02GorranAtPools(player, tile, repeat=False)]
 
-        resp = trigger_events()
-        bug = check(resp, "Ch02GorranAtPools trigger")
-        if bug:
-            bugs.append(bug)
-        check_flag("gorran_at_pools", "Ch02GorranAtPools")
+            resp = trigger_events()
+            bug = check(resp, "Ch02GorranAtPools trigger")
+            if bug:
+                bugs.append(bug)
+            check_flag("gorran_at_pools", "Ch02GorranAtPools")
+            still_following = [
+                a for a in player.combat_list_allies if isinstance(a, Gorran)
+            ]
+            if still_following or party_gorran not in tile.npcs_here:
+                bugs.append(self._bug(
+                    title="Ch02GorranAtPools: Gorran not left waiting on the scene's tile",
+                    severity=BugSeverity.MEDIUM,
+                    category=BugCategory.WRONG_RESPONSE,
+                    endpoint="/api/world/events",
+                    method="POST",
+                    expected="Gorran out of combat_list_allies and standing on the event's tile (#613)",
+                    actual=(
+                        f"{len(still_following)} Gorran still in combat_list_allies; "
+                        f"on the event's tile: {party_gorran in tile.npcs_here}"
+                    ),
+                ))
+        finally:
+            if boss_gate is not None:
+                story[AfterDefeatingKingSlime.GATE_KEY] = boss_gate
 
         return bugs

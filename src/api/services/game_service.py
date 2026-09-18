@@ -4,7 +4,7 @@ import contextlib
 import inspect
 import re
 from collections import Counter
-from typing import TYPE_CHECKING, Dict, Any, NamedTuple, Optional, List
+from typing import TYPE_CHECKING, Dict, Any, NamedTuple, Optional, List, Tuple
 from unittest.mock import patch
 
 from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
@@ -247,6 +247,14 @@ def _unsupported_action_message(target, action):
     return f"There's no way for Jean to {verb} the {name}."
 
 
+class _FightTiles(NamedTuple):
+    """Where the player's last fight was fought, most reliable first; see
+    :meth:`GameService._fight_tile_candidates`."""
+
+    combat_tile: Any
+    current_room: Any
+
+
 class _InteractionOutcome(NamedTuple):
     """What one dispatched interaction produced.
 
@@ -321,10 +329,11 @@ class _PreInteractionLocation(NamedTuple):
 #: ``src/narration.py``).
 _BLANK_LINE_RUN_RE = re.compile(r"\n\s*\n")
 
-#: API-side: the two ``_ALLOWED_INTERACTION_VERBS`` entries that move an item
-#: OUT of a container. Unlike ``Container.LOOK_INSIDE_VERBS``, which the engine
-#: declares and this layer must not copy, the engine declares nothing here --
-#: so this is the one authority, not a duplicate of one.
+#: API-side: the two ``_ALLOWED_INTERACTION_VERBS`` entries that act on a single
+#: item inside a container. (``take_all`` targets the container itself and
+#: dispatches through the generic arm.) Unlike ``Container.LOOK_INSIDE_VERBS``,
+#: which the engine declares and this layer must not copy, the engine declares
+#: nothing here -- so this is the one authority, not a duplicate of one.
 _CONTAINER_ITEM_VERBS = frozenset({"take", "equip"})
 
 #: The break-away threshold, in feet. Named because the refusal message below
@@ -419,6 +428,21 @@ class GameService:
             "look",
             "take",
             "equip",
+            # The client renders TAKE ALL on every open container holding more
+            # than one item, independent of authored keywords, but
+            # ``Container.__init__``'s own ``take_all`` keyword is overwritten
+            # by the placement's authored list at map load — so most shipped
+            # containers refused their own button (issue #609;
+            # tests/test_object_action_dispatch_contract.py derives the
+            # affected placements). Allowed here rather than authored into
+            # every map. On a container, ``_dispatch_interaction``'s generic
+            # arm resolves the verb to ``Container.take_all`` and calls it;
+            # that is the engine's only implementation, so on any other target
+            # the same arm resolves nothing and refuses it in fiction. One
+            # exception, shared with every other verb on this list: a
+            # non-demo-end Passageway goes to the step-through confirmation arm
+            # whatever the verb. Hardening that arm is #620.
+            "take_all",
         }
     )
 
@@ -3690,8 +3714,8 @@ class GameService:
             _adapter._post_combat_tile_events_fired = True
             # Use the tile captured at victory time, not the current room —
             # the player may have moved before this poll.
-            _tile = getattr(_adapter, "_combat_tile", None) or getattr(
-                player, "current_room", None
+            _tile = next(
+                (t for t in self._fight_tile_candidates(player) if t), None
             )
             if _tile:
                 if session_data is None:
@@ -4458,14 +4482,7 @@ class GameService:
                 # combat state is wiped above, so this load is effectively a fresh
                 # start that should restore any equipped item's granted states.
                 player.recharge_equip_states()
-                if hasattr(player, "_combat_adapter"):
-                    del player._combat_adapter
-                if hasattr(player, "combat_adapter_state"):
-                    del player.combat_adapter_state
-                if hasattr(player, "_combat_deferred_enemies"):
-                    del player._combat_deferred_enemies
-                if hasattr(player, "combat_end_summary"):
-                    del player.combat_end_summary
+                self._discard_fight_state(player)
 
             return player
         except Exception as e:
@@ -4716,14 +4733,7 @@ class GameService:
         else:
             player.combat_wave_pending = False
 
-        if hasattr(player, "_combat_adapter"):
-            del player._combat_adapter
-        if hasattr(player, "combat_adapter_state"):
-            del player.combat_adapter_state
-        if hasattr(player, "_combat_deferred_enemies"):
-            del player._combat_deferred_enemies
-        if hasattr(player, "combat_end_summary"):
-            del player.combat_end_summary
+        self._discard_fight_state(player)
 
         # Fleeing tore down everything about the fight EXCEPT player.combat_events,
         # which is process-wide and outlives every combat — it was the exit door
@@ -5052,77 +5062,61 @@ class GameService:
         }
 
     def collect_combat_loot(self, player: Any, item_names: list) -> Dict[str, Any]:
-        """Move selected post-combat drops from the current tile into the player's inventory.
+        """Move selected post-combat drops from the fight's tile into the player's inventory.
 
-        Items listed in item_names are picked up; all others remain on the tile.
-        combat_drops is cleared regardless so the loot phase cannot be repeated.
+        ``item_names`` comes from the client, so only names the fight offered
+        can be taken (:meth:`_offered_drops`: ``player.combat_drops``, and only
+        while a won fight is unresolved), each up to as many objects as it
+        recorded, newest first. That bounds names and object counts, not units:
+        a stackable drop merged into an older pile of its kind arrives as one
+        object, and the whole pile comes with it. The drops are looked for where
+        the fight was fought, not where the player now stands
+        (:meth:`_loot_tile`).
+
+        This call is the victory's resolve signal (:meth:`_end_loot_phase`), so
+        once the tile is found the loot phase ends whatever was taken. If the
+        tile cannot be found and something was asked for, the call is an error
+        and ends nothing, so the player can retry or skip (issue #610). It is
+        refused outright during combat, when there is no victory to resolve.
 
         Args:
             player: The Player instance.
             item_names: List of item names the player chose to take.
 
         Returns:
-            Dict with success, collected list, and skipped list.
+            ``{"success": True, "collected": [...], "skipped": [...]}``, each
+            skipped entry ``{"name", "reason"}`` with reason ``not_offered``,
+            ``not_found`` or ``over_capacity``; or ``{"success": False,
+            "error": ...}`` for a malformed request, a call during combat, or a
+            fight tile that cannot be found — in which cases the drops and the
+            victory are kept.
         """
-        # FIX 3: Add parameter validation
         if item_names is None:
             item_names = []
-        elif not isinstance(item_names, list):
-            return {
-                "success": False,
-                "error": f"Invalid item_names parameter: expected list, got {type(item_names).__name__}",
-            }
+        invalid = self._loot_request_error(item_names)
+        if invalid:
+            return invalid
 
-        # Validate each item name is a string
-        for name in item_names:
-            if not isinstance(name, str):
-                return {
-                    "success": False,
-                    "error": f"Invalid item name in list: expected string, got {type(name).__name__}",
-                }
+        if getattr(player, "in_combat", False):
+            return {"success": False, "error": self._LOOT_DURING_COMBAT_MESSAGE}
 
-        tile = getattr(player, "current_room", None)
-        if not tile or not hasattr(tile, "items_here"):
-            player.combat_drops = []
+        tile = self._loot_tile(player)
+        if tile is None:
+            if item_names:
+                # Nothing taken and nothing forgotten: the drops stay listed and
+                # the victory stays open, so the player can retry or skip. This
+                # used to wipe combat_drops and report success (issue #610).
+                return {"success": False, "error": self._LOOT_TILE_NOT_FOUND_MESSAGE}
+            # Skipping picks nothing up, so it needs no tile to resolve.
+            self._end_loot_phase(player)
             return {"success": True, "collected": [], "skipped": []}
 
-        inventory = get_inventory_list(player)
-
-        capacity = float(getattr(player, "weight_tolerance", 20.0) or 20.0)
-
-        # Build a name → [item, ...] mapping from the tile (all matches per name)
-        tile_by_name: Dict[str, list] = {}
-        for item in list(tile.items_here):
-            name = getattr(item, "name", None)
-            if name:
-                tile_by_name.setdefault(name, []).append(item)
-
-        collected = []
-        skipped = []
-        current_weight = sum(float(getattr(i, "weight", 0) or 0) for i in inventory)
-
-        for name in item_names:
-            candidates = tile_by_name.get(name)
-            if not candidates:
-                skipped.append({"name": name, "reason": "not_found"})
-                continue
-            # Pick up every physical item object with this name (handles stacked drops)
-            any_collected = False
-            for item in list(candidates):
-                item_weight = float(getattr(item, "weight", 0) or 0)
-                if current_weight + item_weight > capacity:
-                    skipped.append({"name": name, "reason": "over_capacity"})
-                    break
-                if item in tile.items_here:
-                    tile.items_here.remove(item)
-                    inventory.append(item)
-                    collected.append(name)
-                    current_weight += item_weight
-                    any_collected = True
-            if not any_collected and not any(s["name"] == name for s in skipped):
-                skipped.append({"name": name, "reason": "not_found"})
-
+        offered = self._offered_drops(player)
+        # Withdrawn as soon as it is read: a second collect in flight (another
+        # tab) then finds nothing on offer, rather than the same cap again.
         player.combat_drops = []
+        collected, skipped = self._take_offered_drops(player, tile, item_names, offered)
+        self._end_loot_phase(player)
 
         if collected and hasattr(player, "stack_inv_items"):
             player.stack_inv_items()
@@ -5130,6 +5124,223 @@ class GameService:
             player.refresh_weight()
 
         return {"success": True, "collected": collected, "skipped": skipped}
+
+    @staticmethod
+    def _loot_request_error(item_names: Any) -> Optional[Dict[str, Any]]:
+        """The error response for a malformed ``item_names``, or None if it is
+        a list of strings."""
+        if not isinstance(item_names, list):
+            return {
+                "success": False,
+                "error": f"Invalid item_names parameter: expected list, got {type(item_names).__name__}",
+            }
+        for name in item_names:
+            if not isinstance(name, str):
+                return {
+                    "success": False,
+                    "error": f"Invalid item name in list: expected string, got {type(name).__name__}",
+                }
+        return None
+
+    @staticmethod
+    def _take_offered_drops(
+        player: Any, tile: Any, item_names: list, offered: Dict[str, int]
+    ) -> Tuple[list, list]:
+        """Move each requested, offered drop from ``tile`` into the player's
+        inventory; returns ``(collected, skipped)``.
+
+        A name not on offer is ``not_offered``; one on offer but not on the
+        tile is ``not_found``; one that would breach ``weight_tolerance`` is
+        ``over_capacity`` and stays put. Each name yields up to its offered cap
+        of objects, newest first: ``spawn_item`` appends, so a non-stackable's
+        own objects are the last of their name on the tile, and an older twin
+        (perhaps a hidden one) is not this fight's to hand over.
+        """
+        inventory = get_inventory_list(player)
+        capacity = float(getattr(player, "weight_tolerance", 20.0) or 20.0)
+        current_weight = sum(float(getattr(i, "weight", 0) or 0) for i in inventory)
+
+        tile_by_name: Dict[str, list] = {}
+        for item in list(tile.items_here):
+            name = getattr(item, "name", None)
+            if name:
+                tile_by_name.setdefault(name, []).append(item)
+
+        collected: list = []
+        skipped: list = []
+        # Each distinct name once, in request order: the list is client-sized,
+        # and a repeated name can take nothing a first pass did not.
+        for name in dict.fromkeys(item_names):
+            if name not in offered:
+                skipped.append({"name": name, "reason": "not_offered"})
+                continue
+            newest_first = tile_by_name.get(name, [])[::-1][: offered[name]]
+            any_collected = over_capacity = False
+            for item in newest_first:
+                item_weight = float(getattr(item, "weight", 0) or 0)
+                if current_weight + item_weight > capacity:
+                    skipped.append({"name": name, "reason": "over_capacity"})
+                    over_capacity = True
+                    break
+                if item in tile.items_here:
+                    tile.items_here.remove(item)
+                    inventory.append(item)
+                    collected.append(name)
+                    current_weight += item_weight
+                    any_collected = True
+            if not any_collected and not over_capacity:
+                skipped.append({"name": name, "reason": "not_found"})
+        return collected, skipped
+
+    @classmethod
+    def _offered_drops(cls, player: Any) -> Dict[str, int]:
+        """What the player's last won fight still offers: ``{name: object cap}``.
+
+        Read from ``player.combat_drops`` — written only by a dying enemy as
+        ``{"name", "quantity"}`` dicts (``src/npc/_loot.py``) — and only while
+        that victory is unresolved (:meth:`_is_unresolved_victory`). A defeat
+        leaves the list behind (flee and load withdraw it, through
+        :meth:`_abandon_loot_phase`), so the victory gate is what stops a
+        fight's leftover names being collected somewhere else.
+
+        The cap is the recorded quantity summed per name. It bounds how many
+        *objects* a name may yield: exact for non-stackables, which spawn one
+        object per unit, but not for a stackable drop that merged into an older
+        pile (see :meth:`collect_combat_loot`).
+        """
+        if not cls._is_unresolved_victory(player):
+            return {}
+        offered: Dict[str, int] = {}
+        drops = getattr(player, "combat_drops", None)
+        drops = drops if isinstance(drops, list) else []
+        for drop in drops:
+            if not isinstance(drop, dict):
+                continue
+            name, quantity = drop.get("name"), drop.get("quantity", 1)
+            if isinstance(name, str) and name:
+                offered[name] = offered.get(name, 0) + max(1, int(quantity or 1))
+        return offered
+
+    @staticmethod
+    def _is_unresolved_victory(player: Any) -> bool:
+        """Whether ``player``'s end-of-combat summary is a won fight not yet
+        resolved: the only state in which there is loot to hand out."""
+        summary = getattr(player, "combat_end_summary", None)
+        return isinstance(summary, dict) and summary.get("status") == "victory"
+
+    @classmethod
+    def _end_loot_phase(cls, player: Any) -> None:
+        """End the victory's loot phase: nothing more is on offer, and the
+        victory is resolved (:meth:`_mark_victory_resolved`)."""
+        player.combat_drops = []
+        cls._mark_victory_resolved(player)
+
+    @classmethod
+    def _mark_victory_resolved(cls, player: Any) -> None:
+        """Drop the end-of-combat summary of a won fight, so ``end_state``
+        stops being served (issue #610).
+
+        ``ApiCombatAdapter.get_combat_state`` emits ``end_state`` for as long as
+        ``player.combat_end_summary`` is set and the player is out of combat,
+        and the client's dedupe of it is in-memory only — deliberately, so a
+        reload mid-dialog still shows the result (issue #116). The loot call is
+        a victory's only resolve point, so it clears the summary here; without
+        this the VICTORY dialog came back on every reload.
+
+        Victory only: a defeat summary is what the DefeatDialog is built from,
+        and defeat resolves through load-save / start-over. A stray loot call
+        after a defeat — a second tab's SKIP — must leave it alone.
+        """
+        if cls._is_unresolved_victory(player):
+            cls._clear_combat_end_summary(player)
+
+    @classmethod
+    def _discard_fight_state(cls, player: Any) -> None:
+        """Drop everything a fight left on ``player`` when it ends unresolved
+        (load, flee): the adapter, its saved state, any deferred enemies, and
+        the loot phase. One spelling for both exits, so neither can miss a
+        step the other takes."""
+        for attr in ("_combat_adapter", "combat_adapter_state", "_combat_deferred_enemies"):
+            if hasattr(player, attr):
+                delattr(player, attr)
+        cls._abandon_loot_phase(player)
+
+    @classmethod
+    def _abandon_loot_phase(cls, player: Any) -> None:
+        """End a fight without resolving it (flee, load): clear the summary,
+        whatever its outcome, and withdraw the offer with it."""
+        player.combat_drops = []
+        cls._clear_combat_end_summary(player)
+
+    @staticmethod
+    def _clear_combat_end_summary(player: Any) -> None:
+        """Clear ``player.combat_end_summary``, whatever the fight's outcome.
+
+        Set to ``None`` rather than deleted, mirroring
+        ``ApiCombatAdapter.initialize_combat``: every reader guards with
+        ``getattr(..., None)``, and leaving the attribute in place keeps the
+        pickled shape stable across saves.
+        """
+        if getattr(player, "combat_end_summary", None) is not None:
+            player.combat_end_summary = None
+
+    #: Why a collect took nothing when the fight's tile could not be found.
+    _LOOT_TILE_NOT_FOUND_MESSAGE = (
+        "Jean cannot find where the battle was fought, so nothing was "
+        "collected. The spoils still lie there."
+    )
+
+    #: Why a collect was refused while a fight is still on.
+    _LOOT_DURING_COMBAT_MESSAGE = (
+        "The fight is not over yet. The spoils can wait until it is."
+    )
+
+    @staticmethod
+    def _fight_tile_candidates(player: Any) -> "_FightTiles":
+        """Where the player's last fight was fought, most reliable first.
+
+        ``_combat_adapter._combat_tile`` is snapshotted at victory, because the
+        player may have moved since; ``current_room`` stands in when the adapter
+        holds no victory snapshot (no adapter, or the fight did not end in a
+        victory). The one rule both the post-combat tile events
+        (:meth:`get_combat_status`) and the loot lookup (:meth:`_loot_tile`)
+        read, each applying its own test of what counts as a usable tile.
+        """
+        adapter = getattr(player, "_combat_adapter", None)
+        return _FightTiles(
+            combat_tile=getattr(adapter, "_combat_tile", None),
+            current_room=getattr(player, "current_room", None),
+        )
+
+    def _loot_tile(self, player: Any) -> Any:
+        """The tile a won fight's drops lie on, or ``None`` if it can't be found.
+
+        Drops are spawned on the tile the fight was fought on, which is not
+        necessarily where the player is now (issue #610), so the candidates are
+        :meth:`_fight_tile_candidates`. A candidate counts only if its
+        ``items_here`` is a real list: a tile is somewhere items can be picked
+        up from, and an auto-vivified test double is not.
+
+        The tile at the player's coordinates is a last, defensive fallback,
+        consulted only while ``current_room`` is ``None``. No real fight ends
+        that way — ``check_for_combat`` reads ``current_room`` and
+        ``start_combat`` sets it — and what this may hand out is bounded by
+        ``combat_drops`` regardless (:meth:`_offered_drops`).
+        """
+
+        def _usable(tile):
+            return isinstance(getattr(tile, "items_here", None), list)
+
+        candidates = self._fight_tile_candidates(player)
+        for tile in candidates:
+            if _usable(tile):
+                return tile
+
+        if candidates.current_room is None:
+            tile = self.get_current_tile_object(player)
+            if _usable(tile):
+                return tile
+        return None
 
     # ── Shop ──────────────────────────────────────────────────────────────────
 

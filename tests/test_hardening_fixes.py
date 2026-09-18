@@ -9,6 +9,7 @@ from unittest.mock import Mock, MagicMock, patch
 
 from src.api.services.game_service import GameService
 from src import player as player_module
+from tests._loot_fixtures import offer_victory_drops
 
 
 class TestDropItemHardening:
@@ -163,13 +164,13 @@ class TestCollectCombatLootHardening:
         item2.name = "Sword"
         item2.weight = 5.0
 
-        player = Mock()
+        player = Mock(in_combat=False)
         player.current_room = Mock()
         player.current_room.items_here = [item1, item2]
         player.inventory_list = []
         player.inventory = []
         player.weight_tolerance = 100.0
-        player.combat_drops = ["Gold Coin"]
+        offer_victory_drops(player, "Gold Coin")
 
         result = game_service.collect_combat_loot(player, ["Gold Coin"])
 
@@ -181,7 +182,7 @@ class TestCollectCombatLootHardening:
         """FIX 3: Test that collect_combat_loot handles None item_names."""
         game_service = GameService()
 
-        player = Mock()
+        player = Mock(in_combat=False)
         player.current_room = None  # No room, so validation happens early
         player.combat_drops = []
 
@@ -195,7 +196,7 @@ class TestCollectCombatLootHardening:
         """FIX 3: Test that collect_combat_loot rejects non-list item_names."""
         game_service = GameService()
 
-        player = Mock()
+        player = Mock(in_combat=False)
         player.combat_drops = []
 
         result = game_service.collect_combat_loot(player, "not_a_list")
@@ -208,7 +209,7 @@ class TestCollectCombatLootHardening:
         """FIX 3: Test that collect_combat_loot rejects non-string item names."""
         game_service = GameService()
 
-        player = Mock()
+        player = Mock(in_combat=False)
         player.combat_drops = []
 
         result = game_service.collect_combat_loot(player, ["Sword", 42, "Shield"])
@@ -221,7 +222,7 @@ class TestCollectCombatLootHardening:
         """FIX 3: Test that collect_combat_loot rejects dict parameter."""
         game_service = GameService()
 
-        player = Mock()
+        player = Mock(in_combat=False)
         player.combat_drops = []
 
         result = game_service.collect_combat_loot(player, {"item": "Sword"})
@@ -233,7 +234,7 @@ class TestCollectCombatLootHardening:
         """Test that collect_combat_loot handles empty item list."""
         game_service = GameService()
 
-        player = Mock()
+        player = Mock(in_combat=False)
         player.current_room = None  # No room, so validation happens early
         player.combat_drops = []
 
@@ -250,13 +251,13 @@ class TestCollectCombatLootHardening:
         heavy_item.name = "Boulder"
         heavy_item.weight = 50.0
 
-        player = Mock()
+        player = Mock(in_combat=False)
         player.current_room = Mock()
         player.current_room.items_here = [heavy_item]
         player.inventory_list = []
         player.inventory = []
         player.weight_tolerance = 5.0  # much less than item weight
-        player.combat_drops = ["Boulder"]
+        offer_victory_drops(player, "Boulder")
 
         result = game_service.collect_combat_loot(player, ["Boulder"])
 
@@ -719,13 +720,13 @@ class TestRegressionScenarios:
         item2.name = "Rusty Key"
         item2.weight = 0.05
 
-        player = Mock()
+        player = Mock(in_combat=False)
         player.current_room = Mock()
         player.current_room.items_here = [item1, item2]
         player.inventory_list = []
         player.inventory = []
         player.weight_tolerance = 100.0
-        player.combat_drops = ["Gold Coin", "Rusty Key"]
+        offer_victory_drops(player, "Gold Coin", "Rusty Key")
 
         result = game_service.collect_combat_loot(
             player, ["Gold Coin", "Rusty Key"]

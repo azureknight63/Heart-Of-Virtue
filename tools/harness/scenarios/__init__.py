@@ -22,6 +22,7 @@ from .npc_chat import NpcChatScenario
 from .logs import LogsScenario
 from .feedback import FeedbackScenario
 from .debug_ops import DebugOpsScenario
+from .victory_loot import VictoryLootScenario
 
 _ALL_SCENARIOS = [
     HealthScenario(),
@@ -46,6 +47,7 @@ _ALL_SCENARIOS = [
     LogsScenario(),
     FeedbackScenario(),
     DebugOpsScenario(),
+    VictoryLootScenario(),
 ]
 
 

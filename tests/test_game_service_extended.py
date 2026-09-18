@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 from src.items import Consumable, Gold
 from src.npc._merchants import Merchant
 from src.combatant import wire_handle
+from tests._loot_fixtures import offer_victory_drops
 
 
 @pytest.fixture
@@ -558,6 +559,7 @@ class TestCollectCombatLoot:
     def test_a_named_drop_moves_into_the_pack(self, game_service, looter):
         tonic = _tradeable(name="Tonic", value=10, weight=0.5)
         looter.current_room.items_here = [tonic]
+        offer_victory_drops(looter, "Tonic")
 
         result = game_service.collect_combat_loot(looter, ["Tonic"])
 
@@ -570,15 +572,24 @@ class TestCollectCombatLoot:
         wanted = _tradeable(name="Tonic", value=10, weight=0.5)
         ignored = _tradeable(name="Salve", value=10, weight=0.5)
         looter.current_room.items_here = [wanted, ignored]
+        offer_victory_drops(looter, "Tonic", "Salve")
 
         game_service.collect_combat_loot(looter, ["Tonic"])
 
         assert looter.current_room.items_here == [ignored]
 
     def test_the_drop_list_is_cleared_afterwards(self, game_service, looter):
-        """``combat_drops`` is the post-victory prompt; leaving it populated
-        would re-offer the same loot on the next fight."""
-        looter.combat_drops = [_tradeable(name="Tonic")]
+        """A skip still ends the loot phase: once the fight's tile is found,
+        ``combat_drops`` is cleared whatever was taken.
+
+        Since issue #610 the clear is no longer unconditional — when the tile
+        cannot be found and something was asked for, the call is an error and
+        clears nothing (``tests/test_victory_loot_resolution.py``). This case
+        has a tile, so it is unaffected. The reason this docstring used to give,
+        that leftover drops would be re-offered on the next fight, was never
+        what this guarded: ``ApiCombatAdapter.initialize_combat`` clears them
+        at the start of every fight."""
+        looter.combat_drops = [{"name": "Tonic", "quantity": 1}]
 
         game_service.collect_combat_loot(looter, [])
 
@@ -589,6 +600,7 @@ class TestCollectCombatLoot:
     ):
         anvil = _tradeable(name="Anvil", value=1, weight=999)
         looter.current_room.items_here = [anvil]
+        offer_victory_drops(looter, "Anvil")
 
         result = game_service.collect_combat_loot(looter, ["Anvil"])
 

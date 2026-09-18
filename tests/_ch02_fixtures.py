@@ -23,7 +23,11 @@ from unittest.mock import Mock
 
 import src.items as items
 import src.npc as npc
-from src.story.ch02 import AfterDefeatingKingSlime, CLEANSED_CHANNEL_DESCRIPTIONS
+from src.story.ch02 import (
+    AfterDefeatingKingSlime,
+    CLEANSED_CHANNEL_DESCRIPTIONS,
+    Ch02GorranAtPools,
+)
 from src.story.effects import NPCSpawnerEvent
 from tests._gs_fixtures import make_tile
 from tests._map_scan import event_placements, map_data, resolve_class, tiles
@@ -38,6 +42,7 @@ POOLS_MAP = MAP_DIR / "grondelith-mineral-pools.json"
 POOLS_MAP_NAME = POOLS_MAP.stem
 
 CLEANSING_EVENT = AfterDefeatingKingSlime.__name__
+GORRAN_EVENT = Ch02GorranAtPools.__name__
 
 #: Stands in for the corrupted authored text on a Mock tile: the #573
 #: symptom was this rendering ALONGSIDE the cleansed prose, so a test seeds
@@ -128,17 +133,36 @@ def pools_event_placements():
     )
 
 
-def arena_coord():
-    """The tile the shipped pools map authors ``AfterDefeatingKingSlime`` onto."""
+def _sole_event_coord(class_name):
+    """The one tile the shipped pools map authors ``class_name`` onto.
+
+    Derived from the map rather than typed, for the reason the module
+    docstring gives: a hand-typed coordinate keeps agreeing with a test that
+    hands the event whichever tile it names, long after the placement moved.
+    """
     placements = [
         placement for placement in pools_event_placements()
-        if placement.class_name == CLEANSING_EVENT
+        if placement.class_name == class_name
     ]
     assert len(placements) == 1, (
-        f"{POOLS_MAP.name} authors {CLEANSING_EVENT} on {len(placements)} tiles; "
-        "the arena is no longer unambiguous"
+        f"{POOLS_MAP.name} authors {class_name} on {len(placements)} tiles; "
+        "its placement is no longer unambiguous"
     )
     return ast.literal_eval(placements[0].coord)
+
+
+def arena_coord():
+    """The tile the shipped pools map authors ``AfterDefeatingKingSlime`` onto."""
+    return _sole_event_coord(CLEANSING_EVENT)
+
+
+def threshold_coord():
+    """The tile the shipped pools map authors ``Ch02GorranAtPools`` onto.
+
+    The threshold of the issue's title: the scene plays here, with Jean
+    standing on it, and it is where the scene leaves Gorran (#613).
+    """
+    return _sole_event_coord(GORRAN_EVENT)
 
 
 @functools.lru_cache(maxsize=1)

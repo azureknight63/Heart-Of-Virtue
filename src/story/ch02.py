@@ -534,8 +534,36 @@ class Ch02GuideToCitadel(
 #: What ``Universe`` names the Grondelith pools map: the file stem.
 POOLS_MAP_NAME = "grondelith-mineral-pools"
 
-#: Where Gorran waits at the pools' threshold: the Atrium.
+#: The Atrium: the great vaulted space one tile inside the pools. A session
+#: saved before #613 may still have Gorran waiting here (``GORRAN_WAIT_COORDS``).
 ATRIUM_COORDS = (2, 1)
+
+#: Where Gorran waits while Jean goes into the pools alone: the entry tile,
+#: which is the tile the map authors ``Ch02GorranAtPools`` onto and the tile
+#: Jean is standing on while that scene plays. The scene says he "had come to
+#: the threshold and no further" and that Jean "came up beside him", so the
+#: fiction puts them both here.
+THRESHOLD_COORDS = (2, 0)
+
+#: Where ``AfterDefeatingKingSlime`` looks for the waiting Gorran: the
+#: threshold first, then the Atrium, so a session that was already inside the
+#: pools when #613 shipped still gets him back.
+GORRAN_WAIT_COORDS = (THRESHOLD_COORDS, ATRIUM_COORDS)
+
+#: Gorran's class name: what every lookup in this module matches on, and what
+#: ``MapTile.spawn_npc`` is asked for when he has to be stood up.
+GORRAN = "Gorran"
+
+#: Where ``_wear_waiting_idle_line`` keeps his ordinary line while he waits.
+_IDLE_LINE_BEFORE_WAIT = "idle_message_before_wait"
+
+#: What the room prints about Gorran while he waits. A room renders
+#: ``npc.idle_message`` (``NPCSerializer`` / ``RoomContents.jsx``), and his
+#: ordinary "bumbling about" -- the line of a wandering NPC -- rendered
+#: directly under the scene that settles him against the arch (#613).
+GORRAN_WAITING_IDLE_MESSAGE = (
+    " waits beside the arch, one broad hand resting against the stone."
+)
 
 #: The story key holding the game tick at which Jean was last reminded to
 #: hand over the mineral fragment, how many ticks must pass before the next
@@ -651,6 +679,82 @@ def _coordinate_tiles(pools_map):
             yield coords, tile
 
 
+def _move_npc_to(npc, destination, also_from=None):
+    """Stand ``npc`` on ``destination`` exactly once, and off every room he
+    is known to be listed in: those :func:`_rooms_of` names, the destination
+    itself, and ``also_from``, a room known to hold him that neither of his
+    own attributes points at (see :func:`_unlist_npc` for what is skipped).
+
+    ``current_room`` is what ``Player.recall_friends`` reads to take a
+    follower off his old room, so it moves with the listing. Appending without
+    removing is how Gorran came to stand in two rooms at once (#613).
+    """
+    _unlist_npc(npc, *_rooms_of(npc), destination, also_from)
+    npc.current_room = destination
+    npc.tile = destination
+    destination.npcs_here.append(npc)
+
+
+def _rooms_of(npc):
+    """The rooms ``npc``'s own attributes say he is in: ``current_room``, and
+    ``tile``, the older attribute these events have always set."""
+    return getattr(npc, "current_room", None), getattr(npc, "tile", None)
+
+
+def _unlist_npc(npc, *rooms):
+    """Take ``npc`` off each room's ``npcs_here``, every time he is listed.
+    ``None``, and anything without an ``npcs_here`` list, is skipped."""
+    for room in rooms:
+        npcs_here = getattr(room, "npcs_here", None)
+        if isinstance(npcs_here, list):
+            while npc in npcs_here:
+                npcs_here.remove(npc)
+
+
+def _is_gorran(npc):
+    """Whether ``npc`` is Gorran, matched by class name (``GORRAN``, the name
+    ``spawn_npc`` is asked for). The stub ``spawn_npc`` falls back to when the
+    class cannot be built is a ``_StubNPC`` and does not match."""
+    return npc.__class__.__name__ == GORRAN
+
+
+def _find_gorran(npcs):
+    """The first Gorran in ``npcs``, or None."""
+    return next((npc for npc in npcs if _is_gorran(npc)), None)
+
+
+def _party(player):
+    """``player.combat_list_allies`` when it is a list, else an empty list:
+    how this module searches the party. A caller that removes from the result
+    edits the party itself; one that must *add* to it goes through
+    ``combat_list_allies`` directly, since the empty fallback is a throwaway."""
+    allies = getattr(player, "combat_list_allies", None)
+    return allies if isinstance(allies, list) else []
+
+
+def _wear_waiting_idle_line(npc):
+    """Give ``npc`` the waiting idle line, keeping his ordinary one for
+    ``_restore_ordinary_idle_line``.
+
+    Guarded rather than assumed: the spawn fallback in ``MapTile.spawn_npc``
+    stands up a stub with no idle line at all, and a missing flavour line must
+    not crash the beat. Wearing it twice keeps the ordinary line, rather than
+    saving the waiting line in its place.
+    """
+    ordinary_line = getattr(npc, "idle_message", None)
+    if isinstance(ordinary_line, str) and ordinary_line != GORRAN_WAITING_IDLE_MESSAGE:
+        setattr(npc, _IDLE_LINE_BEFORE_WAIT, ordinary_line)
+        npc.idle_message = GORRAN_WAITING_IDLE_MESSAGE
+
+
+def _restore_ordinary_idle_line(npc):
+    """Put back the line ``_wear_waiting_idle_line`` kept, if it kept one."""
+    ordinary_line = getattr(npc, _IDLE_LINE_BEFORE_WAIT, None)
+    if isinstance(ordinary_line, str):
+        npc.idle_message = ordinary_line
+        delattr(npc, _IDLE_LINE_BEFORE_WAIT)
+
+
 def _is_hostile(npc):
     """Whether the sweep treats ``npc`` as an enemy: ``npc.friend`` is the
     engine's only friend/foe flag (``src/npc/_base.py``), so anything
@@ -664,8 +768,9 @@ class AfterDefeatingKingSlime(Event):
     Rewrites the cleansed pool tiles' descriptions, grants the MineralFragment
     straight into Jean's inventory (nothing is dropped on the floor), and
     queues the memory flash that fires on that possession. Gorran is then
-    brought from the atrium to the arena and rejoins the party (#577), and
-    every enemy and spawner still in the pools is swept out (#594).
+    brought from where he waited (``GORRAN_WAIT_COORDS``) to the arena and
+    rejoins the party (#577), and every enemy and spawner still in the pools
+    is swept out (#594).
     """
 
     GATE_KEY = "king_slime_defeated"
@@ -795,49 +900,54 @@ class AfterDefeatingKingSlime(Event):
         """Bring Gorran to the arena tile and return him, or None when he is
         nowhere to be found.
 
-        He lives as an ally NPC. ``Ch02GorranAtPools`` sat him in the atrium
-        of ``pools_map`` -- a dict keyed by ``(x, y)`` tuples, looked up
-        through the universe as that event does, because after a flee
-        ``player.map`` can point at a combat arena with no atrium in it (it
-        is the fallback when the pools map is not loaded). A Gorran who never
-        left the party is found in ``combat_list_allies`` instead. Either way
-        he comes off the tile he stood on and onto this one.
+        He lives as an ally NPC. ``Ch02GorranAtPools`` sat him down to wait at
+        one of ``GORRAN_WAIT_COORDS`` in ``pools_map`` -- a dict keyed by
+        ``(x, y)`` tuples, looked up through the universe (``find_pools_map``)
+        because after a flee ``player.map`` can point at a combat arena with
+        none of those tiles in it (it is the fallback when the pools map is
+        not loaded). A Gorran who never left the party is found in
+        ``combat_list_allies`` instead. Either way he comes off the room he
+        stood in and onto this one -- ``current_room`` included, since he is
+        about to rejoin the party and follow Jean out, and a follower whose
+        ``current_room`` still named the wait tile stayed listed in the arena
+        for good (#613).
         """
         current_map = pools_map or self.player.map
         gorran = old_tile = None
-        if ATRIUM_COORDS in current_map:
-            old_tile = current_map[ATRIUM_COORDS]
-            gorran = next(
-                (n for n in old_tile.npcs_here if n.__class__.__name__ == "Gorran"), None
-            )
+        for coords in GORRAN_WAIT_COORDS:
+            if coords not in current_map:
+                continue
+            wait_tile = current_map[coords]
+            gorran = _find_gorran(getattr(wait_tile, "npcs_here", []))
+            if gorran is not None:
+                old_tile = wait_tile
+                break
         if gorran is None:
-            gorran = next(
-                (a for a in self.player.combat_list_allies if a.__class__.__name__ == "Gorran"),
-                None,
-            )
-            old_tile = getattr(gorran, "tile", None)
+            gorran = _find_gorran(_party(self.player))
         if gorran is None:
             return None
-        if old_tile is not None and gorran in getattr(old_tile, "npcs_here", []):
-            old_tile.npcs_here.remove(gorran)
-        gorran.tile = self.tile
-        self.tile.npcs_here.append(gorran)
+        _move_npc_to(gorran, self.tile, also_from=old_tile)
         return gorran
 
     def _rejoin_party(self, gorran):
         """Put Gorran back in the party (#577).
 
         ``Ch02GorranAtPools`` took him out of ``combat_list_allies`` to wait
-        in the atrium, and that list is the single source of truth for the
+        at the threshold, and that list is the single source of truth for the
         status party, battle allies and tile-following -- without this he
         stayed behind for good. Same join as Ch01's escape beat: friend flag,
         appended behind the player at index 0, levelled up to Jean.
+
+        His waiting idle line goes with the wait (#613): he follows Jean out
+        of the pools from here, and "waits beside the arch" would travel with
+        him all the way down the Eastern Descent.
         """
         gorran.friend = True
         if gorran not in self.player.combat_list_allies:
             self.player.combat_list_allies.append(gorran)
         if hasattr(gorran, "sync_level"):
             gorran.sync_level(getattr(self.player, "level", 1))
+        _restore_ordinary_idle_line(gorran)
 
     def _cleanse_pool_tiles(self, pools_map):
         """Rewrite each corrupted channel tile of ``pools_map`` as
@@ -970,14 +1080,15 @@ def fold_legacy_cleansed_descriptions(player):
 
 class Ch02GorranAtPools(Event):
     """
-    Fires once when Jean first enters the Grondelith map (tile 2,0).
+    Fires once when Jean first enters the Grondelith map, on the entry tile.
 
     Gorran led Jean this far but cannot follow into the corrupted interior —
-    the corruption is too dense for stone to tolerate. He settles at the
-    Atrium threshold (tile 2,1), where he will wait until King Slime is
-    defeated. AfterDefeatingKingSlime already looks for him at (2,1).
+    the corruption is too dense for stone to tolerate. He settles here, at
+    ``THRESHOLD_COORDS``, and waits until King Slime is defeated;
+    ``AfterDefeatingKingSlime`` brings him in and returns him to the party
+    (#577).
 
-    Attach to tile (2,0) in grondelith-mineral-pools.json.
+    Attach to tile ``THRESHOLD_COORDS`` in grondelith-mineral-pools.json.
     """
 
     GATE_KEY = "gorran_at_pools"
@@ -991,69 +1102,97 @@ class Ch02GorranAtPools(Event):
         # Set description for API serialization
         self.description = (
             "Gorran stops at the threshold of the corrupted interior, unable to proceed. "
-            "He settles at the atrium entrance to wait for Jean's return."
+            "He settles beside the arch to wait for Jean's return."
         )
 
     def process(self):
-        # Spawn Gorran at the Atrium (2,1) — where AfterDefeatingKingSlime
-        # expects to find him. Don't place him on this entry tile so he doesn't
-        # block the passage or trigger combat checks.
-        # Use universe.maps lookup rather than player.map so the correct tile is
-        # found even when player.map is pointing to a combat arena after a flee.
-        pools_map = find_pools_map(self.player)
-        atrium_tile = pools_map.get(ATRIUM_COORDS) if pools_map else None
-        if atrium_tile is not None:
-            gorran_already_there = any(
-                n.__class__.__name__ == "Gorran" for n in atrium_tile.npcs_here
-            )
-            if not gorran_already_there:
-                # Check if Gorran is in the player's party
-                gorran_in_party = None
-                for ally in list(getattr(self.player, "combat_list_allies", [])):
-                    if ally.__class__.__name__ == "Gorran":
-                        gorran_in_party = ally
-                        break
-
-                if gorran_in_party is not None:
-                    # Remove Gorran from party and move to tile
-                    self.player.combat_list_allies.remove(gorran_in_party)
-                    gorran_in_party.tile = atrium_tile
-                    atrium_tile.npcs_here.append(gorran_in_party)
-                else:
-                    # Spawn new Gorran if not in party
-                    atrium_tile.spawn_npc("Gorran")
-
-        if not self.player.skip_dialog:
-            print_slow(
-                "Gorran had come to the threshold and no further. He stood at the entrance "
-                "to the atrium — that great vaulted space with its spring-fed pools — "
-                "facing south, one hand resting against the stone arch."
-            )
-            time.sleep(1.5)
-            print_slow(
-                "Jean came up beside him. The air changed here. Even at the threshold he could "
-                "feel it — a heaviness below the mineral scent, something sweet and wrong."
-            )
-            time.sleep(1)
-            print_slow(
-                "Gorran did not look at him. He tapped his own chest twice — slow, deliberate. "
-                "Then he pointed south, toward the deeper passages. Then he drew his hand back."
-            )
-            time.sleep(1)
-            print_slow(
-                "He made a sound. Low and brief. The Golemite equivalent of: I know."
-            )
-            time.sleep(1)
-            print_slow(
-                "He lowered himself beside the arch — that slow, deliberate settling of stone "
-                "finding its position. He would wait here. Jean understood that."
-            )
-            time.sleep(1.5)
-            await_input()
+        # The wait lasts until the King Slime falls, and only the aftermath
+        # brings him back. With the boss already dead (a start past it, a
+        # harness), seating him would strand him for good -- so the scene only
+        # records itself.
+        if not self.gate_is_set(AfterDefeatingKingSlime.GATE_KEY):
+            self._seat_gorran_at_the_threshold()
+            if not self.player.skip_dialog:
+                self._narrate_the_wait()
 
         self.set_story_gate(self.GATE_KEY)
         complete_objective(self.player, OBJ_CH02_EXPLORE_GRONDIA)
         self.tile.remove_event(self.name)
+
+    def _seat_gorran_at_the_threshold(self):
+        """Stand Gorran on this tile — the threshold — and take him out of
+        the party, to wait there while Jean goes in alone.
+
+        ``combat_list_allies`` is the single source of truth for the status
+        party, the battle allies and tile-following
+        (``Player.recall_friends``), so leaving it is what keeps him out of
+        the pools; ``AfterDefeatingKingSlime`` puts him back (#577).
+
+        This tile, not the Atrium one further in: the scene seats him at the
+        threshold he comes to "and no further", with Jean coming up beside
+        him, so the fiction puts them both here (#613). He is *moved* rather
+        than merely appended: the passage into the pools is a teleport,
+        which does not recall the party, so he arrives still listed in the
+        Grondia room he last followed Jean to.
+        """
+        # The party's instance first: it carries his level and state, and it
+        # is the one that would otherwise follow Jean in.
+        gorran = _find_gorran(_party(self.player)) or _find_gorran(self.tile.npcs_here)
+        if gorran is None:
+            # Nobody to seat: a session that reached the pools without him (a
+            # config with no ``starting_party_members``, or a harness driving
+            # the beat directly). Stand one up so the scene has its subject.
+            gorran = self.tile.spawn_npc(GORRAN)
+        else:
+            _move_npc_to(gorran, self.tile)
+        for stray in self._remove_every_gorran_from_the_party():
+            if stray is not gorran:
+                _unlist_npc(stray, *_rooms_of(stray))
+        _wear_waiting_idle_line(gorran)
+
+    def _remove_every_gorran_from_the_party(self):
+        """Drop every Gorran from ``combat_list_allies``; returns those dropped.
+
+        Every one, not merely the one just seated: a second instance leaves
+        exactly the defect this closes — one Gorran sitting at the arch while
+        another walks the pools behind Jean — and the list is what does the
+        walking. The caller takes any second instance off the room it stood
+        in, or it would be left listed there for good.
+        """
+        allies = _party(self.player)
+        removed = [a for a in allies if _is_gorran(a)]
+        for gorran in removed:
+            allies.remove(gorran)
+        return removed
+
+    def _narrate_the_wait(self):
+        """Gorran stops at the threshold, and Jean understands he will wait."""
+        print_slow(
+            "Gorran had come to the threshold and no further. He stood at the entrance "
+            "to the atrium — that great vaulted space with its spring-fed pools — "
+            "facing south, one hand resting against the stone arch."
+        )
+        time.sleep(1.5)
+        print_slow(
+            "Jean came up beside him. The air changed here. Even at the threshold he could "
+            "feel it — a heaviness below the mineral scent, something sweet and wrong."
+        )
+        time.sleep(1)
+        print_slow(
+            "Gorran did not look at him. He tapped his own chest twice — slow, deliberate. "
+            "Then he pointed south, toward the deeper passages. Then he drew his hand back."
+        )
+        time.sleep(1)
+        print_slow(
+            "He made a sound. Low and brief. The Golemite equivalent of: I know."
+        )
+        time.sleep(1)
+        print_slow(
+            "He lowered himself beside the arch — that slow, deliberate settling of stone "
+            "finding its position. He would wait here. Jean understood that."
+        )
+        time.sleep(1.5)
+        await_input()
 
 
 class Ch02ArenaEntrance(Event):

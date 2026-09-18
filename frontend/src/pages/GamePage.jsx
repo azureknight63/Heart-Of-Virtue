@@ -26,7 +26,8 @@ import FeedbackDialog from '../components/FeedbackDialog'
 import MobileTabBar, { MOBILE_TAB_BAR_HEIGHT } from '../components/MobileTabBar'
 import { TAB_KEYS } from '../utils/mobileTabs'
 import { redirectToLogin } from '../utils/session'
-import { autosaveErrorMessage } from '../utils/apiError'
+import { apiErrorMessage, autosaveErrorMessage } from '../utils/apiError'
+import { LOOT_COLLECT_REFUSED } from '../utils/lootCopy'
 
 export default function GamePage() {
   const isMobile = useMobile()
@@ -655,10 +656,18 @@ export default function GamePage() {
   /**
    * Handle victory dialog close (only reached when no loot drops exist).
    * When drops exist, VictoryDialog routes to loot phase via onContinueToLoot instead.
+   *
+   * Goes through `finishLoot([])` rather than straight to `returnFromVictory()`
+   * because this path used to call no combat endpoint at all (issue #610): the
+   * backend never learned the victory had been resolved, kept `end_state` in
+   * the session, and re-served it on every poll. Since the client's dedupe of
+   * that id is in-memory by design (issue #116), every reload re-opened the
+   * VICTORY dialog and pinned the Combat screen. An empty collect is the same
+   * resolve signal SKIP sends, and it takes nothing off the tile.
    */
   const handleVictoryClose = async () => {
     setShowVictoryDialog(false)
-    await returnFromVictory()
+    await finishLoot([])
   }
 
   /**
@@ -671,19 +680,30 @@ export default function GamePage() {
 
   /**
    * Close the loot dialog after collecting `itemNames` (none, to skip: the
-   * items stay on the tile), then return to the world. A failed collect is
-   * logged, labelled by whether anything was being collected, and still
+   * items stay on the tile), then return to the world. A request that throws
+   * is logged, labelled by whether anything was being collected, and still
    * closes the dialog.
+   *
+   * A request the backend *refuses* (`success: false` — for instance it could
+   * not find the tile the fight was won on) is shown to the player. When they
+   * were collecting, the dialog stays open: the backend kept the drops and the
+   * victory, so they can retry or SKIP. This used to close as if the loot had
+   * been taken (issue #610). A refused skip still leaves, since there is
+   * nothing to retry.
    */
   const finishLoot = async (itemNames) => {
+    const collecting = itemNames?.length > 0
     try {
-      await combatApi.collectLoot(itemNames)
+      const response = await combatApi.collectLoot(itemNames)
+      const result = response?.data
+      const refused = result?.success === false
+      if (refused) showError(apiErrorMessage(result, LOOT_COLLECT_REFUSED))
+      const keepDialogOpen = refused && collecting
+      if (keepDialogOpen) return
     } catch (err) {
-      const failureLabel = itemNames?.length > 0 ? 'collect-loot failed:' : 'collect-loot (skip) failed:'
-      console.error(failureLabel, err)
-    } finally {
-      setShowLootDialog(false)
+      console.error(collecting ? 'collect-loot failed:' : 'collect-loot (skip) failed:', err)
     }
+    setShowLootDialog(false)
     await returnFromVictory()
   }
 
