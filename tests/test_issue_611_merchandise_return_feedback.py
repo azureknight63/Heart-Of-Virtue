@@ -192,6 +192,34 @@ class TestPassagewayConfirmationNamesTheReturnedGoods:
 
         assert ITEM_NAME in result["message"]
 
+    def test_the_crossing_itself_does_not_repeat_the_return_narration(
+        self, shop_doorway, game_service
+    ):
+        """Told once, at the moment it happened -- not again on the way out.
+
+        ``Player.teleport`` calls ``drop_merchandise_items`` a second time as
+        it leaves the origin tile, so the confirmation's own submission runs
+        the same method again. It finds nothing left to take, which is the
+        only reason the player is not told twice; a change that moved the drop
+        to the crossing without moving this report would double it.
+        """
+        player, _, passage = shop_doorway
+        _carry_merchandise(player)
+        session_data = {}
+
+        armed = game_service.interact_with_target(
+            player, wire_handle(passage), "enter", session_data=session_data
+        )
+        crossed = game_service.process_event_input(
+            player,
+            armed["events_triggered"][0]["event_id"],
+            "continue",
+            session_data,
+        )
+
+        assert crossed["success"] is True
+        assert ITEM_NAME not in crossed.get("output_text", "")
+
     def test_the_goods_really_do_land_on_the_shop_floor(
         self, shop_doorway, game_service
     ):
