@@ -29,8 +29,11 @@ from src.items import (
     DragonHeartGem,
     Draught,
     MineralSolvent,
+    Relic,
     Restorative,
     SlimeFlask,
+    Special,
+    Weapon,
     unique_item_factories,
     unique_items_spawned,
 )
@@ -458,3 +461,83 @@ def test_restock_leaves_no_floor_litter_across_several_seeds():
             f"seed {seed} left {len(litter)} merchandise item(s) on the floor: "
             f"{sorted(type(it).__name__ for it in litter)}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Issue #611 — the Special family must never be random merchant stock
+# ---------------------------------------------------------------------------
+
+
+def _merchant_with_only_container(allowed, cap=20):
+    """A merchant with no shelves of his own and one container accepting ``allowed``.
+
+    ``stock_count=0`` means every roll has to find a home in the container or
+    nowhere, so the container's contents are a direct readout of which classes
+    the random-fill pass considers stockable -- no dependence on which roll
+    happened to land in a merchant slot.
+    """
+    merchant, room = _merchant_in_world(name="Curio Dealer", stock_count=0)
+    room.spawn_item = _stub_spawn_item(room)
+    container = Container(
+        name="Curio Case",
+        merchant=merchant,
+        allowed_subtypes=[allowed],
+        stock_count=cap,
+    )
+    room.objects_here.append(container)
+    return merchant, room, container
+
+
+def test_random_stock_never_contains_special_family_items():
+    """Regression test for issue #611 (an unbuyable, unreadable book in Jambo's tent).
+
+    ``disallowed_classes`` lists ``Special``, but the filter was ``obj in
+    disallowed_classes`` -- exact membership, not a subclass test. Every one of
+    ``Special``'s 18 concrete subclasses therefore stayed a valid random-stock
+    candidate: quest tokens, lore fragments, and bare ``Book`` (name "Book",
+    value 5, ``text_file_path=None``), which spawns merchandise-flagged,
+    invisible to the Buy panel, and reads as "This book is mysteriously blank."
+    """
+    merchant, room, case = _merchant_with_only_container(Special)
+
+    _restock_without_unique_injection(merchant, seed=0)
+
+    stocked = sorted(type(it).__name__ for it in case.inventory)
+    assert stocked == [], (
+        "no Special-family item may be rolled as random stock; the pass "
+        f"stocked {stocked}"
+    )
+
+
+def test_random_stock_never_contains_relics():
+    """``Relic`` carries the same never-stock intent as ``Special``.
+
+    It has no subclasses today, so this asserts the rule rather than catching a
+    live leak -- the point is that adding one cannot quietly reopen the hole.
+    """
+    merchant, room, case = _merchant_with_only_container(Relic)
+
+    _restock_without_unique_injection(merchant, seed=0)
+
+    stocked = sorted(type(it).__name__ for it in case.inventory)
+    assert stocked == [], f"no Relic may be rolled as random stock; got {stocked}"
+
+
+def test_random_stock_still_contains_ordinary_merchandise():
+    """Positive control: the exclusion must not have emptied the candidate pool.
+
+    ``Weapon`` is in the same disallowed list as ``Special``, but for the
+    opposite reason -- it is an abstract base nobody should instantiate
+    directly, while its 18 concrete subclasses are exactly what an armourer
+    sells. A subclass test applied to the whole list would take those with it,
+    so this is the test that fails if the fix is made too broad.
+    """
+    merchant, room, case = _merchant_with_only_container(Weapon)
+
+    _restock_without_unique_injection(merchant, seed=0)
+
+    stocked = [type(it).__name__ for it in case.inventory]
+    assert stocked, "the random-fill pass stocked no weapons at all"
+    assert all(
+        issubclass(type(it), Weapon) and type(it) is not Weapon for it in case.inventory
+    ), f"a Weapon-only container took something else: {stocked}"

@@ -54,6 +54,41 @@ from src.shop_conditions import (  # type: ignore
     iter_rooms,
 )
 
+# Two different reasons to keep a class out of random merchant stock, so two
+# different tests. Collapsing them into one list is how issue #611 happened.
+
+#: Families that must never reach a shop at all, excluded by ``issubclass``
+#: because the *family* is the point. ``Special`` covers 18 concrete quest
+#: tokens, lore fragments, curios and books -- including a bare ``Book`` (name
+#: "Book", value 5, ``text_file_path=None``), which is what rolled into Jambo's
+#: tent as an item that could be neither bought nor read (issue #611). ``Key``
+#: is itself a ``Special`` and is named anyway so the intent survives any
+#: reparenting. ``Relic`` has no subclasses today and is listed by intent: it is
+#: a single-use, story-locked memento granted in Jean's starting inventory, and
+#: its ``value=0`` would make it sell for free, so a future subclass must not
+#: quietly reopen the hole.
+_NEVER_STOCK_FAMILIES: tuple[type[Item], ...] = (Special, Key, Relic)
+
+#: Classes excluded by exact membership only, because the shop stocks *through*
+#: them: these are the abstract bases whose concrete subclasses are the
+#: merchandise (``Weapon``'s 18 subclasses are an armourer's whole trade,
+#: ``Consumable``'s 13 are Jambo's), plus concrete singletons with no meaningful
+#: subclass tree. Applying a subclass test here would empty the candidate pool
+#: of everything sellable.
+_NOT_STOCKABLE_AS_ROLLED: frozenset[type[Item]] = frozenset({
+    Gold,
+    Rock,
+    Fists,
+    Consumable,
+    Accessory,
+    Gloves,
+    Helm,
+    Boots,
+    Armor,
+    Weapon,
+    Arrow,
+})
+
 
 class MerchantShopMixin:
     """Shop inventory management mixin for Merchant NPCs."""
@@ -431,31 +466,16 @@ class MerchantShopMixin:
             unique_factories = set(items_module.unique_item_factories)  # type: ignore[attr-defined]
         except Exception:
             unique_factories = set()
-        disallowed_classes = {
-            Gold,
-            Rock,
-            Fists,
-            Key,
-            Special,
-            Consumable,
-            Accessory,
-            Gloves,
-            Helm,
-            Boots,
-            Armor,
-            Weapon,
-            Arrow,
-            # Relic is a single-use, story-locked memento (granted in Jean's
-            # starting inventory) — it must never appear as random merchant
-            # stock, and its value=0 would make it sell for free anyway.
-            Relic,
-        }
         candidates: list[type[Item]] = []
         for _nm, obj in inspect.getmembers(items_module, inspect.isclass):
             try:
                 if obj is Item or not issubclass(obj, Item):
                     continue
-                if obj in unique_factories or obj in disallowed_classes:
+                if obj in unique_factories or obj in _NOT_STOCKABLE_AS_ROLLED:
+                    continue
+                # Family exclusion, not membership: the subclasses are the
+                # whole reason these are listed (issue #611).
+                if issubclass(obj, _NEVER_STOCK_FAMILIES):
                     continue
                 candidates.append(obj)
             except Exception:
