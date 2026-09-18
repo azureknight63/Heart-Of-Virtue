@@ -15,6 +15,48 @@ from src.items import Item, stack_sentence_label  # noqa; Item is used in type h
 #####
 
 
+#: ``_class_declared_handler``'s "no class in the MRO declares this name" answer,
+#: distinct from a class that declares it as ``None`` (``Container.open_message``
+#: is exactly that) — the two take different branches below.
+_NOT_DECLARED = object()
+
+
+def _class_declared_handler(target, name):
+    """What ``name`` resolves to when looked up on ``target``'s CLASS alone.
+
+    Attribute lookup, minus the instance ``__dict__``: walks the MRO for the
+    first class that declares ``name`` and applies the descriptor protocol to
+    whatever it finds, so a plain method comes back BOUND to ``target``, a
+    ``staticmethod`` comes back as its plain function and a ``property`` comes
+    back as its computed value — the same three shapes ``getattr`` would hand
+    back, just sourced where map JSON cannot reach.
+
+    Returns :data:`_NOT_DECLARED` when no class in the MRO declares the name.
+
+    The descriptor is invoked off ``type(raw)`` rather than ``raw.__get__``
+    because that is what the interpreter does, and the difference is
+    load-bearing here: a map-authored value that happens to carry a ``__get__``
+    attribute of its own must not be treated as a descriptor.
+    """
+    owner = type(target)
+    for klass in owner.__mro__:
+        if name not in klass.__dict__:
+            continue
+        raw = klass.__dict__[name]
+        descriptor_get = getattr(type(raw), "__get__", None)
+        if descriptor_get is None:
+            return raw
+        try:
+            return descriptor_get(raw, target, owner)
+        except Exception:
+            # A property that raises is not a handler. Answering "declared,
+            # but nothing usable" (rather than falling through to the
+            # instance) keeps a raising class attribute from being a way to
+            # reach the instance lookup.
+            return None
+    return _NOT_DECLARED
+
+
 def resolve_interaction(target, action):
     """Return the bound callable implementing ``action`` on ``target``, or None.
 
@@ -36,14 +78,38 @@ def resolve_interaction(target, action):
       the map loader ``setattr``s every authored prop onto the instance, so an
       instance-readable table would let map JSON redirect one verb onto any
       other method.
-    * The handler is then looked up on the **instance**, so instance-bound
-      aliases still work — which is how ``Passageway``'s per-name aliases
-      (``setattr(self, word, self.enter)``) keep resolving.
+    * The handler comes from the **class** whenever a class declares the name,
+      and from the instance only when it is a bound method OF THIS TARGET.
+
+    That second rule is issue #620. The handler used to be a bare
+    ``getattr(target, ...)`` accepted on ``callable()`` alone, and the legacy
+    map loader ``setattr``s every authored prop onto the instance — including
+    ``{"__class_type__": "module:Class"}`` props, which deserialize to engine
+    CLASSES, and a class is callable. So a placement authored with a prop named
+    after an interaction verb turned that class into the verb's handler, and
+    the API's dispatch then called it with the player as its first argument.
+    Nothing shipped does this, which is the only reason it was a hole rather
+    than a bug report.
+
+    ``Passageway``'s per-name aliases (``setattr(self, word, self.enter)``) are
+    the one legitimate instance-stored handler, and they are bound methods of
+    the passageway itself, so ``__self__ is target`` readmits them and nothing
+    else. ``HealingSpring.clean`` is why the instance rule cannot be the WHOLE
+    rule: it is a ``staticmethod``, so it has no ``__self__`` at all and is
+    admitted by the class lookup instead.
     """
     aliases = {}
     for klass in reversed(type(target).__mro__):
         aliases.update(klass.__dict__.get("KEYWORD_METHOD_ALIASES") or {})
-    handler = getattr(target, aliases.get(action, action), None)
+    name = aliases.get(action, action)
+    handler = _class_declared_handler(target, name)
+    if handler is _NOT_DECLARED:
+        # Purely instance-sourced. Only a method bound to this very target
+        # qualifies: anything else under this name was put there by the map
+        # loader or a restored save, neither of which may nominate handlers.
+        handler = getattr(target, name, None)
+        if getattr(handler, "__self__", None) is not target:
+            return None
     return handler if callable(handler) else None
 
 
