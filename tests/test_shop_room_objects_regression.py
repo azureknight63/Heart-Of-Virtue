@@ -20,6 +20,7 @@ a coordinate-keyed dict map, exactly like the live engine.
 """
 
 import logging
+import random
 
 from src.items import (
     AncientRelic,
@@ -27,7 +28,9 @@ from src.items import (
     Consumable,
     DragonHeartGem,
     Draught,
+    MineralSolvent,
     Restorative,
+    SlimeFlask,
     unique_item_factories,
     unique_items_spawned,
 )
@@ -359,3 +362,99 @@ def test_update_goods_always_stock_items_land_in_inventory_not_container():
         "always_stock items must never be routed into a container; found "
         f"{crate_names} in the Crate instead of merchant.inventory"
     )
+
+
+# ---------------------------------------------------------------------------
+# Issue #611 — unplaceable random stock must not be abandoned on the floor
+# ---------------------------------------------------------------------------
+
+
+def _jambo_like_merchant():
+    """Build the shipped Jambo configuration: 5 always_stock, 1 spare slot.
+
+    Mirrors ``grondia-jambos_shop.json`` tile (2, 2) -- ``stock_count`` 6
+    against five ``always_stock`` potions, so exactly one merchant slot is
+    free, plus the tile (3, 2) storage Crate that accepts ``[Consumable]``
+    only with a cap of 12. That combination is what makes the random-fill
+    pass roll far more classes than it can house.
+    """
+    merchant, room = _merchant_in_world(
+        name="Jambo",
+        stock_count=6,
+        always_stock=[
+            Restorative(count=5, merchandise=True),
+            Draught(count=4, merchandise=True),
+            Antidote(count=3, merchandise=True),
+            SlimeFlask(count=1, merchandise=True),
+            MineralSolvent(count=1, merchandise=True),
+        ],
+        specialties=[Consumable],
+        enchantment_rate=0.0,
+    )
+    room.spawn_item = _stub_spawn_item(room)
+    crate = Container(
+        name="Jambo's Tent Storage",
+        merchant=merchant,
+        allowed_subtypes=[Consumable],
+        stock_count=12,
+    )
+    room.objects_here.append(crate)
+    return merchant, room, crate
+
+
+def _restock_without_unique_injection(merchant, seed):
+    """Run ``update_goods`` deterministically with the unique pass neutralised.
+
+    ``_fill_remaining_stock`` picks with ``random.choice``/``random.uniform``,
+    so the roll is seeded rather than left to the engine's ~220 unseeded
+    ``random.*`` calls. ``UniqueItemInjectionCondition`` is disarmed the same
+    way the issue-#546 test above does it -- by marking every factory as
+    already spawned, derived from ``unique_item_factories`` rather than a
+    hand-kept list of names.
+    """
+    assert unique_item_factories, "no unique factories to isolate -- check the import"
+    spawned_before = set(unique_items_spawned)
+    unique_items_spawned.update(f.__name__ for f in unique_item_factories)
+    random.seed(seed)
+    try:
+        merchant.update_goods()
+    finally:
+        unique_items_spawned.clear()
+        unique_items_spawned.update(spawned_before)
+
+
+def test_restock_leaves_no_merchandise_on_the_merchants_floor():
+    """Regression test for issue #611 (unexplained floor items in Jambo's tent).
+
+    ``_fill_remaining_stock`` spawns each candidate into ``current_room``
+    first and places it afterwards. When neither an eligible container nor a
+    free merchant slot accepted the roll it used to ``continue``, skipping
+    ``_remove_placed_item_from_room`` -- so the item stayed in
+    ``room.items_here``, merchandise-flagged, takeable, and absent from the
+    Buy panel. With the shipped Jambo numbers that abandoned roughly 23 items
+    per restock on the tent entrance tile.
+    """
+    merchant, room, crate = _jambo_like_merchant()
+
+    _restock_without_unique_injection(merchant, seed=0)
+
+    # The restock must actually have happened, or "no litter" proves nothing.
+    assert crate.inventory, "the Crate took no stock -- the fill pass never ran"
+    litter = [it for it in room.items_here if getattr(it, "merchandise", False)]
+    assert litter == [], (
+        "restocking must not abandon merchandise in the merchant's room; "
+        f"{len(litter)} item(s) were left on the floor: "
+        f"{sorted(type(it).__name__ for it in litter)}"
+    )
+
+
+def test_restock_leaves_no_floor_litter_across_several_seeds():
+    """The leak is roll-dependent, so one seed is not evidence of a fix."""
+    for seed in range(5):
+        merchant, room, crate = _jambo_like_merchant()
+        _restock_without_unique_injection(merchant, seed=seed)
+        litter = [it for it in room.items_here if getattr(it, "merchandise", False)]
+        assert litter == [], (
+            f"seed {seed} left {len(litter)} merchandise item(s) on the floor: "
+            f"{sorted(type(it).__name__ for it in litter)}"
+        )

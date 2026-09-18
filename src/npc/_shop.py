@@ -58,6 +58,15 @@ from src.shop_conditions import (  # type: ignore
 class MerchantShopMixin:
     """Shop inventory management mixin for Merchant NPCs."""
 
+    #: Hard ceiling on random-fill rolls in a single ``_fill_remaining_stock``
+    #: pass. A roll is not guaranteed to make progress -- the class may fail to
+    #: spawn, or the instance may be rejected by every open home -- so the loop
+    #: needs a bound. This is a safety valve, not a balance knob: a shop that
+    #: cannot fill within this many rolls has a container whose
+    #: ``allowed_item_types`` no stockable class can satisfy, which is an
+    #: authoring fault rather than a number to tune.
+    _MAX_RESTOCK_ROLLS = 1000
+
     # ── Player-merchandise absorption ─────────────────────────────────────────
 
     def _collect_player_merchandise(self, player, silent=False):
@@ -339,15 +348,17 @@ class MerchantShopMixin:
             functions.add_random_enchantments(item, int(enchantment_points))
 
     @staticmethod
-    def _containers_accepting_type(containers: list[Container], item: Item) -> list[Container]:
-        """Return the subset of ``containers`` whose ``allowed_item_types`` matches ``item``.
+    def _containers_accepting_class(
+        containers: list[Container], item_class: type
+    ) -> list[Container]:
+        """Return the subset of ``containers`` whose ``allowed_item_types`` accepts ``item_class``.
 
-        Shared by ``_place_item`` and ``_fill_remaining_stock``'s
-        ``eligible_containers_for`` so the two don't drift into two
-        independent implementations of the same type-matching rule. Callers
-        that also care about a container's own stock cap (as
-        ``eligible_containers_for`` does) must filter for that separately —
-        this only answers "does the item type match", not "is there room".
+        The class-level form of the type-matching rule, so ``_fill_remaining_stock``
+        can ask "could this candidate class be housed anywhere?" *before* paying to
+        instantiate it. ``_containers_accepting_type`` is the instance-level wrapper;
+        keeping one implementation is what stops the two questions drifting apart.
+        Callers that also care about a container's own stock cap must filter for that
+        separately — this only answers "does the type match", not "is there room".
         """
         acceptable: list[Container] = []
         for container in containers:
@@ -356,12 +367,24 @@ class MerchantShopMixin:
                 continue
             try:
                 for allowed_type in allowed_types:
-                    if isinstance(item, allowed_type):
+                    if issubclass(item_class, allowed_type):
                         acceptable.append(container)
                         break
             except Exception:
                 continue
         return acceptable
+
+    @classmethod
+    def _containers_accepting_type(
+        cls, containers: list[Container], item: Item
+    ) -> list[Container]:
+        """Return the subset of ``containers`` whose ``allowed_item_types`` matches ``item``.
+
+        Shared by ``_place_item`` and ``_fill_remaining_stock``'s
+        ``eligible_containers_for`` so the two don't drift into two
+        independent implementations of the same type-matching rule.
+        """
+        return cls._containers_accepting_class(containers, type(item))
 
     def _place_item(self, item: Item, containers: list[Container]) -> bool:
         """Attempt to place item into a randomly selected eligible container.
@@ -463,26 +486,51 @@ class MerchantShopMixin:
         if not weight_map:
             return
 
-        def weighted_choice() -> type[Item] | None:
-            total = sum(weight_map.values())
+        def weighted_choice(pool: dict[type[Item], float]) -> type[Item] | None:
+            total = sum(pool.values())
             if total <= 0:
                 return None
             r = random.uniform(0, total)
             acc = 0.0
-            for cls, w in weight_map.items():
+            for cls, w in pool.items():
                 acc += w
                 if r <= acc:
                     return cls
             return None
 
+        def open_containers() -> list[Container]:
+            return [ct for ct in containers if container_slots_remaining(ct) > 0]
+
         def eligible_containers_for(item: Item) -> list[Container]:
-            open_containers = [ct for ct in containers if container_slots_remaining(ct) > 0]
-            return self._containers_accepting_type(open_containers, item)
+            return self._containers_accepting_type(open_containers(), item)
+
+        def housable_classes() -> dict[type[Item], float]:
+            """``weight_map`` restricted to classes some open container accepts."""
+            houses = open_containers()
+            return {
+                cls: w
+                for cls, w in weight_map.items()
+                if self._containers_accepting_class(houses, cls)
+            }
 
         safety = 0
-        while not all_full() and safety < 1000:
+        while not all_full() and safety < self._MAX_RESTOCK_ROLLS:
             safety += 1
-            cls = weighted_choice()
+            if merchant_slots_remaining() > 0:
+                pool = weight_map
+            else:
+                # The merchant's own shelves are full, so the only homes left
+                # are the type-restricted containers. Rolling a class none of
+                # them accepts can only be thrown away, so drop those classes
+                # from the roll rather than manufacturing an item with nowhere
+                # to go. Rejection-sampling the full pool (what this used to
+                # do) and sampling this restricted pool put the same
+                # distribution on what actually lands -- the difference is
+                # only the discards, which is what issue #611 was made of.
+                pool = housable_classes()
+                if not pool:
+                    break
+            cls = weighted_choice(pool)
             if cls is None:
                 break
             try:
@@ -491,6 +539,14 @@ class MerchantShopMixin:
                 spawned = None
             if not spawned:
                 continue
+            # Tile.spawn_item has no construction path that skips the room, so
+            # take the item straight back out: the room is a staging detail of
+            # spawning, never a place stock is allowed to come to rest. Doing
+            # it here rather than after a successful placement is the issue
+            # #611 fix -- the old trailing call was skipped whenever nothing
+            # accepted the item, abandoning it (merchandise-flagged, takeable,
+            # absent from the Buy panel) on the merchant's floor.
+            self._remove_placed_item_from_room(spawned)
             self._maybe_enchant(spawned)
             if not hasattr(spawned, "base_value"):
                 try:
@@ -502,9 +558,9 @@ class MerchantShopMixin:
                 random.choice(elig).inventory.append(spawned)
             elif merchant_slots_remaining() > 0:
                 self.inventory.append(spawned)
-            else:
-                continue
-            self._remove_placed_item_from_room(spawned)
+            # else: nothing accepted it, so the spawn is discarded. `pool`
+            # above makes that near-unreachable; it survives as the branch for
+            # a container that accepts a class but rejects the instance.
 
     # ── Shop conditions ────────────────────────────────────────────────────────
 
