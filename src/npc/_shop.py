@@ -418,8 +418,14 @@ class MerchantShopMixin:
         Shared by ``_place_item`` and ``_fill_remaining_stock``'s
         ``eligible_containers_for`` so the two don't drift into two
         independent implementations of the same type-matching rule.
+
+        ``item.__class__``, never ``type(item)``: this call used to be a plain
+        ``isinstance``, and ``isinstance`` consults ``__class__`` while
+        ``type()`` bypasses it. CLAUDE.md tells contributors to pass an engine
+        ``isinstance`` by setting ``mock.__class__`` to the real class, so
+        ``type()`` here would silently stop honouring every such double.
         """
-        return cls._containers_accepting_class(containers, type(item))
+        return cls._containers_accepting_class(containers, item.__class__)
 
     def _place_item(self, item: Item, containers: list[Container]) -> bool:
         """Attempt to place item into a randomly selected eligible container.

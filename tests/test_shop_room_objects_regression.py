@@ -21,6 +21,7 @@ a coordinate-keyed dict map, exactly like the live engine.
 
 import logging
 import random
+from unittest.mock import MagicMock
 
 from src.items import (
     AncientRelic,
@@ -541,3 +542,28 @@ def test_random_stock_still_contains_ordinary_merchandise():
     assert all(
         issubclass(type(it), Weapon) and type(it) is not Weapon for it in case.inventory
     ), f"a Weapon-only container took something else: {stocked}"
+
+
+def test_container_matching_still_honours_a_spoofed_dunder_class():
+    """The instance-level match must keep ``isinstance`` semantics.
+
+    ``_containers_accepting_type`` began as a plain ``isinstance`` call and is
+    now a wrapper over the class-level rule. ``isinstance`` consults
+    ``__class__`` and ``type()`` bypasses it, so writing the wrapper with
+    ``type(item)`` would silently stop honouring the exact test-double pattern
+    CLAUDE.md prescribes ("to pass an engine ``isinstance``, set
+    ``mock.__class__`` to the real class"). Nothing in the suite happened to
+    exercise that, which is why it gets a test of its own rather than trust.
+    """
+    merchant, room = _merchant_in_world()
+    crate = Container(
+        name="Potion Crate", merchant=merchant, allowed_subtypes=[Consumable]
+    )
+    double = MagicMock()
+    double.__class__ = Restorative
+
+    assert isinstance(double, Consumable), "the double no longer spoofs its class"
+    assert merchant._containers_accepting_type([crate], double) == [crate], (
+        "a double whose __class__ is a real Consumable must match a "
+        "Consumable-only container, exactly as isinstance would"
+    )
