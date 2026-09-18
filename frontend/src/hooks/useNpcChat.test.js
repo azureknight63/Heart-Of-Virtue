@@ -1349,6 +1349,39 @@ describe('useNpcChat', () => {
       expect(npcChat.end).not.toHaveBeenCalled()
     })
 
+    it('sends exactly one /end when the player walks out mid-turn (#618)', async () => {
+      // The window issue #618's fix OPENS: End Conversation is no longer gated
+      // on `loading`, so a dismissal can now land while `/respond` is still in
+      // flight. `openNpcKeyRef` is cleared before `/end` goes out, so the
+      // unmount cleanup must not fire a second one — and the reply that lands
+      // afterwards must not write into a hook that is gone.
+      const pending = deferred()
+      npcChat.respond.mockReturnValue(pending.promise)
+      const { result, unmount } = await mountOpened()
+
+      act(() => {
+        result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
+      })
+      await waitFor(() => expect(result.current.phase).toBe('waiting_npc'))
+
+      await act(async () => {
+        await result.current.handleEndConversation()
+      })
+      unmount()
+
+      await act(async () => {
+        pending.resolve({ data: makeNpcChatRespond({ npc_response: 'Too late.' }) })
+      })
+
+      expect(npcChat.end).toHaveBeenCalledTimes(1)
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      // No "Cannot update an unmounted component" from the late reply either.
+      expect(consoleError).not.toHaveBeenCalledWith(
+        expect.stringContaining('unmounted'),
+        expect.anything()
+      )
+    })
+
     it('sends exactly one /end when a dismissal is what unmounted the panel', async () => {
       const { result, unmount } = await mountOpened()
 

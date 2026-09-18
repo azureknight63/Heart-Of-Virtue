@@ -457,9 +457,26 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   // CONVERSATION_STAGE_SPEED) purely to know WHEN it finishes; ConversationStage
   // itself never fires `onComplete` in "live" mode (see its own docstring), so
   // the panel cannot simply listen for that.
+  //
+  // Issue #618: `text` alone was not what is on screen. The engine's OWN
+  // closing line — `closing_lines_when_exhausted`, the line that ends a
+  // conversation the player talked dry — is authored, not generated, so it
+  // ships through `_flavor_only_turn` as an empty `npc_response` with the
+  // prose in `npc_flavor`. An empty string is "fully typed" the instant it
+  // lands (useTypewriter short-circuits `!text`), so this fired on the tick
+  // the payload arrived and the whole 2s window was the entire time the line
+  // was readable. #531's fix was a no-op on exactly the path that always
+  // produces a closing line.
+  //
+  // For a flavor beat this is a READING BUDGET, not a mirror: the stage
+  // renders flavor statically, so nothing is animating. Charging it at the
+  // same per-character rate is the point — it spends the same time on the same
+  // number of words, which is what "let the player read it" meant in #531.
+  // `text` still wins when both are present: that is the half that animates,
+  // and the flavor above it is already fully drawn while it does.
   const latestSegment = conversationSegments[conversationSegments.length - 1]
   const { isComplete: latestBeatFullyTyped } = useTypewriter(
-    latestSegment?.text || '',
+    latestSegment?.text || latestSegment?.flavor || '',
     CONVERSATION_STAGE_SPEED
   )
   // Edge-triggered on purpose: `handleFinalBeatRendered` arms a fresh 2s
