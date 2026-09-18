@@ -5057,6 +5057,15 @@ class GameService:
         Items listed in item_names are picked up; all others remain on the tile.
         combat_drops is cleared regardless so the loot phase cannot be repeated.
 
+        This call is also the victory's **resolve signal** (issue #610). The
+        adapter's ``combat_end_summary`` is what ``get_combat_state`` re-emits
+        as ``end_state`` on every poll while the player is out of combat, and
+        the client's dedupe of it is in-memory only — deliberately, so a reload
+        mid-dialog still shows the result (issue #116). Nothing else on the
+        victory path ever cleared it, so the VICTORY dialog came back on every
+        reload for the rest of the session. Clearing it here (and routing the
+        no-loot close through this endpoint) is what ends the fight for good.
+
         Args:
             player: The Player instance.
             item_names: List of item names the player chose to take.
@@ -5084,6 +5093,7 @@ class GameService:
         tile = getattr(player, "current_room", None)
         if not tile or not hasattr(tile, "items_here"):
             player.combat_drops = []
+            self._mark_victory_resolved(player)
             return {"success": True, "collected": [], "skipped": []}
 
         inventory = get_inventory_list(player)
@@ -5123,6 +5133,7 @@ class GameService:
                 skipped.append({"name": name, "reason": "not_found"})
 
         player.combat_drops = []
+        self._mark_victory_resolved(player)
 
         if collected and hasattr(player, "stack_inv_items"):
             player.stack_inv_items()
@@ -5130,6 +5141,24 @@ class GameService:
             player.refresh_weight()
 
         return {"success": True, "collected": collected, "skipped": skipped}
+
+    @staticmethod
+    def _mark_victory_resolved(player: Any) -> None:
+        """Drop the end-of-combat summary so ``end_state`` stops being served.
+
+        ``ApiCombatAdapter.get_combat_state`` emits ``end_state`` for as long as
+        ``player.combat_end_summary`` is set and the player is out of combat.
+        Defeat resolves through load-save / start-over (both of which delete
+        it); victory's only resolve point is the loot call, so it has to do the
+        same here or the dialog is re-served forever (issue #610).
+
+        Set to ``None`` rather than deleted, mirroring
+        ``ApiCombatAdapter.initialize_combat``: every reader guards with
+        ``getattr(..., None)``, and leaving the attribute in place keeps the
+        pickled shape stable across saves.
+        """
+        if getattr(player, "combat_end_summary", None):
+            player.combat_end_summary = None
 
     # ── Shop ──────────────────────────────────────────────────────────────────
 

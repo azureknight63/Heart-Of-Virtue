@@ -387,6 +387,24 @@ describe('GamePage handler wiring', () => {
         });
     });
 
+    it('resolves a no-loot victory through the collect-loot endpoint (issue #610)', async () => {
+        // Closing VictoryDialog when nothing dropped used to call no combat
+        // endpoint at all, so the backend never learned the victory had been
+        // resolved and kept re-emitting the same end_state on every poll — a
+        // reload re-opened the dialog and pinned the Combat screen.
+        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
+            showVictoryDialog: true,
+            endState: { status: 'victory', items_dropped: [] },
+        }));
+
+        renderGamePage();
+        await act(async () => {
+            fireEvent.click(screen.getByText('Close Victory'));
+        });
+
+        expect(combatApi.collectLoot).toHaveBeenCalledWith([]);
+    });
+
     it('transitions from the victory dialog to the loot dialog', () => {
         const setShowVictoryDialog = vi.fn();
         const setShowLootDialog = vi.fn();

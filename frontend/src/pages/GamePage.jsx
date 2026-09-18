@@ -655,10 +655,18 @@ export default function GamePage() {
   /**
    * Handle victory dialog close (only reached when no loot drops exist).
    * When drops exist, VictoryDialog routes to loot phase via onContinueToLoot instead.
+   *
+   * Goes through `finishLoot([])` rather than straight to `returnFromVictory()`
+   * because this path used to call no combat endpoint at all (issue #610): the
+   * backend never learned the victory had been resolved, kept `end_state` in
+   * the session, and re-served it on every poll. Since the client's dedupe of
+   * that id is in-memory by design (issue #116), every reload re-opened the
+   * VICTORY dialog and pinned the Combat screen. An empty collect is the same
+   * resolve signal SKIP sends, and it takes nothing off the tile.
    */
   const handleVictoryClose = async () => {
     setShowVictoryDialog(false)
-    await returnFromVictory()
+    await finishLoot([])
   }
 
   /**
