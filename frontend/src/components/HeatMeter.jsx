@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react'
-import { accessibility, colors, fonts } from '../styles/theme'
+import React, { useEffect, useId, useState } from 'react'
+import { colors, fonts } from '../styles/theme'
 import { useMobile } from '../hooks/useMobile'
+import CollapsibleSectionHeader from './CollapsibleSectionHeader'
 import {
   HEAT_DRIFT_NOTE,
   HEAT_GAINS,
@@ -214,77 +215,74 @@ function HeatMeter({ heat, beat, combatId }) {
 function HeatRules({ band }) {
   const [expanded, setExpanded] = useState(false)
   const isMobile = useMobile()
+  const rulesId = useId()
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        aria-expanded={expanded}
+      <CollapsibleSectionHeader
+        expanded={expanded}
+        onToggle={() => setExpanded(!expanded)}
+        controlsId={rulesId}
+        // issue #580: measured 89x13px on a 375px viewport, well under the
+        // 44px minimum. The shared header's height floor grows the tappable
+        // box on touch; on desktop the helper stays at its native size so it
+        // does not reflow the meter above it in a panel with no spare height.
+        compact={!isMobile}
         style={{
           marginTop: '5px',
-          padding: 0,
-          border: 'none',
-          background: 'none',
+          width: 'auto',
+          padding: isMobile ? '0 4px' : 0,
           color: colors.text.dim,
           fontSize: '0.55rem',
           letterSpacing: '0.08em',
-          textTransform: 'uppercase',
+          fontWeight: 'normal',
           fontFamily: MONO,
-          cursor: 'pointer',
-          textAlign: 'left',
-          // issue #580: measured 89x13px on a 375px viewport, well under the
-          // 44px minimum. Vertical padding plus a height floor grows the
-          // tappable box without reflowing the meter above it; the label text
-          // itself is unchanged.
-          ...(isMobile ? {
-            minHeight: accessibility.touchTarget,
-            display: 'inline-flex',
-            alignItems: 'center',
-            padding: '0 4px',
-          } : {}),
         }}
       >
-        {expanded ? '▾ Hide' : '▸ What moves it'}
-      </button>
+        {expanded ? 'Hide' : 'What moves it'}
+      </CollapsibleSectionHeader>
 
-      {expanded && (
-        <div
-          data-testid="heat-rules"
-          style={{
-            marginTop: '5px',
-            padding: '7px 9px',
-            borderRadius: '5px',
-            background: 'rgba(0,0,0,0.7)',
-            border: `1px solid ${colors.border.light}`,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '6px',
-          }}
-        >
+      {/* Always mounted so aria-controls always resolves; the table itself
+          comes and goes. Same pattern as InteractPanel's category rows. */}
+      <div id={rulesId}>
+        {expanded && (
           <div
-            data-testid="heat-band-note"
+            data-testid="heat-rules"
             style={{
-              fontSize: '0.6rem',
-              color: band.color,
-              fontFamily: MONO,
-              lineHeight: 1.4,
+              marginTop: '5px',
+              padding: '7px 9px',
+              borderRadius: '5px',
+              background: 'rgba(0,0,0,0.7)',
+              border: `1px solid ${colors.border.light}`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
             }}
           >
-            {band.note}
+            <div
+              data-testid="heat-band-note"
+              style={{
+                fontSize: '0.6rem',
+                color: band.color,
+                fontFamily: MONO,
+                lineHeight: 1.4,
+              }}
+            >
+              {band.note}
+            </div>
+            <RuleGroup title="Gains" color={colors.primary} rules={HEAT_GAINS} />
+            <RuleGroup title="Losses" color={colors.danger} rules={HEAT_LOSSES} />
+            <div style={{
+              fontSize: '0.55rem',
+              color: colors.text.dim,
+              fontFamily: MONO,
+              lineHeight: 1.4,
+            }}>
+              {HEAT_DRIFT_NOTE}
+            </div>
           </div>
-          <RuleGroup title="Gains" color={colors.primary} rules={HEAT_GAINS} />
-          <RuleGroup title="Losses" color={colors.danger} rules={HEAT_LOSSES} />
-          <div style={{
-            fontSize: '0.55rem',
-            color: colors.text.dim,
-            fontFamily: MONO,
-            lineHeight: 1.4,
-          }}>
-            {HEAT_DRIFT_NOTE}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </>
   )
 }

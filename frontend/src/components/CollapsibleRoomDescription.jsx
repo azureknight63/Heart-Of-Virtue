@@ -1,11 +1,13 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useId } from 'react'
 import RoomContents from './RoomContents'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
+import CollapsibleSectionHeader from './CollapsibleSectionHeader'
 import useScrollIndicators from '../hooks/useScrollIndicators'
-import { colors, fonts, accessibility } from '../styles/theme'
+import { colors } from '../styles/theme'
 
 export default function CollapsibleRoomDescription({ location, onInteract, defaultOpen = true }) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
+  const bodyId = useId()
   // containerRef holds the DOM node for imperative scrollTop resets without
   // making it a reactive dep (avoids spurious effect re-runs on every render).
   const containerRef = useRef(null)
@@ -29,42 +31,24 @@ export default function CollapsibleRoomDescription({ location, onInteract, defau
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      <button
-        onClick={() => setIsOpen(o => !o)}
+      <CollapsibleSectionHeader
+        expanded={isOpen}
+        onToggle={() => setIsOpen(o => !o)}
+        controlsId={bodyId}
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: 'none',
-          border: 'none',
           borderBottom: `1px solid ${colors.primary}33`,
           padding: '6px 8px',
-          cursor: 'pointer',
-          color: colors.primary,
-          fontFamily: fonts.main,
-          fontSize: '11px',
-          fontWeight: 'bold',
-          textTransform: 'uppercase',
-          letterSpacing: '1px',
-          touchAction: 'manipulation',
-          minHeight: accessibility.touchTarget,
-          width: '100%',
-          textAlign: 'left',
         }}
       >
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flexShrink: 1 }}>
           {location.name || 'Current Location'}
         </span>
-        <span style={{
-          marginLeft: '8px',
-          flexShrink: 0,
-          display: 'inline-block',
-          transition: 'transform 0.2s',
-          transform: isOpen ? 'rotate(180deg)' : 'none',
-          fontSize: '10px',
-        }}>▼</span>
-      </button>
+      </CollapsibleSectionHeader>
 
+      {/* Always mounted so aria-controls always resolves; the description
+          itself comes and goes. Same pattern as InteractPanel's category
+          rows and HeatMeter's rules table. */}
+      <div id={bodyId}>
       {isOpen && (
         <div style={{ position: 'relative' }}>
           <div
@@ -95,6 +79,7 @@ export default function CollapsibleRoomDescription({ location, onInteract, defau
           )}
         </div>
       )}
+      </div>
     </div>
   )
 }
