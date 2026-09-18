@@ -33,6 +33,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from src.npc._chat_llm import (
+    JEAN_TONES,
     MAX_OPTION_CHARS,
     _MIN_OPTION_CHARS,
     ConversationalNPCMixin,
@@ -1397,19 +1398,21 @@ class TestQCJeanOptions:
             "Where were you headed",
         ]
 
-    def test_a_dropped_leading_option_does_not_leave_a_hole_in_the_tone_cycle(
-        self, npc
-    ):
-        """Tones are keyed on the KEPT position, not the source position, so a
-        dropped option at index 0 must not cost the player the "direct" reply."""
+    def test_a_dropped_leading_option_does_not_shift_labels(self, npc):
+        """Issue #591 removed the positional tone cycle rather than porting it
+        to kinds: each surviving option keeps the axes it arrived with, so a
+        drop at index 0 cannot slide a label onto the wrong text."""
         result = npc._qc_jean_options(
             [
-                {"text": "x"},
-                {"text": "Tell me about the road"},
-                {"text": "Where were you headed"},
+                {"text": "x", "tone": "angry", "kind": "challenge"},
+                {"text": "Tell me about the road", "tone": "curious", "kind": "ask-lore"},
+                {"text": "Where were you headed", "tone": "neutral", "kind": "ask-npc"},
             ]
         )
-        assert [o["tone"] for o in result] == ["direct", "guarded"]
+        assert result == [
+            {"tone": "curious", "kind": "ask-lore", "text": "Tell me about the road"},
+            {"tone": "neutral", "kind": "ask-npc", "text": "Where were you headed"},
+        ]
 
     def test_a_missing_apostrophe_slips_past_the_meta_speech_guard(self, npc):
         """Pinned limitation: the regex requires *some* character where the
@@ -1434,39 +1437,61 @@ class TestQCJeanOptions:
             "Something completely different",
         ]
 
-    def test_valid_options_pass_through_with_their_tones(self, npc):
+    def test_valid_options_pass_through_with_both_axes(self, npc):
         options = [
-            {"text": "Tell me more", "tone": "open"},
-            {"text": "I will keep that in mind", "tone": "guarded"},
-            {"text": "What else?", "tone": "direct"},
+            {"text": "Tell me more", "tone": "curious", "kind": "follow-up"},
+            {"text": "I will keep that in mind", "tone": "skeptical", "kind": "reply"},
+            {"text": "What else?", "tone": "neutral", "kind": "ask-lore"},
         ]
         assert npc._qc_jean_options(options) == [
-            {"tone": "open", "text": "Tell me more"},
-            {"tone": "guarded", "text": "I will keep that in mind"},
-            {"tone": "direct", "text": "What else?"},
+            {"tone": "curious", "kind": "follow-up", "text": "Tell me more"},
+            {"tone": "skeptical", "kind": "reply", "text": "I will keep that in mind"},
+            {"tone": "neutral", "kind": "ask-lore", "text": "What else?"},
         ]
 
-    def test_an_unusable_tone_falls_back_to_the_positional_default(self, npc):
-        """Missing or nonsense tones become direct/guarded/open by position, so
-        the UI always has one button of each colour."""
+    def test_a_repeated_tone_is_preserved(self, npc):
+        """Tone is the portrait emotion and may repeat — the kind is what
+        distinguishes two buttons, so nothing re-keys this axis."""
+        options = [
+            {"text": "Tell me more", "tone": "curious", "kind": "follow-up"},
+            {"text": "Where does that road go?", "tone": "curious", "kind": "ask-lore"},
+        ]
+        assert [o["tone"] for o in npc._qc_jean_options(options)] == [
+            "curious",
+            "curious",
+        ]
+
+    def test_an_unusable_tone_falls_back_to_neutral(self, npc):
+        """Missing or nonsense tones become ``neutral``, NOT a positional pick.
+
+        Positional defaulting said something while the tuple held three
+        registers in a fixed order; across eight emotions an option is not
+        "happy" because it landed second.
+        """
         options = [
             {"text": "Tell me more", "tone": "invalid"},
             {"text": "Second option"},
-            {"text": "Third option"},
         ]
-        assert npc._qc_jean_options(options) == [
-            {"tone": "direct", "text": "Tell me more"},
-            {"tone": "guarded", "text": "Second option"},
-            {"tone": "open", "text": "Third option"},
+        assert [o["tone"] for o in npc._qc_jean_options(options)] == [
+            "neutral",
+            "neutral",
         ]
 
     def test_tone_matching_is_case_insensitive(self, npc):
         options = [
-            {"text": "Tell me more", "tone": "OPEN"},
+            {"text": "Tell me more", "tone": "CURIOUS"},
             {"text": "Second option"},
             {"text": "Third option"},
         ]
-        assert npc._qc_jean_options(options)[0]["tone"] == "open"
+        assert npc._qc_jean_options(options)[0]["tone"] == "curious"
+
+    def test_kind_matching_is_case_insensitive(self, npc):
+        options = [
+            {"text": "Tell me more", "kind": "ASK-LORE"},
+            {"text": "Second option"},
+            {"text": "Third option"},
+        ]
+        assert npc._qc_jean_options(options)[0]["kind"] == "ask-lore"
 
     def test_only_the_first_three_options_are_kept(self, npc):
         options = [
@@ -1547,9 +1572,10 @@ class TestChatOpen:
             o["text"] for o in ScriptedAdapter.VALID_OPTIONS
         ]
         assert [o["tone"] for o in result["jean_options"]] == [
-            "direct",
-            "guarded",
-            "open",
+            o["tone"] for o in ScriptedAdapter.VALID_OPTIONS
+        ]
+        assert [o["kind"] for o in result["jean_options"]] == [
+            o["kind"] for o in ScriptedAdapter.VALID_OPTIONS
         ]
         # ...and it is persisted, so a reload resumes mid-conversation.
         stored = player.npc_chat_histories[result["npc_key"]]["exchanges"]
@@ -2070,8 +2096,10 @@ class TestGetFallbackJeanOptions:
         opts = npc._get_fallback_jean_options()
         for opt in opts:
             assert "text" in opt
-            assert "tone" in opt
-            assert opt["tone"] in ("direct", "guarded", "open")
+            assert opt["tone"] in JEAN_TONES
+            # Every fallback is a reply: a degraded round answers rather than
+            # pretending to pursue a subject nobody generated (issue #591).
+            assert opt["kind"] == "reply"
 
 
 class TestIntegrationChatFlow:

@@ -57,7 +57,27 @@ const CITATIONS = [
         where: 'hooks/useNpcChat.js',
         about: 'hooks/useNpcChat.test.js',
         anchor: 'JEAN_TONES',
-        claim: 'the suite pins TONE_EMOTIONS against the Python source',
+        claim: 'the suite pins the tone vocabulary against the Python source',
+    }),
+    cite({
+        where: 'hooks/useNpcChat.js',
+        about: 'ai/llm_client.py',
+        anchor: 'JEAN_KINDS',
+        claim: 'the engine owns the kind vocabulary as JEAN_KINDS',
+    }),
+    cite({
+        where: 'hooks/useNpcChat.js',
+        about: 'hooks/useNpcChat.test.js',
+        anchor: 'JEAN_KINDS',
+        claim: 'the suite pins KIND_LABELS against the Python source',
+    }),
+    cite({
+        // Issue #591 collapsed tone and emotion into one vocabulary, so the
+        // hook now names the module that owns the emotion list outright.
+        where: 'hooks/useNpcChat.js',
+        about: 'utils/portraits.js',
+        anchor: 'EMOTIONS',
+        claim: 'utils/portraits owns the registered portrait emotions',
     }),
     cite({
         where: 'hooks/useNpcChat.js',

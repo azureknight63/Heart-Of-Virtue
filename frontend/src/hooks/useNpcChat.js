@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import npcChat from '../api/npcChat'
-import { portraitUrl } from '../utils/portraits'
+import { portraitUrl, normalizeEmotion } from '../utils/portraits'
 import {
   conversationSegment,
   npcCast,
@@ -22,15 +22,15 @@ export { npcCast, JEAN_ID }
 
 /** @typedef {import('../utils/conversationSegment').ConversationSegment} ConversationSegment */
 
-// Jean's chosen tone -> the portrait worn while delivering it. The KEYS are
-// the engine's tone vocabulary, owned by ai/llm_client.py's `JEAN_TONES`
-// (`direct` / `guarded` / `open`), and useNpcChat.test.js pins them against
-// that file rather than against a copy of this table.
-export const TONE_EMOTIONS = {
-  direct: DEFAULT_EMOTION,
-  guarded: 'skeptical',
-  open: 'curious',
-}
+// Jean's tone IS the portrait emotion — there is no table between them any
+// more. `JEAN_TONES` (ai/llm_client.py) and `EMOTIONS` (utils/portraits.js)
+// hold the same eight names, so `toneEmotion` is `normalizeEmotion`, and
+// useNpcChat.test.js pins the two vocabularies against each other.
+//
+// Issue #591 deleted a three-entry `TONE_EMOTIONS` map here. It translated
+// direct/guarded/open onto three of the eight emotions, which left five of
+// Jean's portraits unreachable from chat and kept one vocabulary in two files.
+// Widening the engine's tuple to the emotion names removed the need for it.
 
 // The server's `conversation_quality` verdict -> the NPC's reaction portrait.
 export const QUALITY_EMOTIONS = {
@@ -67,12 +67,13 @@ export const CHAT_PHASES = {
 /**
  * Resolve a tagged value against an emotion table, defaulting to neutral.
  *
- * Both tables are looked up the same way — case-folded, with an unmapped or
- * missing value reading as neutral — so the rule lives here once instead of
- * being written out per table.
+ * One table reaches this now — `QUALITY_EMOTIONS`. It stays parameterised
+ * because the rule it carries (case-folded, unmapped reads as neutral) is the
+ * same rule `normalizeEmotion` applies on the tone side, and collapsing it
+ * into its single caller would put that rule in two shapes.
  *
- * `lookupOr`, not `table[key] || DEFAULT_EMOTION`. `tone` and
- * `conversation_quality` are strings the server chose; a value of
+ * `lookupOr`, not `table[key] || DEFAULT_EMOTION`. `conversation_quality` is
+ * a string the server chose; a value of
  * `constructor` or `toString` found an inherited function on the table, which
  * is truthy, so the default never ran and a FUNCTION went on to be used as a
  * portrait emotion. `table` arrives as a parameter here, so the static audit
@@ -84,7 +85,47 @@ function mapEmotion(table, key) {
 }
 
 export function toneEmotion(tone) {
-  return mapEmotion(TONE_EMOTIONS, tone)
+  // `normalizeEmotion`, not `mapEmotion`: the value already IS an emotion, and
+  // both coerce an unknown or missing value to neutral.
+  return normalizeEmotion(tone)
+}
+
+// What each `kind` reads as on the button. The wire carries the schema name
+// (`ask-lore`); the player never sees it.
+//
+// Display copy lives here rather than in the engine because it is presentation
+// — the prompt needs a gloss the model can act on, the button needs words a
+// player recognises, and those are not the same sentence. A `{npc}` token is
+// filled with the NPC's display name, which the panel already holds, so
+// "Ask about Mara" costs nothing on the wire.
+//
+// The KEYS are `JEAN_KINDS` in ai/llm_client.py. A kind added there without an
+// entry here would render a button with no label, which useNpcChat.test.js
+// pins against the Python source the same way it pins the tones.
+export const KIND_LABELS = {
+  reply: 'Answer',
+  'follow-up': 'Press further',
+  'ask-lore': 'Ask about the world',
+  'ask-npc': 'Ask about {npc}',
+  challenge: 'Push back',
+  redirect: 'Change the subject',
+  confide: 'Share something',
+  'ask-guidance': "Ask {npc}'s advice",
+  counsel: 'Offer counsel',
+}
+
+/**
+ * The player-facing label for an option, with the NPC's name filled in.
+ *
+ * Returns '' for an unknown kind rather than echoing the raw schema name: a
+ * blank label slot reads as a plain button, while `ask-lore` on screen reads
+ * as a bug. `lookupOr` for the same reason `mapEmotion` uses it — `kind`
+ * arrives from the server, and `constructor` finds an inherited function on a
+ * bare object literal.
+ */
+export function kindLabel(kind, npcName) {
+  const label = lookupOr(KIND_LABELS, String(kind || '').toLowerCase(), '')
+  return label.replace('{npc}', npcName || 'them')
 }
 
 export function qualityEmotion(quality) {

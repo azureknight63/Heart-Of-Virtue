@@ -28,7 +28,12 @@ import re
 import time
 
 import src.text_safety as text_safety
-from src.npc._chat_llm import MAX_OPTION_CHARS, ConversationalNPCMixin
+from src.npc._chat_llm import (
+    JEAN_KINDS,
+    JEAN_TONES,
+    MAX_OPTION_CHARS,
+    ConversationalNPCMixin,
+)
 from ai.llm_client import NpcChatLLMAdapter, _JSONTools
 from tests._npc_fixtures import chat_player, make_turn, qc_npc, wired_chat_npc
 
@@ -397,8 +402,8 @@ class TestJeanOptionTopUp:
         npc = _qc_host()
         npc._chat_fallback_idx = 0
         kept = [
-            {"tone": "direct", "text": "Where does the road lead?"},
-            {"tone": "open", "text": "Tell me about the caves."},
+            {"tone": "neutral", "kind": "ask-lore", "text": "Where does the road lead?"},
+            {"tone": "curious", "kind": "ask-npc", "text": "Tell me about the caves."},
         ]
         result = npc._top_up_jean_options(kept)
         assert len(result) == 3
@@ -406,7 +411,9 @@ class TestJeanOptionTopUp:
         texts = [o["text"] for o in result]
         assert "Where does the road lead?" in texts
         assert "Tell me about the caves." in texts
-        assert all(o["tone"] in ("direct", "guarded", "open") for o in result)
+        assert all(o["tone"] in JEAN_TONES for o in result)
+        # The pair above is all questions, so the filled slot has to answer.
+        assert any(o["kind"] == "reply" for o in result)
 
     def test_empty_set_yields_full_fallback_pool(self):
         npc = _qc_host()
@@ -414,15 +421,17 @@ class TestJeanOptionTopUp:
         result = npc._top_up_jean_options([])
         assert len(result) == 3
 
-    def test_top_up_prefers_missing_tone(self):
+    def test_top_up_prefers_a_tone_not_already_on_screen(self):
+        """The pool is walked tone-first so a filled slot does not hand the
+        player a third portrait identical to one already beside it."""
         npc = _qc_host()
         npc._chat_fallback_idx = 0
         kept = [
-            {"tone": "direct", "text": "Where does the road lead?"},
-            {"tone": "open", "text": "Tell me about the caves."},
+            {"tone": "neutral", "kind": "ask-lore", "text": "Where does the road lead?"},
+            {"tone": "curious", "kind": "ask-npc", "text": "Tell me about the caves."},
         ]
         result = npc._top_up_jean_options(kept)
-        assert {o["tone"] for o in result} == {"direct", "guarded", "open"}
+        assert len({o["tone"] for o in result}) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -1022,10 +1031,14 @@ class TestOptionSalvageEndToEnd:
         assert "What is the crossing like in winter?" in texts
         assert len(result["jean_options"]) == 3
 
-    def test_a_dropped_option_does_not_cost_the_player_a_tone(self):
-        """Tone defaulting happens on BOTH sides of the boundary: the adapter
-        assigns by kept position, the mixin drops what the adapter could not
-        judge, and the top-up refills the tone that went with it."""
+    def test_a_dropped_option_does_not_cost_the_player_an_option(self):
+        """Defaulting happens on BOTH sides of the boundary: the adapter names
+        both axes, the mixin drops what the adapter could not judge, and the
+        top-up refills the slot that went with it.
+
+        The assertion is on the COUNT and on kind distinctness, not on a set of
+        tones: issue #591 made tone the portrait emotion, which may repeat.
+        """
         adapter = _ScriptedRealAdapter(
             self._payload(
                 [
@@ -1037,11 +1050,8 @@ class TestOptionSalvageEndToEnd:
         )
         result = wired_chat_npc(adapter).chat_open(chat_player())
         assert len(result["jean_options"]) == 3
-        assert {o["tone"] for o in result["jean_options"]} == {
-            "direct",
-            "guarded",
-            "open",
-        }
+        assert all(o["tone"] in JEAN_TONES for o in result["jean_options"])
+        assert all(o["kind"] in JEAN_KINDS for o in result["jean_options"])
 
     def test_a_long_option_is_trimmed_at_a_word_boundary_and_survives(self):
         """The two layers agree on the NUMBER and now on the ACTION: the

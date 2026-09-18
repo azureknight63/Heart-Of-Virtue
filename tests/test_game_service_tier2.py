@@ -171,11 +171,13 @@ class TestNpcChatRespond:
         assert result["success"] is True
         assert npc.responded_with == (player, "Well met.", "open")
 
-    def test_default_tone_is_direct(self, game_service, player, tile):
+    def test_default_tone_is_neutral(self, game_service, player, tile):
+        """Issue #591: tone is the portrait emotion, so the default is the
+        neutral portrait rather than the retired "direct" register."""
         npc = ChattyNPC(name="Gorran")
         tile.npcs_here = [npc]
         game_service.npc_chat_respond(player, "Gorran", "Hello")
-        assert npc.responded_with[2] == "direct"
+        assert npc.responded_with[2] == "neutral"
 
     def test_conversation_ended_clears_the_active_marker(self, game_service, player, tile):
         tile.npcs_here = [

@@ -367,8 +367,77 @@ _STAGE_DIRECTION_RE = re.compile(r'^\[[^\[\]{}"]{1,80}\]\s*\S')
 # against cannot drift apart again.
 # ---------------------------------------------------------------------------
 
-#: The three tones a Jean-options block cycles through, in order.
-JEAN_TONES = ("direct", "guarded", "open")
+#: How many options one round offers.
+#:
+#: Public and mirrored into ``src/npc/_chat_llm.py`` through the same import
+#: guard as the tone and length constants, so the number the prompts ASK for
+#: and the number the QC pipeline KEEPS cannot drift. It briefly existed as two
+#: private literals in two files, which is the exact hazard the header above
+#: says these constants are centralised to prevent.
+JEAN_OPTION_COUNT = 3
+
+#: Jean's tone on an option: the portrait emotion he wears delivering it.
+#:
+#: These ARE the emotion names, not a register that maps onto one. The client's
+#: ``utils/portraits.js`` resolves ``/assets/portraits/jean/<tone>.png`` straight
+#: from this value, and Jean ships art for every name here. Issue #591: this was
+#: ``("direct", "guarded", "open")`` translated through a ``TONE_EMOTIONS`` table
+#: in useNpcChat.js, which left five of Jean's portraits unreachable from chat
+#: and put one vocabulary in two files. Widening it deleted the table.
+#:
+#: Two options in a round MAY share a tone -- ``kind`` is what distinguishes
+#: them on the button, so a repeated portrait is not the legibility bug a
+#: repeated label was.
+JEAN_TONES = (
+    "neutral",
+    "happy",
+    "sad",
+    "angry",
+    "surprised",
+    "skeptical",
+    "concerned",
+    "curious",
+)
+
+#: What Jean's option is ABOUT, as name -> the gloss the prompts hand the model.
+#:
+#: The second axis from issue #591. ``tone`` says how Jean looks saying it;
+#: ``kind`` says what he talks about, which is the axis a playtester actually
+#: asked for. Kinds are speech acts and never registers: "deflect" is not here
+#: because it is what the ``skeptical`` tone already means, and an axis that
+#: restates the other one buys nothing.
+#:
+#: Editable by design -- the prompts render their vocabulary lines from this
+#: mapping rather than spelling it, so adding or renaming a kind is a one-line
+#: change that reaches the prompt, the validator and the wire together. Two
+#: rules bound what may be added: a kind must be answerable from a block
+#: ``_build_system_prompt`` actually carries (which is why ``ask-way`` is absent
+#: -- nothing in the prompt knows the map), and it must not promise an action
+#: the engine cannot honour (which is why ``offer-help`` is absent, and why
+#: ``counsel`` -- the same impulse as speech rather than deed -- is present).
+#:
+#: ``ask-guidance`` is deliberately glossed against objectives: the prompt has
+#: no quest state, so advice about what to DO next would be invented.
+JEAN_KINDS = {
+    "reply": "answer what they just said",
+    "follow-up": "press the current subject further",
+    "ask-lore": "ask about a place, faction or event",
+    "ask-npc": "ask about them: trade, history, opinion",
+    "challenge": "doubt what they just claimed",
+    "redirect": "return to a subject they raised earlier",
+    "confide": "volunteer something of Jean's own",
+    "ask-guidance": "ask their counsel on Jean's situation, never what to do next",
+    "counsel": "meet their trouble with advice or shared feeling",
+}
+
+#: What an option wears when the model omits or mangles an axis.
+#:
+#: ``neutral`` rather than a positional pick from ``JEAN_TONES``: cycling the
+#: tuple positionally was harmless while it held three registers in a fixed
+#: order, and became arbitrary the moment it held eight emotions -- an option
+#: with no stated tone is not "happy" because it landed at index 1.
+JEAN_DEFAULT_TONE = "neutral"
+JEAN_DEFAULT_KIND = "reply"
 
 #: Spoken NPC line: hard character cap and sentence budget.
 MAX_NPC_TEXT_CHARS = 300
@@ -404,14 +473,66 @@ LOQUACITY_DELTA_DEFAULT = -8
 # ---------------------------------------------------------------------------
 
 #: The ``jean_options`` array exactly as the prompts ask for it.
+#:
+#: Built from the option COUNT, not by iterating ``JEAN_TONES``. Those were the
+#: same number while there were three of each; once tone became the eight-strong
+#: emotion vocabulary, iterating it asked the model for eight options in a
+#: pipeline that keeps three (issue #591). The slots are identical because
+#: neither axis is positional any more: the model chooses a tone and a kind per
+#: option, and QC enforces the constraints afterwards.
 _JEAN_OPTIONS_SKELETON = "[%s]" % ", ".join(
-    '{"tone": "%s", "text": "..."}' % tone for tone in JEAN_TONES
+    ['{"tone": "...", "kind": "...", "text": "..."}'] * JEAN_OPTION_COUNT
 )
 
 #: The rule ``_normalise_turn_fields`` then enforces on ``npc_text``.
 _NPC_TEXT_RULE = (
     "npc_text: spoken words only, at most %d sentences and %d characters."
     % (MAX_NPC_SENTENCES, MAX_NPC_TEXT_CHARS)
+)
+
+#: The kind vocabulary, rendered from ``JEAN_KINDS`` so the prompt cannot drift
+#: from the pool the validator enforces. One line per kind: these are paid on
+#: every call forever (see .claude/rules/llm-prompts.md), so the glosses are
+#: terse and carry no examples.
+_JEAN_KIND_VOCABULARY = "\n".join(
+    "- %s: %s" % (name, gloss) for name, gloss in JEAN_KINDS.items()
+)
+
+#: How the two axes are asked for together.
+#:
+#: Field-per-line rather than prose, per .claude/rules/llm-prompts.md: this is
+#: instruction-tail text re-sent on every call, so it is paid once per beat
+#: forever. Every clause here is a rule the pipeline enforces or the player
+#: sees — none of it restates another line, which is the only kind of prompt
+#: text that compresses safely.
+_JEAN_OPTION_AXES_RULE = (
+    "Each option has two labels.\n"
+    "tone (Jean's face): " + "|".join(JEAN_TONES) + ". Two options may share one.\n"
+    "kind (what it is about) — pick three DIFFERENT kinds, at least one '"
+    + JEAN_DEFAULT_KIND + "':\n" + _JEAN_KIND_VOCABULARY
+)
+
+#: The NPC is allowed not to know things.
+#:
+#: Nothing said so before, and a model asked about something outside its brief
+#: confabulates rather than declining — which mattered little while every option
+#: was a mood and matters a great deal now that ``ask-lore`` and ``ask-npc``
+#: exist. The permission is the NPC half of the rule whose Jean half is the
+#: KNOWN CONTEXT clause below.
+_NPC_MAY_NOT_KNOW_RULE = (
+    "Answer only from what this character knows; if Jean asks past that, say so "
+    "in character (\"I wouldn't know\") rather than inventing an answer."
+)
+
+#: Jean cannot ask about what he has never heard of.
+#:
+#: The turn prompt has always carried this inline; the standalone options
+#: prompt did not, so options minted on that path were ungated. Harmless while
+#: they were moods, a route to invented lore once a kind can ask about the
+#: world. Spelled once here and used by both.
+_JEAN_OPTION_KNOWLEDGE_RULE = (
+    "Never reference anything outside JEAN'S KNOWN CONTEXT, the WORLD facts, "
+    "and this conversation."
 )
 
 #: Shared guidance for every prompt that asks the model for Jean's options.
@@ -3278,7 +3399,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
 
     @staticmethod
     def _clean_jean_options(raw: Any) -> List[Dict[str, str]]:
-        """Normalise a model's ``jean_options`` block into ``[{tone, text}]``.
+        """Normalise a model's ``jean_options`` block into ``[{tone, kind, text}]``.
 
         One rule, three call sites. There used to be three: ``generate_turn``
         defaulted the tone by SOURCE position, ``revise_turn`` by KEPT position,
@@ -3287,8 +3408,15 @@ class NpcChatLLMAdapter(GenericLLMClient):
         left the player with only "guarded" and "open" replies and no direct
         one.
 
-        Kept position is the correct rule: dropping a malformed entry must not
-        leave a hole in the tone cycle. Text is capped at ``MAX_OPTION_CHARS``,
+        Both axes now default to a NAMED value rather than a position. Positional
+        defaulting was defensible while the tones were three registers in a fixed
+        order and an option's index told you something; with eight emotions it
+        said nothing — an option whose tone the model omitted is not "happy"
+        because it happened to land second. ``src/npc/_chat_llm.py`` re-keys
+        ``kind`` for uniqueness downstream and does not care what this chose,
+        but it does rely on the field EXISTING and being a member of the pool.
+
+        Text is capped at ``MAX_OPTION_CHARS``,
         the same number ``src/npc/_chat_llm.py`` filters on — capping higher
         here only produced options the mixin was guaranteed to discard.
 
@@ -3310,13 +3438,16 @@ class NpcChatLLMAdapter(GenericLLMClient):
         for item in raw:
             if not isinstance(item, dict) or "text" not in item:
                 continue
-            default_tone = JEAN_TONES[len(cleaned) % len(JEAN_TONES)]
-            tone = str(item.get("tone", default_tone)).lower()
+            tone = str(item.get("tone", JEAN_DEFAULT_TONE)).lower()
             if tone not in JEAN_TONES:
-                tone = default_tone
+                tone = JEAN_DEFAULT_TONE
+            kind = str(item.get("kind", JEAN_DEFAULT_KIND)).lower()
+            if kind not in JEAN_KINDS:
+                kind = JEAN_DEFAULT_KIND
             cleaned.append(
                 {
                     "tone": tone,
+                    "kind": kind,
                     "text": NpcChatLLMAdapter._clean_option_text(item["text"]),
                 }
             )
@@ -3598,6 +3729,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             f"{_QUALITY_GLOSS}\n"
             "Set conversation_end to true ONLY if the NPC is done talking entirely (loquacity exhausted or deeply offended).\n"
             f"{_NPC_TEXT_RULE}\n"
+            f"{_NPC_MAY_NOT_KNOW_RULE}\n"
             f"reputation_delta is a small integer from {REPUTATION_DELTA_BOUNDS[0]} to "
             f"+{REPUTATION_DELTA_BOUNDS[1]} reflecting how much this specific "
             "exchange shifts the NPC's opinion of Jean — in character, based on what Jean actually said. "
@@ -3671,6 +3803,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             # The numbers are interpolated from the module constants the clamps
             # use, so the prose and the clamp cannot drift apart.
             f"{_NPC_TEXT_RULE}\n"
+            f"{_NPC_MAY_NOT_KNOW_RULE}\n"
             "npc_flavor: optional third-person physical or environmental beat "
             f"('She studies the dust before answering'), under {MAX_FLAVOR_CHARS} "
             'characters; "" if none.\n'
@@ -3683,13 +3816,12 @@ class NpcChatLLMAdapter(GenericLLMClient):
             "(-3..-12); up to +8 only when Jean raises something this NPC genuinely cares "
             "about; -25..-35 if Jean is deeply offensive.\n"
             "On an opening line set both deltas to 0.\n"
-            "jean_options: Jean's three replies (he/him, cautious and measured). "
-            f"{JEAN_TONES[0]}=brief and to the point; {JEAN_TONES[1]}=deflects or keeps "
-            f"distance; {JEAN_TONES[2]}=warm or curious. 8-20 words each, never over "
-            f"{MAX_OPTION_CHARS} characters. Ground each one in the specific thing the NPC "
-            "just said and in the history — concrete details, not pleasantries. Never echo "
-            "a history line, and never reference anything outside JEAN'S KNOWN CONTEXT, "
-            "the WORLD facts, and this conversation.\n"
+            f"jean_options: Jean's {JEAN_OPTION_COUNT} replies (he/him, cautious and "
+            f"measured). 8-20 words each, never over {MAX_OPTION_CHARS} characters. "
+            "Ground each one in the specific thing the NPC just said and in the history — "
+            "concrete details, not pleasantries. Never echo a history line. "
+            f"{_JEAN_OPTION_KNOWLEDGE_RULE}\n"
+            f"{_JEAN_OPTION_AXES_RULE}\n"
             f"{_JEAN_OPTION_IDENTITY_RULE}\n"
             f"{_MERCHANT_OPTION_RULE}"
         )
@@ -3851,12 +3983,14 @@ class NpcChatLLMAdapter(GenericLLMClient):
             f"{NPC_SPEAKER_LABEL}: {quoted_name} — {npc_voice_summary}\n"
             f'{quoted_name} just said: "{last_line}"\n\n'
             f"Jean's recent lines (avoid repeating these): {history_hint}\n\n"
-            "Generate exactly 3 Jean response options. Return this JSON object:\n"
+            f"Generate exactly {JEAN_OPTION_COUNT} Jean response options. Return this "
+            "JSON object:\n"
             f'{{"options": {_JEAN_OPTIONS_SKELETON}}}\n\n'
             "Rules:\n"
-            f"- {JEAN_TONES[0]}: brief, factual, Jean gets to the point\n"
-            f"- {JEAN_TONES[1]}: Jean deflects, doesn't commit, or keeps his distance\n"
-            f"- {JEAN_TONES[2]}: Jean engages with some warmth or genuine curiosity\n"
+            f"{_JEAN_OPTION_AXES_RULE}\n"
+            # This path lacked the knowledge clause the turn prompt has always
+            # carried, so its options were ungated (issue #591).
+            f"- {_JEAN_OPTION_KNOWLEDGE_RULE}\n"
             "- No option may echo the recent history above\n"
             "- All options must be plausible for a careful, measured human traveler\n"
             f"- {_JEAN_OPTION_IDENTITY_RULE}\n"

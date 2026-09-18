@@ -193,7 +193,10 @@ class TestMerchantOptionSuppression:
             )
         )
         assert len(options) == 3
-        assert {o["tone"] for o in options} == {"direct", "guarded", "open"}
+        # Every commerce question was dropped, so the whole set is fallback:
+        # three replies wearing the three portraits the pool carries.
+        assert all(o["kind"] == "reply" for o in options)
+        assert len({o["tone"] for o in options}) == 3
 
 
 class TestMerchantNpcLineSuppression:

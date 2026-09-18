@@ -16,6 +16,7 @@ third-party LLM output. This test fuzzes both with a seeded RNG and a mocked LLM
   the adapter exposes no movement / item-grant / combat channel at all.
 """
 
+from ai.llm_client import JEAN_KINDS, JEAN_TONES
 import random
 
 import pytest
@@ -218,5 +219,6 @@ def test_llm_response_fuzz_stays_bounded(seed):
         opts = result["jean_options"]
         assert isinstance(opts, list) and len(opts) <= 3
         for opt in opts:
-            assert opt["tone"] in {"direct", "guarded", "open"}
+            assert opt["tone"] in set(JEAN_TONES)
+            assert opt["kind"] in set(JEAN_KINDS)
             assert isinstance(opt["text"], str) and len(opt["text"]) <= 200

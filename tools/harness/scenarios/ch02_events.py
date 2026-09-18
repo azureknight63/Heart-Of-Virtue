@@ -312,12 +312,45 @@ class Ch02EventsScenario(Scenario):
 
         # ==================================================================
         # 7. Ch02KingSlimeMemoryFlash (fires once fragment is in inventory)
-        # Simulate pickup: move the fragment from the tile onto the player.
+        #
+        # No pickup to simulate: since #378/#371 AfterDefeatingKingSlime grants
+        # the fragment STRAIGHT to inventory rather than dropping it as a floor
+        # item, because leaving the tile without it could soft-lock the Votha
+        # Krr hand-over. This block used to append it to the inventory anyway —
+        # the same object, a second time — so the player carried two. The
+        # hand-over at step 8 removes one (`break` after the first match), the
+        # duplicate stayed, and the scenario reported "MineralFragment still in
+        # inventory after AfterKingSlimeReturn": an engine bug that was not
+        # there, caused by the harness itself.
+        #
+        # The floor branch is kept for the case where it IS on the tile, so the
+        # step still means "make sure Jean is carrying it" either way.
         # ==================================================================
-        if fragment is not None:
-            if fragment in tile.items_here:
+        if fragment is None:
+            fragment = next(
+                (i for i in tile.items_here
+                 if i.__class__.__name__ == "MineralFragment"),
+                None,
+            )
+            if fragment is not None:
                 tile.items_here.remove(fragment)
-            player.inventory.append(fragment)
+                player.inventory.append(fragment)
+
+        if fragment is not None:
+            carried = [
+                i for i in player.inventory
+                if i.__class__.__name__ == "MineralFragment"
+            ]
+            if len(carried) > 1:
+                bugs.append(self._bug(
+                    title="Jean carries more than one MineralFragment",
+                    severity=BugSeverity.MEDIUM,
+                    category=BugCategory.WRONG_RESPONSE,
+                    endpoint="/api/world/events",
+                    method="POST",
+                    expected="exactly one MineralFragment in inventory before the hand-over",
+                    actual=f"{len(carried)} in player.inventory",
+                ))
 
             resp = trigger_events()
             bug = check(resp, "Ch02KingSlimeMemoryFlash trigger (fragment pickup)")

@@ -207,7 +207,8 @@ def npc_chat_respond():
         {
             "npc_key": "NPC identifier for active chat",
             "jean_text": "Jean's dialogue text",
-            "jean_tone": "direct" | "guarded" | "open" (optional, default "direct")
+            "jean_tone": a portrait emotion (optional, default "neutral").
+                          The vocabulary is ai/llm_client.py's JEAN_TONES.
         }
 
     Returns:
@@ -230,7 +231,8 @@ def npc_chat_respond():
 
     npc_key = _string_field(data, "npc_key")
     jean_text = _string_field(data, "jean_text")
-    jean_tone = _string_field(data, "jean_tone", "direct") or "direct"
+    # "neutral", not "direct": issue #591 made tone the portrait emotion.
+    jean_tone = _string_field(data, "jean_tone", "neutral") or "neutral"
 
     if not npc_key:
         return jsonify({"success": False, "error": "npc_key is required"}), 400

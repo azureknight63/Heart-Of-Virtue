@@ -112,6 +112,10 @@ _T = TypeVar("_T")
 # change them.
 try:  # pragma: no cover - trivially exercised by importing this module
     from ai.llm_client import (
+        JEAN_DEFAULT_KIND,
+        JEAN_DEFAULT_TONE,
+        JEAN_KINDS,
+        JEAN_OPTION_COUNT,
         JEAN_TONES,
         LOQUACITY_DELTA_BOUNDS,
         LOQUACITY_DELTA_DEFAULT,
@@ -138,7 +142,30 @@ except Exception as _constants_import_error:  # pragma: no cover - no AI stack
         type(_constants_import_error).__name__,
         _constants_import_error,
     )
-    JEAN_TONES = ("direct", "guarded", "open")
+    JEAN_TONES = (
+        'neutral',
+        'happy',
+        'sad',
+        'angry',
+        'surprised',
+        'skeptical',
+        'concerned',
+        'curious',
+    )
+    JEAN_KINDS = {
+        'reply': 'answer what they just said',
+        'follow-up': 'press the current subject further',
+        'ask-lore': 'ask about a place, faction or event',
+        'ask-npc': 'ask about them: trade, history, opinion',
+        'challenge': 'doubt what they just claimed',
+        'redirect': 'return to a subject they raised earlier',
+        'confide': "volunteer something of Jean's own",
+        'ask-guidance': "ask their counsel on Jean's situation, never what to do next",
+        'counsel': 'meet their trouble with advice or shared feeling',
+    }
+    JEAN_DEFAULT_TONE = "neutral"
+    JEAN_DEFAULT_KIND = "reply"
+    JEAN_OPTION_COUNT = 3
     MAX_NPC_TEXT_CHARS = 300
     MAX_FLAVOR_CHARS = 200
     MAX_OPTION_CHARS = 160
@@ -644,7 +671,13 @@ def _is_combined_adapter(adapter: Any) -> TypeGuard[CombinedChatAdapter]:
 # QC pipeline count/similarity thresholds owned by this module. The *length*
 # caps and the tone names live in ai/llm_client.py (imported above) because the
 # generator has to obey the same numbers the filter enforces.
-_JEAN_OPTION_COUNT = len(JEAN_TONES)  # Jean is always offered exactly three
+# Jean is always offered exactly three. This was ``len(JEAN_TONES)``, which was
+# the same number only by coincidence: issue #591 widened that tuple to the eight
+# portrait emotions and the expression silently became eight. It now comes from
+# ai/llm_client.py like every other shared conversation constant, so the number
+# the prompts ask the model for and the number this pipeline keeps are one
+# value; tests/test_npc_chat_turn_pipeline.py pins the mirrored copy.
+_JEAN_OPTION_COUNT = JEAN_OPTION_COUNT
 _OPTION_SIMILARITY_MAX = 0.6  # Jaccard ceiling before two options count as duplicates
 _NPC_REPEAT_SIMILARITY = 0.7  # Jaccard floor before an NPC line counts as a repeat
 
@@ -1449,21 +1482,30 @@ _TOPIC_STOPWORDS = frozenset(
 )
 
 # Jean options fallback pool (rotated to avoid repetition)
+#
+# Every entry is a `reply`, which is what makes a degraded round honest: the
+# model could not be reached, so Jean answers rather than pretending to pursue a
+# subject nobody generated. It also satisfies the at-least-one-reply rule for
+# free (see `_ensure_a_reply`).
+#
+# The tones migrated through the `TONE_EMOTIONS` table issue #591 deleted —
+# direct->neutral, guarded->skeptical, open->curious — so a fallback round wears
+# the same three portraits it always did.
 _JEAN_FALLBACK_POOL = [
     [
-        {"tone": "direct", "text": "What else can you tell me?"},
-        {"tone": "guarded", "text": "I'll keep that in mind."},
-        {"tone": "open", "text": "That's worth knowing."},
+        {"tone": "neutral", "kind": "reply", "text": "What else can you tell me?"},
+        {"tone": "skeptical", "kind": "reply", "text": "I'll keep that in mind."},
+        {"tone": "curious", "kind": "reply", "text": "That's worth knowing."},
     ],
     [
-        {"tone": "direct", "text": "Go on."},
-        {"tone": "guarded", "text": "Noted."},
-        {"tone": "open", "text": "Tell me more."},
+        {"tone": "neutral", "kind": "reply", "text": "Go on."},
+        {"tone": "skeptical", "kind": "reply", "text": "Noted."},
+        {"tone": "curious", "kind": "reply", "text": "Tell me more."},
     ],
     [
-        {"tone": "direct", "text": "Fair enough."},
-        {"tone": "guarded", "text": "I see."},
-        {"tone": "open", "text": "I'm listening."},
+        {"tone": "neutral", "kind": "reply", "text": "Fair enough."},
+        {"tone": "skeptical", "kind": "reply", "text": "I see."},
+        {"tone": "curious", "kind": "reply", "text": "I'm listening."},
     ],
 ]
 
@@ -3422,9 +3464,14 @@ class ConversationalNPCMixin:
         The whole list is validated *before* it is cut to three. Slicing first
         meant a malformed option at index 0 made a perfectly good option at
         index 3 unreachable — the salvage this exists to provide, defeated by
-        the first line of its own loop. Tones are re-keyed over the KEPT list
-        (see below), so a dropped option cannot leave the player two replies
-        labelled the same and none "guarded".
+        the first line of its own loop.
+
+        Issue #591 **removed** the tone re-keying this used to do rather than
+        moving it to the kind axis. Both axes are now taken at face value: an
+        unusable tone becomes ``neutral`` and an unusable kind becomes
+        ``reply``, and neither is reassigned to manufacture variety. See the
+        comment on the assignment below for why uniqueness is asked for in the
+        prompt instead of enforced here.
         """
         if not isinstance(options, list) or not options:
             return []
@@ -3469,45 +3516,45 @@ class ConversationalNPCMixin:
             if self._is_merchant_commerce_question(text):
                 continue
 
+            # Tone is taken at face value (a name, not a position) and simply
+            # defaulted when unusable — nothing downstream re-keys it, because
+            # duplicates on this axis are allowed now.
             tone = str(opt.get("tone", "")).lower()
-            validated.append((tone if tone in JEAN_TONES else None, text))
+            if tone not in JEAN_TONES:
+                tone = JEAN_DEFAULT_TONE
+            kind = str(opt.get("kind", "")).lower()
+            validated.append((tone, kind if kind in JEAN_KINDS else None, text))
 
         # Dedup: keep the earlier of any too-similar pair, and stop as soon as
         # three survive — the cut to three happens *after* validation and
         # dedup, which is the whole point of scanning past the first three.
-        kept: List[Tuple[Optional[str], str]] = []
-        for tone, text in validated:
-            if self._is_near_duplicate(text, [t for _tone, t in kept]):
+        kept: List[Tuple[str, Optional[str], str]] = []
+        for tone, kind, text in validated:
+            if self._is_near_duplicate(text, [t for _tone, _kind, t in kept]):
                 continue
-            kept.append((tone, text))
+            kept.append((tone, kind, text))
             if len(kept) >= _JEAN_OPTION_COUNT:
                 break
 
-        # Tones are assigned last, over the final kept list, so neither a
-        # malformed option nor a near-duplicate can leave a hole in the
-        # direct/guarded/open cycle the UI colours its three buttons from.
+        # Kinds are NOT re-keyed, and that is the difference between the two
+        # axes rather than an omission.
         #
-        # A model tone survives only while it is still free. `tone or <default>`
-        # — what this was — is inert on the production path, because
-        # ai/llm_client.py already assigns every option a valid tone, so nothing
-        # here was ever None; a mid-list drop therefore shipped whatever
-        # positional default llm_client had given the option that moved up, and
-        # that is how two "direct" replies and no "guarded" one reached the
-        # player. Reassignment draws from the tones nothing claimed, which
-        # cannot run out: `kept` is capped at _JEAN_OPTION_COUNT == len(
-        # JEAN_TONES), so duplicates and holes always balance.
-        free = [t for t in JEAN_TONES if t not in {tone for tone, _text in kept}]
-        assigned: List[Dict[str, str]] = []
-        seen: Set[str] = set()
-        for tone, text in kept:
-            if tone is None or tone in seen:
-                tone = (
-                    free.pop(0)
-                    if free
-                    else JEAN_TONES[len(assigned) % len(JEAN_TONES)]
-                )
-            seen.add(tone)
-            assigned.append({"tone": tone, "text": text})
+        # The tone axis could be reassigned freely because tone only picks a
+        # portrait: calling an option "guarded" when the model said "direct"
+        # changes which face Jean wears and nothing the player reasons about.
+        # The kind is the label on the button — it is what the player reads to
+        # decide — so relabelling a plain answer as "ask-lore" to satisfy
+        # uniqueness puts a false description on a choice. Two options sharing
+        # a kind is a duller round; one carrying the wrong kind is a lie, and
+        # the second is worse.
+        #
+        # Variety is therefore requested where it can be met honestly — the
+        # generation prompt asks for three different kinds — and not imposed
+        # here, where the only way to impose it is to misdescribe an option.
+        assigned: List[Dict[str, str]] = [
+            {"tone": tone, "kind": kind or JEAN_DEFAULT_KIND, "text": text}
+            for tone, kind, text in kept
+        ]
         return assigned
 
     def _top_up_jean_options(
@@ -3518,9 +3565,23 @@ class ConversationalNPCMixin:
         Prefers pool entries whose tone is not already covered, skips any that
         read too close to a kept option, and pads unconditionally as a last
         resort so the player always sees three choices.
+
+        Then enforces the one rule QC cannot: **at least one option is a
+        reply**. Three questions in a row leave the NPC's last line unanswered
+        and read as interrogation rather than conversation (issue #591). The
+        fallback pool is tagged ``reply`` throughout, so the repair is to swap
+        the last option for a pool entry — which also means a fully degraded
+        round satisfies the rule for free.
         """
         options = [dict(o) for o in options[:_JEAN_OPTION_COUNT]]
-        if len(options) >= _JEAN_OPTION_COUNT:
+        # The pool fetch is NOT a pure read — `_get_fallback_jean_options`
+        # advances `_chat_fallback_idx` so successive degraded rounds offer
+        # different stock phrases. So it happens only when this call is
+        # actually going to draw from it: a healthy round that needs neither a
+        # filler nor the reply repair must leave the rotation where it found
+        # it, or every ordinary beat silently spends a group that a later
+        # degraded round would have used.
+        if len(options) >= _JEAN_OPTION_COUNT and self._has_a_reply(options):
             return options
         pool = self._get_fallback_jean_options()
         used_tones = {o["tone"] for o in options}
@@ -3539,6 +3600,47 @@ class ConversationalNPCMixin:
             if any(fb["text"] == o["text"] for o in options):
                 continue
             options.append(dict(fb))
+        return self._ensure_a_reply(options, pool)
+
+    @staticmethod
+    def _has_a_reply(options: List[Dict[str, str]]) -> bool:
+        """Whether the set already answers the NPC's last line.
+
+        Named rather than inlined because two callers ask it for different
+        reasons — one to decide whether the pool is needed at all, one to
+        decide whether to repair — and a copy in each is how the two would
+        drift into disagreeing about what satisfies the rule.
+        """
+        return any(o.get("kind") == JEAN_DEFAULT_KIND for o in options)
+
+    def _ensure_a_reply(
+        self, options: List[Dict[str, str]], pool: List[Dict[str, str]]
+    ) -> List[Dict[str, str]]:
+        """Guarantee one ``reply`` among the options, replacing the last if not.
+
+        The LAST option is the one sacrificed, not the first: the model puts its
+        most pertinent option first often enough that spending the tail costs
+        the player less. The replacement keeps its own tone rather than the
+        pool entry's, so the portrait sequence the round already established
+        does not jump.
+        """
+        if not options or self._has_a_reply(options):
+            return options
+        texts = [o["text"] for o in options[:-1]]
+        for fb in pool:
+            if self._is_near_duplicate(fb["text"], texts):
+                continue
+            options[-1] = {
+                "tone": options[-1]["tone"],
+                "kind": JEAN_DEFAULT_KIND,
+                "text": fb["text"],
+            }
+            return options
+        # Every pool entry read too close to something already on screen. The
+        # rule still has to hold, so relabel in place: the text is a question
+        # wearing a reply's label, which is a worse option than a swap but a
+        # better round than three unanswered questions.
+        options[-1] = dict(options[-1], kind=JEAN_DEFAULT_KIND)
         return options
 
     # ------------------------------------------------------------------
