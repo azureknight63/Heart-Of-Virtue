@@ -387,6 +387,24 @@ describe('GamePage handler wiring', () => {
         });
     });
 
+    it('resolves a no-loot victory through the collect-loot endpoint (issue #610)', async () => {
+        // Closing VictoryDialog when nothing dropped used to call no combat
+        // endpoint at all, so the backend never learned the victory had been
+        // resolved and kept re-emitting the same end_state on every poll — a
+        // reload re-opened the dialog and pinned the Combat screen.
+        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
+            showVictoryDialog: true,
+            endState: { status: 'victory', items_dropped: [] },
+        }));
+
+        renderGamePage();
+        await act(async () => {
+            fireEvent.click(screen.getByText('Close Victory'));
+        });
+
+        expect(combatApi.collectLoot).toHaveBeenCalledWith([]);
+    });
+
     it('transitions from the victory dialog to the loot dialog', () => {
         const setShowVictoryDialog = vi.fn();
         const setShowLootDialog = vi.fn();
@@ -444,6 +462,56 @@ describe('GamePage handler wiring', () => {
         expect(refetchPlayer).toHaveBeenCalledTimes(1);
         expect(screen.queryByTestId('beta-end-dialog')).not.toBeInTheDocument();
         errorSpy.mockRestore();
+    });
+
+    it('surfaces a refused collect and keeps the loot dialog open (issue #610)', async () => {
+        // The backend answers 200 with success:false when it cannot find the
+        // tile the fight was won on, and keeps the drops so the player can
+        // retry or SKIP. finishLoot used to react only to a thrown error, so a
+        // refusal closed the dialog exactly as if the loot had been taken.
+        const showError = vi.fn();
+        useToast.mockReturnValue({ error: showError });
+        combatApi.collectLoot.mockResolvedValue({
+            data: { success: false, error: 'The spoils still lie there.' },
+        });
+        const setShowLootDialog = vi.fn();
+        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
+            showLootDialog: true,
+            endState: { status: 'victory' },
+            setShowLootDialog,
+        }));
+
+        renderGamePage();
+        await act(async () => {
+            fireEvent.click(screen.getByText('Collect Loot'));
+        });
+
+        expect(showError).toHaveBeenCalledWith('The spoils still lie there.');
+        expect(setShowLootDialog).not.toHaveBeenCalledWith(false);
+        expect(refetchPlayer).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a refused skip but still leaves the victory', async () => {
+        // Skipping picks nothing up, so there is nothing to retry: holding the
+        // player on a dialog they asked to leave would only strand them.
+        const showError = vi.fn();
+        useToast.mockReturnValue({ error: showError });
+        combatApi.collectLoot.mockResolvedValue({ data: { success: false } });
+        const setShowLootDialog = vi.fn();
+        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
+            showLootDialog: true,
+            endState: { status: 'victory' },
+            setShowLootDialog,
+        }));
+
+        renderGamePage();
+        await act(async () => {
+            fireEvent.click(screen.getByText('Skip Loot'));
+        });
+
+        expect(showError).toHaveBeenCalledWith(expect.any(String));
+        expect(setShowLootDialog).toHaveBeenCalledWith(false);
+        expect(refetchPlayer).toHaveBeenCalledTimes(1);
     });
 
     it('skips loot with an empty collection call', async () => {

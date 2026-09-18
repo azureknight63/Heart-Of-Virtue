@@ -576,8 +576,16 @@ class TestCollectCombatLoot:
         assert looter.current_room.items_here == [ignored]
 
     def test_the_drop_list_is_cleared_afterwards(self, game_service, looter):
-        """``combat_drops`` is the post-victory prompt; leaving it populated
-        would re-offer the same loot on the next fight."""
+        """A skip still ends the loot phase: once the fight's tile is found,
+        ``combat_drops`` is cleared whatever was taken.
+
+        Since issue #610 the clear is no longer unconditional — when the tile
+        cannot be found and something was asked for, the call is an error and
+        clears nothing (``tests/test_victory_loot_resolution.py``). This case
+        has a tile, so it is unaffected. The reason this docstring used to give,
+        that leftover drops would be re-offered on the next fight, was never
+        what this guarded: ``ApiCombatAdapter.initialize_combat`` clears them
+        at the start of every fight."""
         looter.combat_drops = [_tradeable(name="Tonic")]
 
         game_service.collect_combat_loot(looter, [])
