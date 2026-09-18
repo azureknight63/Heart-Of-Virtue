@@ -5052,10 +5052,14 @@ class GameService:
         }
 
     def collect_combat_loot(self, player: Any, item_names: list) -> Dict[str, Any]:
-        """Move selected post-combat drops from the current tile into the player's inventory.
+        """Move selected post-combat drops from the fight's tile into the player's inventory.
 
         Items listed in item_names are picked up; all others remain on the tile.
-        combat_drops is cleared regardless so the loot phase cannot be repeated.
+        The drops are looked for where the fight was fought, not where the player
+        now stands (:meth:`_loot_tile`). Once the tile is found, combat_drops is
+        cleared whatever was taken, so the loot phase cannot be repeated; if it
+        cannot be found and something was asked for, the call is an error and
+        clears nothing (issue #610).
 
         This call is also the victory's **resolve signal** (issue #610). The
         adapter's ``combat_end_summary`` is what ``get_combat_state`` re-emits
@@ -5090,8 +5094,14 @@ class GameService:
                     "error": f"Invalid item name in list: expected string, got {type(name).__name__}",
                 }
 
-        tile = getattr(player, "current_room", None)
-        if not tile or not hasattr(tile, "items_here"):
+        tile = self._loot_tile(player)
+        if tile is None:
+            if item_names:
+                # Nothing taken and nothing forgotten: the drops stay listed and
+                # the victory stays open, so the player can retry or skip. This
+                # used to wipe combat_drops and report success (issue #610).
+                return {"success": False, "error": self._LOOT_TILE_NOT_FOUND}
+            # Skipping picks nothing up, so it needs no tile to resolve.
             player.combat_drops = []
             self._mark_victory_resolved(player)
             return {"success": True, "collected": [], "skipped": []}
@@ -5159,6 +5169,56 @@ class GameService:
         """
         if getattr(player, "combat_end_summary", None):
             player.combat_end_summary = None
+
+    #: Why a collect took nothing when the fight's tile could not be found.
+    _LOOT_TILE_NOT_FOUND = (
+        "Jean cannot find where the battle was fought, so nothing was "
+        "collected. The spoils still lie there."
+    )
+
+    @staticmethod
+    def _loot_tile(player: Any) -> Any:
+        """The tile a won fight's drops lie on, or ``None`` if it can't be found.
+
+        Drops are spawned on the tile the fight was fought on, which is not
+        necessarily where the player is now (issue #610). Candidates, in order:
+
+        1. ``_combat_adapter._combat_tile`` — snapshotted at victory, and what
+           the post-combat tile events in :meth:`get_combat_status` use for the
+           same reason: the player may have moved since.
+        2. ``player.current_room`` — for a session with no live adapter.
+        3. The tile at the player's coordinates, consulted only while
+           ``current_room`` is ``None``. It starts that way and session
+           creation never sets it, but every path that relocates the player
+           (move, teleport, attack, interaction, load) does — so while it is
+           still ``None`` the player is standing where they spawned, which is
+           where a fight they never walked away from was fought.
+
+        A candidate counts only if its ``items_here`` is a real list: a tile is
+        somewhere items can be picked up from, and an auto-vivified test double
+        is not.
+        """
+
+        def _usable(tile):
+            return isinstance(getattr(tile, "items_here", None), list)
+
+        adapter = getattr(player, "_combat_adapter", None)
+        for tile in (
+            getattr(adapter, "_combat_tile", None),
+            getattr(player, "current_room", None),
+        ):
+            if _usable(tile):
+                return tile
+
+        universe = getattr(player, "universe", None)
+        if getattr(player, "current_room", None) is None and universe is not None:
+            tile = universe.get_tile(
+                getattr(player, "location_x", None),
+                getattr(player, "location_y", None),
+            )
+            if _usable(tile):
+                return tile
+        return None
 
     # ── Shop ──────────────────────────────────────────────────────────────────
 

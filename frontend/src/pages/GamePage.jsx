@@ -679,19 +679,30 @@ export default function GamePage() {
 
   /**
    * Close the loot dialog after collecting `itemNames` (none, to skip: the
-   * items stay on the tile), then return to the world. A failed collect is
-   * logged, labelled by whether anything was being collected, and still
+   * items stay on the tile), then return to the world. A request that throws
+   * is logged, labelled by whether anything was being collected, and still
    * closes the dialog.
+   *
+   * A request the backend *refuses* (`success: false` — it could not find the
+   * tile the fight was won on) is shown to the player. When they were
+   * collecting, the dialog stays open: the backend kept the drops and the
+   * victory, so they can retry or SKIP. This used to close as if the loot had
+   * been taken (issue #610). A refused skip still leaves, since there is
+   * nothing to retry.
    */
   const finishLoot = async (itemNames) => {
+    const collecting = itemNames?.length > 0
     try {
-      await combatApi.collectLoot(itemNames)
+      const response = await combatApi.collectLoot(itemNames)
+      const result = response?.data
+      if (result?.success === false) {
+        showError(result.error || 'The spoils could not be collected.')
+        if (collecting) return
+      }
     } catch (err) {
-      const failureLabel = itemNames?.length > 0 ? 'collect-loot failed:' : 'collect-loot (skip) failed:'
-      console.error(failureLabel, err)
-    } finally {
-      setShowLootDialog(false)
+      console.error(collecting ? 'collect-loot failed:' : 'collect-loot (skip) failed:', err)
     }
+    setShowLootDialog(false)
     await returnFromVictory()
   }
 

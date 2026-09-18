@@ -464,6 +464,56 @@ describe('GamePage handler wiring', () => {
         errorSpy.mockRestore();
     });
 
+    it('surfaces a refused collect and keeps the loot dialog open (issue #610)', async () => {
+        // The backend answers 200 with success:false when it cannot find the
+        // tile the fight was won on, and keeps the drops so the player can
+        // retry or SKIP. finishLoot used to react only to a thrown error, so a
+        // refusal closed the dialog exactly as if the loot had been taken.
+        const showError = vi.fn();
+        useToast.mockReturnValue({ error: showError });
+        combatApi.collectLoot.mockResolvedValue({
+            data: { success: false, error: 'The spoils still lie there.' },
+        });
+        const setShowLootDialog = vi.fn();
+        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
+            showLootDialog: true,
+            endState: { status: 'victory' },
+            setShowLootDialog,
+        }));
+
+        renderGamePage();
+        await act(async () => {
+            fireEvent.click(screen.getByText('Collect Loot'));
+        });
+
+        expect(showError).toHaveBeenCalledWith('The spoils still lie there.');
+        expect(setShowLootDialog).not.toHaveBeenCalledWith(false);
+        expect(refetchPlayer).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a refused skip but still leaves the victory', async () => {
+        // Skipping picks nothing up, so there is nothing to retry: holding the
+        // player on a dialog they asked to leave would only strand them.
+        const showError = vi.fn();
+        useToast.mockReturnValue({ error: showError });
+        combatApi.collectLoot.mockResolvedValue({ data: { success: false } });
+        const setShowLootDialog = vi.fn();
+        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
+            showLootDialog: true,
+            endState: { status: 'victory' },
+            setShowLootDialog,
+        }));
+
+        renderGamePage();
+        await act(async () => {
+            fireEvent.click(screen.getByText('Skip Loot'));
+        });
+
+        expect(showError).toHaveBeenCalledWith(expect.any(String));
+        expect(setShowLootDialog).toHaveBeenCalledWith(false);
+        expect(refetchPlayer).toHaveBeenCalledTimes(1);
+    });
+
     it('skips loot with an empty collection call', async () => {
         const setShowLootDialog = vi.fn();
         useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({

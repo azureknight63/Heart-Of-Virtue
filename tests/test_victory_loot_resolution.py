@@ -9,6 +9,13 @@ Defect 1
     reload resets by design (issue #116). The dialog therefore came back on
     every reload, and ``GamePage`` pins the Combat screen while it is pending.
 
+Defect 2
+    ``GameService.collect_combat_loot`` looked for the drops on
+    ``player.current_room`` — not the tile the fight ended on, and ``None`` for
+    a player who has not moved since the session began. Either way it then
+    wiped ``combat_drops`` and reported ``success: True``, so the loot flow
+    could never deliver those items again and nothing said where they went.
+
 Everything here runs on real engine objects: a real ``Player``, a real
 ``Universe``/``MapTile`` graph, a real ``Slime`` rolling its own loot table
 (which is what both spawns the item on the tile and records ``combat_drops``),
@@ -136,3 +143,94 @@ class TestResolvingAVictoryClearsTheEndSummary:
         ], "skipped loot stays on the tile"
         assert not getattr(fight.player, "combat_end_summary", None)
         assert "end_state" not in fight.adapter.get_combat_state()
+
+
+def _drops_on(tile, names):
+    return [i for i in tile.items_here if i.name in names]
+
+
+class TestLootIsCollectedFromTheTileTheFightEndedOn:
+    """The drops lie where the fight was fought, wherever Jean is now."""
+
+    def test_loot_is_collected_after_the_player_has_moved_on(
+        self, won_fight, game_service
+    ):
+        fight = won_fight()
+        moved = game_service.move_player(fight.player, "east")
+        assert "error" not in moved, moved
+        assert fight.player.current_room is not fight.fight_tile
+
+        result = game_service.collect_combat_loot(fight.player, fight.drop_names)
+
+        assert result["success"] is True
+        assert result["collected"] == fight.drop_names
+        assert not _drops_on(fight.fight_tile, fight.drop_names)
+        assert _drops_on(
+            SimpleNamespace(items_here=fight.player.inventory), fight.drop_names
+        )
+
+    def test_loot_is_collected_when_the_player_has_no_current_room(
+        self, won_fight, game_service
+    ):
+        """A fight on the spawn tile of a fresh session.
+
+        Session creation never assigns ``current_room``, so both it and the
+        adapter's victory-time snapshot of it are ``None``. Every path that
+        relocates the player also assigns ``current_room``, so while it is
+        still ``None`` the player's coordinates are the tile they spawned on —
+        which is where they fought.
+        """
+        fight = won_fight(player_knows_the_room=False)
+
+        result = game_service.collect_combat_loot(fight.player, fight.drop_names)
+
+        assert result["success"] is True
+        assert result["collected"] == fight.drop_names
+        assert not _drops_on(fight.fight_tile, fight.drop_names)
+
+
+class TestAnUnresolvableTileNeverCostsTheLoot:
+    """If the fight's tile cannot be found, say so and keep the loot flow alive.
+
+    No real path reaches this once the adapter snapshot, ``current_room`` and
+    the player's coordinates are all consulted; it is contrived here by giving
+    the player coordinates that address no tile. What it pins is the contract:
+    a failed lookup is an error, never a silent success that throws the drops
+    away.
+    """
+
+    @pytest.fixture
+    def lost_fight(self, won_fight):
+        fight = won_fight(player_knows_the_room=False)
+        fight.player.location_x, fight.player.location_y = 99, 99
+        return fight
+
+    def test_collecting_is_an_error_that_keeps_the_drops(
+        self, lost_fight, game_service
+    ):
+        drops_before = list(lost_fight.player.combat_drops)
+
+        result = game_service.collect_combat_loot(
+            lost_fight.player, lost_fight.drop_names
+        )
+
+        assert result["success"] is False
+        assert result["error"]
+        assert lost_fight.player.combat_drops == drops_before
+        assert _drops_on(lost_fight.fight_tile, lost_fight.drop_names)
+
+    def test_a_failed_collect_does_not_resolve_the_victory(
+        self, lost_fight, game_service
+    ):
+        """The player must still be able to retry, or skip."""
+        game_service.collect_combat_loot(lost_fight.player, lost_fight.drop_names)
+
+        assert lost_fight.player.combat_end_summary
+        assert "end_state" in lost_fight.adapter.get_combat_state()
+
+    def test_skipping_needs_no_tile(self, lost_fight, game_service):
+        """An empty selection picks nothing up, so it can always resolve."""
+        result = game_service.collect_combat_loot(lost_fight.player, [])
+
+        assert result == {"success": True, "collected": [], "skipped": []}
+        assert "end_state" not in lost_fight.adapter.get_combat_state()
