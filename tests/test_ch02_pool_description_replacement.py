@@ -47,7 +47,6 @@ import pytest
 from src.events import gate_is_set
 from src.objects import TileDescription
 from src.story.ch02 import (
-    ATRIUM_COORDS,
     AfterDefeatingKingSlime,
     fold_legacy_cleansed_descriptions,
 )
@@ -68,6 +67,7 @@ from tests._ch02_fixtures import (
     pre_572_cleansed_prose,
     pre_572_story_gate,
     real_arena_tile,
+    threshold_coord,
 )
 from tests._gs_fixtures import make_tile
 
@@ -409,7 +409,7 @@ def swept():
     """The pools map as the game has it when King Slime falls -- every
     authored spawner armed on its tile, map entry evaluated so the plain
     spawners have stood their NPCs up and the glands have not, King Slime
-    slain, Gorran waiting in the atrium -- then the event run once.
+    slain, Gorran waiting at the threshold -- then the event run once.
 
     The population is the shipped map's: ``pools_spawner_placements`` is
     derived from the JSON, and a map that spawned nothing, or left nothing
@@ -449,7 +449,7 @@ def swept():
     )
     # King Slime falls; the event's own check_conditions reads his absence.
     arena.npcs_here = [n for n in arena.npcs_here if type(n).__name__ != KingSlime.__name__]
-    gorran = pools_map[ATRIUM_COORDS].spawn_npc("Gorran")
+    gorran = pools_map[threshold_coord()].spawn_npc("Gorran")
     assert getattr(gorran, "friend", False) is True, "Gorran is not flagged a friend"
 
     with patch("src.story.ch02.print_slow"), patch("src.story.ch02.narrate") as narrate:

@@ -16,7 +16,8 @@ Events exercised (in story order):
                                    via check_conditions; called directly
   7.  Ch02KingSlimeMemoryFlash  — fires once the fragment is in inventory
   8.  AfterKingSlimeReturn      — 7-stage fragment handoff to Votha Krr
-  9.  Ch02GorranAtPools         — spawns Gorran onto the pools atrium tile
+  9.  Ch02GorranAtPools         — seats Gorran on its own (threshold) tile
+                                   and takes him out of the party (#613)
 
 Prerequisites: session player must have been initialised with a full Universe
 (the harness creates one via SessionManager._create_player_for_session).
@@ -398,8 +399,20 @@ class Ch02EventsScenario(Scenario):
             ))
 
         # ==================================================================
-        # 9. Ch02GorranAtPools (spawns Gorran onto the pools atrium tile)
+        # 9. Ch02GorranAtPools (seats Gorran on its own tile -- the threshold, #613)
         # ==================================================================
+        # Arrive with him in the party, as the real passage does: the beat
+        # must take him OUT of it and leave him on its own tile, or he walks
+        # the pools behind Jean -- or waits a room further in than the scene
+        # that seats him beside Jean says (#613).
+        from src.npc import Gorran
+
+        party_gorran = next(
+            (a for a in player.combat_list_allies if type(a).__name__ == "Gorran"), None
+        )
+        if party_gorran is None:
+            party_gorran = Gorran()
+            player.combat_list_allies.append(party_gorran)
         tile.events_here = [Ch02GorranAtPools(player, tile, repeat=False)]
 
         resp = trigger_events()
@@ -407,5 +420,21 @@ class Ch02EventsScenario(Scenario):
         if bug:
             bugs.append(bug)
         check_flag("gorran_at_pools", "Ch02GorranAtPools")
+        still_following = [
+            a for a in player.combat_list_allies if type(a).__name__ == "Gorran"
+        ]
+        if still_following or party_gorran not in tile.npcs_here:
+            bugs.append(self._bug(
+                title="Ch02GorranAtPools: Gorran not left waiting on the scene's tile",
+                severity=BugSeverity.MEDIUM,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/world/events",
+                method="POST",
+                expected="Gorran out of combat_list_allies and standing on the event's tile (#613)",
+                actual=(
+                    f"{len(still_following)} Gorran still in combat_list_allies; "
+                    f"on the event's tile: {party_gorran in tile.npcs_here}"
+                ),
+            ))
 
         return bugs

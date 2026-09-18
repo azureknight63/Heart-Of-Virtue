@@ -19,7 +19,13 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.story.ch02 import ATRIUM_COORDS, CLEANSED_CHANNEL_DESCRIPTIONS, find_pools_map
+from src.story.ch02 import (
+    ATRIUM_COORDS,
+    CLEANSED_CHANNEL_DESCRIPTIONS,
+    GORRAN_WAIT_COORDS,
+    THRESHOLD_COORDS,
+    find_pools_map,
+)
 from tests._ch02_fixtures import (
     CHANNEL_COORD,
     CORRUPTED_AUTHORED_TEXT,
@@ -413,18 +419,19 @@ class TestAfterDefeatingKingSlimeProcess:
 
         return AfterDefeatingKingSlime(player=self.player, tile=self.tile)
 
-    def _gorran_in_the_atrium(self):
-        """A Gorran waiting on a Mock atrium tile, in a pools map registered
-        as the universe's -- where ``Ch02GorranAtPools`` leaves him. The
-        atrium is found through the universe's pools map (#577), as that
-        event already finds it -- not through ``player.map``. Returns
-        ``(gorran, atrium_tile)``."""
+    def _gorran_waiting_at(self, coords=THRESHOLD_COORDS):
+        """A Gorran waiting on a Mock tile at ``coords``, in a pools map
+        registered as the universe's. The threshold by default -- where
+        ``Ch02GorranAtPools`` leaves him (#613); the Atrium is where it left
+        him before that, and is still looked in. The wait tile is found
+        through the universe's pools map (#577), not through ``player.map``.
+        Returns ``(gorran, wait_tile)``."""
         gorran = Gorran()
         gorran.tile = None
-        atrium_tile = Mock()
-        atrium_tile.npcs_here = [gorran]
-        self.player.universe.maps = [make_pools_map({ATRIUM_COORDS: atrium_tile})]
-        return gorran, atrium_tile
+        wait_tile = Mock()
+        wait_tile.npcs_here = [gorran]
+        self.player.universe.maps = [make_pools_map({coords: wait_tile})]
+        return gorran, wait_tile
 
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
@@ -471,13 +478,17 @@ class TestAfterDefeatingKingSlimeProcess:
 
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
-    def test_process_with_gorran_in_atrium(self, mock_print, mock_sleep):
-        """Gorran found in atrium tile should be moved to arena tile."""
-        gorran, atrium_tile = self._gorran_in_the_atrium()
+    @pytest.mark.parametrize("coords", GORRAN_WAIT_COORDS)
+    def test_process_brings_the_waiting_gorran_to_the_arena(
+        self, mock_print, mock_sleep, coords
+    ):
+        """A Gorran waiting at the threshold -- or in the Atrium, where a
+        pre-#613 session left him -- is moved to the arena tile."""
+        gorran, wait_tile = self._gorran_waiting_at(coords)
         evt = self._make_event()
         evt.process()
 
-        assert gorran not in atrium_tile.npcs_here
+        assert gorran not in wait_tile.npcs_here
         assert gorran.tile == self.tile
         assert gorran in self.tile.npcs_here
 
@@ -502,13 +513,13 @@ class TestAfterDefeatingKingSlimeProcess:
 
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
-    def test_gorran_from_the_atrium_rejoins_the_party(self, mock_print, mock_sleep):
+    def test_the_waiting_gorran_rejoins_the_party(self, mock_print, mock_sleep):
         """#577: Ch02GorranAtPools takes Gorran OUT of ``combat_list_allies``
-        while he waits in the atrium; the aftermath must put him back --
+        while he waits at the threshold; the aftermath must put him back --
         that list is what the status party, battle allies and tile-following
         all read -- behind the player at index 0, flagged a friend, and
         levelled up to Jean the way the ch01 join does."""
-        gorran, _atrium_tile = self._gorran_in_the_atrium()
+        gorran, _wait_tile = self._gorran_waiting_at()
         gorran.sync_level = Mock()
         self.player.combat_list_allies = [self.player]
         self.player.level = 3
@@ -522,7 +533,7 @@ class TestAfterDefeatingKingSlimeProcess:
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
     def test_gorran_already_in_the_party_is_not_added_twice(self, mock_print, mock_sleep):
-        """A Gorran who never left the party -- no atrium wait, found through
+        """A Gorran who never left the party -- no wait at all, found through
         ``combat_list_allies`` -- keeps his one place in it: the rejoin must
         not append a second entry."""
         gorran = Gorran()
@@ -536,19 +547,19 @@ class TestAfterDefeatingKingSlimeProcess:
 
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
-    def test_the_atrium_is_found_through_the_pools_map_when_player_map_is_elsewhere(
+    def test_the_wait_tile_is_found_through_the_pools_map_when_player_map_is_elsewhere(
         self, mock_print, mock_sleep
     ):
-        """After a flee ``player.map`` can point at a combat arena; the
-        atrium must still be found, through ``find_pools_map`` as
-        ``Ch02GorranAtPools`` already does, or Gorran is left behind."""
-        gorran, atrium_tile = self._gorran_in_the_atrium()
+        """After a flee ``player.map`` can point at a combat arena; the tile
+        Gorran waits on must still be found, through ``find_pools_map``, or
+        he is left behind."""
+        gorran, wait_tile = self._gorran_waiting_at()
         self.player.map = {"name": "some-arena"}
         self.player.combat_list_allies = [self.player]
 
         self._make_event().process()
 
-        assert gorran not in atrium_tile.npcs_here
+        assert gorran not in wait_tile.npcs_here
         assert gorran in self.tile.npcs_here
         assert gorran.tile == self.tile
         assert self.player.combat_list_allies == [self.player, gorran]
@@ -818,61 +829,99 @@ class TestCh02GorranAtPools:
         evt.process()
         self.tile.remove_event.assert_called_with(evt.name)
 
-    def test_process_spawns_gorran_when_atrium_tile_found_and_empty(self):
-        """When atrium tile has no Gorran, a new one should be spawned."""
-        atrium_tile = Mock()
-        atrium_tile.npcs_here = []
-        atrium_tile.spawn_npc = Mock()
-
-        self.player.universe.maps = [make_pools_map({ATRIUM_COORDS: atrium_tile})]
+    def test_process_spawns_gorran_at_the_threshold_when_there_is_none(self):
+        """With no Gorran on the tile and none in the party, one is stood up
+        here -- on the threshold the scene plays on (#613), not in the
+        Atrium a tile further in."""
+        self.tile.spawn_npc = Mock()
         self.player.combat_list_allies = []
 
         evt = self._make_event()
         evt.process()
-        atrium_tile.spawn_npc.assert_called_with(Gorran.__name__)
+        self.tile.spawn_npc.assert_called_with(Gorran.__name__)
 
-    def test_process_moves_gorran_from_party_to_atrium(self):
-        """Gorran in party should be moved to atrium tile."""
+    def test_process_moves_gorran_from_the_party_to_the_threshold(self):
+        """Gorran in the party is seated on this tile and taken out of
+        ``combat_list_allies`` -- the list that follows Jean (#613)."""
         gorran = Gorran()
         gorran.tile = None
-
-        atrium_tile = Mock()
-        atrium_tile.npcs_here = []
-        atrium_tile.spawn_npc = Mock()
-
-        self.player.universe.maps = [make_pools_map({ATRIUM_COORDS: atrium_tile})]
+        gorran.current_room = None
+        self.tile.spawn_npc = Mock()
         self.player.combat_list_allies = [gorran]
 
         evt = self._make_event()
         evt.process()
 
-        # Gorran removed from party and added to atrium tile
         assert gorran not in self.player.combat_list_allies
-        assert gorran.tile == atrium_tile
-        assert gorran in atrium_tile.npcs_here
-        # spawn_npc should NOT have been called since Gorran was placed from party
-        atrium_tile.spawn_npc.assert_not_called()
+        assert gorran.tile == self.tile
+        # ``current_room`` is what ``Player.recall_friends`` reads; a
+        # placement that sets only ``tile`` leaves the engine pointing at
+        # the room he left.
+        assert gorran.current_room == self.tile
+        assert gorran in self.tile.npcs_here
+        # Nothing is spawned when there is already a Gorran to seat.
+        self.tile.spawn_npc.assert_not_called()
 
-    def test_process_skips_spawning_if_gorran_already_in_atrium(self):
-        """If Gorran is already in atrium, don't spawn another."""
+    def test_process_takes_gorran_off_the_tile_he_came_from(self):
+        """He is moved, not copied: appending him to the threshold while he
+        was still listed in the room he followed Jean from stood him in two
+        rooms at once (#613)."""
         gorran = Gorran()
+        old_tile = _make_tile()
+        old_tile.npcs_here = [gorran]
+        gorran.current_room = old_tile
+        gorran.tile = old_tile
+        self.player.combat_list_allies = [gorran]
 
-        atrium_tile = Mock()
-        atrium_tile.npcs_here = [gorran]
-        atrium_tile.spawn_npc = Mock()
+        self._make_event().process()
 
-        self.player.universe.maps = [make_pools_map({ATRIUM_COORDS: atrium_tile})]
+        assert gorran not in old_tile.npcs_here
+        assert gorran in self.tile.npcs_here
+
+    def test_process_skips_spawning_if_gorran_is_already_at_the_threshold(self):
+        """If Gorran already stands here, don't spawn another."""
+        gorran = Gorran()
+        self.tile.npcs_here = [gorran]
+        self.tile.spawn_npc = Mock()
 
         evt = self._make_event()
         evt.process()
-        atrium_tile.spawn_npc.assert_not_called()
+        self.tile.spawn_npc.assert_not_called()
+        assert self.tile.npcs_here == [gorran]
 
-    def test_process_no_pools_map_no_crash(self):
-        """When pools map not found, process completes without error."""
+    def test_process_does_not_need_the_pools_map_to_be_loaded(self):
+        """The beat seats Gorran on its OWN tile now, so it no longer looks
+        the pools map up in the universe (#613).
+
+        That lookup used to be the only path to the placement: when it came
+        back empty the beat narrated and set its gate while leaving Gorran in
+        ``combat_list_allies`` to walk into the pools behind Jean. Asserted
+        through the seating, not merely "no crash" -- the old code did not
+        crash either.
+        """
+        gorran = Gorran()
         self.player.universe.maps = []
-        evt = self._make_event()
-        evt.process()
+        self.player.combat_list_allies = [gorran]
+
+        self._make_event().process()
+
+        assert gorran in self.tile.npcs_here
+        assert gorran not in self.player.combat_list_allies
         assert self.player.universe.story.get("gorran_at_pools") == "1"
+
+    def test_process_leaves_no_gorran_in_the_party(self):
+        """Every Gorran leaves ``combat_list_allies``, not just the seated
+        one: one left in the list walks the pools behind Jean while his
+        twin sits at the arch (#613)."""
+        seated, stray = Gorran(), Gorran()
+        self.player.combat_list_allies = [seated, stray]
+
+        self._make_event().process()
+
+        assert [
+            a for a in self.player.combat_list_allies
+            if a.__class__.__name__ == Gorran.__name__
+        ] == []
 
     def test_description_set_in_init(self):
         evt = self._make_event()

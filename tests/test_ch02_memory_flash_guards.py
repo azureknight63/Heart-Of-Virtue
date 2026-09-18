@@ -245,7 +245,7 @@ class TestCh02KingSlimeMemoryFlashFiresAfterInventoryOnlyGrant(unittest.TestCase
         # event reaches for that this namespace lacks raises rather than
         # auto-mocking, so the real grant path is exercised as written.
         player.universe = SimpleNamespace(story={}, maps=[make_pools_map()])
-        player.map = {}  # skip the Gorran-teleport atrium lookup
+        player.map = {}  # skip the Gorran-teleport wait-tile lookup
         tile = real_arena_tile()  # King Slime already dead: no NPCs here
 
         event = AfterDefeatingKingSlime(player=player, tile=tile)
