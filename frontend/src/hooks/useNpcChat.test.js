@@ -669,6 +669,27 @@ describe('useNpcChat', () => {
       expect(result.current.error).not.toContain('Slow down')
     })
 
+    it('names the deadline when the request timed out, instead of blaming the open (#618)', async () => {
+      // ECONNABORTED is the code axios raises when its own `timeout` fires —
+      // the client deadline npcChat.js puts on every chat call. "Failed to open
+      // conversation" reads as "the server said no"; a player who waited out a
+      // 45s spinner needs to be told the wait itself is what ended, or Retry
+      // looks like the same dead end rather than a fresh try.
+      npcChat.open.mockRejectedValue(
+        Object.assign(new Error('timeout of 45000ms exceeded'), { code: 'ECONNABORTED' })
+      )
+      const { result } = mount()
+
+      await waitFor(() => expect(result.current.phase).toBe('failed'))
+      expect(result.current.error).toBe('The conversation timed out — try again.')
+      expect(result.current.error).not.toBe('Failed to open conversation')
+      // Still OUR fixed copy: the axios message carries the raw millisecond
+      // budget, which is diagnostics, not a sentence for a player.
+      expect(result.current.error).not.toContain('45000')
+      expect(result.current.loading).toBe(false)
+      expect(typeof result.current.retry).toBe('function')
+    })
+
     it('exposes a retry that clears the failed phase on success', async () => {
       npcChat.open.mockRejectedValueOnce(new Error('boom'))
       const { result } = mount()
@@ -942,6 +963,29 @@ describe('useNpcChat', () => {
 
       expect(result.current.error).toBe('Too many messages — give it a moment.')
       expect(result.current.phase).toBe('waiting_jean')
+    })
+
+    it('names the deadline when the turn timed out, and hands the options back (#618)', async () => {
+      // Issue #618's actual failure: one `/respond` walked the provider chain
+      // for over 90 seconds while the panel sat at WAITING_NPC with no options,
+      // no error and an inert End Conversation button. The client deadline is
+      // what turns that into a normal failed turn.
+      npcChat.respond.mockRejectedValue(
+        Object.assign(new Error('timeout of 45000ms exceeded'), { code: 'ECONNABORTED' })
+      )
+      const { result } = await mountOpened()
+
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
+      })
+
+      expect(result.current.error).toBe('The conversation timed out — try again.')
+      expect(result.current.error).not.toBe('NPC did not respond')
+      // The conversation itself survives a timed-out turn, same as any other
+      // failed respond: Jean gets her options back rather than a dead panel.
+      expect(result.current.phase).toBe('waiting_jean')
+      expect(result.current.loading).toBe(false)
+      expect(result.current.currentOptions.length).toBeGreaterThan(0)
     })
   })
 

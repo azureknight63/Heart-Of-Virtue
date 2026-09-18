@@ -166,9 +166,17 @@ const RESPOND_FAILED_MESSAGE = 'NPC did not respond'
 // straight back into the
 // throttle. Still OUR copy, not the server's — see the note above.
 const THROTTLED_MESSAGE = 'Too many messages — give it a moment.'
+// The client deadline fired: `NPC_CHAT_TIMEOUT_MS` (api/npcChat.js) elapsed
+// with no answer, so there is no response and no status to read — axios raises
+// `ECONNABORTED` instead (issue #618). Distinct copy because the two generic
+// fallbacks both describe something the SERVER did, and a player who just
+// watched a 45s spinner is owed the actual reason. Retry is live on both paths,
+// and a timed-out turn is the one most likely to succeed on a second try.
+const TIMED_OUT_MESSAGE = 'The conversation timed out — try again.'
 
 /** The fixed copy for a failure, chosen by what kind of failure it is. */
 function failureMessage(err, fallback) {
+  if (err?.code === 'ECONNABORTED') return TIMED_OUT_MESSAGE
   return err?.response?.status === 429 ? THROTTLED_MESSAGE : fallback
 }
 

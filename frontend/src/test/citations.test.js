@@ -122,6 +122,38 @@ const CITATIONS = [
             + ' where conversation_ended is set',
     }),
     cite({
+        // Issue #618: the failure copy for a timed-out turn names the deadline
+        // that produced it, and the deadline lives one module away.
+        where: 'hooks/useNpcChat.js',
+        about: 'api/npcChat.js',
+        anchor: 'NPC_CHAT_TIMEOUT_MS',
+        claim: 'the client deadline the ECONNABORTED branch reports is declared there',
+    }),
+    // `api/npcChat.js` joins the registry here (issue #618). Its deadline
+    // constant is DERIVED from the engine's turn budget rather than picked, and
+    // a derivation is exactly the kind of claim that rots silently: the two
+    // anchors below are the numbers the arithmetic in that comment is built on,
+    // so changing either on the engine side fails here instead of leaving a
+    // plausible-looking sum behind.
+    cite({
+        where: 'api/npcChat.js',
+        about: 'src/npc/_chat_llm.py',
+        anchor: '_MAX_TURN_STAGES = 4',
+        claim: 'the engine funds four provider stages per turn',
+    }),
+    cite({
+        where: 'api/npcChat.js',
+        about: 'src/npc/_chat_llm.py',
+        anchor: '_CHAT_DEADLINE_SECONDS = 12.0',
+        claim: 'twelve seconds is the floor the turn budget is taken against',
+    }),
+    cite({
+        where: 'api/npcChat.js',
+        about: 'hooks/useNpcChat.js',
+        anchor: 'endingRef.current = true',
+        claim: 'the end handler latches before awaiting, so a hung /end strands the panel',
+    }),
+    cite({
         where: 'styles/keyframes.test.js',
         about: 'tests/test_security_headers.py',
         anchor: '_STYLE_INJECTORS',

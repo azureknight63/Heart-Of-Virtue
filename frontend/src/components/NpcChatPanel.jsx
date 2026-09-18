@@ -371,18 +371,27 @@ function ChatErrorBox({ error, retry, disabled }) {
 /**
  * ConversationActionRow — the "View History" / "End Conversation" button row.
  *
+ * End Conversation is NOT gated on `loading` (issue #618). It was, "so the
+ * player cannot double-submit" — but the double-submit hazard is already
+ * covered in the hook: `endingRef` latches one dismissal to one `/end` and one
+ * `onClose`, and with no `npc_key` yet the handler short-circuits straight to
+ * `onClose`. What the gate actually bought was a player watching a reply that
+ * never came with the only LABELLED way out greyed out, while BaseDialog's ✕,
+ * Escape and the overlay click — all wired to the same handler — stayed live.
+ * The hang is exactly when the player most needs the button, and the request it
+ * is waiting on now carries its own deadline (`NPC_CHAT_TIMEOUT_MS`).
+ *
+ * `historyOpen` still gates it: the transcript is stacked over the panel and
+ * nothing behind it may be actioned.
+ *
  * @param {Object} props
  * @param {string} props.phase - One of `CHAT_PHASES`.
- * @param {boolean} props.loading - Whether a request is in flight. Derived
- *   from `phase` in the hook, so it already covers the opening turn — the
- *   gate here used to spell out `loading || phase === 'opening'`, both halves
- *   of the same fact.
  * @param {boolean} props.historyOpen - Whether the transcript is stacked over
  *   the panel; nothing behind it may be actioned.
  * @param {Function} props.onOpenHistory
  * @param {Function} props.onEndConversation
  */
-function ConversationActionRow({ phase, loading, historyOpen, onOpenHistory, onEndConversation }) {
+function ConversationActionRow({ phase, historyOpen, onOpenHistory, onEndConversation }) {
   return (
     <div style={{ display: 'flex', gap: spacing.md, flexWrap: 'wrap' }}>
       <GameButton
@@ -399,7 +408,7 @@ function ConversationActionRow({ phase, loading, historyOpen, onOpenHistory, onE
           variant="secondary"
           size="medium"
           onClick={onEndConversation}
-          disabled={loading || historyOpen}
+          disabled={historyOpen}
           style={{
             flex: '2 1 220px',
             opacity: 0.7,
@@ -636,7 +645,6 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       {/* Transcript + End Conversation */}
       <ConversationActionRow
         phase={phase}
-        loading={loading}
         historyOpen={historyOpen}
         onOpenHistory={handleOpenHistory}
         onEndConversation={handleEndConversation}
