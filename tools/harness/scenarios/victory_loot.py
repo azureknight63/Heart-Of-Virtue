@@ -69,18 +69,14 @@ class VictoryLootScenario(Scenario):
         fight_bugs, won = self._fight_in_fodder_pit(client, _MAX_ROUNDS)
         bugs += fight_bugs
         if not won:
-            bugs.append(self._bug(
-                title="Victory-loot fight did not reach victory",
-                severity=BugSeverity.MEDIUM,
-                category=BugCategory.WRONG_RESPONSE,
-                endpoint="/api/combat/move",
-                method="POST",
-                expected=f"Victory within {_MAX_ROUNDS} rounds in the Fodder Pit",
-                actual="Combat still active or errored — loot checks skipped",
-            ))
             return bugs
 
         resp = client.get("/api/combat/status")
+        bug = self._check_status(resp, 200, "/api/combat/status", "GET",
+                                 "Combat status after the victory")
+        if bug:
+            bugs.append(bug)
+            return bugs
         end_state = client.parse(resp).get("end_state") or {}
         if end_state.get("status") != "victory":
             bugs.append(self._bug(
@@ -133,7 +129,10 @@ class VictoryLootScenario(Scenario):
 
         # Presence only, so a name Jean already carried (his starting Gold)
         # passes regardless; the ``collected`` check above is the real one.
-        missing = [n for n in drop_names if n not in self._inventory_names(client)]
+        held, bug = self._inventory_names(client)
+        if bug:
+            bugs.append(bug)
+        missing = [n for n in drop_names if held is not None and n not in held]
         if missing:
             bugs.append(self._bug(
                 title="Collected loot is not in the inventory",
@@ -146,7 +145,11 @@ class VictoryLootScenario(Scenario):
             ))
 
         resp = client.get("/api/combat/status")
-        if "end_state" in client.parse(resp):
+        bug = self._check_status(resp, 200, "/api/combat/status", "GET",
+                                 "Combat status after collect-loot")
+        if bug:
+            bugs.append(bug)
+        elif "end_state" in client.parse(resp):
             bugs.append(self._bug(
                 title="A resolved victory still serves end_state (the VICTORY dialog returns on reload)",
                 severity=BugSeverity.HIGH,
@@ -225,9 +228,13 @@ class VictoryLootScenario(Scenario):
         pit = client.parse(resp).get("rosters", {}).get(_ARENA, {})
         return pit.get("npcs") if pit.get("loaded") else None
 
-    def _inventory_names(self, client: GameClient) -> set:
+    def _inventory_names(self, client: GameClient):
+        """``(names, bug)``: the inventory's item names, or ``None`` and the
+        bug when the request failed -- a failed request is not an empty pack."""
         resp = client.get("/api/inventory")
-        if resp.status_code != 200:
-            return set()
+        bug = self._check_status(resp, 200, "/api/inventory", "GET",
+                                 "Inventory after collect-loot")
+        if bug:
+            return None, bug
         items = client.parse(resp).get("inventory", {}).get("items", [])
-        return {i.get("name") for i in items if isinstance(i, dict)}
+        return {i.get("name") for i in items if isinstance(i, dict)}, None

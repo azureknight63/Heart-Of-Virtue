@@ -197,16 +197,19 @@ class Scenario(ABC):
         return bugs
 
     # ------------------------------------------------------------------
-    # Arena combat: fight a Fodder Pit enemy to victory
+    # Arena combat: fight in the Fodder Pit until combat ends
     # ------------------------------------------------------------------
 
     def _fight_in_fodder_pit(
         self, client: "GameClient", max_rounds: int
     ) -> Tuple[List[BugReport], bool]:
-        """Move east to the Fodder Pit, fight the first enemy to victory.
+        """Move east to the Fodder Pit and fight until combat ends.
 
         Assumes the combat-testing arena with the player on the Proving
-        Grounds (0, 0). Returns ``(bugs, won)``.
+        Grounds (0, 0). Returns ``(bugs, won)``: ``won`` is True only when
+        ``/api/combat/status`` confirms a victory ``end_state``. A failed
+        request is reported as a bug and ends the fight with ``won`` False —
+        it used to count as "combat ended", so a 500 read as a win.
         """
         bugs = []
         body = {"direction": "east"}
@@ -216,51 +219,107 @@ class Scenario(ABC):
         if bug:
             return [bug], False
 
-        # An aggro enemy can spot Jean on the way in and start the fight
-        # itself; /api/combat/start then answers 200, not 201.
-        started = client.parse(client.get("/api/combat/status")).get("combat_active")
-        if not started:
-            enemy_id = self._find_enemy(client)
-            if not enemy_id:
-                bugs.append(self._bug(
-                    title="No enemy found in the Fodder Pit",
-                    severity=BugSeverity.MEDIUM,
-                    category=BugCategory.WRONG_RESPONSE,
-                    endpoint="/api/world",
-                    method="GET",
-                    expected="Slime/CaveBat present at (1, 0)",
-                    actual="No hostile NPCs in room",
-                ))
-                return bugs, False
-
-            body = {"enemy_id": enemy_id}
-            resp = client.post("/api/combat/start", json=body)
-            bug = self._check_status(resp, 201, "/api/combat/start", "POST",
-                                     "Start combat", request_body=body)
-            if bug:
-                return [bug], False
+        bug = self._engage_in_fodder_pit(client)
+        if bug:
+            return [bug], False
 
         for round_num in range(1, max_rounds + 1):
             resp = client.get("/api/combat/status")
-            if resp.status_code != 200:
-                bugs.append(self._check_status(
-                    resp, 200, "/api/combat/status", "GET",
-                    f"Combat status (round {round_num})"))
+            bug = self._check_status(resp, 200, "/api/combat/status", "GET",
+                                     f"Combat status (round {round_num})")
+            if bug:
+                bugs.append(bug)
                 return bugs, False
             data = client.parse(resp)
-            if not data.get("combat_active"):
-                return bugs, True
-            ended = self._execute_move(client)
+            ended = not data.get("combat_active")
+            if not ended:
+                ended, bug = self._execute_move(client, data.get("battle_state", {}))
+                if bug:
+                    bugs.append(bug)
+                    return bugs, False
             if ended:
-                return bugs, True
+                won, bug = self._ended_in_victory(client)
+                if bug:
+                    bugs.append(bug)
+                return bugs, won
+
+        bugs.append(self._bug(
+            title=f"{type(self).__name__}: Fodder Pit fight did not end",
+            severity=BugSeverity.MEDIUM,
+            category=BugCategory.WRONG_RESPONSE,
+            endpoint="/api/combat/move",
+            method="POST",
+            expected=f"Combat over within {max_rounds} rounds",
+            actual=f"Combat still active after {max_rounds} rounds",
+        ))
         return bugs, False
 
-    def _execute_move(self, client: "GameClient") -> bool:
-        """Execute the best available move. Returns True when combat ended."""
+    def _engage_in_fodder_pit(self, client: "GameClient") -> Optional[BugReport]:
+        """Start the fight in the Fodder Pit, unless an enemy already has.
+
+        An aggro enemy can spot Jean on the way in and start the fight itself;
+        ``/api/combat/start`` then answers 200, not 201. Returns the bug that
+        stopped it, or None once combat is on.
+        """
         resp = client.get("/api/combat/status")
-        if resp.status_code != 200:
-            return True
-        battle = client.parse(resp).get("battle_state", {})
+        bug = self._check_status(resp, 200, "/api/combat/status", "GET",
+                                 "Combat status on entering the Fodder Pit")
+        if bug:
+            return bug
+        if client.parse(resp).get("combat_active"):
+            return None
+        enemy_id = self._find_enemy(client)
+        if not enemy_id:
+            return self._bug(
+                title="No enemy found in the Fodder Pit",
+                severity=BugSeverity.MEDIUM,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/world",
+                method="GET",
+                expected="Slime/CaveBat present at (1, 0)",
+                actual="No hostile NPCs in room",
+            )
+        body = {"enemy_id": enemy_id}
+        resp = client.post("/api/combat/start", json=body)
+        return self._check_status(resp, 201, "/api/combat/start", "POST",
+                                  "Start combat", request_body=body)
+
+    def _ended_in_victory(
+        self, client: "GameClient"
+    ) -> Tuple[bool, Optional[BugReport]]:
+        """``(won, bug)`` for a fight that just ended, read back from the engine.
+
+        A move response saying combat is over is not proof of a win (a defeat
+        ends combat too), so ask ``/api/combat/status`` for the ``end_state``.
+        Anything but a victory comes back as the bug that says so.
+        """
+        resp = client.get("/api/combat/status")
+        bug = self._check_status(resp, 200, "/api/combat/status", "GET",
+                                 "Combat status after the fight ended")
+        if bug:
+            return False, bug
+        data = client.parse(resp)
+        status = (data.get("end_state") or {}).get("status")
+        if data.get("combat_active") or status != "victory":
+            return False, self._bug(
+                title="Fodder Pit fight did not end in a victory",
+                severity=BugSeverity.MEDIUM,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/combat/status",
+                method="GET",
+                expected="combat_active False with end_state.status 'victory'",
+                actual=f"combat_active={data.get('combat_active')!r}, end_state.status={status!r}",
+            )
+        return True, None
+
+    def _execute_move(
+        self, client: "GameClient", battle: dict
+    ) -> Tuple[bool, Optional[BugReport]]:
+        """Execute the best available move for the current ``battle`` state.
+
+        Returns ``(ended, bug)``: ``ended`` when the response says combat is
+        over, ``bug`` when the move request itself failed.
+        """
         options = battle.get("available_options", [])
         input_type = battle.get("input_type", "move_selection")
 
@@ -269,28 +328,26 @@ class Scenario(ABC):
         # a list of strings), or a target (options is a list of target dicts).
         if input_type == "number_input":
             default = options.get("default", 5) if isinstance(options, dict) else 5
-            resp = client.post(
-                "/api/combat/move",
-                json={"move_type": "number", "move_id": str(default)},
-            )
-            return self._response_ended(client, resp)
-        if input_type == "direction_selection":
+            body = {"move_type": "number", "move_id": str(default)}
+        elif input_type == "direction_selection":
             direction = options[0] if options else "north"
-            resp = client.post(
-                "/api/combat/move",
-                json={"move_type": "direction", "direction": direction},
-            )
-            return self._response_ended(client, resp)
-        if input_type == "target_selection":
+            body = {"move_type": "direction", "direction": direction}
+        elif input_type == "target_selection":
             targets = [o for o in options if isinstance(o, dict) and o.get("id")]
             if not targets:
-                return False
-            resp = client.post(
-                "/api/combat/move",
-                json={"move_type": "target", "target_id": targets[0]["id"]},
-            )
-            return self._response_ended(client, resp)
+                return False, None
+            body = {"move_type": "target", "target_id": targets[0]["id"]}
+        else:
+            body = self._pick_move(options)
+            if body is None:
+                return False, None
+        resp = client.post("/api/combat/move", json=body)
+        return self._response_ended(client, resp, body)
 
+    @staticmethod
+    def _pick_move(options) -> Optional[dict]:
+        """The move request for a ``move_selection`` prompt: an offensive move
+        with a target, else Advance, else Wait; None when nothing is usable."""
         options = [o for o in options if isinstance(o, dict)]
         move_index = None
         target_id = None
@@ -311,7 +368,7 @@ class Scenario(ABC):
         if move_index is None:
             chosen = advance_opt or wait_opt
             if chosen is None:
-                return False
+                return None
             move_index = chosen.get("index")
             targets = chosen.get("viable_targets", [])
             if targets:
@@ -320,17 +377,21 @@ class Scenario(ABC):
         body: dict = {"move_type": "move", "move_id": str(move_index)}
         if target_id:
             body["target_id"] = target_id
-        resp = client.post("/api/combat/move", json=body)
-        return self._response_ended(client, resp)
+        return body
 
-    def _response_ended(self, client: "GameClient", resp) -> bool:
-        """True when the move response signals combat has ended (or errored)."""
-        if resp.status_code != 200:
-            return True
+    def _response_ended(
+        self, client: "GameClient", resp, body: dict
+    ) -> Tuple[bool, Optional[BugReport]]:
+        """``(ended, bug)`` for a ``/api/combat/move`` response: a non-200 is a
+        bug, never a sign the fight is over."""
+        bug = self._check_status(resp, 200, "/api/combat/move", "POST",
+                                 "Combat move", request_body=body)
+        if bug:
+            return False, bug
         data = client.parse(resp)
         return bool(
             not data.get("combat_active", True)
             or data.get("combat_ended")
             or data.get("victory")
             or data.get("defeated")
-        )
+        ), None

@@ -38,15 +38,20 @@ from src.npc import Slime
 _CERTAIN_LOOT = {"Restorative": {"chance": 100, "qty": 1}}
 
 
+def _named(items, names):
+    """The items in ``items`` whose engine name is one of ``names``."""
+    return [i for i in items if i.name in names]
+
+
 @pytest.fixture
 def won_fight(make_world, grid_3x3):
     """Factory for a just-won fight, settled by the real adapter.
 
     ``won_fight()`` — Jean knows which room he is standing in, the normal case.
     ``won_fight(player_knows_the_room=False)`` — ``player.current_room`` is
-    ``None`` throughout, which is what a fight started by a starting-tile event
-    on a fresh session looks like: session creation never assigns
-    ``current_room`` (``src/player/__init__.py`` initialises it to ``None``).
+    ``None`` throughout. No real fight ends that way (``check_for_combat``
+    reads ``current_room`` and ``start_combat`` sets it); this drives the
+    defensive coordinate fallback in ``GameService._loot_tile`` directly.
     """
 
     def _build(player_knows_the_room=True):
@@ -76,9 +81,9 @@ def won_fight(make_world, grid_3x3):
 
         drop_names = sorted({d["name"] for d in jean.combat_drops})
         assert drop_names, "fixture must produce at least one drop"
-        assert [
-            i for i in fight_tile.items_here if i.name in drop_names
-        ], "the rolled loot must actually be on the tile"
+        assert _named(
+            fight_tile.items_here, drop_names
+        ), "the rolled loot must actually be on the tile"
 
         jean.current_room = fight_tile if player_knows_the_room else None
         jean._combat_adapter._handle_victory()
@@ -138,15 +143,11 @@ class TestResolvingAVictoryClearsTheEndSummary:
 
         game_service.collect_combat_loot(fight.player, [])
 
-        assert [
-            i for i in fight.fight_tile.items_here if i.name in fight.drop_names
-        ], "skipped loot stays on the tile"
+        assert _named(
+            fight.fight_tile.items_here, fight.drop_names
+        ), "skipped loot stays on the tile"
         assert not getattr(fight.player, "combat_end_summary", None)
         assert "end_state" not in fight.adapter.get_combat_state()
-
-
-def _drops_on(tile, names):
-    return [i for i in tile.items_here if i.name in names]
 
 
 class TestLootIsCollectedFromTheTileTheFightEndedOn:
@@ -164,21 +165,19 @@ class TestLootIsCollectedFromTheTileTheFightEndedOn:
 
         assert result["success"] is True
         assert result["collected"] == fight.drop_names
-        assert not _drops_on(fight.fight_tile, fight.drop_names)
-        assert _drops_on(
-            SimpleNamespace(items_here=fight.player.inventory), fight.drop_names
-        )
+        assert not _named(fight.fight_tile.items_here, fight.drop_names)
+        assert _named(fight.player.inventory, fight.drop_names)
 
     def test_loot_is_collected_when_the_player_has_no_current_room(
         self, won_fight, game_service
     ):
-        """A fight on the spawn tile of a fresh session.
+        """The defensive fallback: with ``current_room`` and the adapter's
+        snapshot of it both ``None``, the tile at the player's coordinates.
 
-        Session creation never assigns ``current_room``, so both it and the
-        adapter's victory-time snapshot of it are ``None``. Every path that
-        relocates the player also assigns ``current_room``, so while it is
-        still ``None`` the player's coordinates are the tile they spawned on —
-        which is where they fought.
+        No real fight ends this way — ``check_for_combat`` reads
+        ``current_room`` and ``start_combat`` sets it — but a lookup that can
+        find the drops should, and what it may hand out is bounded by
+        ``combat_drops`` either way.
         """
         fight = won_fight(player_knows_the_room=False)
 
@@ -186,7 +185,7 @@ class TestLootIsCollectedFromTheTileTheFightEndedOn:
 
         assert result["success"] is True
         assert result["collected"] == fight.drop_names
-        assert not _drops_on(fight.fight_tile, fight.drop_names)
+        assert not _named(fight.fight_tile.items_here, fight.drop_names)
 
 
 class TestAnUnresolvableTileNeverCostsTheLoot:
@@ -217,7 +216,7 @@ class TestAnUnresolvableTileNeverCostsTheLoot:
         assert result["success"] is False
         assert result["error"]
         assert lost_fight.player.combat_drops == drops_before
-        assert _drops_on(lost_fight.fight_tile, lost_fight.drop_names)
+        assert _named(lost_fight.fight_tile.items_here, lost_fight.drop_names)
 
     def test_a_failed_collect_does_not_resolve_the_victory(
         self, lost_fight, game_service
@@ -234,3 +233,187 @@ class TestAnUnresolvableTileNeverCostsTheLoot:
 
         assert result == {"success": True, "collected": [], "skipped": []}
         assert "end_state" not in lost_fight.adapter.get_combat_state()
+
+
+def _spawned(tile, item_type, amt=1):
+    """Spawn ``amt`` of ``item_type`` on ``tile`` and return what landed.
+
+    Returned rather than re-derived by name, so a test holds the exact objects
+    it placed and the item's name comes from the engine, not from the test.
+    """
+    before = list(tile.items_here)
+    tile.spawn_item(item_type, amt=amt)
+    return [i for i in tile.items_here if i not in before]
+
+
+class TestOnlyThisFightsDropsCanBeCollected:
+    """The client names what to collect; the engine decides what may be taken.
+
+    ``collect-loot`` takes the item names from the request, and the fix for
+    Defect 2 made it look on the fight's tile rather than where Jean stands.
+    Without a check against what the fight actually dropped, that turned the
+    endpoint into a remote pickup: any item named in a request, lying on the
+    last tile a fight was won on, from anywhere, for as long as the snapshot
+    lasted. The offer is ``player.combat_drops`` — written only by a dying
+    enemy and cleared when the victory resolves — so it is the authority here.
+    """
+
+    def test_an_item_the_fight_did_not_drop_is_left_on_the_tile(
+        self, won_fight, game_service
+    ):
+        fight = won_fight()
+        (bystander,) = _spawned(fight.fight_tile, "Antidote")
+        assert bystander.name not in fight.drop_names
+
+        result = game_service.collect_combat_loot(fight.player, [bystander.name])
+
+        assert bystander in fight.fight_tile.items_here
+        assert bystander not in fight.player.inventory
+        assert result["collected"] == []
+        assert result["skipped"] == [{"name": bystander.name, "reason": "not_offered"}]
+
+    def test_a_replayed_collect_takes_nothing(self, won_fight, game_service):
+        """Once the victory resolves there is nothing on offer, so a second
+        request for the same names cannot empty the tile again."""
+        fight = won_fight()
+        game_service.collect_combat_loot(fight.player, fight.drop_names)
+        (second,) = _spawned(fight.fight_tile, fight.drop_names[0])
+
+        result = game_service.collect_combat_loot(fight.player, fight.drop_names)
+
+        assert second in fight.fight_tile.items_here
+        assert result["collected"] == []
+
+    def test_with_no_fight_nothing_can_be_collected(
+        self, make_world, grid_3x3, game_service
+    ):
+        """No fight, no drops: the endpoint must not double as a pickup that
+        skips discovery, hidden-item searches and walking to the item."""
+        jean, game_map = make_world(grid_3x3)
+        (lying_here,) = _spawned(jean.current_room, "Restorative")
+        assert not getattr(jean, "combat_drops", None)
+
+        result = game_service.collect_combat_loot(jean, [lying_here.name])
+
+        assert lying_here in jean.current_room.items_here
+        assert result["collected"] == []
+
+    def test_a_drop_takes_only_as_many_objects_as_it_recorded(
+        self, won_fight, game_service
+    ):
+        """One Shortsword dropped; another was already lying on the tile.
+
+        Non-stackable items spawn one object per unit, so the recorded quantity
+        bounds how many objects this fight may hand over. Stackable drops merge
+        into piles already on the floor and are not bounded here — splitting a
+        pile by its recorded share is a separate change.
+        """
+        fight = won_fight()
+        swords = _spawned(fight.fight_tile, "Shortsword", amt=2)
+        assert len(swords) == 2, "a non-stackable spawns one object per unit"
+        fight.player.combat_drops.append({"name": swords[0].name, "quantity": 1})
+
+        game_service.collect_combat_loot(fight.player, [swords[0].name])
+
+        taken = [s for s in swords if s in fight.player.inventory]
+        assert len(taken) == 1
+
+
+class TestTheOfferEndsWithTheVictory:
+    """``combat_drops`` is only an offer while a won fight is unresolved.
+
+    Flee and load clear the summary but used to leave the drops listed, and a
+    defeat leaves them too, so the names a fight recorded stayed collectable —
+    from whatever tile the player walked to next — long after that fight was
+    over.
+    """
+
+    @pytest.mark.parametrize(
+        "summary",
+        [None, {"status": "defeat", "game_over": True}],
+        ids=["summary cleared, drops still listed", "defeat"],
+    )
+    def test_drops_offer_nothing_without_an_unresolved_victory(
+        self, won_fight, game_service, summary
+    ):
+        """Any path that ends the fight some other way than resolving the
+        victory -- one that clears only the summary, or a defeat -- must not
+        leave the recorded names collectable."""
+        fight = won_fight()
+        fight.player.combat_end_summary = summary
+        assert fight.player.combat_drops, "precondition: the drops are still listed"
+
+        result = game_service.collect_combat_loot(fight.player, fight.drop_names)
+
+        assert result["collected"] == []
+        assert _named(fight.fight_tile.items_here, fight.drop_names)
+
+    def test_a_non_stackable_drop_is_the_one_taken_not_an_older_twin(
+        self, won_fight, game_service
+    ):
+        """``spawn_item`` appends, so the fight's own object is the newest of
+        its name on the tile; an older same-named one — perhaps a hidden item
+        the player never found — is not the fight's to hand over."""
+        fight = won_fight()
+        (older,) = _spawned(fight.fight_tile, "Shortsword")
+        (dropped,) = _spawned(fight.fight_tile, "Shortsword")
+        fight.player.combat_drops.append({"name": dropped.name, "quantity": 1})
+
+        game_service.collect_combat_loot(fight.player, [dropped.name])
+
+        assert dropped in fight.player.inventory
+        assert older in fight.fight_tile.items_here
+
+
+class TestOnlyAVictoryIsResolvedByTheLootCall:
+    """``collect-loot`` resolves a won fight, and nothing else."""
+
+    def test_a_defeat_summary_survives_a_stray_collect(
+        self, won_fight, game_service
+    ):
+        """A LootDialog left open in a second tab, SKIPped after Jean died in the
+        first, must not erase the defeat: it is what the DefeatDialog is built
+        from, and defeat resolves only through load or start-over."""
+        fight = won_fight()
+        defeat = {"status": "defeat", "game_over": True}
+        fight.player.combat_end_summary = defeat
+
+        game_service.collect_combat_loot(fight.player, [])
+
+        assert fight.player.combat_end_summary == defeat
+
+    def test_a_collect_during_combat_is_refused_and_keeps_the_drops(
+        self, won_fight, game_service
+    ):
+        """Mid-fight there is no victory to resolve; a request here would
+        otherwise wipe the drops gathered so far and leave the summary empty."""
+        fight = won_fight()
+        fight.player.in_combat = True
+        drops_before = list(fight.player.combat_drops)
+
+        result = game_service.collect_combat_loot(fight.player, fight.drop_names)
+
+        assert result["success"] is False
+        assert result["error"]
+        assert fight.player.combat_drops == drops_before
+        assert _named(fight.fight_tile.items_here, fight.drop_names)
+
+
+def test_each_requested_name_is_handled_once(won_fight, game_service):
+    """The name list is client-sized. Answering every repeat rescanned the
+    growing ``skipped`` list per name -- 25,000 names took seconds, and a 1 MiB
+    body carries far more -- and a repeat can take nothing a first pass did
+    not, so each distinct name is handled once."""
+    fight = won_fight()
+    gone = fight.drop_names[0]
+    for item in _named(list(fight.fight_tile.items_here), [gone]):
+        fight.fight_tile.items_here.remove(item)
+
+    result = game_service.collect_combat_loot(
+        fight.player, ["", "", gone, gone, ""]
+    )
+
+    assert result["skipped"] == [
+        {"name": "", "reason": "not_offered"},
+        {"name": gone, "reason": "not_found"},
+    ]

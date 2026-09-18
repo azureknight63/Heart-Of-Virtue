@@ -642,9 +642,20 @@ class TestFleeCombatCleanup:
         assert not hasattr(in_combat_player, "_combat_deferred_enemies")
 
     def test_flee_removes_combat_end_summary(self, game_service, in_combat_player):
+        """No stale summary survives a flee, so ``end_state`` is never served
+        for the fight Jean ran from. Cleared to ``None`` rather than deleted
+        (``GameService._clear_combat_end_summary``): every reader guards with
+        ``getattr(..., None)``, so the two are the same to the game."""
         in_combat_player.combat_end_summary = {"victory": False}
         game_service.flee_combat(in_combat_player)
-        assert not hasattr(in_combat_player, "combat_end_summary")
+        assert getattr(in_combat_player, "combat_end_summary", None) is None
+
+    def test_flee_withdraws_the_loot_offer(self, game_service, in_combat_player):
+        """A fled fight's drops are no longer on offer: left listed, a crafted
+        collect could name them on any tile Jean walks to next."""
+        in_combat_player.combat_drops = [{"name": "Restorative", "quantity": 1}]
+        game_service.flee_combat(in_combat_player)
+        assert in_combat_player.combat_drops == []
 
     def test_flee_strips_non_persistent_status_effects(self, game_service, in_combat_player):
         persistent = MagicMock()

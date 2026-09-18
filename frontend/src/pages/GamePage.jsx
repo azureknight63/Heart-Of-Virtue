@@ -26,7 +26,8 @@ import FeedbackDialog from '../components/FeedbackDialog'
 import MobileTabBar, { MOBILE_TAB_BAR_HEIGHT } from '../components/MobileTabBar'
 import { TAB_KEYS } from '../utils/mobileTabs'
 import { redirectToLogin } from '../utils/session'
-import { autosaveErrorMessage } from '../utils/apiError'
+import { apiErrorMessage, autosaveErrorMessage } from '../utils/apiError'
+import { LOOT_COLLECT_REFUSED } from '../utils/lootCopy'
 
 export default function GamePage() {
   const isMobile = useMobile()
@@ -683,9 +684,9 @@ export default function GamePage() {
    * is logged, labelled by whether anything was being collected, and still
    * closes the dialog.
    *
-   * A request the backend *refuses* (`success: false` — it could not find the
-   * tile the fight was won on) is shown to the player. When they were
-   * collecting, the dialog stays open: the backend kept the drops and the
+   * A request the backend *refuses* (`success: false` — for instance it could
+   * not find the tile the fight was won on) is shown to the player. When they
+   * were collecting, the dialog stays open: the backend kept the drops and the
    * victory, so they can retry or SKIP. This used to close as if the loot had
    * been taken (issue #610). A refused skip still leaves, since there is
    * nothing to retry.
@@ -695,10 +696,10 @@ export default function GamePage() {
     try {
       const response = await combatApi.collectLoot(itemNames)
       const result = response?.data
-      if (result?.success === false) {
-        showError(result.error || 'The spoils could not be collected.')
-        if (collecting) return
-      }
+      const refused = result?.success === false
+      if (refused) showError(apiErrorMessage(result, LOOT_COLLECT_REFUSED))
+      const keepDialogOpen = refused && collecting
+      if (keepDialogOpen) return
     } catch (err) {
       console.error(collecting ? 'collect-loot failed:' : 'collect-loot (skip) failed:', err)
     }

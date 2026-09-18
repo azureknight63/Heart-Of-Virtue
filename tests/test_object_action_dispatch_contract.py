@@ -363,16 +363,17 @@ def test_no_authored_keyword_anywhere_is_undispatchable():
 #
 # Everything above asks "does every authored keyword resolve to something".
 # #609 is the other direction, and nothing was asking it: the client renders a
-# TAKE ALL button on every open container regardless of what the placement
-# authors, while ``GameService._verb_refusal`` accepts a verb only when the
+# TAKE ALL button on every open container holding more than one item,
+# regardless of what the placement authors, while ``GameService._verb_refusal`` accepts a verb only when the
 # target ADVERTISES it in ``keywords`` or it sits on that service's
 # ``_ALLOWED_INTERACTION_VERBS``.
 #
 # ``Container.__init__`` does advertise it (``keywords.extend(["loot",
 # "take_all"])``), which is why a container built here would pass — but the map
 # loader ``setattr``s the placement's authored ``keywords`` straight over that
-# list, and 40 of the 47 shipped placements author one without ``take_all``. So
-# the button was dead almost everywhere, answering "There's no way for Jean to
+# list, and most shipped placements author one without ``take_all`` (the
+# assertion below names every one it finds). So the button was dead almost
+# everywhere, answering "There's no way for Jean to
 # take_all the Dusty Satchel."
 #
 # Both halves of the derivation below are therefore external to the service and
@@ -598,18 +599,20 @@ def test_every_shipped_container_accepts_the_clients_take_all():
     assert not refused, (
         f"GameService refuses the client's {verb!r} on {len(refused)} shipped "
         f"container placements (issue #609): {refused}. The frontend renders "
-        "TAKE ALL for every open container regardless of authored keywords, so "
+        "TAKE ALL for every open container holding more than one item, "
+        "regardless of authored keywords, so "
         "the verb belongs on _ALLOWED_INTERACTION_VERBS — do not fix this by "
         "authoring the keyword into the maps."
     )
 
 
 def test_take_all_dispatches_on_every_shipped_container():
-    """Passing the gate is half of it; the verb must also reach the method.
+    """Passing the gate is half of it; the verb must also resolve on the target.
 
     ``_dispatch_interaction`` falls through to ``resolve_interaction`` for this
     verb, and a target that resolves nothing is refused in fiction there
-    instead — the same player-visible failure one branch later.
+    instead — the same player-visible failure one branch later. That the
+    dispatch then hands the items over is the end-to-end test below.
     """
     from src.objects import resolve_interaction
 
@@ -622,6 +625,52 @@ def test_take_all_dispatches_on_every_shipped_container():
     assert not unimplemented, (
         f"{verb!r} resolves to nothing callable on: {unimplemented}"
     )
+
+
+def test_take_all_on_the_reported_container_moves_its_contents_to_jean():
+    """Through the gate and ``_dispatch_interaction``, in the order
+    ``interact_with_target`` runs them, on the placement #609 was reproduced
+    against: the verb is accepted, and the arm it lands in hands the items over.
+
+    A fresh instance, not the cached ``_loaded_containers()`` row: this test
+    opens and empties the satchel, and ``pytest-randomly`` shuffles the order
+    in which its siblings read that shared object. Opened first, because the
+    button lives in the Container Contents panel -- the player clicks TAKE ALL
+    on an open container.
+    """
+    from src.api.services.game_service import GameService, _InteractionRequest
+    from src.items import Restorative
+    from src.player import Player
+    from src.universe import Universe
+
+    payload = next(
+        payload for map_name, coord, ref, payload in _container_payloads()
+        if map_name == "grondia.json" and coord == "(1, 3)"
+        and ref.props.get("name") == "Dusty Satchel"
+    )
+    satchel = Universe(player=_player())._deserialize_saved_instance(
+        payload, tile=_StubTile()
+    )
+    satchel.open()
+    tonic = Restorative()
+    satchel.inventory.append(tonic)
+    jean = Player()
+    verb = _client_take_all_verb()
+
+    assert _gate_refusal(satchel, verb) is None
+    outcome = GameService()._dispatch_interaction(_InteractionRequest(
+        player=jean,
+        target=satchel,
+        target_id="",
+        tile=None,
+        action=verb,
+        quantity=None,
+        session_data=None,
+    ))
+
+    assert outcome.refusal is None, outcome.refusal
+    assert tonic not in satchel.inventory
+    assert [i for i in jean.inventory if i.name == tonic.name]
 
 
 def test_the_gate_still_refuses_an_unadvertised_public_method():

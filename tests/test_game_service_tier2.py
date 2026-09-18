@@ -26,6 +26,7 @@ import pytest
 from src.items import Gold, RustedDagger, Restorative
 from src.npc import NPC
 from tests._gs_fixtures import GRID_3X3, live_world
+from tests._loot_fixtures import offer_victory_drops
 
 
 @pytest.fixture
@@ -320,7 +321,7 @@ class TestCollectCombatLoot:
     def test_collects_named_items_and_leaves_the_rest(self, game_service, player, tile):
         dagger, potion = RustedDagger(), Restorative()
         tile.items_here = [dagger, potion]
-        player.combat_drops = [dagger, potion]
+        offer_victory_drops(player, dagger.name, potion.name)
 
         result = game_service.collect_combat_loot(player, ["Rusted Dagger"])
 
@@ -331,14 +332,18 @@ class TestCollectCombatLoot:
     def test_clears_combat_drops_so_looting_cannot_repeat(self, game_service, player, tile):
         dagger = RustedDagger()
         tile.items_here = [dagger]
-        player.combat_drops = [dagger]
+        offer_victory_drops(player, dagger.name)
 
         game_service.collect_combat_loot(player, ["Rusted Dagger"])
 
         assert player.combat_drops == []
 
-    def test_unknown_name_is_skipped_with_a_reason(self, game_service, player, tile):
+    def test_offered_name_absent_from_tile_is_not_found(self, game_service, player, tile):
+        # Offered by the fight but no longer on the tile: an offered name the
+        # tile cannot supply is ``not_found``; an un-offered one is
+        # ``not_offered`` (tests/test_victory_loot_resolution.py).
         tile.items_here = []
+        offer_victory_drops(player, "Excalibur")
         result = game_service.collect_combat_loot(player, ["Excalibur"])
         assert result["collected"] == []
         assert result["skipped"] == [{"name": "Excalibur", "reason": "not_found"}]
@@ -349,6 +354,7 @@ class TestCollectCombatLoot:
         anvil.name = "Anvil"
         anvil.weight = player.weight_tolerance + 1
         tile.items_here = [anvil]
+        offer_victory_drops(player, "Anvil")
 
         result = game_service.collect_combat_loot(player, ["Anvil"])
 

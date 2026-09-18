@@ -10,6 +10,7 @@ import { useMobile } from '../hooks/useMobile';
 import { useAudio } from '../context/AudioContext';
 import { useToast } from '../context/ToastContext';
 import { combat as combatApi } from '../api/endpoints';
+import { LOOT_COLLECT_REFUSED } from '../utils/lootCopy';
 import { makePlayer, makeLocation } from '../test/payloads';
 import { TAB_KEYS } from '../utils/mobileTabs';
 import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds';
@@ -232,6 +233,31 @@ describe('GamePage handler wiring', () => {
 
     const renderGamePage = () => render(<MemoryRouter><GamePage /></MemoryRouter>);
 
+    /** Render with the loot dialog open; returns its `setShowLootDialog` spy. */
+    const renderLootDialog = (endState = { status: 'victory' }) => {
+        const setShowLootDialog = vi.fn();
+        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
+            showLootDialog: true,
+            endState,
+            setShowLootDialog,
+        }));
+        renderGamePage();
+        return setShowLootDialog;
+    };
+
+    /** A toast whose `error` is a spy, for asserting what the player is told. */
+    const mockToastError = () => {
+        const showError = vi.fn();
+        useToast.mockReturnValue({ error: showError });
+        return showError;
+    };
+
+    const clickAndSettle = async (label) => {
+        await act(async () => {
+            fireEvent.click(screen.getByText(label));
+        });
+    };
+
     it('moves, refetches player, and triggers an autosave tick', async () => {
         renderGamePage();
         // GamePage polls combat status once on mount; discount that baseline so
@@ -423,17 +449,8 @@ describe('GamePage handler wiring', () => {
     });
 
     it('collects loot, calls the API, and shows the beta-end dialog on a beta-end kill', async () => {
-        const setShowLootDialog = vi.fn();
-        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
-            showLootDialog: true,
-            endState: { status: 'victory', beta_end: true },
-            setShowLootDialog,
-        }));
-
-        renderGamePage();
-        await act(async () => {
-            fireEvent.click(screen.getByText('Collect Loot'));
-        });
+        const setShowLootDialog = renderLootDialog({ status: 'victory', beta_end: true });
+        await clickAndSettle('Collect Loot');
 
         expect(combatApi.collectLoot).toHaveBeenCalledWith(['Sword']);
         expect(setShowLootDialog).toHaveBeenCalledWith(false);
@@ -443,17 +460,8 @@ describe('GamePage handler wiring', () => {
     it('still closes the loot dialog and refetches when collectLoot fails', async () => {
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         combatApi.collectLoot.mockRejectedValue(new Error('server down'));
-        const setShowLootDialog = vi.fn();
-        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
-            showLootDialog: true,
-            endState: { status: 'victory' },
-            setShowLootDialog,
-        }));
-
-        renderGamePage();
-        await act(async () => {
-            fireEvent.click(screen.getByText('Collect Loot'));
-        });
+        const setShowLootDialog = renderLootDialog();
+        await clickAndSettle('Collect Loot');
 
         expect(errorSpy).toHaveBeenCalledWith('collect-loot failed:', expect.any(Error));
         expect(setShowLootDialog).toHaveBeenCalledWith(false);
@@ -469,22 +477,12 @@ describe('GamePage handler wiring', () => {
         // tile the fight was won on, and keeps the drops so the player can
         // retry or SKIP. finishLoot used to react only to a thrown error, so a
         // refusal closed the dialog exactly as if the loot had been taken.
-        const showError = vi.fn();
-        useToast.mockReturnValue({ error: showError });
+        const showError = mockToastError();
         combatApi.collectLoot.mockResolvedValue({
             data: { success: false, error: 'The spoils still lie there.' },
         });
-        const setShowLootDialog = vi.fn();
-        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
-            showLootDialog: true,
-            endState: { status: 'victory' },
-            setShowLootDialog,
-        }));
-
-        renderGamePage();
-        await act(async () => {
-            fireEvent.click(screen.getByText('Collect Loot'));
-        });
+        const setShowLootDialog = renderLootDialog();
+        await clickAndSettle('Collect Loot');
 
         expect(showError).toHaveBeenCalledWith('The spoils still lie there.');
         expect(setShowLootDialog).not.toHaveBeenCalledWith(false);
@@ -494,38 +492,19 @@ describe('GamePage handler wiring', () => {
     it('surfaces a refused skip but still leaves the victory', async () => {
         // Skipping picks nothing up, so there is nothing to retry: holding the
         // player on a dialog they asked to leave would only strand them.
-        const showError = vi.fn();
-        useToast.mockReturnValue({ error: showError });
+        const showError = mockToastError();
         combatApi.collectLoot.mockResolvedValue({ data: { success: false } });
-        const setShowLootDialog = vi.fn();
-        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
-            showLootDialog: true,
-            endState: { status: 'victory' },
-            setShowLootDialog,
-        }));
+        const setShowLootDialog = renderLootDialog();
+        await clickAndSettle('Skip Loot');
 
-        renderGamePage();
-        await act(async () => {
-            fireEvent.click(screen.getByText('Skip Loot'));
-        });
-
-        expect(showError).toHaveBeenCalledWith(expect.any(String));
+        expect(showError).toHaveBeenCalledWith(LOOT_COLLECT_REFUSED);
         expect(setShowLootDialog).toHaveBeenCalledWith(false);
         expect(refetchPlayer).toHaveBeenCalledTimes(1);
     });
 
     it('skips loot with an empty collection call', async () => {
-        const setShowLootDialog = vi.fn();
-        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
-            showLootDialog: true,
-            endState: { status: 'victory' },
-            setShowLootDialog,
-        }));
-
-        renderGamePage();
-        await act(async () => {
-            fireEvent.click(screen.getByText('Skip Loot'));
-        });
+        const setShowLootDialog = renderLootDialog();
+        await clickAndSettle('Skip Loot');
 
         expect(combatApi.collectLoot).toHaveBeenCalledWith([]);
         expect(setShowLootDialog).toHaveBeenCalledWith(false);
@@ -731,17 +710,8 @@ describe('GamePage handler wiring', () => {
     it('logs and still closes the dialog when skip-loot collectLoot fails', async () => {
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         combatApi.collectLoot.mockRejectedValue(new Error('server down'));
-        const setShowLootDialog = vi.fn();
-        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
-            showLootDialog: true,
-            endState: { status: 'victory' },
-            setShowLootDialog,
-        }));
-
-        renderGamePage();
-        await act(async () => {
-            fireEvent.click(screen.getByText('Skip Loot'));
-        });
+        const setShowLootDialog = renderLootDialog();
+        await clickAndSettle('Skip Loot');
 
         expect(errorSpy).toHaveBeenCalledWith('collect-loot (skip) failed:', expect.any(Error));
         expect(combatApi.collectLoot).toHaveBeenCalledWith([]);
@@ -750,15 +720,8 @@ describe('GamePage handler wiring', () => {
     });
 
     it('shows the beta-end dialog after skipping loot on a beta-end victory', async () => {
-        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
-            showLootDialog: true,
-            endState: { status: 'victory', beta_end: true },
-        }));
-
-        renderGamePage();
-        await act(async () => {
-            fireEvent.click(screen.getByText('Skip Loot'));
-        });
+        renderLootDialog({ status: 'victory', beta_end: true });
+        await clickAndSettle('Skip Loot');
 
         await waitFor(() => expect(screen.getByTestId('beta-end-dialog')).toBeInTheDocument());
     });
