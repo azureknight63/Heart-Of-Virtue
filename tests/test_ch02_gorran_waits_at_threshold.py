@@ -34,6 +34,7 @@ import pytest
 
 import src.npc as npc
 import src.story.ch02 as ch02
+from src.events import set_story_gate
 from src.player import Player
 from src.story.ch02 import (
     ATRIUM_COORDS,
@@ -53,7 +54,7 @@ from tests._ch02_fixtures import (
 #: teleports Jean into the pools, so it is where a Gorran who is never taken
 #: off his old tile is left behind as a second copy.
 OUTSIDE_MAP_NAME = "grondia"
-OUTSIDE_COORD = (7, 9)
+OUTSIDE_COORD = (7, 9)  # arbitrary on this synthetic map; not read from grondia
 
 
 class PoolsWorld:
@@ -77,8 +78,6 @@ class PoolsWorld:
         universe.maps = [self.outside, self.pools]
 
         # Gorran is where he last followed Jean to: the Grondia-side tile.
-        # The passage teleports Jean into the pools and ``teleport`` never
-        # recalls the party, so this is the state the scene actually meets.
         self.gorran = npc.Gorran()
         self.gorran.current_room = self.outside[OUTSIDE_COORD]
         self.outside[OUTSIDE_COORD].npcs_here.append(self.gorran)
@@ -115,6 +114,18 @@ class PoolsWorld:
             event.check_conditions()
         return event
 
+    def run_aftermath(self, arena):
+        """Play ``AfterDefeatingKingSlime`` on ``arena`` with its prose muted."""
+        with (
+            patch("src.story.ch02.print_slow"),
+            patch("src.story.ch02.narrate"),
+            patch("src.story.ch02.begin_conversation"),
+            patch("src.story.ch02.end_conversation"),
+            patch("src.story.ch02.say"),
+            patch("src.story.ch02.time.sleep"),
+        ):
+            AfterDefeatingKingSlime(player=self.player, tile=arena).process()
+
     def rooms_holding_gorran(self):
         """Every coordinate, in either map, whose ``npcs_here`` holds a
         Gorran -- the room state a player actually sees."""
@@ -123,7 +134,7 @@ class PoolsWorld:
             for game_map in (self.outside, self.pools)
             for coord, tile in game_map.items()
             if isinstance(coord, tuple)
-            and any(type(n).__name__ == "Gorran" for n in tile.npcs_here)
+            and any(isinstance(n, npc.Gorran) for n in tile.npcs_here)
         }
 
 
@@ -226,17 +237,8 @@ class TestTheAftermathStillFindsHim:
 
     @pytest.fixture
     def rejoined(self, waited):
-        arena = waited.pools[arena_coord()]
         waited.player.level = 3
-        with (
-            patch("src.story.ch02.print_slow"),
-            patch("src.story.ch02.narrate"),
-            patch("src.story.ch02.begin_conversation"),
-            patch("src.story.ch02.end_conversation"),
-            patch("src.story.ch02.say"),
-            patch("src.story.ch02.time.sleep"),
-        ):
-            AfterDefeatingKingSlime(player=waited.player, tile=arena).process()
+        waited.run_aftermath(waited.pools[arena_coord()])
         return waited
 
     def test_he_rejoins_the_party(self, rejoined):
@@ -275,14 +277,51 @@ def test_a_gorran_who_never_waited_is_listed_in_the_arena_once(world):
     world.enter(world.pools, arena_xy)
     assert world.gorran in arena.npcs_here, "precondition: he followed Jean in"
 
-    with (
-        patch("src.story.ch02.print_slow"),
-        patch("src.story.ch02.narrate"),
-        patch("src.story.ch02.begin_conversation"),
-        patch("src.story.ch02.end_conversation"),
-        patch("src.story.ch02.say"),
-        patch("src.story.ch02.time.sleep"),
-    ):
-        AfterDefeatingKingSlime(player=world.player, tile=arena).process()
+    world.run_aftermath(arena)
 
     assert [n for n in arena.npcs_here if n is world.gorran] == [world.gorran]
+
+
+def test_wearing_the_waiting_line_twice_keeps_the_ordinary_one():
+    """Were the scene ever replayed on the same Gorran, a second wear must not
+    save the waiting line as his ordinary one -- or the rejoin would restore
+    it, and he would "wait beside the arch" all the way down the descent."""
+    gorran = npc.Gorran()
+    ordinary = gorran.idle_message
+    assert ordinary != ch02.GORRAN_WAITING_IDLE_MESSAGE
+
+    ch02._wear_waiting_idle_line(gorran)
+    ch02._wear_waiting_idle_line(gorran)
+    ch02._restore_ordinary_idle_line(gorran)
+
+    assert gorran.idle_message == ordinary
+    assert not hasattr(gorran, ch02._IDLE_LINE_BEFORE_WAIT)
+
+
+def test_a_second_gorran_in_the_party_is_not_left_standing_in_his_room(world):
+    """Two Gorran objects in the party is not a state the game makes today,
+    but the scene removes every one from the party -- so every one it removes
+    must also leave the room he stood in, or he is listed there for good."""
+    second = npc.Gorran()
+    outside = world.outside[OUTSIDE_COORD]
+    second.current_room = outside
+    outside.npcs_here.append(second)
+    world.player.combat_list_allies.append(second)
+
+    world.run_threshold_scene()
+
+    assert world.rooms_holding_gorran() == {(POOLS_MAP_NAME, world.threshold_coord)}
+
+
+def test_the_scene_leaves_gorran_with_jean_when_the_king_slime_is_already_dead(world):
+    """The threshold scene seats Gorran to wait for the King Slime to fall, and
+    only ``AfterDefeatingKingSlime`` brings him back. If the boss is already
+    dead when the scene plays (a start past it, a harness), seating him would
+    strand him for good -- so the scene plays without taking him from Jean."""
+    set_story_gate(world.player, AfterDefeatingKingSlime.GATE_KEY)
+    idle_before = world.gorran.idle_message
+
+    world.run_threshold_scene()
+
+    assert world.gorran in world.player.combat_list_allies
+    assert world.gorran.idle_message == idle_before

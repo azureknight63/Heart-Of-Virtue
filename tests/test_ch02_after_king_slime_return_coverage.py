@@ -750,9 +750,10 @@ class TestCh02MapConstantsMatchTheShippedMap:
 
         assert ch02.POOLS_MAP_NAME == POOLS_MAP_NAME
 
-    def test_ch02_looks_for_gorran_where_the_shipped_map_puts_the_atrium(self):
-        """Move the Atrium and ch02 would leave Gorran behind, with every Mock
-        test still green."""
+    def test_ch02_looks_for_a_pre_613_gorran_where_the_shipped_map_puts_the_atrium(self):
+        """The Atrium is only the legacy wait tile now, but a session saved
+        before #613 may still have Gorran seated there: move it and ch02 would
+        leave that Gorran behind, with every Mock test still green."""
         authored = dict(pools_tiles())
         assert ATRIUM_COORDS in authored, (
             f"the pools map authors no tile at {ATRIUM_COORDS}, where ch02 looks "
@@ -918,10 +919,7 @@ class TestCh02GorranAtPools:
 
         self._make_event().process()
 
-        assert [
-            a for a in self.player.combat_list_allies
-            if a.__class__.__name__ == Gorran.__name__
-        ] == []
+        assert not any(isinstance(a, Gorran) for a in self.player.combat_list_allies)
 
     def test_description_set_in_init(self):
         evt = self._make_event()
