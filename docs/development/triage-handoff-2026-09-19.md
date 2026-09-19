@@ -118,6 +118,7 @@ suites. Resume at **2–3 chunks at a time**, i.e. 10–15 dimension agents, not
 | Issue | Decision |
 |---|---|
 | #621 | **Don't merge drops into pre-existing piles** in `before_death`. Not split-at-collect. |
+| #621 (2026-09-19) | **Freeze stackable merges on the fight tile until the victory dialog is dismissed.** Supersedes "handle succession on merge" for the residual. See §5. |
 | #617 | **Implement, with REDUCED exp** for reinforcements (not the full 45 each). |
 | #612 | **Hide the hint when panning can't move** (clamp-derived), not "let Fit pan off the arena". |
 | #600 | **Leave open awaiting reporter.** Do not close. |
@@ -126,20 +127,47 @@ suites. Resume at **2–3 chunks at a time**, i.e. 10–15 dimension agents, not
 
 ---
 
-## 5. OPEN — needs the maintainer, do not close on model judgement
+## 5. #621 residual — DECIDED 2026-09-19, ready to implement
 
-**#621 behaviour movement (security-labelled).** CLAUDE.md: a Critical/Major security finding never
-closes on model judgement alone.
+The residual reported at the end of the #621 fix has a maintainer decision. Full reasoning is in
+the issue comment; the constraints are repeated here because they are what the implementation
+turns on.
 
-If a **visible** pre-existing pile of the drop's kind sits on the fight tile and the player picks
-anything up before collecting, `MapTile.stack_duplicate_items` merges them, keeps the older object,
-and collect-loot answers `not_found`. The units remain on the floor, visible and takeable by hand.
-Pre-fix the player got the whole merged pile (too much); now they get none from the dialog (too
-little). Closing it properly means **handle succession on merge**, which is an identity-design
-change. The client pins the combat screen while a victory is unresolved, so reaching it needs a
-second tab or a crafted request.
+**The residual:** if a **visible** pre-existing pile of the drop's kind sits on the fight tile and
+the player picks anything up before collecting, `MapTile.stack_duplicate_items` merges them, keeps
+the older object, and collect-loot answers `not_found`. The units stay on the floor, visible and
+takeable by hand, but the dialog gives nothing. Pre-fix: too much. Post-fix: too little.
 
----
+**Decision: freeze stackable merges on the fight tile while the victory is unresolved.** Not handle
+succession on merge. The window already exists — `_is_unresolved_victory(player)` is
+`combat_end_summary["status"] == "victory"`, with exits at `_end_loot_phase` →
+`_mark_victory_resolved` (`game_service.py:5201`, `:5213`) and `_abandon_loot_phase` (`:5373`).
+
+**Why it beats the shipped arrangement:** one statable invariant instead of a patchwork; it closes
+the residual outright rather than trading it; and the cosmetic cost is near zero because the
+victory dialog covers the screen. Precedent: commit `2d0f6259` (2026-04-17) records that items
+previously did not stack until the next world beat and the only complaint was visual clutter.
+
+**Three constraints, first is the real risk:**
+
+1. **A freeze whose release leaks becomes permanent.** Enumerate every fight-ending path *before*
+   writing the gate. Defeat is safe by construction (`status != "victory"`). Session drop and
+   save/load across the window both need checking.
+2. **The gate is player-scoped; the merge sites are room-scoped.** `_is_unresolved_victory` takes a
+   player; the merges call `player.current_room.stack_duplicate_items()`. The predicate must mean
+   *"is this room the unresolved fight's tile"*. The tile is tracked; the predicate is not written.
+3. **Four merge sites, not one:** `src/npc/_loot.py:135`, plus `src/items.py:327`, `:461-462`,
+   `:494-495`. Gating one is a partial fix. `src/functions.py:1108` stacks an *inventory* — out of
+   scope.
+
+**Do NOT revert as redundant:** handle-based collection (the actual identity fix), and the
+hidden/visible merge guard (merging resumes after the victory resolves, and a visible item merging
+into a hidden pile still partially reveals an undiscovered stash).
+
+**Verification:** engine behaviour change, so rung 1 is not enough. `python tools/bug_hunt.py
+--scenario victory_loot` and `--scenario combat`, before and after, diffed. The `victory_loot`
+scenario already plants a decoy twin and checks departures by wire id — extend it with the residual
+case itself.
 
 ## 6. Not started
 
