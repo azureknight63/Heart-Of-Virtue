@@ -27,12 +27,15 @@ and the real ``ApiCombatAdapter`` settling the victory. Expectations are read
 back out of engine state rather than restating the implementation.
 """
 
+import threading
+import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 from src.api.combat_adapter import ApiCombatAdapter
+from src.api.services.game_service import GameService
 from src.items import Restorative
 from src.npc import Slime
 
@@ -563,3 +566,65 @@ class TestADropIsTheObjectTheFightSpawned:
         assert len(piles) == 1, "two scattered rows, one pile"
         assert piles[0].count == 5
         assert piles[0].hidden is True, "scattered inventory is hidden, as before"
+
+
+class TestTwoCollectsInFlight:
+    """Two requests for one victory must not both be served the offer.
+
+    The offer is withdrawn as soon as it is read, but under the threaded
+    Socket.IO server a second collect can read it before the first clears it
+    (#621). Both requests then believe they may take the same objects.
+    """
+
+    def test_only_one_of_two_concurrent_collects_is_served(
+        self, won_fight, game_service
+    ):
+        """Forced interleave: the first collect is held inside the offer read
+        while the second one runs at it.
+
+        Not a probabilistic race hunt -- the pause makes the losing order the
+        only order. With the read-and-withdraw serialized, the second request
+        cannot reach the read at all until the first has finished with it.
+        """
+        fight = won_fight(loot=_CERTAIN_SWORD)
+        offers_seen = []
+        results = []
+        first_is_reading = threading.Event()
+        second_has_started = threading.Event()
+        original = GameService._offered_drops.__func__
+
+        def held_open(cls, player):
+            offer = original(cls, player)
+            offers_seen.append(dict(offer))
+            if not first_is_reading.is_set():
+                first_is_reading.set()
+                # Hand the window to the second request, and hold it open long
+                # enough for that request to reach the read it must not make.
+                second_has_started.wait(2.0)
+                time.sleep(0.1)
+            return offer
+
+        def collect():
+            results.append(
+                game_service.collect_combat_loot(fight.player, ["Shortsword"])
+            )
+
+        def second():
+            assert first_is_reading.wait(2.0), "the first collect never read the offer"
+            second_has_started.set()
+            collect()
+
+        with patch.object(GameService, "_offered_drops", classmethod(held_open)):
+            threads = [
+                threading.Thread(target=collect),
+                threading.Thread(target=second),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(10)
+            assert not any(t.is_alive() for t in threads), "a collect never returned"
+
+        assert [bool(offer) for offer in offers_seen] == [True, False]
+        assert sorted(r["collected"] for r in results) == [[], ["Shortsword"]]
+        assert _units(fight.player.inventory, "Shortsword") == 1

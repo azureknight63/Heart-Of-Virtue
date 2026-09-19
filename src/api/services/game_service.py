@@ -1,4 +1,5 @@
 import logging
+import threading
 import uuid
 import contextlib
 import inspect
@@ -51,6 +52,39 @@ _log = logging.getLogger(__name__)
 #: Named because the number was written twice -- once in the check and once
 #: in the message the player reads -- so they could disagree.
 MAX_MANUAL_SAVES = 20
+
+#: Serializes resolving a victory's loot phase (issue #621).
+#:
+#: ``collect_combat_loot`` reads the offer, withdraws it, moves the objects and
+#: marks the victory resolved. Under the threaded Socket.IO server two requests
+#: for one session hold the SAME ``Player`` object, so a second collect could
+#: read the offer inside ``_offered_drops`` before the first cleared it, and
+#: both would then walk the same handles: the loser either reports collecting
+#: what the winner took, or races the ``item in tile.items_here`` check and
+#: raises out of ``list.remove``.
+#:
+#: NOT the combat adapter's ``_beat_lock``, which is the obvious candidate and
+#: the wrong one. Three reasons, in order of weight:
+#:
+#: 1. The adapter is not a stable object across this window. Anything that
+#:    finds ``_combat_adapter`` missing builds a NEW ``ApiCombatAdapter`` (see
+#:    ``get_combat_status``), and ``_discard_fight_state`` deletes it outright
+#:    on flee and load. Two threads could hold two different adapters' locks
+#:    and exclude nothing.
+#: 2. There need not be an adapter at all when a loot call arrives, so the
+#:    lock would have to be optional -- and a fallback lock is exactly the
+#:    second lock ordering that must not be introduced.
+#: 3. ``_beat_lock`` is held across whole move loops. Borrowing it would park
+#:    an out-of-combat request behind in-combat beat execution for nothing.
+#:
+#: A module-level lock is safe here precisely because the guarded region is
+#: closed: it acquires no other lock, performs no I/O, and only mutates lists
+#: and attributes, so it cannot be one half of a cycle. Nothing reaches
+#: ``collect_combat_loot`` while holding ``_beat_lock`` either -- its only
+#: caller is the ``/api/combat/collect-loot`` route. Global rather than
+#: per-player because the section is microseconds long and a lock table keyed
+#: on players is machinery this does not need.
+_LOOT_PHASE_LOCK = threading.Lock()
 
 
 def _warn(message):
@@ -5073,6 +5107,10 @@ class GameService:
         are looked for where the fight was fought, not where the player now
         stands (:meth:`_loot_tile`).
 
+        The offer read, the take and the resolve run under
+        :data:`_LOOT_PHASE_LOCK` so a second request cannot be served an offer
+        the first is already spending.
+
         This call is the victory's resolve signal (:meth:`_end_loot_phase`), so
         once the tile is found the loot phase ends whatever was taken. If the
         tile cannot be found and something was asked for, the call is an error
@@ -5111,15 +5149,16 @@ class GameService:
             self._end_loot_phase(player)
             return {"success": True, "collected": [], "skipped": []}
 
-        offered = self._offered_drops(player)
-        # Withdrawn as soon as it is read: a second collect in flight
-        # (another tab) then finds nothing on offer, rather than the same
-        # objects again.
-        player.combat_drops = []
-        collected, skipped = self._take_offered_drops(
-            player, tile, item_names, offered
-        )
-        self._end_loot_phase(player)
+        with _LOOT_PHASE_LOCK:
+            offered = self._offered_drops(player)
+            # Withdrawn as soon as it is read: a second collect in flight
+            # (another tab) then finds nothing on offer, rather than the same
+            # objects again.
+            player.combat_drops = []
+            collected, skipped = self._take_offered_drops(
+                player, tile, item_names, offered
+            )
+            self._end_loot_phase(player)
 
         if collected and hasattr(player, "stack_inv_items"):
             player.stack_inv_items()
