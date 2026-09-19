@@ -43,7 +43,7 @@ from typing import NamedTuple
 
 import pytest
 
-from tests._source_scan import MAP_DIR, ROOT, SRC_ROOT, py_files
+from tests._source_scan import MAP_DIR, ROOT, SRC_ROOT, py_files, walk_json_strings
 
 #: The two roots the issue asked this guard to cover: shipped map/content
 #: JSON and the AI personality/config JSON. Hidden paths (any dot-prefixed
@@ -252,27 +252,6 @@ def _content_json_walk(roots):
     return tuple(files)
 
 
-def _walk_json_strings(value, path=""):
-    """Yield ``(json_path, string)`` for every string in a decoded document.
-
-    Keys as well as values: most keys are schema names like
-    ``"description"``, but a mis-decoded key would otherwise be the one
-    string the guard never looked at. ``json_path`` mirrors how a map's own
-    coordinate/prop structure reads (``/(0, 2)/description``), so a failure
-    message can be pasted straight back into the authored file.
-    """
-    if isinstance(value, str):
-        yield path, value
-    elif isinstance(value, dict):
-        for key, sub in value.items():
-            key_path = f"{path}/{key}"
-            yield f"{key_path} (key)", key
-            yield from _walk_json_strings(sub, key_path)
-    elif isinstance(value, list):
-        for index, sub in enumerate(value):
-            yield from _walk_json_strings(sub, f"{path}[{index}]")
-
-
 def _file_violation(rel_path, label, error):
     """The report row for a whole file that failed as ``label``."""
     return Violation(rel_path, _FILE_LEVEL, label, str(error))
@@ -311,7 +290,7 @@ def _find_json_violations(files):
             # json.JSONDecodeError is a ValueError.
             violations.append(_file_violation(rel_path, _NOT_PARSEABLE, error))
             continue
-        for json_path, string in _walk_json_strings(data):
+        for json_path, string in walk_json_strings(data):
             violations.extend(
                 Violation(rel_path, json_path, *hit) for hit in _sequence_hits(string)
             )
