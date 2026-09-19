@@ -9,17 +9,18 @@ run_api.py. That is safe, and it is what keeps these tests deterministic:
 the LOG_JSONL_DIR guard runs *above* both of those imports in run_api.py, so
 it is still exercised for real in a real clean process — only the Flask and
 engine stack that the guard never touches is skipped. Importing that stack
-cold costs ~60s on a loaded machine, which is how this file used to blow a
-30s timeout and fail intermittently under ``-n auto`` while passing in
-isolation. A non-deterministic baseline is worse than a slow one: CLAUDE.md
-tells contributors that anything beyond the four known ``openai`` failures is
-theirs, so a real regression in a parallel run was easy to wave through as
+cold was slow enough on a loaded machine to blow a 30s timeout, so this file
+failed intermittently under ``-n auto`` while passing in isolation -- and a
+non-deterministic baseline makes a real regression easy to wave through as
 "probably the flaky log test".
 
-Nothing here can fail *open* if the guard is later moved or deleted. The two
-"defaults on" tests assert the variable is set, and the stubs do not set it —
-so a guard that stops running, including one relocated into a stubbed module,
-fails them.
+Closing the fail-open paths is the other half. The child starts WITHOUT
+``LOG_JSONL_DIR`` and ``FLASK_ENV`` from the parent's environment, and
+``src.env_bootstrap`` is stubbed too: ``run_api.py`` calls
+``load_project_env()`` before the guard, and ``load_dotenv(override=False)``
+refills any absent key from a developer's ``.env``. Either way the variable
+could arrive already set, and a deleted guard would then pass the "defaults
+on" tests. Those tests also assert the exact default path, not merely "set".
 """
 
 import os
@@ -44,6 +45,12 @@ sys.path.insert(0, root)
 # reached, so stubbing them changes nothing about what is measured -- it only
 # skips importing Flask, the engine and the LLM modules, which is the entire
 # cost of this probe.
+# And the .env loader, which runs ABOVE the guard: a developer's .env would
+# otherwise refill LOG_JSONL_DIR or FLASK_ENV that _probe deliberately removed.
+_env = types.ModuleType("src.env_bootstrap")
+_env.load_project_env = lambda *a, **k: False
+sys.modules["src.env_bootstrap"] = _env
+
 _app = types.ModuleType("src.api.app")
 _app.create_app = lambda *a, **k: None
 _cfg = types.ModuleType("src.api.config")
@@ -62,8 +69,16 @@ print(os.environ.get("LOG_JSONL_DIR", "<unset>"))
 """
 
 
+#: What the guard sets when it applies (run_api.py's own default).
+_DEFAULT_DIR = _ROOT / "logs" / "backend"
+
+
 def _probe(flask_env):
-    env = {"FLASK_ENV": flask_env} if flask_env else {}
+    env = {
+        k: v for k, v in os.environ.items() if k not in ("LOG_JSONL_DIR", "FLASK_ENV")
+    }
+    if flask_env:
+        env["FLASK_ENV"] = flask_env
     # src/api/config.py's SECRET_KEY and ENCRYPTION_KEY guards used to need
     # satisfying here for the production case. They no longer do: that module
     # is stubbed above, and the guard under test runs before it is imported.
@@ -72,7 +87,7 @@ def _probe(flask_env):
         capture_output=True,
         text=True,
         cwd=str(_ROOT),
-        env={**os.environ, **env},
+        env=env,
         timeout=_PROBE_TIMEOUT_SECONDS,
     )
     assert result.returncode == 0, result.stderr
@@ -80,11 +95,11 @@ def _probe(flask_env):
 
 
 def test_log_jsonl_dir_defaults_on_in_development():
-    assert _probe("development") != "<unset>"
+    assert Path(_probe("development")) == _DEFAULT_DIR
 
 
 def test_log_jsonl_dir_defaults_on_when_flask_env_unset():
-    assert _probe(None) != "<unset>"
+    assert Path(_probe(None)) == _DEFAULT_DIR
 
 
 def test_log_jsonl_dir_stays_unset_in_production():

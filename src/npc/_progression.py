@@ -46,9 +46,8 @@ def join_party(player, ally, *, temporary=False):
     ``player.combat_list_allies`` is the single source of truth for the status
     party, the battle allies and tile-following, so every join has to flag the
     NPC a friend, place it in that list exactly once (behind the player at
-    index 0) and bring it up to Jean's level.  That sequence was written out
-    five times before issue #625; the copies had already drifted apart in
-    ordering and in which of them bothered to guard ``sync_level``.
+    index 0 -- the list is started with the player if there is none yet)
+    and bring it up to Jean's level.
 
     ``sync_level`` is guarded because not every ally is an
     ``AllyProgressionMixin`` — flavour companions and test doubles reach here
@@ -67,6 +66,8 @@ def join_party(player, ally, *, temporary=False):
     if temporary:
         ally.aggro = False
         ally.event_temp_ally = True
+    if not isinstance(getattr(player, "combat_list_allies", None), list):
+        player.combat_list_allies = [player]
     if ally not in player.combat_list_allies:
         player.combat_list_allies.append(ally)
     if not temporary and hasattr(ally, "sync_level"):

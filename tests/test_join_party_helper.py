@@ -17,18 +17,9 @@ from src.npc._progression import join_party
 class _Player:
     """Minimal player stand-in: a real list so membership is observable."""
 
-    def __init__(self, level=1, allies=None):
+    def __init__(self, level=1):
         self.level = level
-        self.combat_list_allies = [self] if allies is None else allies
-
-
-class _Ally:
-    """An ally that supports progression."""
-
-    def __init__(self):
-        self.friend = False
-        self.aggro = True
-        self.sync_level = Mock()
+        self.combat_list_allies = [self]
 
 
 class _PlainAlly:
@@ -37,6 +28,14 @@ class _PlainAlly:
     def __init__(self):
         self.friend = False
         self.aggro = True
+
+
+class _Ally(_PlainAlly):
+    """An ally that supports progression."""
+
+    def __init__(self):
+        super().__init__()
+        self.sync_level = Mock()
 
 
 # --- Permanent joins ----------------------------------------------------------
@@ -163,3 +162,16 @@ def test_temporary_is_keyword_only():
 
     sig = inspect.signature(join_party)
     assert sig.parameters["temporary"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_a_player_with_no_party_list_gets_one_with_the_player_first():
+    """The docstring promises the ally lands behind the player at index 0;
+    a player with no list yet used to depend on each caller seeding it."""
+    player = _Player()
+    del player.combat_list_allies
+    ally = _PlainAlly()
+
+    join_party(player, ally)
+
+    assert player.combat_list_allies == [player, ally]
+

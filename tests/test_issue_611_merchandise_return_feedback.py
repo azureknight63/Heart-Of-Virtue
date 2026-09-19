@@ -29,10 +29,11 @@ from src.combatant import wire_handle
 from src.items import Restorative
 from src.objects import Passageway
 
-#: Every phrase ``drop_merchandise_items`` can pick names the item and says
-#: something about not having paid; the choice is an unseeded ``random.choice``
-#: (CLAUDE.md: never assert on an unseeded roll), so the assertions below pin
-#: the item name and the staging, never which of the six phrases came up.
+#: Every phrase ``drop_merchandise_items`` can pick names the item (pinned by
+#: ``test_every_return_phrase_names_the_item``); the choice is an unseeded
+#: ``random.choice`` (CLAUDE.md: never assert on an unseeded roll), so the
+#: assertions below pin the item name and the staging, never which phrase
+#: came up.
 ITEM_NAME = "Rusted Iron Mace"
 
 
@@ -233,3 +234,14 @@ class TestPassagewayConfirmationNamesTheReturnedGoods:
 
         assert [i.name for i in tile.items_here] == [ITEM_NAME]
         assert not [i for i in player.inventory if getattr(i, "merchandise", False)]
+
+
+def test_every_return_phrase_names_the_item():
+    """The assertions above find the item by name in whichever phrase the
+    roll picked, so every phrase has to carry it."""
+    from src.player._inventory import MERCHANDISE_RETURN_PHRASES
+
+    assert MERCHANDISE_RETURN_PHRASES, "no return phrases at all"
+    for phrase in MERCHANDISE_RETURN_PHRASES:
+        assert ITEM_NAME in phrase.format(item=ITEM_NAME), phrase
+

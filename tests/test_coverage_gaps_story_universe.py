@@ -689,6 +689,19 @@ class TestAfterGorranIntro:
         assert gorran in player.combat_list_allies
         assert gorran.friend is True
 
+    def test_process_does_not_list_gorran_twice(self):
+        """The one player-visible drift #625's join_party fixed: this beat
+        appended unconditionally, so a Gorran already in the party (spoken to
+        before the earlier beat took him out) was listed twice."""
+        ev, player, tile, gorran = self._make()
+        player.combat_list_allies.append(gorran)
+        with (
+            patch("src.story.ch01.print"),
+            patch("src.story.ch01.await_input"),
+        ):
+            ev.process()
+        assert player.combat_list_allies.count(gorran) == 1
+
     def test_process_teleports_player(self):
         ev, player, tile, gorran = self._make()
         with (

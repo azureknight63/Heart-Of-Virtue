@@ -330,8 +330,6 @@ class CombatEvent(Event):
                 # src.events outright (issue #625).
                 from src.npc._progression import join_party
 
-                if not hasattr(self.player, "combat_list_allies"):
-                    self.player.combat_list_allies = [self.player]
                 for ally_name, count in self.config.ally_list:
                     for _ in range(count):
                         ally = self.tile.spawn_npc(ally_name)

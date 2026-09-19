@@ -10,6 +10,18 @@ from src.universe import tile_exists as tile_exists
 from src.narration import cprint, narrate
 
 
+#: How Jean puts unpaid shop goods back as he leaves a merchant's tile, one
+#: picked at random per item. Each names the item through ``{item}``.
+MERCHANDISE_RETURN_PHRASES = (
+    "Jean sets {item} down; unpaid goods don't leave the shop.",
+    "Jean places {item} carefully against the wall.",
+    "Jean pauses and returns {item} to the shop floor.",
+    "With a quiet sigh Jean lays {item} aside—he hasn't bought it yet.",
+    "Jean leaves {item} behind for the shopkeeper.",
+    "Jean props {item} where the merchant will easily find it.",
+)
+
+
 class PlayerInventoryMixin:
     """Item management for the Player: equip, use, take, weight, and gold stacking."""
 
@@ -55,15 +67,7 @@ class PlayerInventoryMixin:
             current_tile = None
         if not current_tile:
             return []
-        returned = []
-        phrases = [
-            "Jean sets {item} down; unpaid goods don't leave the shop.",
-            "Jean places {item} carefully against the wall.",
-            "Jean pauses and returns {item} to the shop floor.",
-            "With a quiet sigh Jean lays {item} aside—he hasn't bought it yet.",
-            "Jean leaves {item} behind for the shopkeeper.",
-            "Jean props {item} where the merchant will easily find it.",
-        ]
+        narrated_lines = []
         for item in self.inventory[:]:
             if getattr(item, "merchandise", False):
                 try:
@@ -74,16 +78,16 @@ class PlayerInventoryMixin:
                         item.stack_grammar()
                 except ValueError:
                     continue
-                msg = random.choice(phrases).format(
+                msg = random.choice(MERCHANDISE_RETURN_PHRASES).format(
                     item=getattr(item, "name", str(item))
                 )
                 narrate(msg)
                 time.sleep(0.15)
-                returned.append(msg)
-        if returned:
+                narrated_lines.append(msg)
+        if narrated_lines:
             # brief pause after dropping sequence for readability
             time.sleep(0.25)
-        return returned
+        return narrated_lines
 
     def equip_item(self, phrase="", item_object=None):
         """Equip an item by phrase match or a direct item object.
