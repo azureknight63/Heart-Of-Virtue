@@ -36,8 +36,7 @@ def _interaction_target(verb, handler=None, *, name="Thing", keywords=None):
     """An interaction target that declares ``verb`` on its CLASS.
 
     Issue #620: ``resolve_interaction`` takes the handler from the target's
-    class, and from the instance only when it is a bound method of that same
-    target. The map loader ``setattr``s every authored prop onto the instance,
+    class and from nowhere else. The map loader ``setattr``s every authored prop onto the instance,
     and a prop written as the editor's ``{"__class_type__": ...}`` marker
     deserializes to an engine CLASS -- which is callable, and so used to become
     the verb's handler and be invoked with the player.

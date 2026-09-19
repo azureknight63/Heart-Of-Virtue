@@ -14,10 +14,12 @@ passageway's ``events_before``, and only then stores the pending event.
 
 LOOT a city gate and Jean put down everything he was carrying to sell.
 
-The gate is now ``is_crossing_handler(handler) or action in target.keywords``.
-The second half is not slack: ``Passageway.__init__``'s alias loop binds words
-of the placement's NAME (over three letters, alphabetic), so a placement that
-authors a crossing verb its name does not contain resolves to nothing. Three
+The gate is now ``Passageway.accepts_step_through(handler, action)``:
+``is_crossing_handler(handler)`` or an advertised keyword. The second half is
+not slack: a placement's name words resolve to ``enter`` (through the
+class-declared ``instance_keyword_aliases``, words of the NAME only, over three
+letters, alphabetic), so a placement that authors a crossing verb its name does
+not contain resolves to nothing. Three
 shipped ones do -- grondia (11, 5) ``inside``, grondia (15, 5) ``east`` and
 eastern-descent (0, 2) ``west``, two of them main-path city gates -- and they
 worked only because this arm ignored the handler. An authored keyword is the
@@ -215,6 +217,44 @@ def test_an_unadvertised_allow_list_verb_is_refused_in_fiction(
     assert way.name in result["message"], result
     for leak in ("Traceback", "AttributeError", "object has no attribute"):
         assert leak not in result["message"], result
+
+
+@pytest.mark.parametrize(
+    "keywords,verb",
+    [
+        ("inside", "sid"),       # a bare string: `in` substring-matched it
+        ("inside", "ins"),
+        (None, "sid"),           # absent: `in None` raised into the catch-all
+        (["enter", 3, None], "sid"),
+    ],
+)
+def test_malformed_authored_keywords_advertise_only_whole_words(
+    game_service, passageway_world, keywords, verb
+):
+    """``keywords`` is map-authored, so it is not trusted to be a list. A
+    bare string was a haystack: any fragment of it passed ``_verb_refusal``
+    and then armed the crossing in arm 4."""
+    player, way = passageway_world
+    way.keywords = keywords
+    session_data = {}
+
+    result = interact_with(game_service, player, way, verb, session_data)
+
+    assert _step_throughs(result) == [], result
+    assert not session_data.get("pending_events"), session_data
+    assert result["success"] is False and way.name in result["message"], result
+
+
+def test_a_bare_string_keyword_still_advertises_itself(game_service, passageway_world):
+    """The whole word still counts -- tolerance, not a new refusal."""
+    player, way = passageway_world
+    way.keywords = "inside"
+
+    result = interact_with(game_service, player, way, "inside", {})
+
+    assert _step_throughs(result) == [
+        f"{PassagewayTransitionEvent.NAME_PREFIX}{way.name}"
+    ], result
 
 
 # ---------------------------------------------------------------------------

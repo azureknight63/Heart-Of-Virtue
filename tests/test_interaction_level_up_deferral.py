@@ -34,8 +34,7 @@ class _Sconce(Object):
     """A wall sconce that implements its own ``touch``.
 
     On the CLASS, not the instance: issue #620 restricts ``resolve_interaction``
-    to handlers a class declares (plus a bound method of the target itself),
-    because the map loader ``setattr``s authored props onto the instance and a
+    to handlers a class declares, because the map loader ``setattr``s authored props onto the instance and a
     prop holding a deserialized class is callable. This fixture used to do
     ``obj.touch = lambda _player: None``, which is that same instance shape and
     is now refused before the interaction ever reaches the combat check the

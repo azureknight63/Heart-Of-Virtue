@@ -57,6 +57,22 @@ def _class_declared_handler(target, name):
     return _NOT_DECLARED
 
 
+def advertised_keywords(target):
+    """The verbs ``target`` advertises, as a frozenset of strings.
+
+    ``keywords`` is map-authored and restored from saves, so it is not trusted
+    to be a list: ``None`` advertises nothing, a bare string is one keyword
+    (never a haystack ``in`` would substring-match), and non-string entries
+    are ignored.
+    """
+    keywords = getattr(target, "keywords", None)
+    if isinstance(keywords, str):
+        return frozenset({keywords})
+    if not isinstance(keywords, (list, tuple, set, frozenset)):
+        return frozenset()
+    return frozenset(k for k in keywords if isinstance(k, str))
+
+
 def resolve_interaction(target, action):
     """Return the bound callable implementing ``action`` on ``target``, or None.
 
@@ -78,8 +94,10 @@ def resolve_interaction(target, action):
       the map loader ``setattr``s every authored prop onto the instance, so an
       instance-readable table would let map JSON redirect one verb onto any
       other method.
-    * The handler comes from the **class** whenever a class declares the name,
-      and from the instance only when it is a bound method OF THIS TARGET.
+    * The handler comes from the **class**, and from nowhere else. An
+      instance-supplied word can reach a method only through a
+      class-declared ``instance_keyword_aliases`` table, whose values the
+      class fixes.
 
     That second rule is issue #620. The handler used to be a bare
     ``getattr(target, ...)`` accepted on ``callable()`` alone, and the legacy
@@ -1017,8 +1035,9 @@ class Passageway(Object):
     #: distinct bound methods, so an identity test against ``enter`` alone
     #: answers False for all three -- which is how a demo-end passageway
     #: stayed crossable by the only three verbs the shipped map authors
-    #: (#552). The authored name words (``ferry``, ``landing``) ARE bound to
-    #: ``enter`` itself and so answer through that entry.
+    #: (#552). The authored name words (``ferry``, ``landing``) resolve to
+    #: ``enter`` itself (``instance_keyword_aliases``) and so answer through
+    #: that entry.
     CROSSING_METHOD_NAMES = ("enter", *_DELEGATED_CROSSING_VERBS)
 
     def __init__(
@@ -1153,6 +1172,23 @@ class Passageway(Object):
             handler == _class_declared_handler(self, name)
             for name in type(self).CROSSING_METHOD_NAMES
         )
+
+    def accepts_step_through(self, handler, action):
+        """Whether ``action`` -- already resolved to ``handler`` -- should ask
+        "step through?" on this passageway (#620).
+
+        The API's confirmation arm asks here rather than spelling the rule
+        itself, so the dispatch contract test can ask the same question
+        instead of retyping it (a retyped mirror has failed open twice).
+        Two ways in, because neither alone is right: the verb crosses
+        (``is_crossing_handler``: ``enter``, its delegators, the name words),
+        or the placement ADVERTISES it -- an authored keyword is the author
+        saying "this verb uses it", which is how grondia's ``inside``/``east``
+        and eastern-descent's ``west`` cross while resolving to nothing. What
+        stays out is exactly the hole: an allow-listed verb the placement
+        never advertised.
+        """
+        return self.is_crossing_handler(handler) or action in advertised_keywords(self)
 
     def is_demo_edge(self, ready_flag=None):
         """True when this passageway is where the demo stops -- and, given

@@ -97,8 +97,9 @@ def _instantiate(cls, props=None):
     ``Universe._deserialize_saved_instance`` filters authored props to the real
     constructor signature, injects ``player``/``tile`` when accepted, and falls
     back to ``cls.__new__`` + a bare ``__init__`` if construction raises. This
-    mirrors that, because instance-level aliases matter: ``Passageway.__init__``
-    binds each word of its own name to ``self.enter`` via ``setattr``.
+    mirrors that, because the authored name matters: a ``Passageway``'s name
+    words resolve to ``enter`` (through ``instance_keyword_aliases``), so an
+    instance built without its name advertises none of them.
 
     The authored props are filtered in here rather than dropped. They used to
     be: every instance was built with ``player``/``tile`` only, so a
@@ -212,13 +213,13 @@ def _is_dispatchable(cls, instance, keyword):
     ``Passageway`` — true at the time, because arm 4 keyed off the target's
     TYPE and never looked at the verb, but a mirror that asserts nothing about
     the verb fails open the moment the arm starts asking about one. Issue #620
-    made it ask, so this asks the same question: ``is_crossing_handler`` or an
-    advertised keyword.
+    made it ask, and the question now lives in the engine
+    (``Passageway.accepts_step_through``), so this calls it rather than
+    retyping it -- the retyped copy is what failed open.
     """
     from src.objects import resolve_interaction
 
     handler = resolve_interaction(instance, keyword)
-    advertised = keyword in (getattr(instance, "keywords", None) or [])
 
     look_inside = getattr(Container, "LOOK_INSIDE_VERBS", frozenset())
     if issubclass(cls, Container) and keyword in look_inside:
@@ -231,7 +232,7 @@ def _is_dispatchable(cls, instance, keyword):
             # falls past arm 4 (which excludes it) to arm 5.
             if instance.is_crossing_handler(handler):
                 return True                                  # arm 3
-        elif instance.is_crossing_handler(handler) or advertised:
+        elif instance.accepts_step_through(handler, keyword):
             return True                                      # arm 4
     return handler is not None                               # arm 5
 

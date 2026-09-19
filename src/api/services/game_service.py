@@ -473,10 +473,9 @@ class GameService:
             # every map. On a container, ``_dispatch_interaction``'s generic
             # arm resolves the verb to ``Container.take_all`` and calls it;
             # that is the engine's only implementation, so on any other target
-            # the same arm resolves nothing and refuses it in fiction. One
-            # exception, shared with every other verb on this list: a
-            # non-demo-end Passageway goes to the step-through confirmation arm
-            # whatever the verb. Hardening that arm is #620.
+            # the same arm resolves nothing and refuses it in fiction --
+            # passageways included, since the step-through arm takes only
+            # verbs that cross or that the placement advertises (#620).
             "take_all",
         }
     )
@@ -2609,12 +2608,12 @@ class GameService:
         from src.objects import Container, Passageway, resolve_interaction
         from src.inventory_utils import transfer_item
 
-        # Resolved ONCE for the whole dispatch: the demo-end gate below and
-        # the fall-through arm both need to know what this verb means, and two
-        # calls are two sites that have to keep agreeing. None means the class
-        # implements nothing by that name -- the arms that do not consult it
-        # (container, container-item, passageway) key off the target's TYPE,
-        # not off a handler.
+        # Resolved ONCE for the whole dispatch: the demo-end arm, the
+        # step-through arm and the fall-through arm all need to know what this
+        # verb means, and two calls are two sites that have to keep agreeing.
+        # None means the class implements nothing by that name. Only the
+        # container and container-item arms key off the target's TYPE and the
+        # verb alone, never the handler.
         handler = resolve_interaction(target, action)
 
         is_container = isinstance(target, Container)
@@ -2671,32 +2670,17 @@ class GameService:
         # `_ALLOWED_INTERACTION_VERBS` armed a crossing confirmation on any
         # ordinary passageway -- LOOT a city gate and
         # `_queue_passageway_confirmation` ran `drop_merchandise_items()` and
-        # every `events_before` BEFORE the player was asked anything. Two
-        # conditions, because neither alone is right:
-        #
-        # * `is_crossing_handler` is the engine's own answer to "does this
-        #   verb use it" (the same gate `_is_demo_end_crossing` asks), and it
-        #   covers `enter`, the three delegators and the name-word aliases.
-        # * `action in target.keywords` readmits the crossing verbs a
-        #   placement authors that its NAME does not contain: the alias loop
-        #   in `Passageway.__init__` binds words of the name only, so
-        #   grondia (11, 5) `inside`, grondia (15, 5) `east` and
-        #   eastern-descent (0, 2) `west` resolve to nothing and worked purely
-        #   because this arm ignored the handler. An authored keyword is the
-        #   author saying "this verb uses it", which `_verb_refusal` already
-        #   treats as authoritative.
-        #
-        # What is excluded is exactly the hole: an allow-list verb the
-        # placement never advertised. Those fall to the generic arm and are
-        # refused in fiction.
+        # every `events_before` BEFORE the player was asked anything. Which
+        # verbs may step through is the engine's rule
+        # (`Passageway.accepts_step_through`: the verb crosses, or the
+        # placement advertises it); what stays out is exactly the hole, an
+        # allow-list verb the placement never advertised, which falls to the
+        # generic arm and is refused in fiction.
         elif (
             isinstance(target, Passageway)
             and not _is_demo_end_passageway(target)
             and session_data is not None
-            and (
-                target.is_crossing_handler(handler)
-                or action in getattr(target, "keywords", ())
-            )
+            and target.accepts_step_through(handler, action)
         ):
             events_triggered.extend(
                 self._queue_passageway_confirmation(request)
@@ -2922,8 +2906,10 @@ class GameService:
         from the player's side both are "that verb does nothing here", and the
         difference (advertised vs implemented) is ours, not theirs.
         """
+        from src.objects import advertised_keywords
+
         target, action = request.target, request.action
-        advertised = hasattr(target, "keywords") and action in target.keywords
+        advertised = action in advertised_keywords(target)
         if advertised or action in self._ALLOWED_INTERACTION_VERBS:
             return None
         return {
