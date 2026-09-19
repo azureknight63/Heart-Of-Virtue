@@ -358,15 +358,8 @@ describe('NpcChatPanel', () => {
       expect(screen.getByText('Go on.')).toBeInTheDocument()
     })
 
-    // Issue #618. This assertion used to read `toBeDisabled()`, justified as
-    // "so the player cannot double-submit" — but the double-submit hazard is
-    // already covered by the hook's `endingRef` latch (one dismissal, one
-    // `/end`, one `onClose`; no `/end` at all without an `npcKey`).
-    // What the gate actually bought was a player watching a reply that never
-    // came with the ONLY labelled way out greyed out. BaseDialog's ✕, Escape
-    // and the overlay click all route to the same handler and were never
-    // gated, so the button was inert while three unlabelled exits beside it
-    // worked — which is worse than either choice made consistently.
+    // Issue #618: this assertion used to read `toBeDisabled()`.
+    // ConversationActionRow's docstring says why the gate went.
     it('leaves End Conversation live while the NPC composes a reply (#618)', async () => {
       npcChat.respond.mockReturnValue(new Promise(() => {}))
       renderPanel()
@@ -707,32 +700,55 @@ describe('NpcChatPanel', () => {
     })
 
     // Issue #531: the panel used to arm the hook's 2s close timer the instant
-    // `conversation_ended` landed, which cut off a closing line still typing
-    // out on the stage. `typewriter.mode = 'partial'` (see the module mock at
-    // the top of this file) freezes BOTH ConversationStage's own typewriter
-    // and the panel's tracking copy mid-line, so this proves the panel never
-    // even tells the hook the beat is done while it is still "typing".
-    it('never signals the final beat rendered while the closing line is still typing (#531)', async () => {
+    // `conversation_ended` landed, cutting off a closing line still typing out.
+    // Issue #618 re-opened it: `closing_lines_when_exhausted`
+    // (src/npc/_chat_llm.py) is engine-authored, so it ships through
+    // `_flavor_only_turn` as `npc_response: ''` with the line in `npc_flavor`,
+    // and a tracker reading only `text` saw an empty string -- "fully typed"
+    // the instant it lands. Both closing shapes run through both tests.
+    // `visible` is what the stage shows mid-line, so each row proves its beat
+    // is actually on screen before asserting the close waits for it.
+    const CLOSING_BEATS = [
+      ['a spoken closing line', {
+        beat: { npc_response: 'Farewell, and safe travels on the long road home.' },
+        visible: 'Farewell',
+      }],
+      ['a flavor-only closing line', {
+        // What the engine actually sends when loquacity runs out.
+        beat: { npc_response: '', npc_flavor: 'Mynx turns back to her ledger without another word.' },
+        visible: 'Mynx turns back to her ledger',
+      }],
+    ]
+
+    /** Answer Jean's option with `beat` as the conversation's last turn. */
+    const endOn = async (beat) => {
+      npcChat.respond.mockResolvedValue({
+        data: makeNpcChatRespond({
+          ...beat,
+          jean_options: [],
+          loquacity_current: 0,
+          conversation_ended: true,
+        }),
+      })
+      renderPanel()
+      await act(async () => {})
+      fireEvent.click(screen.getByText('Hi there'))
+      await act(async () => {})
+      expect(screen.getByText('Conversation ended.')).toBeInTheDocument()
+    }
+
+    // `typewriter.mode = 'partial'` (see the module mock at the top of this
+    // file) freezes BOTH ConversationStage's own typewriter and the panel's
+    // tracking copy mid-line, so this proves the panel never even tells the
+    // hook the beat is done while it is still "typing".
+    it.each(CLOSING_BEATS)('never signals the final beat rendered while %s is still typing', async (_label, { beat, visible }) => {
       vi.useFakeTimers()
       try {
-        npcChat.respond.mockResolvedValue({
-          data: makeNpcChatRespond({
-            npc_response: 'Farewell, and safe travels on the long road home.',
-            jean_options: [],
-            loquacity_current: 0,
-            conversation_ended: true,
-          }),
-        })
         typewriter.mode = 'partial'
+        await endOn(beat)
+        expect(screen.getByTestId('conversation-stage')).toHaveTextContent(visible)
 
-        renderPanel()
-        await act(async () => {})
-        fireEvent.click(screen.getByText('Hi there'))
-        await act(async () => {})
-        expect(screen.getByText('Conversation ended.')).toBeInTheDocument()
-
-        // Generously past the OLD fixed 2s window — the panel must not have
-        // told the hook to close, because the line is still "typing".
+        // Generously past the OLD fixed 2s window.
         await act(async () => { vi.advanceTimersByTime(10000) })
         expect(mockOnClose).not.toHaveBeenCalled()
       } finally {
@@ -740,101 +756,13 @@ describe('NpcChatPanel', () => {
       }
     })
 
-    it('closes 2s after the closing line finishes typing', async () => {
+    // Default 'complete' mode (see the top-of-file beforeEach): the line is
+    // fully rendered the moment it lands. Tracking it must not mean never
+    // closing at all.
+    it.each(CLOSING_BEATS)('closes 2s after %s has rendered', async (_label, { beat }) => {
       vi.useFakeTimers()
       try {
-        npcChat.respond.mockResolvedValue({
-          data: makeNpcChatRespond({
-            npc_response: 'Farewell.',
-            jean_options: [],
-            loquacity_current: 0,
-            conversation_ended: true,
-          }),
-        })
-        // Default 'complete' mode (see the top-of-file beforeEach): the line
-        // is fully rendered the moment it lands, same as a short closing line
-        // typed out at normal speed well within the 2s window.
-
-        renderPanel()
-        await act(async () => {})
-        fireEvent.click(screen.getByText('Hi there'))
-        await act(async () => {})
-        expect(screen.getByText('Conversation ended.')).toBeInTheDocument()
-
-        await act(async () => { vi.advanceTimersByTime(1999) })
-        expect(mockOnClose).not.toHaveBeenCalled()
-
-        await act(async () => { vi.advanceTimersByTime(1) })
-        expect(mockOnClose).toHaveBeenCalledTimes(1)
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-
-    // Issue #618, a re-opening of #531 through #532. Every fixture above sends
-    // the closing line as `npc_response: 'Farewell.'` — the ONE shape the
-    // engine never produces on this path. `closing_lines_when_exhausted`
-    // (src/npc/_chat_llm.py) is engine-authored, not model-authored, so it goes
-    // out through `_flavor_only_turn`: `npc_response: ''` with the line in
-    // `npc_flavor`. The panel's close tracker read only `latestSegment.text`,
-    // which for that beat is `''`, and an empty string is "fully typed" the
-    // instant it lands — so #531's fix (let the closing line finish typing
-    // first) was a no-op on exactly the path that always produces one, and the
-    // whole 2s window was the entire time the line was on screen.
-    it('waits for a flavor-only closing line to render before arming the close (#618)', async () => {
-      vi.useFakeTimers()
-      try {
-        npcChat.respond.mockResolvedValue({
-          data: makeNpcChatRespond({
-            // What the engine actually sends when loquacity runs out.
-            npc_response: '',
-            npc_flavor:
-              'Mynx turns back to her ledger without another word. '
-              + 'Whatever else she knows, she is finished sharing it today.',
-            jean_options: [],
-            loquacity_current: 0,
-            conversation_ended: true,
-          }),
-        })
-        typewriter.mode = 'partial'
-
-        renderPanel()
-        await act(async () => {})
-        fireEvent.click(screen.getByText('Hi there'))
-        await act(async () => {})
-        expect(screen.getByText('Conversation ended.')).toBeInTheDocument()
-        // The line the player is meant to read is on screen...
-        expect(screen.getByTestId('conversation-flavor')).toBeInTheDocument()
-
-        // ...so the close must not be armed yet, any more than it would be for
-        // a spoken closing line still typing out.
-        await act(async () => { vi.advanceTimersByTime(10000) })
-        expect(mockOnClose).not.toHaveBeenCalled()
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-
-    it('still closes 2s after a flavor-only closing line has rendered (#618)', async () => {
-      vi.useFakeTimers()
-      try {
-        npcChat.respond.mockResolvedValue({
-          data: makeNpcChatRespond({
-            npc_response: '',
-            npc_flavor: 'She turns back to her ledger.',
-            jean_options: [],
-            loquacity_current: 0,
-            conversation_ended: true,
-          }),
-        })
-        // 'complete' mode: the flavor is fully rendered the moment it lands.
-        // Tracking the flavor must not mean never closing at all.
-
-        renderPanel()
-        await act(async () => {})
-        fireEvent.click(screen.getByText('Hi there'))
-        await act(async () => {})
-        expect(screen.getByText('Conversation ended.')).toBeInTheDocument()
+        await endOn(beat)
 
         await act(async () => { vi.advanceTimersByTime(1999) })
         expect(mockOnClose).not.toHaveBeenCalled()

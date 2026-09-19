@@ -14,6 +14,7 @@ import {
   TELEGRAPH_SEVERITIES,
   NO_REACHABLE_TARGET_REASON,
 } from './combatMoveStatus';
+import { makeTargetOption } from '../test/payloads';
 
 // Issue #586: King Slime's Tidal Surge (then 2.5x, a full-to-dead hit; 1.8x
 // since part B of the same issue, still "deadly") was
@@ -296,28 +297,30 @@ describe('moveDamagePreview', () => {
 // worked it out from `distance` and `mvrange` would be a second copy of the
 // engine's reach rule.
 describe('nearestShortfall', () => {
-  const far = (distance, shortfall) => ({
-    id: `enemy_${distance}`,
-    distance,
-    in_range: false,
-    shortfall_ft: shortfall,
-  });
+  // The builder derives `in_range` and `shortfall_ft` from the distance the
+  // way the adapter does, so no number below restates the reach rule; the
+  // expectations are read off the same previews the function reads.
+  const far = (distance) => makeTargetOption({ id: `enemy_${distance}`, distance });
+  const reading = ({ distance, shortfall_ft }) => ({ distance, shortfall_ft });
 
   it('reads the distance and shortfall off the single out-of-reach preview', () => {
-    expect(nearestShortfall({ target_previews: [far(8, 3)] }))
-      .toEqual({ distance: 8, shortfall_ft: 3 });
+    const only = far(8);
+    expect(only.shortfall_ft).toBeGreaterThan(0); // out of reach, not a vacuous null
+    expect(nearestShortfall({ target_previews: [only] })).toEqual(reading(only));
   });
 
   it('picks the smallest shortfall rather than trusting the list order', () => {
-    expect(nearestShortfall({ target_previews: [far(14, 9), far(7, 2), far(20, 15)] }))
-      .toEqual({ distance: 7, shortfall_ft: 2 });
+    const nearest = far(7);
+    expect(nearestShortfall({ target_previews: [far(14), nearest, far(20)] }))
+      .toEqual(reading(nearest));
   });
 
   // With something in reach the move is greyed for some other reason, and a
   // shortfall appended to THAT sentence would name an irrelevant distance.
   it('says nothing when any candidate is in reach', () => {
-    const inReach = { id: 'enemy_1', distance: 5, in_range: true, shortfall_ft: null };
-    expect(nearestShortfall({ target_previews: [inReach, far(9, 4)] })).toBeNull();
+    const inReach = makeTargetOption({ id: 'enemy_1', distance: 5 });
+    expect(inReach.in_range).toBe(true);
+    expect(nearestShortfall({ target_previews: [inReach, far(9)] })).toBeNull();
   });
 
   // Too close (inside range_min) publishes a null shortfall by contract --
@@ -329,7 +332,7 @@ describe('nearestShortfall', () => {
   it('says nothing when any candidate is too close rather than inventing its number', () => {
     const tooClose = { id: 'enemy_1', distance: 1, in_range: false, shortfall_ft: null };
     expect(nearestShortfall({ target_previews: [tooClose] })).toBeNull();
-    expect(nearestShortfall({ target_previews: [tooClose, far(9, 4)] })).toBeNull();
+    expect(nearestShortfall({ target_previews: [tooClose, far(9)] })).toBeNull();
   });
 
   it('refuses a non-finite distance or shortfall instead of rendering NaN', () => {

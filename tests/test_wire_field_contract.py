@@ -608,6 +608,31 @@ MOVE_STAGE_BEATS_CONTRACT = {
 }
 
 
+@pytest.fixture
+def attack_payload_out_of_reach(real_combat_player):
+    """Attack's ``_get_available_moves()`` entry, one living Slime past its reach.
+
+    Only an out-of-reach candidate gives ``target_previews`` a populated
+    entry, and an empty list would let a renamed sub-field through the entry
+    contract. The distance is one foot past the reach the adapter itself
+    computes (``_move_range``), not a number written down here.
+    """
+    player = real_combat_player
+    attack = Attack(player)
+    enemy = Slime()
+    player.known_moves = [attack]
+    player.combat_list = [enemy]
+    enemy.combat_list = [player]
+    with patch("src.api.combat_adapter.CombatStrategist"):
+        adapter = ApiCombatAdapter(player)
+        _, reach = adapter._move_range(attack)
+        player.combat_proximity = {enemy: int(reach) + 1}
+        enemy.combat_proximity = {player: int(reach) + 1}
+        move_payloads = adapter._get_available_moves()
+    assert move_payloads, "expected Attack to appear in available moves"
+    return move_payloads[0]
+
+
 class TestMoveWireContract:
     def test_available_move_fields(self):
         player = Player()
@@ -632,7 +657,9 @@ class TestMoveWireContract:
             "_get_available_moves()[0].stage_beats",
         )
 
-    def test_no_move_field_ships_without_a_consumer_or_a_reason(self):
+    def test_no_move_field_ships_without_a_consumer_or_a_reason(
+        self, attack_payload_out_of_reach
+    ):
         """The other direction: every key the wire sends is accounted for.
 
         ``_assert_contract`` walks the CONTRACT and looks each field up in the
@@ -649,28 +676,7 @@ class TestMoveWireContract:
         non-empty first: derived from an empty payload, every check below
         passes while checking nothing.
         """
-        player = Player()
-        # A living enemy, out of Attack's reach: only then does the payload
-        # carry a populated `target_previews`, and an empty list would let a
-        # renamed sub-field through the entry contract below.
-        enemy = Slime()
-        player.known_moves = [Attack(player)]
-        player.combat_log = []
-        player.last_move_summary = ""
-        player.combat_beat = 1
-        player.combat_list = [enemy]
-        player.combat_list_allies = [player]
-        player.combat_proximity = {enemy: 9}
-        enemy.combat_proximity = {player: 9}
-        enemy.combat_list = [player]
-        player.in_combat = True
-
-        with patch("src.api.combat_adapter.CombatStrategist"):
-            adapter = ApiCombatAdapter(player)
-            move_payloads = adapter._get_available_moves()
-
-        assert move_payloads, "expected Attack to appear in available moves"
-        wire_fields = set(move_payloads[0])
+        wire_fields = set(attack_payload_out_of_reach)
         assert wire_fields, "read no fields off the move payload"
 
         accounted = set(MOVE_CONTRACT) | set(MOVE_FIELDS_WITH_NO_CLIENT_READ)
@@ -688,8 +694,11 @@ class TestMoveWireContract:
             "which the adapter no longer sends — drop the entry."
         )
 
-        # The preview entry itself, which is where `shortfall_ft` lives.
-        previews = move_payloads[0]["target_previews"]
+    def test_an_out_of_reach_preview_carries_the_fields_the_card_reads(
+        self, attack_payload_out_of_reach
+    ):
+        """The preview entry itself, which is where ``shortfall_ft`` lives (#614)."""
+        previews = attack_payload_out_of_reach["target_previews"]
         assert previews, "expected the out-of-reach enemy to be previewed"
         _assert_contract(
             previews[0],

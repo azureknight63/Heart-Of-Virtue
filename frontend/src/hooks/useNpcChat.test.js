@@ -18,7 +18,9 @@ import {
 import { portraitUrl, EMOTIONS } from '../utils/portraits'
 import { makeNpcChatOpen, makeNpcChatRespond, makeJeanOption, makeRelationship } from '../test/payloads'
 
-vi.mock('../api/npcChat', () => ({
+// The real module's constants survive; only the calls are stubbed.
+vi.mock('../api/npcChat', async (importOriginal) => ({
+  ...(await importOriginal()),
   default: {
     open: vi.fn(),
     respond: vi.fn(),
@@ -26,7 +28,11 @@ vi.mock('../api/npcChat', () => ({
   },
 }))
 
-import npcChat from '../api/npcChat'
+import npcChat, { NPC_CHAT_TIMEOUT_MS } from '../api/npcChat'
+
+/** What axios rejects with when the client deadline on a chat call fires. */
+const axiosTimeoutError = () =>
+  Object.assign(new Error(`timeout of ${NPC_CHAT_TIMEOUT_MS}ms exceeded`), { code: 'ECONNABORTED' })
 
 /** A promise plus its settle handles, so a request can be held mid-flight. */
 function deferred() {
@@ -672,12 +678,10 @@ describe('useNpcChat', () => {
     it('names the deadline when the request timed out, instead of blaming the open (#618)', async () => {
       // ECONNABORTED is the code axios raises when its own `timeout` fires —
       // the client deadline npcChat.js puts on every chat call. "Failed to open
-      // conversation" reads as "the server said no"; a player who waited out a
-      // 45s spinner needs to be told the wait itself is what ended, or Retry
+      // conversation" reads as "the server said no"; a player who waited out
+      // the whole spinner needs to be told the wait itself is what ended, or Retry
       // looks like the same dead end rather than a fresh try.
-      npcChat.open.mockRejectedValue(
-        Object.assign(new Error('timeout of 45000ms exceeded'), { code: 'ECONNABORTED' })
-      )
+      npcChat.open.mockRejectedValue(axiosTimeoutError())
       const { result } = mount()
 
       await waitFor(() => expect(result.current.phase).toBe('failed'))
@@ -685,7 +689,8 @@ describe('useNpcChat', () => {
       expect(result.current.error).not.toBe('Failed to open conversation')
       // Still OUR fixed copy: the axios message carries the raw millisecond
       // budget, which is diagnostics, not a sentence for a player.
-      expect(result.current.error).not.toContain('45000')
+      expect(NPC_CHAT_TIMEOUT_MS).toBeGreaterThan(0) // the real constant, not mocked away
+      expect(result.current.error).not.toContain(String(NPC_CHAT_TIMEOUT_MS))
       expect(result.current.loading).toBe(false)
       expect(typeof result.current.retry).toBe('function')
     })
@@ -988,9 +993,7 @@ describe('useNpcChat', () => {
       // for over 90 seconds while the panel sat at WAITING_NPC with no options,
       // no error and an inert End Conversation button. The client deadline is
       // what turns that into a normal failed turn.
-      npcChat.respond.mockRejectedValue(
-        Object.assign(new Error('timeout of 45000ms exceeded'), { code: 'ECONNABORTED' })
-      )
+      npcChat.respond.mockRejectedValue(axiosTimeoutError())
       const { result } = await mountOpened()
 
       await act(async () => {

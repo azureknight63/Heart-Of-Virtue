@@ -7,6 +7,7 @@ import GameText from './GameText'
 import ConversationStage from './ConversationStage'
 import ConversationHistoryDialog from './ConversationHistoryDialog'
 import { TranscriptEntry } from './ConversationTranscript'
+import { segmentReadingText } from '../utils/conversationSegment'
 import { colors, spacing, fonts, commonStyles } from '../styles/theme'
 import LiveAnnouncer from './LiveAnnouncer'
 
@@ -474,11 +475,9 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   // renders flavor statically, so nothing is animating. Charging it at the
   // same per-character rate is the point — it spends the same time on the same
   // number of words, which is what "let the player read it" meant in #531.
-  // `text` still wins when both are present: that is the half that animates,
-  // and the flavor above it is already fully drawn while it does.
   const latestSegment = conversationSegments[conversationSegments.length - 1]
   const { isComplete: latestBeatFullyTyped } = useTypewriter(
-    latestSegment?.text || latestSegment?.flavor || '',
+    segmentReadingText(latestSegment),
     CONVERSATION_STAGE_SPEED
   )
   // Edge-triggered on purpose: `handleFinalBeatRendered` arms a fresh 2s

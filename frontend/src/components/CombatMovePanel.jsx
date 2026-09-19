@@ -166,10 +166,11 @@ function MoveCard({
   // Appended to the same string the reason line renders, not shown beside it:
   // that element IS the button's accessible description (aria-describedby),
   // so a sibling node would be text a screen reader never reaches.
-  // Gated on `reason` as well as on the shortfall, matching the render guard
-  // below: with no sentence to append to, the suffix alone would be a
-  // dangling em-dash in the tooltip of a card whose reason line never renders.
-  const reasonLine = !isAvailable && reason ? reason + shortfallSuffix(move, reason) : reason;
+  // `showReason` is the one guard for the line, its aria link and the suffix:
+  // with no sentence to append to, the suffix alone would be a dangling
+  // em-dash in the tooltip of a card whose reason line never renders.
+  const showReason = !isAvailable && Boolean(reason);
+  const reasonLine = showReason ? reason + shortfallSuffix(move, reason) : reason;
 
   // The card is a wrapper, not the button itself: the
   // unavailability reason carries interactive glossary terms
@@ -233,7 +234,7 @@ function MoveCard({
           }}
           disabled={!isAvailable || isProcessing}
           title={!isAvailable ? reasonLine : ''}
-          aria-describedby={!isAvailable && reason ? reasonId : undefined}
+          aria-describedby={showReason ? reasonId : undefined}
           style={{
               background: 'none',
               border: 'none',
@@ -290,7 +291,7 @@ function MoveCard({
               {move.description}
           </GameText>
       </button>
-      {!isAvailable && reason && (
+      {showReason && (
           <GlossaryText
               id={reasonId}
               text={`⚠ ${reasonLine}`}

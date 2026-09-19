@@ -2450,9 +2450,10 @@ function BattlefieldGrid({
   leftX += panCells.x;
   topY += panCells.y;
 
-  // How far the window may legally shift from where this render put it. Two
-  // consumers that must never disagree: the re-clamp effect just below, and
-  // the pan affordance at the end of the render.
+  // How far the window may legally shift from where this render put it. The
+  // re-clamp effect just below and the pan affordance at the end of the render
+  // read this; the drag handlers' `measureGesture` calls the same
+  // `windowPanBounds` on `viewRef` at gesture start. All three must agree.
   const panBounds = useMemo(() => windowPanBounds({
     leftX: unpannedLeftX, topY: unpannedTopY, gridCols, mapSize: resolvedMapSize,
   }), [unpannedLeftX, unpannedTopY, gridCols, resolvedMapSize]);
@@ -2462,9 +2463,10 @@ function BattlefieldGrid({
   // ORDINARY case rather than an edge one: arenas scale to three columns per
   // combatant (get_dynamic_grid_size in src/coordinate_config.py), so the
   // two- and three-combatant fights that make up nearly the whole game are 10
-  // and 13 columns under a 13-cell frame. Fit mode guarantees it by
-  // construction (fitBox floors the frame at VIEW_SIZE and clamps it inside
-  // the arena), and follow mode reaches it whenever Jean stands mid-arena.
+  // and 13 columns under a 13-cell frame. Fit mode reaches it by construction
+  // on any arena no wider than VIEW_SIZE (fitBox floors the frame there and
+  // clamps it inside the arena), and follow mode whenever Jean stands
+  // mid-arena.
   //
   // Derived from the bounds, deliberately NOT from the view mode (#612). The
   // dead affordance was reported in fit mode, but it is slack-specific, not
@@ -2809,17 +2811,16 @@ function BattlefieldGrid({
           dragged, it becomes the way back — pan is sticky now, so without it
           there would be no route home from a corner of the arena.
 
-          The hint appears only when the camera has somewhere to go (#612):
-          the clamp collapses to [0, 0] on any window that already covers the
-          arena, which is most fights in either mode, and a legend promising a
-          gesture that cannot move one pixel is worse than no legend. It is
-          removed from the tree rather than dimmed, so it leaves the
-          accessibility tree with it — a screen reader announcing a dead
-          gesture is the same defect as printing one.
+          The hint renders only when `canPan` (#612; why that is most fights
+          is on its declaration). It is removed from the tree rather than
+          dimmed, so it leaves the accessibility tree with it — a screen
+          reader announcing a dead gesture is the same defect as printing one.
 
-          The recenter control is NOT gated on canPan: it is only ever
-          rendered once a pan has happened, and the way home must not vanish
-          because the fit frame grew under the player's feet. */}
+          The recenter control is NOT gated on canPan. When the window grows
+          to cover the arena, the re-clamp effect clears a whole-cell shift and
+          `isPanned` with it — but a sub-cell drag remainder survives (0 cells
+          is still legal, so the effect returns early), and that remainder
+          still needs its way home while canPan is false. */}
       {isPanned ? (
         <button
           type="button"
