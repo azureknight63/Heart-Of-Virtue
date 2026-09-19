@@ -2261,8 +2261,7 @@ class TestEquipmentHandling:
         This used to pass ``equipped={"hand": "Sword"}`` to probe "value is not
         a dict" -- a branch of a read that no Player could reach. The real
         degenerate case is an item whose ``name`` is missing or None, which
-        `Gold` and `Relic` in Jean's starting inventory demonstrate for
-        ``isequipped``.
+        `Gold` in Jean's starting inventory demonstrates for ``isequipped``.
         """
         npc = chat_npc()
         nameless = equipped_item("Sword")

@@ -445,6 +445,8 @@ def test_starting_level_is_parsed_and_clamped(tmp_path, raw, expected):
     [
         ("even", "even"),
         (" EVEN ", "even"),        # case/whitespace-insensitive
+        ("player", "player"),      # the player spends the points (beta 2)
+        (" Player ", "player"),
         ("combat-heavy", "even"),  # unknown policy -> default, with a warning
         ("", "even"),
     ],
@@ -456,7 +458,7 @@ def test_starting_level_allocation_is_validated(tmp_path, raw, expected, caplog)
         config = ConfigManager(str(path)).load()
     assert config.starting_level_allocation == expected
     warned = [r for r in caplog.records if "starting_level_allocation" in r.message]
-    if raw.strip().lower() in ("", "even"):
+    if raw.strip().lower() in ("", "even", "player"):
         assert warned == []
     else:
         assert warned, "an unknown policy must be reported, not silently replaced"

@@ -422,9 +422,9 @@ class MerchantShopMixin:
             Armor,
             Weapon,
             Arrow,
-            # Relic is a single-use, story-locked memento (granted in Jean's
-            # starting inventory) — it must never appear as random merchant
-            # stock, and its value=0 would make it sell for free anyway.
+            # Relic is a single-use personal memento awaiting a redesign
+            # (issue #646) — it must never appear as random merchant stock,
+            # and its value=0 would make it sell for free anyway.
             Relic,
         }
         candidates: list[type[Item]] = []
