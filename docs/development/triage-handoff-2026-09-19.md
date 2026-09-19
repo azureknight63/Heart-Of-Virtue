@@ -5,8 +5,19 @@
 **Merge base:** `c8f5f17b` (== `origin/master` at pass start)
 **PR #645 is open** (pushed at `c363213d`). `closingIssuesReferences` verified: 611 612 614 618 620 621
 624 625 633 634 — not 613 (already closed), not 615. After merging, re-run §12's per-issue state
-check. Follow-ups filed: #636–#644. PR #635 overlaps on `game_service.py` and
-`test_wire_field_contract.py`.
+check. Follow-ups filed: #636–#644. PR #635 merged first; `a7f2e79a` merges master back in (one
+conflict, `src/npc/_shop.py`, #646's Relic comment — kept the module constants).
+
+**Open question for the maintainer — production topology.** Session 3's binding decision was "the
+Procfile is production", and `tests/test_npc_chat_turn_budget.py` pins the turn budget and the
+client deadline to the Procfile's worker timeout. #635's `docs/development/deployment.md` says the
+API runs gunicorn under a systemd unit (`heart-of-virtue`) that is not in this repo. If that unit's
+`--timeout`/`--workers`/`--threads` differ from the Procfile, the budget test is pinned to the wrong
+number, and the single-flight analysis (#636) changes with `--threads`.
+
+Local-only failures after the merge: `tests/test_deploy_script.py` (7) fails on a Windows checkout
+because `core.autocrlf` checks `deploy.ps1` out as CRLF; all 129 pass on LF. A `.gitattributes`
+`deploy.ps1 eol=lf` line (or reading with newline normalisation) would fix it.
 
 This file is the resume point. Update it at milestones.
 
