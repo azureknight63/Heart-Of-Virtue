@@ -1495,6 +1495,42 @@ def test_the_runbook_s_emergency_commands_are_the_ones_the_script_prints():
         assert lines[0] in runbook, f"docs/development/deployment.md does not carry the {kind} command:\n{lines[0]}"
 
 
+#: What the deploy account may run under sudo: the server's sudoers, read with
+#: `sudo -l` as alex (2026-09-19). alex's password is LOCKED (`passwd -S`
+#: reports L), so any other sudo command prompts for a password nothing can
+#: supply -- a dead end for the operator with the page up. sudoers matches the
+#: whole argv, so these are exact commands, not prefixes.
+DEPLOY_ACCOUNT_SUDO = {f"systemctl restart {SERVICE}", f"systemctl status {SERVICE}"}
+_SUDO_COMMAND = re.compile(r"\bsudo\s+([^;&|}`\n]+)")
+#: The runbook's commands: fenced blocks and code spans, not its prose.
+_MARKDOWN_CODE = re.compile(r"```.*?```|`[^`\n]+`", re.S)
+
+
+@pytest.mark.usefixtures("pwsh")
+def test_every_sudo_command_is_one_the_deploy_account_may_run(rendered):
+    # Every state, with and without a rollback commit: all the help it prints.
+    help_text = _pwsh(
+        DOT_SOURCE
+        + "foreach ($state in $DeployStates) {\n"
+        + f"    Write-StuckHelp -State $state -RollbackSha '{PREV_SHA}'\n"
+        + "    Write-StuckHelp -State $state -RollbackNote 'no rollback commit'\n"
+        + "}\n",
+        check=True,
+    ).stdout
+    sources = {phase: rendered[phase] for phase in PHASES}
+    sources["the stuck help"] = help_text
+    sources["the runbook"] = "\n".join(_MARKDOWN_CODE.findall(RUNBOOK.read_text(encoding="utf-8")))
+    seen = collections.defaultdict(set)
+    for source, text in sources.items():
+        for command in _SUDO_COMMAND.findall(text):
+            seen[source].add(command.strip())
+    for source in ("stage", "the stuck help", "the runbook"):
+        assert f"systemctl restart {SERVICE}" in seen[source], f"no sudo restart found in {source}: the scan is blind"
+    for source, commands in seen.items():
+        refused = commands - DEPLOY_ACCOUNT_SUDO
+        assert not refused, f"{source} has `sudo {sorted(refused)[0]}`, which asks for alex's locked password"
+
+
 # ── the script's own contract ────────────────────────────────────────────────
 
 

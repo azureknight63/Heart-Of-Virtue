@@ -1131,7 +1131,7 @@ function Write-StuckHelp {
     }
     $lines += ''
     $lines += "Diagnose (on the server): ssh $ServerLogin"
-    $lines += "    systemctl status $ServiceName; sudo journalctl -u $ServiceName -n 50"
+    $lines += "    systemctl status $ServiceName; journalctl -u $ServiceName -n 50"
     $lines += "    systemctl cat $ServiceName | grep -i FLASK_ENV; grep FLASK_ENV $AppDir/.env"
     if ($State -ne 'Unknown') {
         $lines += ''

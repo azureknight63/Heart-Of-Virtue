@@ -62,7 +62,11 @@ Needs on the server (`-Status` checks the ones it can; the deploy refuses
 before the window on the two marked ★):
 - `alex`'s login shell is **bash** (the remote scripts use `set -o pipefail`);
 - `alex` runs `docker` without `sudo`;
-- passwordless `sudo systemctl restart heart-of-virtue`;
+- passwordless `sudo systemctl restart heart-of-virtue`. This is the only
+  `sudo` the deploy runs or prints, and sudoers must match it exactly.
+  `alex`'s password is locked, so any other `sudo` command fails
+  (`test_every_sudo_command_is_one_the_deploy_account_may_run`). Server
+  administration, such as `apt`, goes through the admin account;
 - ★ `curl` on the host, and the host can reach its **own public URL**
   (`HOV_STATUS_HOST_REACHES_PUBLIC`) — ssh #2 fetches the new bundle through it;
 - ★ the live directory is not itself a mount point
@@ -212,8 +216,9 @@ An error between phases — after one phase reported its end and before the next
 began — prints the help for the last state observed; after the lift, just a note
 that the release is live.
 
-Diagnose the backend with `sudo journalctl -u heart-of-virtue -n 50` (the
-journal may need `sudo` or the `adm` group); the usual cause is `FLASK_ENV`
+Diagnose the backend with `journalctl -u heart-of-virtue -n 50`, without
+`sudo`: the service runs as `alex`, so its output is `alex`'s to read, and
+`alex` has no password `sudo` could accept. The usual cause is `FLASK_ENV`
 not being exactly `production` in the unit or the server's `.env`, which
 `wsgi.py` reports by name. Then `.\deploy.ps1 -Status`.
 
