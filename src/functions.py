@@ -999,6 +999,29 @@ _CONSONANT_SOUND_VOWEL_PREFIXES = (
 #: here as "one".
 _CONSONANT_SOUND_VOWEL_WORDS = frozenset({"one", "once", "ones"})
 
+#: Every prefix table, paired with the article it forces. ``indefinite_article``
+#: walks THIS rather than the tables directly, so a fourth table is added in one
+#: place and is picked up by the lookup and by ``ARTICLE_EXCEPTION_STEMS``
+#: together. The two tables are disjoint in their first letter, so the order
+#: they are walked in cannot change an answer.
+_ARTICLE_PREFIX_TABLES = (
+    (_VOWEL_SOUND_CONSONANT_PREFIXES, "an"),
+    (_CONSONANT_SOUND_VOWEL_PREFIXES, "a"),
+)
+
+#: Every stem the exception tables can decide, as one aggregate, derived from
+#: the tables rather than re-listed. Callers that need to ask "is this word
+#: decided by an exception rather than by its first letter?" -- the map-derived
+#: guard in ``tests/test_indefinite_article.py`` is the one in the tree -- read
+#: this, so adding a table cannot leave such a check silently fail-open.
+#: Whole-word entries are included as prefixes, which is deliberately
+#: over-inclusive: a check built on this errs toward flagging a word ("onerous"
+#: behind "one") rather than toward missing one.
+ARTICLE_EXCEPTION_STEMS = tuple(sorted(
+    {stem for table, _article in _ARTICLE_PREFIX_TABLES for stem in table}
+    | set(_CONSONANT_SOUND_VOWEL_WORDS)
+))
+
 
 def indefinite_article(word):
     """``"a"`` or ``"an"`` for ``word`` -- the article only, no space.
@@ -1020,10 +1043,9 @@ def indefinite_article(word):
         return "a"
     if first.split("-")[0] in _CONSONANT_SOUND_VOWEL_WORDS:
         return "a"
-    if first.startswith(_VOWEL_SOUND_CONSONANT_PREFIXES):
-        return "an"
-    if first.startswith(_CONSONANT_SOUND_VOWEL_PREFIXES):
-        return "a"
+    for prefixes, article in _ARTICLE_PREFIX_TABLES:
+        if first.startswith(prefixes):
+            return article
     return "an" if first[0] in "aeiou" else "a"
 
 

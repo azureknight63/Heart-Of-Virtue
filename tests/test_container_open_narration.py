@@ -33,7 +33,10 @@ if str(_ROOT) not in sys.path:
 
 from src.narration import capture_narration  # noqa: E402
 from src.objects import Container  # noqa: E402
-from tests._map_scan import object_placements, resolve_class  # noqa: E402
+from tests._map_scan import (  # noqa: E402
+    MIN_CONTAINER_PLACEMENTS,
+    container_placements,
+)
 
 # Words that assert a specific physical mechanism. A line built for every
 # container in the game may not use any of them.
@@ -51,14 +54,10 @@ def _shipped_container_placements():
     The walk itself lives in :mod:`tests._map_scan`, shared by the guards
     over authored objects and events.
     """
-    placements = []
-    for placement in object_placements():
-        cls = resolve_class(placement)
-        if isinstance(cls, type) and issubclass(cls, Container):
-            placements.append(
-                (placement.map_name, placement.coord, cls, placement.props)
-            )
-    return placements
+    return [
+        (placement.map_name, placement.coord, cls, placement.props)
+        for placement, cls in container_placements()
+    ]
 
 
 def _lidless_placements():
@@ -107,7 +106,7 @@ def _assert_no_false_mechanism(text, context):
 
 def test_the_shipped_container_population_is_not_empty():
     placements = _shipped_container_placements()
-    assert len(placements) > 20, (
+    assert len(placements) >= MIN_CONTAINER_PLACEMENTS, (
         "map scan found almost no Container placements — the scan broke, and "
         f"every assertion below would now be vacuous. Found: {placements}"
     )
