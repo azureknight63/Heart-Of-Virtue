@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Battlefield from './Battlefield';
 import { accessibility } from '../styles/theme';
+import { stubPointerEnvironment } from '../test/pointerEnvironment';
 
 const gridProps = [];
 vi.mock('./BattlefieldGrid', () => ({
@@ -133,25 +134,19 @@ describe('Battlefield — framing the fight the player was handed (#561)', () =>
 });
 
 describe('Battlefield — toolbar touch targets on a phone (#564)', () => {
-    const originalMatchMedia = window.matchMedia;
+    // 375x812: a phone width AND a coarse pointer. This used to be an inline
+    // stub that matched both axes off one regex, so it could only ever say
+    // "phone" or "desktop" — the shared helper splits them, which is what the
+    // 1024px landscape tablet of #639 needs.
+    let env;
 
     beforeEach(() => {
         gridProps.length = 0;
-        window.matchMedia = (query) => ({
-            // 375x812: a phone width AND a coarse pointer.
-            matches: /max-width|pointer: coarse|hover: none/.test(query),
-            media: query,
-            onchange: null,
-            addListener: () => {},
-            removeListener: () => {},
-            addEventListener: () => {},
-            removeEventListener: () => {},
-            dispatchEvent: () => false,
-        });
+        env = stubPointerEnvironment({ narrow: true, coarse: true });
     });
 
     afterEach(() => {
-        window.matchMedia = originalMatchMedia;
+        env.restore();
     });
 
     it.each(['Overview', 'Enemies (1)', 'Follow', 'Fit Fight'])(
@@ -170,7 +165,8 @@ describe('Battlefield — toolbar touch targets on a phone (#564)', () => {
     });
 
     it('leaves the desktop toolbar compact', () => {
-        window.matchMedia = originalMatchMedia;
+        // Back to the shared setup's stub: wide viewport, fine pointer.
+        env.restore();
         render(<Battlefield combat={fight({ enemyX: 11 })} currentLogIndex={0} />);
         expect(screen.getByRole('button', { name: 'Overview' }).style.minHeight).toBe('');
     });

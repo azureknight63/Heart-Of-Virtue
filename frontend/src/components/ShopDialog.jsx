@@ -290,7 +290,13 @@ function QtyPicker({ value, max, onChange }) {
  *                         for them.
  *   onClose    {function}
  *   onRefetch  {function} Called after each successful transaction to sync parent
- *   isMobile   {boolean}
+ *   isMobile   {boolean}  LAYOUT only -- how much room there is, so the shop
+ *                         stacks to one column. Never a touch-target gate:
+ *                         `useMobile` is `(max-width: 767px)` and a landscape
+ *                         tablet is wider than that and still a thumb, which
+ *                         is how `QtyPicker` shipped 26px steppers (#639).
+ *                         The 44px floor is decided by `useLargeTouchTargets`
+ *                         where it is applied.
  *
  * KNOWN SIZE, deliberately not split here -- same decision as
  * `ItemDetailDialog`, whose block carries the reasoning.

@@ -30,9 +30,12 @@ import * as espree from 'espree'
  *   {@link findWidthGatedTouchTargets}   the 44px floor handed out by viewport
  *                                        width instead of by pointer type
  *
- * They share the corpus and the walker and nothing else. Each states its own
- * reach, in its own docstring, including what it does NOT cover — a guard that
- * sounds general and is not is the failure this file is written against.
+ * They share the corpus, the walker and — via {@link PARSE_CACHE}, keyed on
+ * the `files` array's identity — one parse of it, which is what makes the
+ * heading above true rather than aspirational. Otherwise each is independent,
+ * and each states its own reach, in its own docstring, including what it does
+ * NOT cover — a guard that sounds general and is not is the failure this file
+ * is written against.
  */
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -102,8 +105,24 @@ function walkAst(root, visit) {
     return parents
 }
 
+/**
+ * Parsed corpora, keyed on the `files` ARRAY identity.
+ *
+ * This is what makes the file's own "three audits, one parse" claim true.
+ * Each exported scanner parses the corpus it is handed, and the suite calls
+ * them over the same module-level `FILES` const six times — ~150 shipped
+ * modules espree-parsed six times over. Keying on identity rather than
+ * content keeps it honest: a hand-built array passed twice is two arrays and
+ * is parsed twice, and a `WeakMap` lets a corpus be collected with its array,
+ * so a long-lived process does not accumulate ASTs.
+ */
+const PARSE_CACHE = new WeakMap()
+
 /** Parse every file, dropping (and naming) any the parser rejects. */
 function parseAll(files) {
+    const cached = PARSE_CACHE.get(files)
+    if (cached) return cached
+
     const asts = new Map()
     const unparsed = []
     for (const { path, content } of files) {
@@ -113,7 +132,9 @@ function parseAll(files) {
             unparsed.push(`${path}: ${error.message}`)
         }
     }
-    return { asts, unparsed }
+    const result = { asts, unparsed }
+    PARSE_CACHE.set(files, result)
+    return result
 }
 
 // ---------------------------------------------------------------------------
@@ -391,14 +412,33 @@ const WIDTH_ONLY_HOOKS = new Set(['useMobile'])
  * The name is the only signal, so the name is what is used, and the gap is
  * stated rather than papered over: a device guard arriving under a name like
  * `compact` would not be policed.
+ *
+ * `large.*targets?` is here for `needsLargeTargets`, the name this codebase
+ * standardised on for the answer at all seven floor sites. Without it, the
+ * pointer answer re-threaded down as a PROP — exactly the QtyPicker defect
+ * this audit was written for, in the vocabulary the fix introduced — resolves
+ * to nothing, matches no hint, and is silently not reported. A new device-ish
+ * name adopted anywhere in `src/` belongs in this alternation.
  */
-const DEVICE_HINT = /mobile|phone|touch|coarse|pointer|viewport|narrow|tablet|handheld|smallscreen/i
+const DEVICE_HINT = /mobile|phone|touch|coarse|pointer|viewport|narrow|tablet|handheld|smallscreen|large.*targets?/i
 
 const POINTER_AWARE = 'pointer-aware'
 const WIDTH_ONLY = 'width-only'
 const UNRESOLVED = 'unresolved'
 
-/** Every `const`/`let` declarator in a module, by name. Shadowing is ignored. */
+/**
+ * Every `const`/`let` declarator in a module, by name. Shadowing is ignored.
+ *
+ * The map is MODULE-WIDE and first-declarator-wins, with no scope analysis, so
+ * a sub-component parameter named `needsLargeTargets` is credited with a
+ * module-local `const needsLargeTargets = useLargeTouchTargets()` it has
+ * nothing to do with. That is fail-OPEN, in the one direction this audit has
+ * to fail closed, and it is left that way deliberately: scoping it correctly
+ * means real scope analysis (function params, destructuring patterns, block
+ * scope, hoisting), which is a different piece of machinery from this one.
+ * The trade is disclosed here and in the exported audit's contract rather than
+ * implied, and the shape does not occur in this tree today.
+ */
 function declaratorsIn(ast) {
     const declared = new Map()
     walkAst(ast, (node) => {
@@ -441,9 +481,13 @@ function classifyExpression(node, declared, seen) {
     if (node.type === 'Identifier') return classifyIdentifier(node.name, declared, seen)
     if (node.type === 'UnaryExpression') return classifyExpression(node.argument, declared, seen)
     if (node.type === 'LogicalExpression') {
+        // A fresh copy of `seen` per branch: one shared Set would mark an
+        // identifier read on BOTH operands as already-visited on the second
+        // visit and return UNRESOLVED for it, which changes the verdict of the
+        // operand that happens to be walked second.
         const sides = [
-            classifyExpression(node.left, declared, seen),
-            classifyExpression(node.right, declared, seen),
+            classifyExpression(node.left, declared, new Set(seen)),
+            classifyExpression(node.right, declared, new Set(seen)),
         ]
         // `&&` intersects, so a width term anywhere in it constrains the whole
         // guard to narrow viewports; `||`/`??` unions, so a pointer term
@@ -561,7 +605,31 @@ function nearestGuard(node, parents) {
  *     buttons declare the token unconditionally and are still shrunk below it
  *     by useHeroAutoScale; only the compensation's own gate is visible here.
  *   - shadowing, and a guard whose identifier is reassigned after declaration.
- *     The first declarator of a name in the module wins.
+ *     The first declarator of a name in the module wins — module-wide, so a
+ *     sub-component's PROP sharing a name with a module-local pointer-aware
+ *     binding is credited pointer-aware without proof. See
+ *     {@link declaratorsIn}.
+ *   - a read inside a callback whose only guard sits outside it.
+ *     {@link nearestGuard} stops at the enclosing function, so
+ *     `xs.map(x => … accessibility.touchTarget …)` gated by a ternary around
+ *     the whole `.map(…)` reads as unconditional and passes. This is stated
+ *     in that function's own docstring too, but it is a limit of the EXPORTED
+ *     audit and belongs in the exported audit's contract. It nearly occurs
+ *     already: SettingsDialog maps `FEATURE_FLAGS` passing `buttonStyle`, and
+ *     is only visible here because the token read sits outside the callback.
+ *   - the floor extracted into a shared helper. The whole audit keys on a
+ *     literal `accessibility.touchTarget` member read, so a DRY pass that
+ *     collapsed the six duplicated floor-style spreads into one helper would
+ *     delete that read from all six call sites at a stroke: `readCount` would
+ *     fall toward the `> 20` floor the suite asserts, and the population the
+ *     audit holds an opinion about would shrink to one read inside the helper
+ *     — where the gate is a parameter no module can resolve, so the verdict
+ *     degrades to `unprovable` for everything at once. The audit would still
+ *     say something; it would no longer be looking at the six call sites where
+ *     the gate is actually chosen. The duplication is therefore load-bearing — it is
+ *     what the audit has to look at — and a future refactor that removes it
+ *     must bring this audit with it rather than discovering afterwards that
+ *     it was silently disarmed.
  *
  * @param {Array<{path: string, content: string}>} files
  * @returns {{findings: Array, readCount: number, unparsed: Array<string>}}
@@ -589,11 +657,17 @@ export function findWidthGatedTouchTargets(files) {
             const guard = nearestGuard(node, parents)
             if (!guard) return
 
+            // The WHOLE guard expression, not its identifiers one at a time.
+            // Flattening to identifiers and passing on any single pointer-aware
+            // verdict put `isMobile && isCoarse` — narrow AND coarse, i.e. a
+            // phone — through unreported whenever the `&&` spanned two
+            // declarators, which is issue #639 itself. `identifiersIn` is kept
+            // only for the DEVICE_HINT question and the reported guard string.
             const names = [...identifiersIn(guard.test)]
-            const verdicts = names.map((name) => classifyIdentifier(name, declared))
-            if (verdicts.includes(POINTER_AWARE)) return
+            const verdict = classifyExpression(guard.test, declared, new Set())
+            if (verdict === POINTER_AWARE) return
 
-            const reason = verdicts.includes(WIDTH_ONLY)
+            const reason = verdict === WIDTH_ONLY
                 ? 'width-gated'
                 : (names.some((name) => DEVICE_HINT.test(name)) ? 'unprovable' : null)
             if (!reason) return

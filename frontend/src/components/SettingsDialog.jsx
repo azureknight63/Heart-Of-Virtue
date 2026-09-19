@@ -78,8 +78,8 @@ function VolumeRow({
     onToggleMute,
     volume,
     onVolumeChange,
-    touchTarget,
-    touchHeight,
+    touchTargetStyle,
+    touchHeightStyle,
     marginBottom,
 }) {
     return (
@@ -110,7 +110,7 @@ function VolumeRow({
                         cursor: 'pointer',
                         fontSize: '12px',
                         fontWeight: 'bold',
-                        ...touchTarget,
+                        ...touchTargetStyle,
                     }}
                 >
                     {muted ? 'MUTED' : 'ON'}
@@ -142,7 +142,7 @@ function VolumeRow({
                         // browser draws thin and vertically centered
                         // regardless of the box height) widens the tappable
                         // corridor without the track reading as fatter.
-                        ...touchHeight,
+                        ...touchHeightStyle,
                     }}
                     disabled={muted}
                 />
@@ -250,10 +250,14 @@ export default function SettingsDialog({ onClose }) {
     // touch-target minimum. Touch-only so a mouse keeps the compact settings
     // layout; issue #639 made "touch" mean the POINTER rather than a
     // `max-width`, since a landscape tablet was getting the compact one.
-    const touchTarget = needsLargeTargets
+    // `…Style` because these are style BAGS to spread, not sizes:
+    // `accessibility.touchTarget` on the next line is the 44px string itself,
+    // and the two were a rename apart in the same file. Battlefield.jsx uses
+    // the same `touchTargetStyle` name for the same thing.
+    const touchTargetStyle = needsLargeTargets
         ? { minWidth: accessibility.touchTarget, minHeight: accessibility.touchTarget }
         : {}
-    const touchHeight = needsLargeTargets
+    const touchHeightStyle = needsLargeTargets
         ? { minHeight: accessibility.touchTarget }
         : {}
 
@@ -268,8 +272,8 @@ export default function SettingsDialog({ onClose }) {
                     onToggleMute={() => setIsMusicMuted(!isMusicMuted)}
                     volume={musicVolume}
                     onVolumeChange={setMusicVolume}
-                    touchTarget={touchTarget}
-                    touchHeight={touchHeight}
+                    touchTargetStyle={touchTargetStyle}
+                    touchHeightStyle={touchHeightStyle}
                     marginBottom="20px"
                 />
 
@@ -279,8 +283,8 @@ export default function SettingsDialog({ onClose }) {
                     onToggleMute={() => setIsSfxMuted(!isSfxMuted)}
                     volume={sfxVolume}
                     onVolumeChange={setSfxVolume}
-                    touchTarget={touchTarget}
-                    touchHeight={touchHeight}
+                    touchTargetStyle={touchTargetStyle}
+                    touchHeightStyle={touchHeightStyle}
                     marginBottom="15px"
                 />
 
@@ -290,7 +294,7 @@ export default function SettingsDialog({ onClose }) {
                     options={COMBAT_SPEED_OPTIONS}
                     value={combatSpeed}
                     onSelect={setCombatSpeed}
-                    buttonStyle={touchHeight}
+                    buttonStyle={touchHeightStyle}
                 />
 
                 {/* Text Speed — the story is the game's primary delivery
@@ -301,7 +305,7 @@ export default function SettingsDialog({ onClose }) {
                     options={TEXT_SPEED_OPTIONS}
                     value={textSpeed}
                     onSelect={setTextSpeed}
-                    buttonStyle={touchHeight}
+                    buttonStyle={touchHeightStyle}
                     fontSize="11px"
                 />
 
@@ -318,7 +322,7 @@ export default function SettingsDialog({ onClose }) {
                         enabled={autoAdvance}
                         onToggle={() => setAutoAdvance(!autoAdvance)}
                         ariaLabel="Auto-advance story"
-                        buttonStyle={touchTarget}
+                        buttonStyle={touchTargetStyle}
                     />
                 </div>
 
@@ -337,7 +341,7 @@ export default function SettingsDialog({ onClose }) {
                             // 375px viewport. "Auto-advance story" above
                             // already gets this treatment; these three
                             // registry-driven rows never received it.
-                            buttonStyle={touchTarget}
+                            buttonStyle={touchTargetStyle}
                         />
                     ))}
                 </div>

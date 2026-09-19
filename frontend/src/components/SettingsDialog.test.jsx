@@ -247,7 +247,7 @@ describe('SettingsDialog', () => {
     // fixed, but the sliders themselves (247x16) and the three EXPERIMENTAL
     // flag toggles (38x28 / 38x28 / 31x28) were not — the flag rows render
     // through FeatureFlagRow -> ToggleRow, which never received the
-    // mobileTouchTarget style the "Auto-advance story" ToggleRow already gets.
+    // `touchTargetStyle` bag the "Auto-advance story" ToggleRow already gets.
     it('grows both volume sliders to the touch-target minimum height on mobile', () => {
       mobileMock.isMobile = true;
       render(<SettingsDialog onClose={mockOnClose} />);
@@ -448,8 +448,12 @@ describe('SettingsDialog', () => {
     it('grows every control to the touch-target minimum for a coarse pointer at desktop width', () => {
       render(<SettingsDialog onClose={mockOnClose} />);
 
-      // One assertion per consumer of mobileTouchTarget/mobileTouchHeight, so
-      // a gate swapped at only one of the three call sites still fails.
+      // One assertion per CONSUMER of the two style bags — the volume slider
+      // (touchHeightStyle), the mute toggles (touchTargetStyle), and both
+      // segmented rows (touchHeightStyle). The bags are built from one
+      // `needsLargeTargets` now, so a per-site gate swap is no longer the
+      // failure mode; what this pins is that every consumer still RECEIVES a
+      // bag, so dropping the prop from one row cannot go unnoticed.
       expect(screen.getByRole('slider', { name: 'Music volume' }).style.minHeight)
         .toBe(accessibility.touchTarget);
       screen.getAllByText('ON').slice(0, 2).forEach((toggle) => {

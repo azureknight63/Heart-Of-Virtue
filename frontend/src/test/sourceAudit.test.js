@@ -11,7 +11,7 @@ import {
 } from './sourceAudit'
 
 /**
- * Two static audits, each held to the same two obligations.
+ * Three static audits, each held to the same two obligations.
  *
  * The obligations matter more than the checks. A scan that reports nothing is
  * indistinguishable from a scan that looked at nothing, and every guard this
@@ -193,23 +193,31 @@ describe('the 44px touch-target floor is decided by the pointer, not the width (
         expect(unparsed, unparsed.join('\n')).toEqual([])
     })
 
-    it('reports a floor gated on a width hook, over a real directory', () => {
+    it('reports both width-gated shapes over a real directory', () => {
         // Run through readSourceFiles, not hand-built strings: a scanner that
         // stopped WALKING reports nothing and looks exactly like clean code.
         const files = readSourceFiles(FIXTURES)
-        expect(files.map((f) => f.path).sort()).toEqual(['PointerAware.jsx', 'WidthGated.jsx'])
+        expect(files.map((f) => f.path).sort())
+            .toEqual(['AndGated.jsx', 'PointerAware.jsx', 'WidthGated.jsx'])
 
         const { findings, readCount } = findWidthGatedTouchTargets(files)
-        expect(readCount).toBe(3)
-        expect(findings).toEqual([
+        expect(readCount).toBe(4)
+        // Sorted, because finding order follows directory-walk order and that
+        // is the filesystem's business, not this assertion's.
+        expect([...findings].sort((a, b) => a.where.localeCompare(b.where))).toEqual([
+            { where: 'AndGated.jsx', line: 18, guard: 'isMobile, isCoarse', reason: 'width-gated' },
             { where: 'WidthGated.jsx', line: 12, guard: 'isMobile', reason: 'width-gated' },
         ])
     })
 
     it('stays quiet on a pointer-aware gate in a file that also uses useMobile', () => {
         // The reason the guard must be the INNERMOST conditional and not the
-        // file: BaseDialog legitimately holds both hooks, so any file-level
-        // check passes the moment either name appears anywhere in it.
+        // file: a module legitimately holds both answers at once — `useMobile`
+        // for LAYOUT, the pointer answer for the floor — so a file-level check
+        // passes the moment either name appears anywhere in it. The
+        // PointerAware.jsx fixture calls both hooks; HeroPanel and ShopDialog
+        // hold the pair as a `useLargeTouchTargets()` call beside an `isMobile`
+        // PROP, which a file-level check would launder just the same.
         const { findings } = findWidthGatedTouchTargets([
             source('components/Panel.jsx', [
                 "import { useMobile } from '../hooks/useMobile'",
@@ -250,6 +258,48 @@ describe('the 44px touch-target floor is decided by the pointer, not the width (
         ])
         expect(findings).toEqual([
             { where: 'components/Panel.jsx', line: 2, guard: 'gate', reason: 'width-gated' },
+        ])
+    })
+
+    it('does NOT credit `isMobile && isCoarse` when the `&&` spans two declarators', () => {
+        // The half-wired shape. The audit used to flatten the guard to its
+        // IDENTIFIERS and classify each one alone, passing the guard as soon as
+        // any single verdict was pointer-aware — so the `&&` logic above was
+        // only ever reached when both operands sat inside one declarator. Split
+        // across two, `['width-only', 'pointer-aware']` contained a pointer
+        // verdict and the read passed, although the conjunction means narrow
+        // AND coarse: a 1024px landscape tablet is coarse and not narrow and
+        // loses the floor. Issue #639, waved through by the guard written to
+        // stop it. The whole expression is classified now, not its parts.
+        const { findings } = findWidthGatedTouchTargets([
+            source('components/Close.jsx', [
+                'const isMobile = useMobile()',
+                'const isCoarse = useCoarsePointer()',
+                'export const T = () => <b style={{ ...(isMobile && isCoarse ? { minWidth: accessibility.touchTarget } : {}) }} />',
+            ].join('\n')),
+        ])
+        expect(findings).toEqual([
+            { where: 'components/Close.jsx', line: 3, guard: 'isMobile, isCoarse', reason: 'width-gated' },
+        ])
+    })
+
+    it('does NOT credit `isMobile && needsLargeTargets` where the second half is a prop', () => {
+        // The likelier regression: the pointer answer re-threaded as a prop and
+        // ANDed with a width hook. UNRESOLVED on one side and WIDTH_ONLY on the
+        // other is still width-gated, because `&&` cannot be widened by a term
+        // nobody can resolve. This one was already reported before the audit
+        // classified whole expressions — it is here as a pin, so the switch to
+        // whole-expression classification cannot quietly lose it.
+        const { findings } = findWidthGatedTouchTargets([
+            source('components/Row.jsx', [
+                'const isMobile = useMobile()',
+                'function Row({ needsLargeTargets }) {',
+                '  return <b style={{ minWidth: isMobile && needsLargeTargets ? accessibility.touchTarget : "26px" }} />',
+                '}',
+            ].join('\n')),
+        ])
+        expect(findings).toEqual([
+            { where: 'components/Row.jsx', line: 3, guard: 'isMobile, needsLargeTargets', reason: 'width-gated' },
         ])
     })
 

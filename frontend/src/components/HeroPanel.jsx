@@ -376,9 +376,11 @@ function HeroPanel({
   // as the history that motivated this, not as current measurements.
   // Counter-scaling each button by 1/heroScale cancels the ancestor's shrink
   // for just these interactive elements, restoring the declared 44px+ target
-  // regardless of how small the portrait itself has to get. A no-op under a
-  // mouse and a no-op whenever the panel isn't actually shrunk
-  // (heroScale >= 1), so neither is affected.
+  // regardless of how small the portrait itself has to get. A no-op on a WIDE
+  // mouse-driven window and a no-op whenever the panel isn't actually shrunk
+  // (heroScale >= 1), so neither is affected. Not a no-op under every mouse:
+  // `useLargeTouchTargets` is deliberately true for a narrow desktop window
+  // with a fine pointer, whose layout has already collapsed to the phone one.
   //
   // Issue #639: this used to read the `isMobile` PROP, which is
   // `(max-width: 767px)`. useHeroAutoScale has no width or pointer gate at
