@@ -18,24 +18,19 @@ const BASE = '/npc/chat'
  * cut off `/game/new` and `/saves/{id}/load`, which build a universe and are
  * legitimately slow), so the bound is scoped to the three chat calls here.
  *
- * Derived from the engine's own turn budget rather than picked:
- * `_turn_deadline` (src/npc/_chat_llm.py) allows a turn
- * `max(_CHAT_DEADLINE_SECONDS, _MAX_TURN_STAGES x NPC_CHAT_LLM_TIMEOUT)`
- * = max(12, 4 x 6) = 24 seconds of provider work. That budget only refuses to
- * OPEN a further stage, it never aborts one already in flight, and a single
- * stage walks the whole provider fallback chain — so the honest server-side
- * ceiling is 24s plus the tail of the last stage to start. 45s clears that with
- * room for the Flask round trip, while staying far short of the uncapped
- * chain walk this exists to stop the player watching.
- *
- * Raising NPC_CHAT_LLM_TIMEOUT server-side widens the engine budget without
- * widening this; the engine logs a warning when it is set above 6s, and this
- * number should move with it.
+ * Sized from the engine's turn budget, which is now ENFORCED: every provider
+ * call is clipped to what the turn has left and the chain stops once it is
+ * spent, so a turn ends at `_TURN_CEILING_SECONDS` (src/npc/_chat_llm.py) plus
+ * at most one call. This waits a little longer than that, and stays inside the
+ * production worker's 30s timeout -- past it the worker is killed first and
+ * this deadline never fires. Both bounds are derived from the engine constants
+ * by tests/test_npc_chat_turn_budget.py, not restated here.
  */
-export const NPC_CHAT_TIMEOUT_MS = 45000
+export const NPC_CHAT_TIMEOUT_MS = 28000
 
-// Every LLM-backed chat call carries the deadline. `/end` needs it as much as
-// the other two: `handleEndConversation` (hooks/useNpcChat.js) latches
+// Every chat call the panel waits on carries the deadline. `/end` is not
+// LLM-backed, but it needs one as much as the other two: `handleEndConversation`
+// (hooks/useNpcChat.js) latches
 // `endingRef` before awaiting, so a hung `/end` makes a second click a no-op
 // and strands the panel on screen with no way out at all.
 const TURN_CONFIG = { timeout: NPC_CHAT_TIMEOUT_MS }
@@ -53,7 +48,7 @@ const npcChat = {
    * Send a response from Jean to an NPC
    * @param {string} npcKey - Session key returned from /open
    * @param {string} jeanText - Jean's dialogue text
-   * @param {string} jeanTone - 'direct', 'guarded', or 'open'
+   * @param {string} jeanTone - Jean's portrait emotion for the line (the tone of the option picked)
    * @returns {Promise} Response with { npc_response, jean_options, loquacity_current,
    *   loquacity_max, conversation_ended, reputation, reputation_delta, relationship }
    */

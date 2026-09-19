@@ -129,23 +129,21 @@ const CITATIONS = [
         anchor: 'NPC_CHAT_TIMEOUT_MS',
         claim: 'the client deadline the ECONNABORTED branch reports is declared there',
     }),
-    // `api/npcChat.js` joins the registry here (issue #618). Its deadline
-    // constant is DERIVED from the engine's turn budget rather than picked, and
-    // a derivation is exactly the kind of claim that rots silently: the two
-    // anchors below are the numbers the arithmetic in that comment is built on,
-    // so changing either on the engine side fails here instead of leaving a
-    // plausible-looking sum behind.
+    // `api/npcChat.js` joins the registry here (issue #618). Its deadline is
+    // sized from the engine's ENFORCED turn ceiling; the arithmetic itself is
+    // not restated in the comment but derived by a Python test, which these
+    // two anchors keep the comment pointed at.
     cite({
         where: 'api/npcChat.js',
         about: 'src/npc/_chat_llm.py',
-        anchor: '_MAX_TURN_STAGES = 4',
-        claim: 'the engine funds four provider stages per turn',
+        anchor: '_TURN_CEILING_SECONDS = ',
+        claim: 'a turn ends at this ceiling plus at most one call',
     }),
     cite({
         where: 'api/npcChat.js',
-        about: 'src/npc/_chat_llm.py',
-        anchor: '_CHAT_DEADLINE_SECONDS = 12.0',
-        claim: 'twelve seconds is the floor the turn budget is taken against',
+        about: 'tests/test_npc_chat_turn_budget.py',
+        anchor: 'def test_the_client_waits_at_least_as_long_as_a_turn_can_run',
+        claim: 'both bounds on the deadline are derived there from the engine constants',
     }),
     cite({
         where: 'api/npcChat.js',
