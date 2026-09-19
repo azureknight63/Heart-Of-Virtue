@@ -80,7 +80,7 @@ are recorded below and nothing has been edited.
 
 Findings worth carrying (full detail was in the agents' reports; these are the ones with teeth):
 
-- **[Major, pre-existing, SECURITY — needs a human]** `src/objects.py:111` — the new docstring claims
+- **[Major, SECURITY] — FIXED 2026-09-19 in `900ac5e0`, maintainer-authorised.** Was: `src/objects.py:111` — the new docstring claims
   `__self__ is target` "readmits them and nothing else". It readmits **any bound method of the
   target**. A restored save (untrusted input per `.claude/rules/saves-persistence.md`) could store
   `obj.__dict__["look"] = obj.die`, and the allow-listed verb `look` would dispatch
@@ -88,9 +88,19 @@ Findings worth carrying (full detail was in the agents' reports; these are the o
   introduced here (bare `getattr` admitted it too), but the docstring now asserts it is closed.
   Either soften the claim or remove the instance carve-out entirely: replace
   `setattr(self, word, self.enter)` with a data-only `self._name_aliases` list that
-  `resolve_interaction` maps to `type(target).enter`. **Per CLAUDE.md this cannot close on model
-  judgement.**
-- **[Minor, Correctness]** `src/objects.py:1101-1104` — `is_crossing_handler` still resolves its
+  `resolve_interaction` maps to `type(target).enter`.
+  **Resolution:** the maintainer authorised the recommended shape, so the instance carve-out is
+  gone entirely. `Passageway`'s name words are now DATA, mapped to `enter` by a class-declared
+  `instance_keyword_aliases()` derived from `self.name` on demand (so older saves resolve
+  identically). `is_crossing_handler` was switched to class-declared comparison in the same commit,
+  which also closes the `#552`-shaped asymmetry listed below. Two tests that pinned the removed rule
+  were inverted rather than deleted, and the alias population scan was pointed at where the aliases
+  now live rather than narrowed — it read `instance.__dict__` for callables and would have matched
+  nothing and passed forever. Revert-proved **surgically**: restoring only the vulnerable line fails
+  both guards on their own assertions (`assert take_all is None`, `assert drink is None`) instead of
+  on a collection error. Verified: backend 4 failed (pre-existing `openai`) / **14602 passed**,
+  `flake8 src/` clean, `python tools/bug_hunt.py` finds no bugs.
+- **[Minor, Correctness] — FIXED in the same commit (`900ac5e0`).** Was: `is_crossing_handler` resolved its
   comparison targets with `getattr(self, name, None)` (instance `__dict__`) while
   `resolve_interaction` now sources from the class. The halves can disagree: an authored prop named
   `enter`/`go`/`leave`/`exit` poisons the comparison side, `_is_demo_end_crossing` returns False,
