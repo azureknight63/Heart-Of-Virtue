@@ -1,8 +1,9 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import CombatMovePanel from './CombatMovePanel';
 import { useAudio } from '../context/AudioContext';
 import { spacing, accessibility } from '../styles/theme';
+import { stubWideTouchTablet } from '../test/pointerEnvironment';
 
 // Mock useAudio
 vi.mock('../context/AudioContext', () => ({
@@ -574,6 +575,36 @@ describe('CombatMovePanel', () => {
       // No stage segments render for an all-zero move (no width to divide up).
       expect(instantBar.querySelector('[data-testid^="commitment-segment-"]')).toBeNull();
       expect(screen.getByText('0 beats')).toBeDefined();
+    });
+  });
+
+  // The #580 floor was keyed on viewport width, so the 23x35px close glyph
+  // stayed 23x35px on any touch device wider than 767px — and this panel is
+  // dismissed mid-fight, under time pressure.
+  describe('close button on a wide touch tablet (issue #639)', () => {
+    let env;
+
+    beforeEach(() => {
+      mobileMock.isMobile = false;
+      env = stubWideTouchTablet();
+    });
+
+    afterEach(() => {
+      env.restore();
+    });
+
+    it('grows the close button to 44px for a coarse pointer at desktop width', () => {
+      render(
+        <CombatMovePanel
+          moves={mockMoves}
+          category="Offensive"
+          onMoveClick={mockOnMoveClick}
+          onClose={mockOnClose}
+        />
+      );
+      const closeBtn = screen.getByText('✕');
+      expect(closeBtn.style.minWidth).toBe(accessibility.touchTarget);
+      expect(closeBtn.style.minHeight).toBe(accessibility.touchTarget);
     });
   });
 });

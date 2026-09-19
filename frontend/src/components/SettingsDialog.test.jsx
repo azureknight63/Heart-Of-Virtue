@@ -4,6 +4,7 @@ import SettingsDialog from './SettingsDialog';
 import { usePreferences } from '../context/PreferencesContext';
 import { FEATURE_FLAGS, getFlag, resetFlags } from '../utils/featureFlags';
 import { accessibility } from '../styles/theme';
+import { stubWideTouchTablet } from '../test/pointerEnvironment';
 
 vi.mock('../context/PreferencesContext', () => ({
   usePreferences: vi.fn()
@@ -426,6 +427,38 @@ describe('SettingsDialog', () => {
         unnamed.map((el) => `${el.tagName}${el.type ? `[type=${el.type}]` : ''}`),
         'these controls in SettingsDialog have an empty accessible name'
       ).toEqual([]);
+    });
+  });
+
+  // Every floor above was keyed on viewport width, so the whole dialog — five
+  // control types, none of them bigger than 56x32 — stayed mouse-sized on any
+  // touch device over 767px.
+  describe('touch targets on a wide touch tablet (issue #639)', () => {
+    let env;
+
+    beforeEach(() => {
+      mobileMock.isMobile = false;
+      env = stubWideTouchTablet();
+    });
+
+    afterEach(() => {
+      env.restore();
+    });
+
+    it('grows every control to the touch-target minimum for a coarse pointer at desktop width', () => {
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      // One assertion per consumer of mobileTouchTarget/mobileTouchHeight, so
+      // a gate swapped at only one of the three call sites still fails.
+      expect(screen.getByRole('slider', { name: 'Music volume' }).style.minHeight)
+        .toBe(accessibility.touchTarget);
+      screen.getAllByText('ON').slice(0, 2).forEach((toggle) => {
+        expect(toggle.style.minWidth).toBe(accessibility.touchTarget);
+        expect(toggle.style.minHeight).toBe(accessibility.touchTarget);
+      });
+      expect(screen.getByText('1x').style.minHeight).toBe(accessibility.touchTarget);
+      expect(screen.getByRole('button', { name: 'INSTANT' }).style.minHeight)
+        .toBe(accessibility.touchTarget);
     });
   });
 

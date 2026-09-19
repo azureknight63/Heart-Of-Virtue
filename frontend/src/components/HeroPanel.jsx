@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { colors, spacing, fonts, accessibility } from '../styles/theme'
+import { useLargeTouchTargets } from '../hooks/useLargeTouchTargets'
 import StatusEffectsIconPanel from './StatusEffectsIconPanel'
 import GameText from './GameText'
 import { CATEGORY_NAV_LABEL } from '../utils/categories'
@@ -310,6 +311,9 @@ function HeroPanel({
   const [hoveredButton, setHoveredButton] = useState(null)
   const [hoveredBar, setHoveredBar] = useState(null)
   const [focusedBar, setFocusedBar] = useState(null)
+  // Target SIZE only — see `touchCompensation` below. The `isMobile` prop is
+  // still what decides where the status/passive panels go.
+  const needsLargeTargets = useLargeTouchTargets()
 
   // Get player stats or use defaults
   const hp = {
@@ -358,7 +362,7 @@ function HeroPanel({
 
   const buttons = inCombat ? combatButtons.filter(btn => btn.show !== false) : explorationButtons
 
-  // Mobile touch-target compensation (issue #542).
+  // Touch-target compensation (issue #542; re-gated by #639).
   //
   // LeftPanel wraps this whole component in `transform: scale(heroScale)` so
   // the radial layout fits whatever room a tight mobile combat screen leaves
@@ -372,10 +376,17 @@ function HeroPanel({
   // as the history that motivated this, not as current measurements.
   // Counter-scaling each button by 1/heroScale cancels the ancestor's shrink
   // for just these interactive elements, restoring the declared 44px+ target
-  // regardless of how small the portrait itself has to get. A no-op on
-  // desktop (isMobile is false there) and a no-op whenever the panel isn't
-  // actually shrunk (heroScale >= 1), so neither is affected.
-  const touchCompensation = (isMobile && heroScale > 0 && heroScale < 1) ? 1 / heroScale : 1
+  // regardless of how small the portrait itself has to get. A no-op under a
+  // mouse and a no-op whenever the panel isn't actually shrunk
+  // (heroScale >= 1), so neither is affected.
+  //
+  // Issue #639: this used to read the `isMobile` PROP, which is
+  // `(max-width: 767px)`. useHeroAutoScale has no width or pointer gate at
+  // all — it shrinks whenever the container is tight — so a landscape tablet
+  // got the ancestor's shrink with the compensation switched off, rendering
+  // these 44px buttons at roughly 25px under a thumb. The shrink is decided
+  // by available room; whether it needs cancelling is decided by the pointer.
+  const touchCompensation = (needsLargeTargets && heroScale > 0 && heroScale < 1) ? 1 / heroScale : 1
 
   return (
     <div data-testid="hero-panel-root" style={{
