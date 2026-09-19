@@ -1130,7 +1130,7 @@
     "(6, 4)": {
         "id": "tile_6_4",
         "title": "EmptyCave",
-        "description": "Walls pinch close, polished where shoulders must have\nbrushed. A residual warmth clings in narrow eddies,\nthen thins, urging movement onward.\nWax drippings harden in a thin line along one wall - someone walked this corridor with a candle, recently.",
+        "description": "Walls pinch close, polished where shoulders must have\nbrushed. A residual warmth clings in narrow eddies,\nthen thins, urging movement onward.\nWax drippings harden in a thin line along one wall - someone walked this corridor with a candle, long ago.",
         "exits": [
             "north",
             "west",
