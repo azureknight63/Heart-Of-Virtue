@@ -31,7 +31,11 @@ import pytest
 from src.items import Antidote, Draught, Restorative
 from src.objects import Container, Crate, Shelf
 from src.player import Player
-from tests._map_scan import object_placements, resolve_class
+from tests._map_scan import (
+    MIN_CONTAINER_PLACEMENTS,
+    container_placements,
+    map_files,
+)
 
 
 def _authored_container_placements():
@@ -44,18 +48,28 @@ def _authored_container_placements():
     being covered. Their own hardcoded descriptions are covered explicitly
     below instead.
     """
-    out = []
-    for placement in object_placements():
-        cls = resolve_class(placement)
-        if not (isinstance(cls, type) and issubclass(cls, Container)):
-            continue
-        if placement.props.get("description"):
-            out.append((placement.map_name, placement.coord, placement.props))
-    return out
+    return [
+        (placement.map_name, placement.coord, placement.props)
+        for placement, _cls in container_placements()
+        if placement.props.get("description")
+    ]
+
+
+#: One spelling of the map-derived case list for the two parametrized guards
+#: below, which ran byte-identical decorators. Built once at import, as both
+#: decorators did.
+_AUTHORED_CASES = [
+    pytest.param(*p, id=f"{p[0]}:{p[1]}:{p[2].get('name', 'Container')}")
+    for p in _authored_container_placements()
+]
 
 
 def _stocked(**kwargs):
-    """A closed container holding three distinct (non-stacking) items."""
+    """A container holding three distinct (non-stacking) items.
+
+    Closed unless the caller passes ``start_open=True``, which most callers
+    here do: the loot and single-take paths only run on an open container.
+    """
     kwargs.setdefault("inventory", [Restorative(), Antidote(), Draught()])
     return Container(**kwargs)
 
@@ -79,7 +93,7 @@ def _player_for(container):
 
 def test_the_authored_container_population_is_not_empty():
     placements = _authored_container_placements()
-    assert len(placements) > 20, (
+    assert len(placements) >= MIN_CONTAINER_PLACEMENTS, (
         "map scan found almost no Container placements carrying an authored "
         "description — the scan broke, and every assertion below is now "
         f"vacuous. Found: {placements}"
@@ -91,13 +105,7 @@ def test_the_authored_container_population_is_not_empty():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "map_name,coord,props",
-    [
-        pytest.param(*p, id=f"{p[0]}:{p[1]}:{p[2].get('name', 'Container')}")
-        for p in _authored_container_placements()
-    ],
-)
+@pytest.mark.parametrize("map_name,coord,props", _AUTHORED_CASES)
 def test_opening_a_shipped_container_keeps_its_authored_description(
     map_name, coord, props
 ):
@@ -112,13 +120,7 @@ def test_opening_a_shipped_container_keeps_its_authored_description(
     )
 
 
-@pytest.mark.parametrize(
-    "map_name,coord,props",
-    [
-        pytest.param(*p, id=f"{p[0]}:{p[1]}:{p[2].get('name', 'Container')}")
-        for p in _authored_container_placements()
-    ],
-)
+@pytest.mark.parametrize("map_name,coord,props", _AUTHORED_CASES)
 def test_looting_a_shipped_container_keeps_its_authored_description(
     map_name, coord, props
 ):
@@ -137,7 +139,12 @@ def test_looting_a_shipped_container_keeps_its_authored_description(
 
 
 def test_authored_description_survives_a_single_item_take():
-    """The per-item refresh path (``GameService`` line ~2583) too."""
+    """The per-item refresh path too.
+
+    That is ``GameService._dispatch_interaction`` in
+    ``src/api/services/game_service.py``, which refreshes the parent container
+    after every single-item take.
+    """
     authored = "A squat stone coffer, sealed with a carved disc lock."
     container = _stocked(nickname="archive coffer", description=authored,
                          start_open=True)
@@ -213,9 +220,95 @@ def test_default_description_container_regenerates_after_each_single_take():
     assert "empty" in container.description.lower()
 
 
+def test_every_generated_template_carries_one_of_the_markers():
+    """Positive half of the shape test: the markers are what we produce.
+
+    Without this, ``_GENERATED_MARKERS`` could drift away from the templates
+    and the guard below would keep passing while recognising nothing.
+    """
+    seen = set()
+    states = (
+        Container(nickname="old chest"),                      # closed
+        _stocked(nickname="old chest", start_open=True),      # open, holding
+        Container(nickname="old chest", start_open=True),     # open, empty
+    )
+    for container in states:
+        container.refresh_description()
+        matched = [
+            m for m in Container._GENERATED_MARKERS if m in container.description
+        ]
+        assert matched, f"{container.description!r} carries no generated marker"
+        seen.update(matched)
+    assert seen == set(Container._GENERATED_MARKERS), (
+        f"templates no longer produce every marker: missing "
+        f"{set(Container._GENERATED_MARKERS) - seen}"
+    )
+
+
+def test_no_authored_map_prose_looks_generated():
+    """Negative half: the markers appear nowhere an author could have written.
+
+    This is the premise the shape test rests on. A marker phrase turning up in
+    authored map prose would make ``_description_is_generic`` overwrite that
+    prose — the #629 bug again — so the whole map corpus is scanned as text
+    rather than just the ``description`` props: a marker in an idle message or
+    an NPC line is a warning that the phrase has stopped being distinctive.
+    """
+    paths = map_files()
+    assert len(paths) >= 10, f"map scan found almost no maps: {paths}"
+    offenders = [
+        (path.name, marker)
+        for path in paths
+        for marker in Container._GENERATED_MARKERS
+        if marker in path.read_text(encoding="utf-8")
+    ]
+    assert not offenders, (
+        "shipped map prose contains a phrase refresh_description treats as "
+        f"its own output, and would overwrite: {offenders}"
+    )
+
+
+# A save written before #629 holds containers whose ``description`` IS a
+# generated listing -- the templates below are the pre-fix spellings, article
+# bug and all -- and which carry no bookkeeping attribute saying so. The guard
+# has to recognise those by SHAPE or it freezes them forever, which is worse
+# than the bug it was written to fix: the player empties the container and the
+# description shipped to the client goes on naming items that are gone.
+_PRE_FIX_DESCRIPTIONS = {
+    "closed": (
+        "A old chest which may or may not have things inside. You can try "
+        "to UNLOCK (if locked), OPEN, or LOOT it."
+    ),
+    "empty": "A old chest. It's empty. Very sorry.",
+    "stocked": (
+        "A old chest. Inside are the following things: \n\n"
+        "A small vial of some long-forgotten remedy."
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "stale",
+    list(_PRE_FIX_DESCRIPTIONS.values()),
+    ids=list(_PRE_FIX_DESCRIPTIONS),
+)
+def test_a_pre_fix_save_regenerates_instead_of_freezing(stale):
+    container = _stocked(nickname="old chest", start_open=True)
+    container.description = stale
+    # Whatever bookkeeping the current implementation keeps, a container
+    # restored from a pre-fix pickle does not have it.
+    container.__dict__.pop("_generated_description", None)
+    container.refresh_description()
+    assert container.description != stale, (
+        "a pre-#629 generated listing was treated as authored prose and "
+        "frozen -- the container can never describe its contents again"
+    )
+    for item in container.inventory:
+        assert item.description in container.description
+
+
 def test_closed_default_container_still_gets_the_closed_template():
     container = Container(nickname="old chest")
-    container.description = Container._DEFAULT_DESCRIPTION
     container.refresh_description()
     assert "OPEN" in container.description
 

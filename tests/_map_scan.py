@@ -27,9 +27,12 @@ game refuses the placement. Nothing nested inside a payload's props is walked.
 
 **No assertions live here.** A helper that asserts its own non-emptiness makes
 each caller's positive control look redundant, and the callers are where the
-threshold belongs -- ``> 20`` containers means something different from
-``>= 10`` map files. Each module keeps its own; ``test_map_scan_helpers.py``
-holds the controls for this module itself.
+threshold belongs -- a container floor means something different from a map-file
+floor. Each module keeps its own assertion; ``test_map_scan_helpers.py`` holds
+the controls for this module itself. What IS shared is the floor *value* for a
+population several guards assert over (``MIN_CONTAINER_PLACEMENTS``): three
+copies of one number is how a scan that lost half the tree goes on passing
+everywhere.
 """
 
 import functools
@@ -179,6 +182,42 @@ def object_placements() -> Tuple[Placement, ...]:
 def event_placements() -> Tuple[Placement, ...]:
     """Every authored tile event across every shipped map."""
     return _placements("events")
+
+
+#: Floor for the shipped ``Container``-family population, shared by the three
+#: guards that assert over it (authored descriptions, open narration, article
+#: grammar). The real count is comfortably above it -- the floor exists to catch
+#: a scan that has stopped matching, not to pin the number, which would turn
+#: every new placement into a test edit. Set well under the real population and
+#: well over "a handful": a walk that lost half the maps trips it.
+MIN_CONTAINER_PLACEMENTS = 40
+
+
+@functools.lru_cache(maxsize=1)
+def container_placements() -> Tuple[Tuple[Placement, type], ...]:
+    """Every shipped ``Container``-family placement, paired with its class.
+
+    Yields the RESOLVED class rather than its name, so a caller can instantiate
+    the real subclass, and the placement itself, so a caller can project
+    whichever of ``map_name``/``coord``/``props`` it asserts over.
+
+    This walk was written out three times -- in the guards over open narration,
+    authored descriptions and article grammar -- each iterating
+    ``object_placements()``, resolving, and testing ``issubclass``. That is the
+    duplication this module exists to prevent: see the note about
+    ``tests/_moves_scan.py`` above. No assertions here; each caller keeps its
+    own non-emptiness control against ``MIN_CONTAINER_PLACEMENTS``.
+    """
+    # Local import: ``src.objects`` pulls in most of the engine, and this
+    # module is imported at collection time by every map guard in the tree.
+    from src.objects import Container
+
+    found = []
+    for placement in object_placements():
+        cls = resolve_class(placement)
+        if isinstance(cls, type) and issubclass(cls, Container):
+            found.append((placement, cls))
+    return tuple(found)
 
 
 def resolve_class(placement: Placement) -> type:

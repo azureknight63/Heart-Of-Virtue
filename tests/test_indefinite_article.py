@@ -25,32 +25,28 @@ import pytest
 from src import functions
 from src.api.combat_adapter import _weapon_noun_phrase
 from src.objects import Container
-from tests._map_scan import object_placements, resolve_class
+from tests._map_scan import MIN_CONTAINER_PLACEMENTS, container_placements
 
-# The production exception tables, read rather than copied. The map guard
-# below applies the plain vowel-LETTER rule, which is only safe while no
-# shipped nickname needs an exception; asking the real tables is what makes
-# that control keep working when someone extends them. This is not circular:
-# the guard's expectation is still computed from the letter, never from the
-# helper's answer.
-_TRICKY_PREFIXES = (
-    functions._VOWEL_SOUND_CONSONANT_PREFIXES
-    + functions._CONSONANT_SOUND_VOWEL_PREFIXES
-    + tuple(functions._CONSONANT_SOUND_VOWEL_WORDS)
-)
+
+def _letter_article(word):
+    """The plain written rule -- ``"an"`` before a vowel LETTER -- and nothing else.
+
+    Deliberately independent of ``functions.indefinite_article``: a guard that
+    computes its expectation with the code under test asserts only that the
+    code agrees with itself. It is spelled here once rather than at each of the
+    two sites that need it, because two copies of the "independent" rule can
+    drift apart and then only one of them is the control anybody reads.
+    """
+    return "an" if str(word)[:1].lower() in "aeiou" else "a"
 
 
 def _shipped_container_nicknames():
     """Every authored nickname on a shipped ``Container``-family placement."""
-    out = []
-    for placement in object_placements():
-        cls = resolve_class(placement)
-        if not (isinstance(cls, type) and issubclass(cls, Container)):
-            continue
-        nickname = placement.props.get("nickname")
-        if nickname:
-            out.append((placement.map_name, placement.coord, nickname))
-    return out
+    return [
+        (placement.map_name, placement.coord, placement.props["nickname"])
+        for placement, _cls in container_placements()
+        if placement.props.get("nickname")
+    ]
 
 
 def _generated_descriptions(nickname):
@@ -105,7 +101,7 @@ def test_plain_words_follow_the_vowel_letter_rule(word, expected):
     [
         # Consonant sound behind a vowel letter.
         ("unicorn", "a"), ("university", "a"), ("useful pouch", "a"),
-        ("one-eyed skull", "a"), ("euro", "a"), ("ewe", "a"),
+        ("one crate", "a"), ("euro", "a"), ("ewe", "a"),
         # Vowel sound behind a consonant letter.
         ("hour", "an"), ("hourglass", "an"), ("honest merchant", "an"),
         ("honor guard", "an"), ("heir", "an"),
@@ -126,14 +122,44 @@ def test_the_exception_table_overrides_the_letter_rule(word, expected):
         ("union banner", "a"),
         # "one" as a bare prefix would claim "onerous".
         ("onerous ledger", "an"),
-        # A hyphenated first word is decided by its first element.
-        ("one-eyed skull", "a"), ("hour-glass", "an"),
     ],
 )
 def test_the_exception_tables_do_not_overreach(word, expected):
     """Every entry is a prefix of some word — it must not be a prefix of one
     that takes the OTHER article. These are the collisions that shape them."""
     assert functions.indefinite_article(word) == expected
+
+
+@pytest.mark.parametrize(
+    "word,expected",
+    [("one-eyed skull", "a"), ("hour-glass", "an")],
+)
+def test_a_hyphenated_first_word_is_decided_by_its_first_element(word, expected):
+    """Separate from the collision cases above: this is about WHERE the rule
+    looks, not about a table entry claiming too much."""
+    assert functions.indefinite_article(word) == expected
+
+
+def test_the_aggregate_lists_exactly_the_words_the_letter_rule_gets_wrong():
+    """``ARTICLE_EXCEPTION_STEMS`` is what the map control below consults.
+
+    It is derived from the tables rather than re-listed, so a new table cannot
+    be missed — but a stem that is NOT actually an exception would make that
+    control flag innocent nicknames, and a table wired into the helper without
+    going through ``_ARTICLE_PREFIX_TABLES`` would leave the control fail-open.
+    Both show up here: every listed stem must disagree with the plain letter
+    rule, which is the only reason for a stem to be listed at all.
+    """
+    stems = functions.ARTICLE_EXCEPTION_STEMS
+    assert stems, "the aggregate is empty — the map control below is vacuous"
+    not_exceptions = [
+        stem for stem in stems
+        if functions.indefinite_article(stem) == _letter_article(stem)
+    ]
+    assert not not_exceptions, (
+        f"these stems agree with the plain letter rule and do not belong in "
+        f"the exception aggregate: {not_exceptions}"
+    )
 
 
 @pytest.mark.parametrize("word", ["", None, "   "])
@@ -149,7 +175,7 @@ def test_an_absent_word_falls_back_to_a(word):
 
 def test_the_shipped_nickname_population_is_not_empty():
     nicknames = _shipped_container_nicknames()
-    assert len(nicknames) > 20, (
+    assert len(nicknames) >= MIN_CONTAINER_PLACEMENTS, (
         "map scan found almost no authored container nicknames — the scan "
         f"broke and every assertion below is vacuous. Found: {nicknames}"
     )
@@ -159,7 +185,7 @@ def test_some_shipped_nickname_actually_starts_with_a_vowel():
     """Positive control: no vowel-initial nickname means no bug to catch."""
     vowel_initial = [
         n for _m, _c, n in _shipped_container_nicknames()
-        if n[:1].lower() in "aeiou"
+        if _letter_article(n) == "an"
     ]
     assert vowel_initial, (
         "no shipped container nickname starts with a vowel — the guard below "
@@ -175,7 +201,7 @@ def test_no_shipped_nickname_needs_the_exception_table():
     """
     tricky = [
         (m, c, n) for m, c, n in _shipped_container_nicknames()
-        if n.lower().startswith(_TRICKY_PREFIXES)
+        if n.lower().startswith(functions.ARTICLE_EXCEPTION_STEMS)
     ]
     assert not tricky, (
         f"these shipped nicknames need the article exception table: {tricky}"
@@ -197,7 +223,7 @@ def test_no_shipped_nickname_needs_the_exception_table():
 def test_no_generated_description_uses_the_wrong_article(
     map_name, coord, nickname
 ):
-    expected = "An" if nickname[:1].lower() in "aeiou" else "A"
+    expected = _letter_article(nickname).capitalize()
     wrong = "An" if expected == "A" else "A"
     for which, text in _generated_descriptions(nickname).items():
         assert f"{wrong} {nickname}" not in text, (
