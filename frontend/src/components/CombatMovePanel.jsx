@@ -359,6 +359,12 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                             // close button (#542), since this panel renders
                             // its own inline "✕" rather than using BaseDialog.
                             // Gated on the pointer, not the width (issue #639).
+                            // This spread is byte-identical to BaseDialog's and
+                            // is NOT extracted on purpose: findWidthGatedTouchTargets
+                            // keys on a literal `accessibility.touchTarget` read,
+                            // so folding the six copies into one helper would
+                            // delete the reads it inspects from every call site
+                            // and disarm the audit without failing anything.
                             ...(needsLargeTargets ? {
                                 minWidth: accessibility.touchTarget,
                                 minHeight: accessibility.touchTarget,
