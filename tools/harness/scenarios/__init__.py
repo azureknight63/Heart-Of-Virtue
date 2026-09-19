@@ -18,6 +18,7 @@ from .ch03_events import Ch03EventsScenario
 from .grondia_happy_path import GroniaHappyPathScenario
 from .ally_progression import AllyProgressionScenario
 from .shop import ShopScenario
+from .shop_story_items import ShopStoryItemsScenario
 from .npc_chat import NpcChatScenario
 from .logs import LogsScenario
 from .feedback import FeedbackScenario
@@ -44,6 +45,7 @@ _ALL_SCENARIOS = [
     GroniaHappyPathScenario(),
     AllyProgressionScenario(),
     ShopScenario(),
+    ShopStoryItemsScenario(),
     NpcChatScenario(),
     LogsScenario(),
     FeedbackScenario(),

@@ -269,7 +269,7 @@ def test_restock_never_stocks_a_disallowed_class():
     """``disallowed_classes`` is the guard that keeps Gold, Relic and the bare
     equipment base classes out of shop stock — a Relic on a shelf would sell
     for nothing and break a story item."""
-    from src.items import Gold, Relic
+    from src.items import Gold, Relic, Commodity, ProtectiveGear
 
     m = MockMerchant()
     room = FakeRoom()
@@ -279,7 +279,14 @@ def test_restock_never_stocks_a_disallowed_class():
 
     m._fill_remaining_stock([])
 
-    banned = {Gold, Relic, Consumable, Item}
+    # Issue #632: this assertion is `assert not [...]`, which an empty
+    # inventory satisfies — so pin the fill first, or the guard goes quiet the
+    # moment stocking breaks for any reason.
+    assert len(m.inventory) == 30, f"restock only filled {len(m.inventory)}/30 slots"
+
+    # Commodity and ProtectiveGear joined the set in #632: both are abstract
+    # bases that raise TypeError on the bare cls() the roller performs.
+    banned = {Gold, Relic, Consumable, Item, Commodity, ProtectiveGear}
     assert not [i for i in m.inventory if type(i) in banned]
 
 

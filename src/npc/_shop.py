@@ -43,6 +43,8 @@ from src.items import (
     Weapon,
     Arrow,
     Relic,
+    Commodity,
+    ProtectiveGear,
 )
 from src.objects import Container  # type: ignore
 from src.narration import narrate
@@ -426,6 +428,15 @@ class MerchantShopMixin:
             # (issue #646) — it must never appear as random merchant stock,
             # and its value=0 would make it sell for free anyway.
             Relic,
+            # Issue #632: two more abstract bases that were missing from this
+            # set. Both raise TypeError on the bare cls() that spawn_item does,
+            # silently burning a fill iteration. They belong here rather than
+            # on the inherited `stockable` flag precisely because their
+            # subclasses ARE legitimate stock — Commodity's Crystals and
+            # MineralPowder exist to be sold, and ProtectiveGear is the parent
+            # of Armor/Helm/Boots/Gloves, already listed above.
+            Commodity,
+            ProtectiveGear,
         }
         candidates: list[type[Item]] = []
         for _nm, obj in inspect.getmembers(items_module, inspect.isclass):
@@ -433,6 +444,13 @@ class MerchantShopMixin:
                 if obj is Item or not issubclass(obj, Item):
                     continue
                 if obj in unique_factories or obj in disallowed_classes:
+                    continue
+                # Issue #632: per-class opt-out for story items, quest keys,
+                # puzzle ingredients and lore documents. Unlike the identity
+                # test above it is inherited, so it covers whole subtrees such
+                # as Book. getattr's default keeps a test double that lacks the
+                # attribute stockable, matching this file's defensive style.
+                if not getattr(obj, "stockable", True):
                     continue
                 candidates.append(obj)
             except Exception:
