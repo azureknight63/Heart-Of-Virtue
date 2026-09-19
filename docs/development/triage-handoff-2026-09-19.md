@@ -1,11 +1,65 @@
 # Triage pass handoff — 2026-09-19
 
-**Status:** in progress, paused near the weekly usage limit.
+**Status:** in progress (session 2). **Read §0 first** — it supersedes §3's "where it stopped".
 **Branch:** `claude/issue-triage-a7acc5` (worktree `.claude/worktrees/issue-triage-a7acc5`)
 **Merge base:** `c8f5f17b` (== `origin/master` at pass start)
 **Nothing has been pushed. No PR exists yet.**
 
 This file is the resume point. Update it at milestones.
+
+---
+
+## 0. Session 2 — resume point (supersedes §3's status lines)
+
+A session whose launch worktree is a *different* one is blocked from editing this worktree's
+files. Enter it first: `EnterWorktree` with `path` = this worktree.
+
+### Scrub state
+| Chunk | Dimension agents | Adversaries | Fixes |
+|---|---|---|---|
+| c1-620-security | 5/5 (Security re-dispatched, returned **C**) | style + security done | C1 applied (`78577df1`); rest pending |
+| c2-621-loot | 5/5 | style + security done | test-side fixes applied (`65e87b7e`); src-side pending |
+| c3-shop-items | 5/5 | style + security done | test-side fixes applied (`5c4b608b`, `d030abe8`); src-side pending |
+| c4-frontend-combat-chat | dispatched 2026-09-19 session 2 | — | — |
+| c5-dry-feedback | **not dispatched** — hold until the 5-hour window resets | — | — |
+
+The c1 Security re-dispatch escalated #620: the fix closed only the first hop. Handlers the class
+declares still call `self.<method>` (go/leave/exit→`self.enter`, `wash`→`self.clean`,
+`take_all`→`self.refresh_description`, `use`/`examine`→`self.drink`/`self.read`, event
+`check_conditions`, …), and the map loader `setattr`s every prop, so an instance `__dict__`
+entry shadowing any class-declared **non-data descriptor** (function/staticmethod/classmethod) or
+UPPER_CASE policy constant reaches #620's primitive one hop later. Plus two pre-existing loader
+Majors: `SafeUnpickler` (C `pickle.Unpickler`) cannot hook BUILD, so a save can `setattr` on an
+allow-listed CLASS process-wide; and the map class-marker gate (`universe.py:141`, `:186`, `:251`,
+`map_placeholders.py:134`) checks only `_is_allowed`, so `story:import_module` resolves to
+`importlib.import_module`. **Keep property setters** (`demo_end_ready_flag` is a data descriptor
+the loader must still apply).
+
+### Maintainer decisions, session 2 (binding — add to §4)
+| Topic | Decision |
+|---|---|
+| #620 scope | **Full root fix in this branch, and close #620**: map loader refuses props shadowing class non-data descriptors / UPPER_CASE constants; class-marker gate requires a real, trusted class; save side sanitises restored instance dicts and refuses BUILD on classes/functions (pure-Python unpickler); per-site hardening (C2 class-routed `enter`, C4 `type(self).CROSSING_METHOD_NAMES`) as defence in depth. |
+| Shop B1/B2 | **Fix both here.** B1: buyback stamps the ledger's value on returned units (sell→buyback→resell profit, widened by #624). B2: `shop_sell` refuses merchandise-flagged items (mirror `equip_item`). Each with a before/after repro. |
+| #621 freeze window | **Refuse floor take/drop during combat, then freeze merges at victory as decided in §5.** (Take/drop were ungated in combat — `interact_with_target` refuses only Passageway, `drop_item` has no check — so a merge could destroy a recorded drop before victory, and later arrivals merge INTO a recorded drop.) |
+| Commits | **Commit per verified fix group**, local only; no push/PR until §12 is checked. |
+
+### Committed in session 2
+`78577df1` C1 alias-word helper read off the class (repro: 21 red → green) · `5c4b608b` derived
+shop guards (families incl. Key; every stackable keeps its name) · `d030abe8` shared
+`walk_json_strings`, authored-path containment test · `65e87b7e` identity in #621 fixtures,
+keywords keyed by placement.
+
+### Pending, in order
+1. #620 full root fix (above) + C2/C4/C5/C6(A1 atomic pop)/C7/C8 + D1 (`Passageway.accepts_step_through`).
+2. c2/c3 src fixes: A2 (`Item.take` appends before removing), A6 (VICTORY dialog details by handle, not name), A7 (skip `_combat_handle` in `__dict__` copies), A11/A12 (harness silent passes), B1, B2, B4 (`Book.text` cwd-relative; narrates path+errno), B10 (container take narration lost the count), stale comments/docstrings (T2/T3/T6/T12/T15, S10–S15), `_shop.py` extraction (T1/T4) if budget allows.
+3. #621: refuse take/drop in combat + freeze at victory (§5, all merge sites).
+4. c5 wave, c4 adversaries/fixes, targeted re-dispatch of below-A pairs, `/code-review` over the architecture-touching subset, full suites, `bug_hunt`, PR per §12.
+
+Deferred with reason: B8 (pre-#624 saves keep baked names) — save compat is suspended for beta,
+but the docstrings claim old saves are handled; correct the claim or add normalisation. A9/A10
+downgraded to Nit (embedded arrows unrecorded; `_forget_drop_handles` has no observable effect —
+fix its docstring). B12 moot (pytest-randomly reseeds per test). Per-session mutation lock
+(root of A1/A2/A4/A5) → follow-up issue.
 
 ---
 
