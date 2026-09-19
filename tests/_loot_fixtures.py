@@ -36,7 +36,9 @@ def offer_victory_drops(player, *names, tile=None):
             None,
         )
         if match is not None:
-            unclaimed.remove(match)
+            # By identity: ``list.remove`` compares with ``==``, and an equal
+            # twin claimed in the match's place is the defect #621 closes.
+            unclaimed = [i for i in unclaimed if i is not match]
         player.combat_drops.append(
             {
                 "name": name,

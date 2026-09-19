@@ -301,7 +301,11 @@ def test_every_shipped_passageway_keyword_still_crosses(
     tile = game_map[(0, 0)]
     way = plain_passageway(player, tile, name=name or "Passageway")
     way.teleport_map, way.teleport_tile = REACHABLE_DESTINATION
-    way.keywords = [k for _m, _c, n, k in _SHIPPED_KEYWORDS if n == name]
+    # This placement's own keywords. Keyed by where it sits, not by name
+    # alone: every unnamed placement shares the name None, and grouping on
+    # that pooled all of their keywords onto one probe.
+    placement = (map_name, coord, name)
+    way.keywords = [k for m, c, n, k in _SHIPPED_KEYWORDS if (m, c, n) == placement]
     tile.objects_here = [way]
 
     result = interact_with(game_service, player, way, keyword, {})

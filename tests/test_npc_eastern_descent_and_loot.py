@@ -339,12 +339,13 @@ class TestNPCLootMixinDeathSequence:
     def test_before_death_stacks_duplicate_drops_into_one_pile_per_visibility(
         self, corpse
     ):
-        """The stacking step is what stops a corpse leaving five separate
-        one-arrow entries the player has to pick up individually.
+        """The stacking step is what stops a corpse leaving one entry per
+        embedded arrow for the player to pick up individually.
 
-        It groups by visibility as well as by kind (#621): scattered inventory
-        is hidden and embedded arrows are not, and a pile cannot be half
-        concealed. So two piles here, not eight objects.
+        It groups by visibility as well as by kind (#621): the scattered stack
+        lands hidden as one object and each embedded arrow lands visible as its
+        own, and a pile cannot be half concealed. So two piles here, not three
+        objects.
         """
         import random
 
@@ -364,8 +365,8 @@ class TestNPCLootMixinDeathSequence:
         assert len([i for i in tile.items_here if i.hidden]) == 1
 
     def test_before_death_survives_a_room_without_an_items_list(self, corpse):
-        """Guarded by ``hasattr(current_room, "items_here")`` — a stub room must
-        not crash the death handler."""
+        """A stub room must not crash the death handler: ``_spawn_drop`` and
+        ``_stack_own_drops`` both require ``items_here`` to be a real list."""
         npc, _ = corpse
 
         class _BareRoom:

@@ -265,9 +265,11 @@ def _spawned(tile, item_type, amt=1):
     Returned rather than re-derived by name, so a test holds the exact objects
     it placed and the item's name comes from the engine, not from the test.
     """
-    before = list(tile.items_here)
+    # By identity, not ``in`` (which compares with ``==``): an equal twin
+    # already on the floor must not hide the object that just landed.
+    before = {id(i) for i in tile.items_here}
     tile.spawn_item(item_type, amt=amt)
-    return [i for i in tile.items_here if i not in before]
+    return [i for i in tile.items_here if id(i) not in before]
 
 
 class TestOnlyThisFightsDropsCanBeCollected:
