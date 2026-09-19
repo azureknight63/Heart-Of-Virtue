@@ -18,16 +18,16 @@ that only asserted "shipped content is fine" would therefore pass against the
 unfixed code, so every test here builds the hostile placement through the
 **real loader** and drives the **real dispatch**.
 
-The rule is provenance, not shape: the class may nominate handlers, the
-instance may not -- with one carve-out for ``Passageway``, which binds each
-word of its own name to ``self.enter`` on the instance (``setattr(self, word,
-self.enter)``) and is how the shipped city gates and tent flaps are used.
-Those are bound methods OF THE TARGET, so ``__self__ is target`` readmits them
-and nothing a map or a save can store.
+The rule is provenance, not shape: the class nominates handlers and the
+instance never does. ``Passageway``'s name words (how the shipped city gates
+and tent flaps are used) are DATA -- the class-declared
+``instance_keyword_aliases`` maps each one to ``enter``, so an instance can
+supply a word and never the method it reaches. ``HealingSpring.clean`` is a
+``staticmethod`` and resolves through the ordinary class lookup.
 
-``__self__ is target`` cannot be the whole rule, which is why the class lookup
-comes first: ``HealingSpring.clean`` is a ``staticmethod``, so it has no
-``__self__`` at all, and four shipped springs advertise ``clean`` as a button.
+This module pins the resolver. The loaders' refusal to let an instance
+shadow class behaviour at all -- the root of the hops past it -- is pinned by
+``tests/test_instance_shadowing_guard.py``.
 """
 
 import inspect
@@ -383,44 +383,47 @@ class TestAGraftedBoundMethodIsNotAHandler:
         assert not way.is_crossing_handler(way.__dict__["enter"])
 
 
-def _passageway_with_shadowed_alias_words(vector):
+def _passageway_with_shadowed_alias_words():
     """A ``Passageway`` whose instance ``__dict__`` shadows the class's
     ``_name_alias_words`` staticmethod with the nominated engine class.
 
-    ``vector`` is how it got there: ``"map"`` through the real legacy loader
-    (an authored class-marker prop), ``"save"`` as a restored save's
-    ``__dict__`` carries it (written directly, as unpickling does).
+    Written straight into ``__dict__``: neither loader can put it there any
+    more (``tests/test_instance_shadowing_guard.py`` pins both refusals), so
+    this is the state a future writer would have to create -- and the
+    per-site read off the class must still hold against it.
     """
     player, game_map = live_world()
     tile = game_map[(0, 0)]
-    if vector == "map":
-        payload = {
-            "__class__": "Passageway",
-            "__module__": "objects",
-            "props": {
-                "name": "Ferry Landing",
-                "_name_alias_words": {"__class_type__": _NOMINATED[0]},
-            },
-        }
-        with capture_narration():
-            way = player.universe._deserialize_saved_instance(payload, tile=tile)
-        assert way is not None, "the loader refused the payload outright"
-    else:
-        way = Passageway(player=player, tile=tile, name="Ferry Landing")
-        way.__dict__["_name_alias_words"] = _NOMINATED[1]
-    assert way.__dict__.get("_name_alias_words") is _NOMINATED[1], (
-        f"the {vector} vector no longer stores a class over _name_alias_words; "
-        "this guard has stopped reproducing the hole it exists for"
-    )
+    way = Passageway(player=player, tile=tile, name="Ferry Landing")
+    way.__dict__["_name_alias_words"] = _NOMINATED[1]
     way.tile, way.player = tile, player
     tile.objects_here = [way]
     return player, way
 
 
-@pytest.mark.parametrize("vector", ["map", "save"])
+def test_the_map_loader_refuses_to_shadow_the_alias_word_helper():
+    """The map vector C1 was found through: an authored class-marker prop
+    named ``_name_alias_words``. The loader now refuses it outright."""
+    player, game_map = live_world()
+    payload = {
+        "__class__": "Passageway",
+        "__module__": "objects",
+        "props": {
+            "name": "Ferry Landing",
+            "_name_alias_words": {"__class_type__": _NOMINATED[0]},
+        },
+    }
+    with capture_narration():
+        way = player.universe._deserialize_saved_instance(
+            payload, tile=game_map[(0, 0)]
+        )
+    assert way is not None, "the loader refused the whole payload"
+    assert "_name_alias_words" not in way.__dict__
+
+
 @pytest.mark.parametrize("verb", _HOSTILE_VERBS)
 def test_the_alias_word_helper_is_never_read_off_the_instance(
-    game_service, verb, vector, monkeypatch
+    game_service, verb, monkeypatch
 ):
     """``instance_keyword_aliases`` is class-declared so that what an alias
     word MEANS cannot come from the instance -- but it derived the words by
@@ -429,7 +432,7 @@ def test_the_alias_word_helper_is_never_read_off_the_instance(
     no class declares then CALLED the instance-supplied object, with the
     instance-supplied name as its argument: #620's primitive, one hop inside
     the resolver that closed it."""
-    player, way = _passageway_with_shadowed_alias_words(vector)
+    player, way = _passageway_with_shadowed_alias_words()
     constructed = []
     real_init = states_module.Clean.__init__
 
@@ -446,12 +449,12 @@ def test_the_alias_word_helper_is_never_read_off_the_instance(
 
     assert constructed == [], (
         f"{verb!r} on a Passageway called an instance-stored "
-        f"_name_alias_words ({vector} vector): {constructed}"
+        f"_name_alias_words: {constructed}"
     )
 
 
 def test_the_alias_words_still_cross_when_the_helper_is_shadowed():
     """The class-declared helper keeps working for the words themselves."""
-    _player, way = _passageway_with_shadowed_alias_words("save")
+    _player, way = _passageway_with_shadowed_alias_words()
     for word in ("ferry", "landing"):
         assert way.is_crossing_handler(resolve_interaction(way, word)), word

@@ -172,8 +172,9 @@ def _is_demo_end_crossing(target, handler):
     """True when `handler` is a verb that would CROSS a demo-end passageway.
 
     Gated on the resolved handler rather than on the verb, because a
-    Passageway binds its authored name words (`ferry`, `landing`) to `enter`
-    on the instance, and all of those are legitimate ways to say "use it".
+    Passageway's authored name words (`ferry`, `landing`) resolve to `enter`
+    too (through its class-declared `instance_keyword_aliases`), and all of
+    those are legitimate ways to say "use it".
     Without this the demo-end branch fired for every verb the allow-list
     permits, so merely examining the ferry to read its description ended the
     demo and set the story gate.
@@ -183,8 +184,8 @@ def _is_demo_end_crossing(target, handler):
     which delegate to it rather than alias it -- and those three are exactly
     the shipped ferry's `action_aliases`, so the miss covered every way a
     player actually crosses. (Its `keywords` list is wider than that:
-    `enter, go, leave, exit, ferry, landing`. The two name words bind to
-    `enter` directly, which is why the handler, not the verb, is the thing to
+    `enter, go, leave, exit, ferry, landing`. The two name words resolve to
+    `enter` itself, which is why the handler, not the verb, is the thing to
     ask about.)
 
     Takes the already-resolved handler rather than the verb, so one
@@ -2653,7 +2654,9 @@ class GameService:
             # to) returns whether THIS call closed the demo, and that verdict
             # is the wire's `beta_end` -- the same flag the combat adapter
             # sets on the Lurker path -- so the client raises BetaEndDialog.
-            beta_end = bool(target.enter(player))
+            # The class-resolved handler, not `target.enter`: an instance
+            # lookup here was one hop past the resolver #620 closed.
+            beta_end = bool(handler(player))
         # `not _is_demo_end_passageway(target)`: this arm asks "step
         # through?", and the arm above has already handled every verb that
         # WOULD step through a demo-end passageway. What reached here is a

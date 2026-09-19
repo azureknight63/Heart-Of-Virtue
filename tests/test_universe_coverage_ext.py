@@ -65,6 +65,7 @@ class TestDeserializeInventorySkip:
             def __init__(self):
                 self.inventory = ["existing_item"]
 
+        FakeObj.__module__ = objects_mod.__name__  # an engine class, as the loader requires (#620)
         setattr(objects_mod, "FakeObj", FakeObj)
         try:
             payload = {
@@ -107,6 +108,7 @@ class TestDeserializeInventorySkip:
         class MyClass:
             pass
 
+        MyClass.__module__ = items_mod.__name__  # an engine class, as the loader requires (#620)
         setattr(items_mod, "MyClass", MyClass)
         try:
             payload = {"__class_type__": "items:MyClass"}
@@ -143,7 +145,9 @@ class TestDeserializeInventorySkip:
             def __init__(self):
                 self.value = 0
 
+        Outer.__module__ = npc_mod.__name__  # an engine class, as the loader requires (#620)
         setattr(npc_mod, "Outer", Outer)
+        Inner.__module__ = npc_mod.__name__  # an engine class, as the loader requires (#620)
         setattr(npc_mod, "Inner", Inner)
         try:
             payload = {
@@ -307,6 +311,7 @@ class TestLoadSingleJsonMap:
             def __init__(self):
                 self.name = "Test Item"
 
+        SimpleItem.__module__ = items_mod.__name__  # an engine class, as the loader requires (#620)
         setattr(items_mod, "SimpleItem", SimpleItem)
         try:
             u = self._universe_with_player()
@@ -345,6 +350,7 @@ class TestLoadSingleJsonMap:
                 self.name = "Test NPC"
                 self.current_room = None
 
+        SimpleNPC.__module__ = npc_mod.__name__  # an engine class, as the loader requires (#620)
         setattr(npc_mod, "SimpleNPC", SimpleNPC)
         try:
             u = self._universe_with_player()
@@ -387,6 +393,7 @@ class TestLoadSingleJsonMap:
                 self.name = "Test Object"
                 self.tile = None
 
+        SimpleObject.__module__ = objects_mod.__name__  # an engine class, as the loader requires (#620)
         setattr(objects_mod, "SimpleObject", SimpleObject)
         try:
             u = self._universe_with_player()

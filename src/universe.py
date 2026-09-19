@@ -183,7 +183,16 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                         )
                         return None
                     module = importlib.import_module(canonical)
-                    return getattr(module, cls_name)
+                    resolved = getattr(module, cls_name)
+                    # The pair is allowed; what it resolved to must also be a
+                    # trusted CLASS -- `story:import_module` passed the pair
+                    # check and was `importlib.import_module` (#620).
+                    if not secure_pickle.is_trusted_engine_class(resolved):
+                        narrate(
+                            f"ERROR: refusing class type '{spec}': not an engine class"
+                        )
+                        return None
+                    return resolved
             except Exception as e:
                 narrate(f"ERROR: Failed to resolve class type '{spec}': {e}")
                 return None
@@ -249,6 +258,12 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             # the canonical src.* module so classes match the running engine's.
             module = importlib.import_module(canonical)
             cls = getattr(module, cls_name)
+            if not secure_pickle.is_trusted_engine_class(cls):
+                narrate(
+                    f"ERROR: refusing to deserialize '{mod_name}.{cls_name}': "
+                    "not an engine class"
+                )
+                return None
             # Try to supply only parameters accepted by __init__ (excluding self)
             try:
                 sig = inspect.signature(cls.__init__)
@@ -281,6 +296,16 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 try:
                     # Skip setting player or tile if they're null - let runtime set these
                     if k in ("player", "tile") and v is None:
+                        continue
+                    # A prop may set data, never replace behaviour the class
+                    # declares: handlers resolve from the class but call
+                    # `self.<method>`, and an instance attribute wins that
+                    # lookup (#620). The save loader applies the same rule.
+                    if secure_pickle.shadows_class_behaviour(cls, k):
+                        narrate(
+                            f"ERROR: refusing prop '{k}' on '{mod_name}.{cls_name}': "
+                            "it would replace behaviour the class declares"
+                        )
                         continue
                     if (
                         k == "inventory"

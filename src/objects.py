@@ -1151,7 +1151,7 @@ class Passageway(Object):
         # with `beta_end` unset -- #552's symptom, via a different door.
         return any(
             handler == _class_declared_handler(self, name)
-            for name in self.CROSSING_METHOD_NAMES
+            for name in type(self).CROSSING_METHOD_NAMES
         )
 
     def is_demo_edge(self, ready_flag=None):
