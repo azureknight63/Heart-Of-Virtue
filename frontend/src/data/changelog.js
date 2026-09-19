@@ -3,6 +3,16 @@
 // alongside CHANGELOG.md when cutting a new version; newest entry first.
 export const CHANGELOG = [
   {
+    version: '0.2.1.0',
+    date: '2026-09-18',
+    highlights: [
+      'Combat: see hit chance, damage range and lethality before you commit; new Disrupt interrupt; per-target outcomes for area moves',
+      'Combat glossary (press ?), Heat momentum meter and a reduced-motion toggle',
+      'Story: the Eastern Descent now leads back to Grondia, and the demo ends at the ferry',
+      'Dozens of fixes from playtesting across combat, dialogs, inventory and accessibility',
+    ],
+  },
+  {
     version: '0.2.0.0',
     date: '2026-08-25',
     highlights: [
