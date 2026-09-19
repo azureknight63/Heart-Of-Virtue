@@ -122,6 +122,36 @@ const CITATIONS = [
             + ' where conversation_ended is set',
     }),
     cite({
+        // Issue #618: the failure copy for a timed-out turn names the deadline
+        // that produced it, and the deadline lives one module away.
+        where: 'hooks/useNpcChat.js',
+        about: 'api/npcChat.js',
+        anchor: 'NPC_CHAT_TIMEOUT_MS',
+        claim: 'the client deadline the ECONNABORTED branch reports is declared there',
+    }),
+    // `api/npcChat.js` joins the registry here (issue #618). Its deadline is
+    // sized from the engine's ENFORCED turn ceiling; the arithmetic itself is
+    // not restated in the comment but derived by a Python test, which these
+    // two anchors keep the comment pointed at.
+    cite({
+        where: 'api/npcChat.js',
+        about: 'src/npc/_chat_llm.py',
+        anchor: '_TURN_CEILING_SECONDS = ',
+        claim: 'a turn ends at this ceiling plus at most one call',
+    }),
+    cite({
+        where: 'api/npcChat.js',
+        about: 'tests/test_npc_chat_turn_budget.py',
+        anchor: 'def test_the_client_waits_at_least_as_long_as_a_turn_can_run',
+        claim: 'both bounds on the deadline are derived there from the engine constants',
+    }),
+    cite({
+        where: 'api/npcChat.js',
+        about: 'hooks/useNpcChat.js',
+        anchor: 'endAbandonedConversation(key)',
+        claim: 'the end handler closes the panel first and sends /end fire-and-forget',
+    }),
+    cite({
         where: 'styles/keyframes.test.js',
         about: 'tests/test_security_headers.py',
         anchor: '_STYLE_INJECTORS',

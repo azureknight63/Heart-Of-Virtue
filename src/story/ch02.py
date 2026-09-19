@@ -8,6 +8,7 @@ import types
 from src import items
 from src.events import Event, gate_is_set, set_story_gate, story_gates
 from src.functions import print_slow, await_input
+from src.npc._progression import join_party
 from src.objects import TileDescription
 from src.story.effects import MemoryFlash, NPCSpawnerEvent
 from src.journal import (
@@ -935,18 +936,15 @@ class AfterDefeatingKingSlime(Event):
         ``Ch02GorranAtPools`` took him out of ``combat_list_allies`` to wait
         at the threshold, and that list is the single source of truth for the
         status party, battle allies and tile-following -- without this he
-        stayed behind for good. Same join as Ch01's escape beat: friend flag,
-        appended behind the player at index 0, levelled up to Jean.
+        stayed behind for good. Same join as Ch01's escape beat -- literally
+        so since #625: ``join_party`` flags him a friend, puts him behind the
+        player at index 0, and levels him up to Jean.
 
         His waiting idle line goes with the wait (#613): he follows Jean out
         of the pools from here, and "waits beside the arch" would travel with
         him all the way down the Eastern Descent.
         """
-        gorran.friend = True
-        if gorran not in self.player.combat_list_allies:
-            self.player.combat_list_allies.append(gorran)
-        if hasattr(gorran, "sync_level"):
-            gorran.sync_level(getattr(self.player, "level", 1))
+        join_party(self.player, gorran)
         _restore_ordinary_idle_line(gorran)
 
     def _cleanse_pool_tiles(self, pools_map):

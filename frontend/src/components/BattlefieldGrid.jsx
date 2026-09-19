@@ -2450,6 +2450,30 @@ function BattlefieldGrid({
   leftX += panCells.x;
   topY += panCells.y;
 
+  // How far the window may legally shift from where this render put it. The
+  // re-clamp effect just below and the pan affordance at the end of the render
+  // read this; the drag handlers' `measureGesture` calls the same
+  // `windowPanBounds` on `viewRef` at gesture start. All three must agree.
+  const panBounds = useMemo(() => windowPanBounds({
+    leftX: unpannedLeftX, topY: unpannedTopY, gridCols, mapSize: resolvedMapSize,
+  }), [unpannedLeftX, unpannedTopY, gridCols, resolvedMapSize]);
+
+  // Whether a drag can move anything at all. panCellBounds collapses to
+  // [0, 0] whenever the window already covers the arena, and that is the
+  // ORDINARY case rather than an edge one: arenas scale to three columns per
+  // combatant (get_dynamic_grid_size in src/coordinate_config.py), so the
+  // two- and three-combatant fights that make up nearly the whole game are 10
+  // and 13 columns under a 13-cell frame. Fit mode reaches it by construction
+  // on any arena no wider than VIEW_SIZE (fitBox floors the frame there and
+  // clamps it inside the arena), and follow mode whenever Jean stands
+  // mid-arena.
+  //
+  // Derived from the bounds, deliberately NOT from the view mode (#612). The
+  // dead affordance was reported in fit mode, but it is slack-specific, not
+  // mode-specific: an `isFitMode` check would fix the report and leave the
+  // identical centre-arena follow case still advertising a dead gesture.
+  const canPan = panBounds.x.max > panBounds.x.min || panBounds.y.max > panBounds.y.min;
+
   // The shift is clamped at gesture start against the window of that moment,
   // and the window moves on its own: Jean steps while the player is panned
   // (follow mode), or the fit frame re-derives. Re-clamp against the fresh
@@ -2457,9 +2481,7 @@ function BattlefieldGrid({
   // before the next drag happens to fix it. Keyed on the UNPANNED window; a
   // shift that is already legal is a no-op, so this cannot fight a drag.
   useEffect(() => {
-    const { x, y } = windowPanBounds({
-      leftX: unpannedLeftX, topY: unpannedTopY, gridCols, mapSize: resolvedMapSize,
-    });
+    const { x, y } = panBounds;
     const cur = panCellsRef.current;
     const clampedX = clampNumber(cur.x, x.min, x.max);
     const clampedY = clampNumber(cur.y, y.min, y.max);
@@ -2469,7 +2491,7 @@ function BattlefieldGrid({
     touchPanRef.current = { x: 0, y: 0 };
     commitPanCells(clampedX, clampedY);
     applyPanTransform();
-  }, [unpannedLeftX, unpannedTopY, gridCols, resolvedMapSize, commitPanCells, applyPanTransform]);
+  }, [panBounds, commitPanCells, applyPanTransform]);
 
   // Tokens shrink with the viewport, so the detail a marker can carry is a
   // function of cell size, not of which mode produced it — fit mode is
@@ -2787,7 +2809,18 @@ function BattlefieldGrid({
 
       {/* Pan affordance. While centered this is a hint; once the player has
           dragged, it becomes the way back — pan is sticky now, so without it
-          there would be no route home from a corner of the arena. */}
+          there would be no route home from a corner of the arena.
+
+          The hint renders only when `canPan` (#612; why that is most fights
+          is on its declaration). It is removed from the tree rather than
+          dimmed, so it leaves the accessibility tree with it — a screen
+          reader announcing a dead gesture is the same defect as printing one.
+
+          The recenter control is NOT gated on canPan. When the window grows
+          to cover the arena, the re-clamp effect clears a whole-cell shift and
+          `isPanned` with it — but a sub-cell drag remainder survives (0 cells
+          is still legal, so the effect returns early), and that remainder
+          still needs its way home while canPan is false. */}
       {isPanned ? (
         <button
           type="button"
@@ -2804,7 +2837,7 @@ function BattlefieldGrid({
         >
           ⌖ recenter
         </button>
-      ) : (
+      ) : canPan ? (
         <div
           style={{
             position: 'absolute', bottom: '28px', right: '6px',
@@ -2817,7 +2850,7 @@ function BattlefieldGrid({
         >
           <span>drag to pan</span>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

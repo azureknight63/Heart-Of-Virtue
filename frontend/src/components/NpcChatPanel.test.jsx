@@ -31,11 +31,18 @@ vi.mock('../api/npcChat', () => ({
 // components/ConversationStage.test.jsx. `typewriter.mode = 'partial'` freezes
 // the stage mid-line for the one test that needs to tell the typed text apart
 // from the announced text.
+//
+// `partial` mode is FAITHFUL about empty text: the real hook (useTypewriter.js)
+// short-circuits `!text` to `isComplete: true` because there is nothing to
+// type. A stub that reported "still typing" for `''` would have made the panel
+// look like it waits on a beat it has no way to wait on — which is precisely
+// the shape issue #618's closing-line regression takes, so the stub must not
+// paper over it.
 const typewriter = vi.hoisted(() => ({ mode: 'complete', PREFIX_CHARS: 8 }))
 vi.mock('../hooks/useTypewriter', () => ({
   default: (text = '') => {
     const full = String(text ?? '')
-    const partial = typewriter.mode === 'partial'
+    const partial = typewriter.mode === 'partial' && full.length > 0
     return {
       displayedText: partial ? full.slice(0, typewriter.PREFIX_CHARS) : full,
       isComplete: !partial,
@@ -237,12 +244,28 @@ describe('NpcChatPanel', () => {
       // loading && segments.length === 0 -> the block loading indicator.
       expect(screen.getByTestId('npc-chat-loading')).toBeInTheDocument()
       expect(screen.queryByText('Hi there')).not.toBeInTheDocument()
-      // End Conversation exists but is inert during the 'opening' phase.
-      expect(screen.getByText('End Conversation')).toBeDisabled()
+      // ...and End Conversation stays live throughout (#618). The opening turn
+      // is the most expensive LLM call in the feature, so it is the likeliest
+      // one to hang; greying out the only labelled exit during it is exactly
+      // backwards. With no `npc_key` yet the hook short-circuits to `onClose`,
+      // and an `/open` that lands on the unmounted hook ends itself.
+      expect(screen.getByText('End Conversation')).toBeEnabled()
 
       await act(async () => { resolveOpen(mockOpenResponse) })
       expect(screen.queryByTestId('npc-chat-loading')).not.toBeInTheDocument()
       expect(screen.getByText('End Conversation')).toBeEnabled()
+    })
+
+    it('lets the player walk out of an opening turn that never lands (#618)', async () => {
+      npcChat.open.mockReturnValue(new Promise(() => {}))
+      renderPanel()
+
+      fireEvent.click(screen.getByText('End Conversation'))
+
+      // No `/end` to send — no conversation was ever opened — but the panel
+      // must still close rather than hold the player on a dead spinner.
+      await waitFor(() => expect(mockOnClose).toHaveBeenCalledTimes(1))
+      expect(npcChat.end).not.toHaveBeenCalled()
     })
 
     it('shows an inline loader over the existing stage while a reply is pending', async () => {
@@ -313,17 +336,16 @@ describe('NpcChatPanel', () => {
       expect(buttons[1]).toHaveTextContent('Leave me aloneAnswer')
     })
 
-    it('withdraws the options and disables End Conversation while the NPC composes a reply', async () => {
+    it('withdraws the options while the NPC composes a reply', async () => {
       let resolveRespond
       npcChat.respond.mockReturnValue(new Promise((resolve) => { resolveRespond = resolve }))
       renderPanel()
 
       fireEvent.click(await screen.findByText('Hi there'))
 
-      // phase === 'waiting_npc': no option is clickable, and End Conversation
-      // is disabled by the loading gate so the player cannot double-submit.
+      // phase === 'waiting_npc': no option is clickable, so a stray Enter
+      // cannot spend a second paid turn on top of the one in flight.
       await waitFor(() => expect(screen.queryByText('Leave me alone')).not.toBeInTheDocument())
-      expect(screen.getByText('End Conversation')).toBeDisabled()
 
       await act(async () => {
         resolveRespond({
@@ -334,7 +356,24 @@ describe('NpcChatPanel', () => {
         })
       })
       expect(screen.getByText('Go on.')).toBeInTheDocument()
-      expect(screen.getByText('End Conversation')).toBeEnabled()
+    })
+
+    // Issue #618: this assertion used to read `toBeDisabled()`.
+    // ConversationActionRow's docstring says why the gate went.
+    it('leaves End Conversation live while the NPC composes a reply (#618)', async () => {
+      npcChat.respond.mockReturnValue(new Promise(() => {}))
+      renderPanel()
+
+      fireEvent.click(await screen.findByText('Hi there'))
+      await waitFor(() => expect(screen.queryByText('Leave me alone')).not.toBeInTheDocument())
+
+      const endButton = screen.getByText('End Conversation')
+      expect(endButton).toBeEnabled()
+
+      // And it has to actually work, not merely look clickable.
+      fireEvent.click(endButton)
+      await waitFor(() => expect(npcChat.end).toHaveBeenCalledWith('npc_session_123'))
+      await waitFor(() => expect(mockOnClose).toHaveBeenCalledTimes(1))
     })
 
   })
@@ -661,32 +700,55 @@ describe('NpcChatPanel', () => {
     })
 
     // Issue #531: the panel used to arm the hook's 2s close timer the instant
-    // `conversation_ended` landed, which cut off a closing line still typing
-    // out on the stage. `typewriter.mode = 'partial'` (see the module mock at
-    // the top of this file) freezes BOTH ConversationStage's own typewriter
-    // and the panel's tracking copy mid-line, so this proves the panel never
-    // even tells the hook the beat is done while it is still "typing".
-    it('never signals the final beat rendered while the closing line is still typing (#531)', async () => {
+    // `conversation_ended` landed, cutting off a closing line still typing out.
+    // Issue #618 re-opened it: `closing_lines_when_exhausted`
+    // (src/npc/_chat_llm.py) is engine-authored, so it ships through
+    // `_flavor_only_turn` as `npc_response: ''` with the line in `npc_flavor`,
+    // and a tracker reading only `text` saw an empty string -- "fully typed"
+    // the instant it lands. Both closing shapes run through both tests.
+    // `visible` is what the stage shows mid-line, so each row proves its beat
+    // is actually on screen before asserting the close waits for it.
+    const CLOSING_BEATS = [
+      ['a spoken closing line', {
+        beat: { npc_response: 'Farewell, and safe travels on the long road home.' },
+        visible: 'Farewell',
+      }],
+      ['a flavor-only closing line', {
+        // What the engine actually sends when loquacity runs out.
+        beat: { npc_response: '', npc_flavor: 'Mynx turns back to her ledger without another word.' },
+        visible: 'Mynx turns back to her ledger',
+      }],
+    ]
+
+    /** Answer Jean's option with `beat` as the conversation's last turn. */
+    const endOn = async (beat) => {
+      npcChat.respond.mockResolvedValue({
+        data: makeNpcChatRespond({
+          ...beat,
+          jean_options: [],
+          loquacity_current: 0,
+          conversation_ended: true,
+        }),
+      })
+      renderPanel()
+      await act(async () => {})
+      fireEvent.click(screen.getByText('Hi there'))
+      await act(async () => {})
+      expect(screen.getByText('Conversation ended.')).toBeInTheDocument()
+    }
+
+    // `typewriter.mode = 'partial'` (see the module mock at the top of this
+    // file) freezes BOTH ConversationStage's own typewriter and the panel's
+    // tracking copy mid-line, so this proves the panel never even tells the
+    // hook the beat is done while it is still "typing".
+    it.each(CLOSING_BEATS)('never signals the final beat rendered while %s is still typing', async (_label, { beat, visible }) => {
       vi.useFakeTimers()
       try {
-        npcChat.respond.mockResolvedValue({
-          data: makeNpcChatRespond({
-            npc_response: 'Farewell, and safe travels on the long road home.',
-            jean_options: [],
-            loquacity_current: 0,
-            conversation_ended: true,
-          }),
-        })
         typewriter.mode = 'partial'
+        await endOn(beat)
+        expect(screen.getByTestId('conversation-stage')).toHaveTextContent(visible)
 
-        renderPanel()
-        await act(async () => {})
-        fireEvent.click(screen.getByText('Hi there'))
-        await act(async () => {})
-        expect(screen.getByText('Conversation ended.')).toBeInTheDocument()
-
-        // Generously past the OLD fixed 2s window — the panel must not have
-        // told the hook to close, because the line is still "typing".
+        // Generously past the OLD fixed 2s window.
         await act(async () => { vi.advanceTimersByTime(10000) })
         expect(mockOnClose).not.toHaveBeenCalled()
       } finally {
@@ -694,26 +756,13 @@ describe('NpcChatPanel', () => {
       }
     })
 
-    it('closes 2s after the closing line finishes typing', async () => {
+    // Default 'complete' mode (see the top-of-file beforeEach): the line is
+    // fully rendered the moment it lands. Tracking it must not mean never
+    // closing at all.
+    it.each(CLOSING_BEATS)('closes 2s after %s has rendered', async (_label, { beat }) => {
       vi.useFakeTimers()
       try {
-        npcChat.respond.mockResolvedValue({
-          data: makeNpcChatRespond({
-            npc_response: 'Farewell.',
-            jean_options: [],
-            loquacity_current: 0,
-            conversation_ended: true,
-          }),
-        })
-        // Default 'complete' mode (see the top-of-file beforeEach): the line
-        // is fully rendered the moment it lands, same as a short closing line
-        // typed out at normal speed well within the 2s window.
-
-        renderPanel()
-        await act(async () => {})
-        fireEvent.click(screen.getByText('Hi there'))
-        await act(async () => {})
-        expect(screen.getByText('Conversation ended.')).toBeInTheDocument()
+        await endOn(beat)
 
         await act(async () => { vi.advanceTimersByTime(1999) })
         expect(mockOnClose).not.toHaveBeenCalled()

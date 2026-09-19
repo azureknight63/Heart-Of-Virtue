@@ -407,6 +407,45 @@ def test_stack_duplicate_items(basic_tile):
     assert "box of small glass vials" in item1.announce
 
 
+def test_stack_duplicate_items_never_merges_across_the_hidden_line(basic_tile):
+    """A hidden cache and a visible pile of the same kind stay two piles.
+
+    Merging them keeps the older object and drops the newer, so the visible
+    pile disappears into a stash the player has not found — out of sight and,
+    when it was a combat drop, out of the victory's loot offer (issue #621).
+    """
+    from src.items import Restorative
+
+    cache, in_plain_sight = Restorative(), Restorative()
+    cache.count, in_plain_sight.count = 3, 1
+    cache.hidden, cache.hide_factor = True, 90
+    basic_tile.items_here = [cache, in_plain_sight]
+
+    basic_tile.stack_duplicate_items()
+
+    assert basic_tile.items_here == [cache, in_plain_sight]
+    assert (cache.count, in_plain_sight.count) == (3, 1)
+    assert cache.hidden is True
+
+
+def test_stack_duplicate_items_merges_two_hidden_piles(basic_tile):
+    """The rule is same-visibility, not never-hidden: two caches of a kind
+    are still one cache."""
+    from src.items import Restorative
+
+    first, second = Restorative(), Restorative()
+    first.count, second.count = 2, 4
+    first.hidden = second.hidden = True
+
+    basic_tile.items_here = [first, second]
+
+    basic_tile.stack_duplicate_items()
+
+    assert basic_tile.items_here == [first]
+    assert first.count == 6
+    assert first.hidden is True
+
+
 def test_stack_duplicate_items_leaves_different_classes_alone(basic_tile):
     """Only same-class items merge; a mixed pile keeps every entry."""
     from src.items import Restorative, Gold

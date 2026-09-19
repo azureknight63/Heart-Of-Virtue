@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
-import { conversationSegment, DEFAULT_EMOTION, MAX_SEGMENT_CHARS } from './conversationSegment'
+import {
+    conversationSegment,
+    DEFAULT_EMOTION,
+    MAX_SEGMENT_CHARS,
+    segmentReadingText,
+} from './conversationSegment'
 import { EMOTIONS } from './portraits'
 import { TranscriptEntry } from '../components/ConversationTranscript'
 import { computeStage } from '../components/ConversationStage'
@@ -133,5 +138,21 @@ describe('the segment contract, as its stage and transcript consumers read it', 
         // Jean does not appear at all — no portrait, no reaction.
         expect(container).not.toHaveTextContent('Jean')
         expect(container.querySelectorAll('img')).toHaveLength(1)
+    })
+})
+
+describe('segmentReadingText', () => {
+    it('is the spoken line when there is one, even under an aside', () => {
+        expect(segmentReadingText(conversationSegment({ text: 'Go on.', flavor: 'She shrugs.' })))
+            .toBe('Go on.')
+    })
+
+    it('is the flavor on a flavor-only beat, which is how authored closings ship (#618)', () => {
+        expect(segmentReadingText(conversationSegment({ text: '', flavor: 'She turns away.' })))
+            .toBe('She turns away.')
+    })
+
+    it('is empty, never undefined, before any beat exists', () => {
+        expect(segmentReadingText(undefined)).toBe('')
     })
 })

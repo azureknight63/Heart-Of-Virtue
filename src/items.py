@@ -1,15 +1,21 @@
 from __future__ import annotations
-import copy
 import importlib
+import logging
 import re
 import random
 import math
 from src.narration import colored, cprint, narrate
 import src.functions as functions
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
     from src.player import Player  # noqa
+
+logger = logging.getLogger(__name__)
+
+#: Authored book paths are repo-relative (``src/resources/books/...``).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 item_types: Dict[str, Dict[str, Any]] = {
     "weapons": {
@@ -92,25 +98,35 @@ def get_base_damage_type(item: Any) -> str:
 
 
 # A space, then `x` or `×`, then digits, at the very end of a name -- the
-# suffix ``stack_grammar()`` bakes into ``item.name`` ("Dried Crystal Sap x2").
+# suffix ``stack_grammar()`` used to bake into ``item.name`` ("Dried Crystal
+# Sap x2") before #624, and a pre-#624 save still carries.
 _BAKED_STACK_COUNT = re.compile(r"\s[x×](\d+)$", re.IGNORECASE)
 
 
 def stack_base_name(item: Any) -> str:
-    """Return ``item.name`` without the ``stack_grammar()`` count suffix.
+    """Return ``item.name`` without a baked-in stack count suffix.
 
     Engine copy of the client's ``stackDisplayName`` (frontend/src/utils/
-    stackName.js). The root cause is ``stack_grammar()`` rewriting ``name``
+    stackName.js). The root cause was ``stack_grammar()`` rewriting ``name``
     to carry the stack size -- a leftover from the terminal readout -- so any
-    caller that prints its own quantity next to the name would otherwise
-    count the stack twice ("2× Dried Crystal Sap x2").
+    caller that printed its own quantity next to the name counted the stack
+    twice ("2× Dried Crystal Sap x2").
+
+    **That mutation is gone** (#624): no ``stack_grammar()`` in this module
+    writes ``name`` any more, so on a
+    freshly built item this is now a no-op. It is kept as a defensive strip
+    rather than deleted for two reasons: ``name`` is ordinary pickled
+    instance state, so a save written before the fix still restores an item
+    literally named "Mineral Powder x3"; and deleting it would silently
+    re-enable the doubling the moment a future ``stack_grammar()`` reached
+    for ``name`` again.
 
     Deliberately conservative: the suffix is dropped only when it is exactly
     the digits of the stack size the item reports, so an item genuinely named
     "Potion x3" sitting two-to-a-stack keeps its name. The comparison is on
     strings, not ints: ``int()`` on a pathological digit run raises on 3.11+
     (4300-digit cap), and it also means a zero-padded "x02" is *not* treated
-    as a baked count -- ``stack_grammar()`` never pads, so that suffix is the
+    as a baked count -- the pre-#624 bake never padded, so that suffix is the
     item's own name. Both are intended.
     """
     name = getattr(item, "name", "")
@@ -315,7 +331,7 @@ class Item:
                                     )
                                 if hasattr(self, "stack_grammar"):
                                     self.stack_grammar()
-                                player.current_room.stack_duplicate_items()
+                                functions.restack_floor(player)
                             else:
                                 narrate("Jean changed his mind.")
                             break
@@ -364,6 +380,25 @@ class Item:
             return False
         return carried + (_as_number(getattr(self, "weight", 0)) or 0) * count > capacity
 
+    def _leave_floor(self, player: "Player") -> bool:
+        """Take this object off the floor it lies on, by identity.
+
+        False when it is already in ``player``'s pack: a victory's collect
+        holds the loot lock and take does not, so a collect can move this
+        very object between the take resolving it and the take running --
+        and appending it again carried one object twice, sellable twice.
+        Off the floor FIRST, then into the pack, so the two cannot both
+        hold it. An object on neither is still taken: callers hand ``take``
+        items that were never placed on a floor.
+        """
+        floor = getattr(getattr(player, "current_room", None), "items_here", None)
+        if isinstance(floor, list) and functions.remove_by_identity(floor, self):
+            return True
+        if any(item is self for item in getattr(player, "inventory", None) or []):
+            narrate(f"{player.name} already has the {self.name}.")
+            return False
+        return True
+
     def take(self, player: "Player", quantity: Optional[int] = None) -> None:
         """Take the item from the ground."""
         # An item is only real shop goods when a genuine merchant NPC is
@@ -406,11 +441,11 @@ class Item:
 
                             if take_count == getattr(self, "count"):
                                 # Take all
+                                if not self._leave_floor(player):
+                                    break
                                 if hasattr(self, "merchandise"):
                                     self.merchandise = is_in_shop
                                 player.inventory.append(self)
-                                if self in player.current_room.items_here:
-                                    player.current_room.items_here.remove(self)
                                 cprint(
                                     f"{player.name} picks up {take_count} x {self.name}.",
                                     "green",
@@ -427,14 +462,7 @@ class Item:
                                 items_mod = importlib.import_module("src.items")
                                 item_cls = getattr(items_mod, self.__class__.__name__)
                                 new_item = item_cls.__new__(item_cls)
-                                for _k, _v in self.__dict__.items():
-                                    try:
-                                        setattr(new_item, _k, copy.copy(_v))
-                                    except Exception:
-                                        try:
-                                            setattr(new_item, _k, _v)
-                                        except Exception:
-                                            pass
+                                functions.copy_item_state(self, new_item)
                                 if hasattr(new_item, "count"):
                                     new_item.count = take_count
                                 # Update the new item's description based on count
@@ -449,8 +477,7 @@ class Item:
                                 )
 
                             functions.stack_inv_items(player)
-                            if hasattr(player.current_room, "stack_duplicate_items"):
-                                player.current_room.stack_duplicate_items()
+                            functions.restack_floor(player)
                         else:
                             narrate("Jean changed his mind.")
                         break
@@ -468,22 +495,21 @@ class Item:
             cprint("It's too heavy to carry!", "red")
             return
 
+        if not self._leave_floor(player):
+            return
+
         # Add to inventory
         if hasattr(self, "merchandise"):
             self.merchandise = is_in_shop
         player.inventory.append(self)
 
-        # Remove from room
-        if self in player.current_room.items_here:
-            player.current_room.items_here.remove(self)
-
         cprint(f"{player.name} picks up the {self.name}.", "green")
 
         # Stack items if possible (in inventory)
         functions.stack_inv_items(player)
-        # Also stack in the room if the method exists
-        if hasattr(player.current_room, "stack_duplicate_items"):
-            player.current_room.stack_duplicate_items()
+        # Also restack the floor it came from (frozen on an unresolved
+        # victory's tile, #621).
+        functions.restack_floor(player)
 
     def equip(self, player: "Player") -> None:
         player.equip_item(item_object=self)
@@ -1227,7 +1253,12 @@ class Consumable(Item):
         self.interactions = ["take", "use", "drop"]
 
     def stack_grammar(self) -> None:
-        """Checks the stack count for the item and changes the verbiage accordingly"""
+        """Adjust the prose for the stack count -- description, announce.
+
+        Never ``name``: it is identity, and the buyback ledger and the sell
+        message key on it (#624). ``tests/test_items_coverage.py`` checks
+        every constructible stackable against this rule.
+        """
         pass
 
     def __str__(self) -> str:  # pragma: no cover - display logic
@@ -1329,7 +1360,12 @@ class Commodity(Special):
         self.interactions = ["drop"]
 
     def stack_grammar(self) -> None:
-        """Checks the stack count for the item and changes the verbiage accordingly"""
+        """Adjust the prose for the stack count -- description, announce.
+
+        Never ``name``: it is identity, and the buyback ledger and the sell
+        message key on it (#624). ``tests/test_items_coverage.py`` checks
+        every constructible stackable against this rule.
+        """
         pass
 
     def __str__(self) -> str:  # pragma: no cover - display logic
@@ -3339,16 +3375,23 @@ class Book(Special):
 
     @property
     def text(self) -> str:
-        """Lazy load text from file if needed."""
+        """Lazy load text from file if needed.
+
+        An authored path is repo-relative (``src/resources/books/...``), so it
+        is resolved against the repo, not the process's working directory --
+        #611's book read blank whenever the server started anywhere else. A
+        failure is logged for us and reads as a blank book to the player:
+        the path and the OS error are not the game's prose.
+        """
         if self._text is None and self.text_file_path:
+            path = Path(self.text_file_path)
+            if not path.is_absolute():
+                path = _REPO_ROOT / path
             try:
-                with open(self.text_file_path, "r", encoding="utf-8") as f:
+                with open(path, "r", encoding="utf-8") as f:
                     self._text = f.read()
             except Exception as e:
-                cprint(
-                    f"Error loading book text from {self.text_file_path}: {e}",
-                    "red",
-                )
+                logger.warning("Could not load book text from %s: %s", path, e)
                 self._text = "This book is mysteriously blank."
         return self._text if self._text else "This book is mysteriously blank."
 
@@ -3654,6 +3697,7 @@ class MineralPowder(Commodity):
         self.count = 1
 
     def stack_grammar(self) -> None:
+        # ``name`` is deliberately left alone: see DriedCrystalSap.stack_grammar.
         if self.count == 1:
             self.description = (
                 "Fine grey-green dust in a twist of woven fiber. "
@@ -3664,9 +3708,6 @@ class MineralPowder(Commodity):
                 f"{self.count} packets of fine grey-green mineral dust, "
                 "each twisted in woven fiber. A material for careful craft."
             )
-        self.name = (
-            "Mineral Powder" if self.count == 1 else f"Mineral Powder x{self.count}"
-        )
 
 
 class DriedCrystalSap(Consumable):
@@ -3695,14 +3736,25 @@ class DriedCrystalSap(Consumable):
         self.power = 25  # Modest HP restore ("dull minor wounds")
 
     def stack_grammar(self) -> None:
+        """Adjust the stack's prose to its size. ``name`` is NOT touched.
+
+        This and ``MineralPowder`` were the only two ``stack_grammar()``
+        implementations that rewrote ``self.name`` to carry the count
+        ("Dried Crystal Sap x2") -- a habit left over from the terminal
+        readout, where the name *was* the whole display. It stopped being
+        harmless once callers began printing their own quantity beside the
+        name: every such caller double-counted, and ``GameService.shop_sell``
+        went further and recorded the baked name in the buyback ledger, where
+        the surviving stack's rename after a partial sell made the row
+        unredeemable (#624). The count belongs to the item's ``count``, which
+        every display path already has.
+        """
         if self.count == 1:
-            self.name = "Dried Crystal Sap"
             self.description = (
                 "A small, waxy amber lump, warm to the touch even in cold tunnels. "
                 "Chewing it seems to dull minor wounds."
             )
         else:
-            self.name = f"Dried Crystal Sap x{self.count}"
             self.description = (
                 f"{self.count} waxy amber lumps, each warm to the touch. "
                 "Chewing one seems to dull minor wounds."

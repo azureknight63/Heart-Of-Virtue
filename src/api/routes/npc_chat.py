@@ -154,6 +154,14 @@ def _string_field(data, key, default=""):
     return value[:_MAX_FIELD_LEN].strip()
 
 
+def _chat_status(result):
+    """200, or 409 for a turn refused because one is already in flight
+    (``GameService._one_chat_turn``), or 400 for any other failure."""
+    if result.get("success"):
+        return 200
+    return 409 if result.get("in_flight") else 400
+
+
 @npc_chat_bp.route("/open", methods=["POST"])
 def npc_chat_open():
     """Start an LLM conversation with a human NPC.
@@ -195,7 +203,7 @@ def npc_chat_open():
     # Save session
     session_manager.save_session(session.session_id)
 
-    status_code = 200 if result.get("success") else 400
+    status_code = _chat_status(result)
     return jsonify(result), status_code
 
 
@@ -249,7 +257,7 @@ def npc_chat_respond():
     # Save session
     session_manager.save_session(session.session_id)
 
-    status_code = 200 if result.get("success") else 400
+    status_code = _chat_status(result)
     return jsonify(result), status_code
 
 

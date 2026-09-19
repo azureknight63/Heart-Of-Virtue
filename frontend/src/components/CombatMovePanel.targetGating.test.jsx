@@ -37,28 +37,30 @@ const reasonFor = (name) => {
   return id ? document.getElementById(id) : null;
 };
 
-describe('CombatMovePanel — targeted moves with nothing in reach (#554)', () => {
-  // The live payload from the reproduction: the engine advertises Attack as
-  // available (its viable() only asks whether SOME enemy is in the move's
-  // band) while the adapter's range-filtered allow-list is empty. The server
-  // then refuses the very move it offered — "No valid targets available for
-  // this move" — so the click spends nothing and advances no beat. The name,
-  // `targeted` and the empty list are the case under test, so they are
-  // spelled out rather than inherited from the builder's defaults. So is the
-  // preview list: beside an empty allow-list, every candidate the adapter
-  // previews is out of reach — `in_range: false`, a shortfall, no damage
-  // preview and no hit chance (_build_target_entry). All four follow from the
-  // distance, which the builder derives, so only the distance is stated.
-  const enemyOutOfReach = makeTargetOption({ distance: 8 });
-  const attackWithNoReachableTarget = makeAvailableOption({
-    id: '7',
-    name: 'Attack',
-    description: 'Swing at an enemy.',
-    targeted: true,
-    viable_targets: [],
-    target_previews: [enemyOutOfReach],
-  });
+// The live payload from the reproduction: the engine advertises Attack as
+// available (its viable() only asks whether SOME enemy is in the move's
+// band) while the adapter's range-filtered allow-list is empty. The server
+// then refuses the very move it offered — "No valid targets available for
+// this move" — so the click spends nothing and advances no beat. The name,
+// `targeted` and the empty list are the case under test, so they are
+// spelled out rather than inherited from the builder's defaults. So is the
+// preview list: beside an empty allow-list, every candidate the adapter
+// previews is out of reach — `in_range: false`, a shortfall, no damage
+// preview and no hit chance (_build_target_entry). All four follow from the
+// distance, which the builder derives, so only the distance is stated: 8 ft
+// from a move that reaches 5, hence `shortfall_ft: 3`. Shared by both
+// describes below.
+const outOfReach = (overrides = {}) => makeTargetOption({ distance: 8, ...overrides });
+const attackWithNoReachableTarget = makeAvailableOption({
+  id: '7',
+  name: 'Attack',
+  description: 'Swing at an enemy.',
+  targeted: true,
+  viable_targets: [],
+  target_previews: [outOfReach()],
+});
 
+describe('CombatMovePanel — targeted moves with nothing in reach (#554)', () => {
   it('disables a targeted move whose viable-target list is empty', () => {
     renderPanel([attackWithNoReachableTarget]);
 
@@ -123,6 +125,101 @@ describe('CombatMovePanel — targeted moves with nothing in reach (#554)', () =
     expect(card('Attack')).not.toBeDisabled();
     fireEvent.click(card('Attack'));
     expect(onMoveClick).toHaveBeenCalledTimes(1);
+  });
+});
+
+// #614 gap 1. The card has said WHY since #554 ("No valid target in range"),
+// but never HOW FAR: the player is told to close the distance without being
+// told what the distance is. The adapter has shipped the number on every
+// out-of-reach preview since #555 -- `shortfall_ft`, computed against the
+// move's own reach in `_build_target_entry` -- and nothing in frontend/src
+// read it. These pin the reading, not the arithmetic: the panel must never
+// work a shortfall out from `distance` and `mvrange` itself (that is engine
+// logic, and CLAUDE.md puts engine logic in the engine).
+describe('CombatMovePanel — how far short a locked move falls (#614)', () => {
+  it('says how far away the nearest target is and how far short the move falls', () => {
+    renderPanel([attackWithNoReachableTarget]);
+
+    const shown = reasonFor('Attack');
+    expect(shown).toHaveTextContent('No valid target in range');
+    expect(shown).toHaveTextContent('nearest 8 ft');
+    expect(shown).toHaveTextContent('3 ft short');
+  });
+
+  it('adds the distance to a server-worded range refusal too', () => {
+    renderPanel([{ ...attackWithNoReachableTarget, available: false, reason: TOO_FAR_REASON }]);
+
+    const shown = reasonFor('Attack');
+    expect(shown).toHaveTextContent(TOO_FAR_REASON);
+    expect(shown).toHaveTextContent('3 ft short');
+  });
+
+  it('measures the nearest candidate, not whichever the list happens to start with', () => {
+    renderPanel([{
+      ...attackWithNoReachableTarget,
+      target_previews: [
+        outOfReach({ id: 'enemy_9', name: 'Far Rumbler', distance: 14 }),
+        outOfReach({ id: 'enemy_2', name: 'Near Rumbler', distance: 7 }),
+      ],
+    }]);
+
+    const shown = reasonFor('Attack');
+    expect(shown).toHaveTextContent('nearest 7 ft');
+    expect(shown).toHaveTextContent('2 ft short');
+  });
+
+  // Negative control: a fatigue lock is not a range lock. Appending a
+  // shortfall to "Not enough fatigue" would name a distance that has nothing
+  // to do with why the card is greyed out.
+  it('says nothing about range when something IS in reach', () => {
+    renderPanel([makeAvailableOption({
+      id: '2',
+      name: 'Power Strike',
+      description: 'Wind up.',
+      targeted: true,
+      available: false,
+      reason: NOT_ENOUGH_FATIGUE_REASON,
+      viable_targets: [makeTargetOption()],
+      target_previews: [makeTargetOption()],
+    })]);
+
+    const shown = reasonFor('Power Strike');
+    expect(shown).toHaveTextContent(NOT_ENOUGH_FATIGUE_REASON);
+    expect(shown.textContent).not.toMatch(/ft short/i);
+  });
+
+  // The lock that holds is the one the reason names. With every target out of
+  // reach AND the card locked for fatigue or a cooldown, "3 ft short" appended
+  // to that sentence would say walking closer fixes it, which it does not.
+  it.each([
+    ['fatigue', NOT_ENOUGH_FATIGUE_REASON],
+    ['a cooldown', 'Available in 3 beats'],
+  ])('says nothing about range when %s is the lock, even out of reach', (_label, why) => {
+    renderPanel([{ ...attackWithNoReachableTarget, available: false, reason: why }]);
+
+    const shown = reasonFor('Attack');
+    expect(shown).toHaveTextContent(why);
+    expect(shown.textContent).not.toMatch(/ft short/i);
+  });
+
+  // A card locked with no sentence at all renders no reason line (the panel
+  // has rendered it behind `reason &&` since #565), so the suffix has nothing
+  // to hang off. It must not become a dangling em-dash in the tooltip either.
+  it('adds no dangling suffix to a lock that came with no sentence', () => {
+    renderPanel([{ ...attackWithNoReachableTarget, available: false, reason: '' }]);
+
+    expect(card('Attack')).not.toHaveAttribute('aria-describedby');
+    expect(card('Attack')).toHaveAttribute('title', '');
+  });
+
+  // The reason element IS the accessible description (aria-describedby points
+  // at it), so the number has to live in the same node rather than in a
+  // sibling a screen reader never reaches.
+  it('carries the distance in the accessible description, not beside it', () => {
+    renderPanel([attackWithNoReachableTarget]);
+
+    const describedBy = card('Attack').getAttribute('aria-describedby');
+    expect(document.getElementById(describedBy).textContent).toMatch(/3 ft short/);
   });
 });
 

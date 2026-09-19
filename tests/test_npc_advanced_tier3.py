@@ -706,8 +706,14 @@ class TestNPCLootMixin:
         assert result is True
         npc.drop_inventory.assert_called_once()
 
-    def test_before_death_stacks_items(self):
-        """Test before_death() stacks items after dropping."""
+    def test_before_death_never_restacks_the_whole_floor(self):
+        """``before_death`` stacks only what this death dropped (#621).
+
+        It used to pass the tile's entire ``items_here``, which merged a drop
+        into the first pile of its kind that was already lying there — hidden
+        piles included — and handed those pre-existing units to the victory's
+        loot collect along with the drop.
+        """
         npc = NPC(
             name="TestNPC",
             description="Test",
@@ -716,13 +722,20 @@ class TestNPCLootMixin:
             exp_award=50,
         )
         npc.loot = None
+        bystander = MagicMock(name="already here")
         npc.current_room = MagicMock()
-        npc.current_room.items_here = []
+        npc.current_room.items_here = [bystander]
         npc.inventory = []
 
         with patch('src.functions.stack_items_list') as mock_stack:
             npc.before_death()
-            mock_stack.assert_called_once_with(npc.current_room.items_here)
+
+        assert mock_stack.call_args_list, "the stacking step still runs"
+        for call in mock_stack.call_args_list:
+            (stacked,) = call.args
+            assert stacked is not npc.current_room.items_here
+            assert bystander not in stacked
+        assert npc.current_room.items_here == [bystander]
 
     def test_drop_inventory_empty(self):
         """Test drop_inventory() with empty inventory."""

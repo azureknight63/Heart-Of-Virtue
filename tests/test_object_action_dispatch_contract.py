@@ -26,7 +26,8 @@ contract. In code order:
   1. ``Container`` + a verb in ``Container.LOOK_INSIDE_VERBS`` -> ``open()``
   2. a verb in ``_CONTAINER_ITEM_VERBS`` on a container's item -> transfer
   3. a demo-end ``Passageway`` + a CROSSING verb -> ends the demo
-  4. any OTHER ``Passageway`` + ``session_data`` -> queues a transition event
+  4. any OTHER ``Passageway`` + ``session_data`` + a verb that CROSSES or that
+     the placement advertises -> queues a transition event
   5. everything else -> ``resolve_interaction(target, action)``
 
 Only arm 5 is a real attribute lookup, so the others are expressed here as the
@@ -35,6 +36,11 @@ NOT waved through below: a non-crossing verb on it falls all the way to arm 5
 and is refused in fiction, so approving every ``Passageway`` unconditionally
 would make this guard fail open for exactly the object this branch made
 special (``tests/test_ferry_demo_end.py`` pins that behaviour).
+
+Arm 4's verb test is issue #620, and the mirror below used to be missing it
+in the same way: it returned True for EVERY non-demo-end ``Passageway``,
+which was accurate while arm 4 keyed off the target's type alone and fails
+open now that it does not.
 """
 
 import functools
@@ -51,7 +57,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from src import map_placeholders  # noqa: E402
-from src.objects import Container, Passageway  # noqa: E402
+from src.objects import Container, Passageway, resolve_interaction  # noqa: E402
 from tests._js_scan import FRONTEND_SRC  # noqa: E402
 from tests._map_scan import (  # noqa: E402
     class_ref,
@@ -85,14 +91,25 @@ def _player():
     return Player()
 
 
-def _instantiate(cls):
+def _instantiate(cls, props=None):
     """Build an instance of ``cls`` the way the map loader does.
 
     ``Universe._deserialize_saved_instance`` filters authored props to the real
     constructor signature, injects ``player``/``tile`` when accepted, and falls
     back to ``cls.__new__`` + a bare ``__init__`` if construction raises. This
-    mirrors that, because instance-level aliases matter: ``Passageway.__init__``
-    binds each word of its own name to ``self.enter`` via ``setattr``.
+    mirrors that, because the authored name matters: a ``Passageway``'s name
+    words resolve to ``enter`` (through ``instance_keyword_aliases``), so an
+    instance built without its name advertises none of them.
+
+    The authored props are filtered in here rather than dropped. They used to
+    be: every instance was built with ``player``/``tile`` only, so a
+    ``Passageway`` came back named "Passageway" and bound NONE of its
+    placement's name words. Six shipped aliases (``ferry``, ``landing``,
+    ``camp``, ``boundary``, ``tent``, ``jambo``) therefore resolved to nothing
+    here while resolving fine in the game, and the mirror's old unconditional
+    "every Passageway is dispatchable" hid it completely. Only the scalar
+    props are passed: the loader deserializes nested payloads first, and this
+    scan deliberately does not walk them.
 
     The fallback exists to mirror the loader, not to be used: every class in
     the shipped maps constructs normally today, and
@@ -104,6 +121,9 @@ def _instantiate(cls):
         params = inspect.signature(cls.__init__).parameters
     except (TypeError, ValueError):  # pragma: no cover - builtins only
         params = {}
+    for key, value in (props or {}).items():
+        if key in params and isinstance(value, (str, int, float, bool, type(None))):
+            kwargs[key] = value
     if "player" in params:
         kwargs["player"] = _player()
     if "tile" in params:
@@ -141,13 +161,20 @@ def _object_placements():
     for placement in object_placements():
         cls = resolve_class(placement)
         props = placement.props
-        instance, used_fallback = _instantiate(cls)
+        instance, used_fallback = _instantiate(cls, props)
         if used_fallback:
             fallbacks.add(cls.__name__)
         if "keywords" in props:
             keywords = list(props["keywords"] or [])
         else:
             keywords = list(getattr(instance, "keywords", []) or [])
+        # Put them back on the instance, which is what the loader's
+        # ``setattr`` of the authored props does. ``_is_dispatchable`` reads
+        # them there because arm 4 does (issue #620): the "step through?"
+        # confirmation is armed for a verb the placement ADVERTISES as well as
+        # for one that crosses, and three shipped passageways author a
+        # crossing verb their name does not contain.
+        instance.keywords = keywords
         rows.append((
             placement.map_name,
             placement.coord,
@@ -180,19 +207,34 @@ def _is_dispatchable(cls, instance, keyword):
     The two engine names this reads are imported lazily so that reverting the
     fix produces the contract's own assertion failure (which names the offending
     pairs) rather than a collection error.
+
+    Every branch below is DERIVED from the engine fact the matching arm keys
+    off. The passageway branch used to be ``return True`` for every non-demo-end
+    ``Passageway`` — true at the time, because arm 4 keyed off the target's
+    TYPE and never looked at the verb, but a mirror that asserts nothing about
+    the verb fails open the moment the arm starts asking about one. Issue #620
+    made it ask, and the question now lives in the engine
+    (``Passageway.accepts_step_through``), so this calls it rather than
+    retyping it -- the retyped copy is what failed open.
     """
     from src.objects import resolve_interaction
 
-    # A demo-end passageway is deliberately NOT waved through: only its
-    # crossing verbs are dispatched by arm 3, and everything else falls to
-    # arm 5 (see the module docstring). Waving them all through would make
-    # this guard fail open on the one object type the demo edge added.
-    if issubclass(cls, Passageway) and not getattr(instance, "demo_end", False):
-        return True
+    handler = resolve_interaction(instance, keyword)
+
     look_inside = getattr(Container, "LOOK_INSIDE_VERBS", frozenset())
     if issubclass(cls, Container) and keyword in look_inside:
-        return True
-    return resolve_interaction(instance, keyword) is not None
+        return True                                          # arm 1
+    # Arm 2 has no placement of its own: a container's items are authored
+    # inside its inventory, never as a placement on the tile.
+    if issubclass(cls, Passageway):
+        if instance.is_demo_edge():
+            # Arm 3 takes the crossing verbs; everything else on the demo edge
+            # falls past arm 4 (which excludes it) to arm 5.
+            if instance.is_crossing_handler(handler):
+                return True                                  # arm 3
+        elif instance.accepts_step_through(handler, keyword):
+            return True                                      # arm 4
+    return handler is not None                               # arm 5
 
 
 def test_every_delegated_crossing_verb_is_a_crossing_handler():
@@ -232,10 +274,13 @@ def test_every_delegated_crossing_verb_is_a_crossing_handler():
             f"is_crossing_handler answers False for {verb!r}"
         )
 
-    # `enter` itself, and the instance-bound authored name words that are set
-    # to `enter` directly, must answer through that entry.
+    # `enter` itself, and the placement's own authored name words, must answer
+    # through that entry. The name words are DATA since #620's follow-up --
+    # `passage.ferry` is deliberately no longer an attribute, because an
+    # instance-stored callable is exactly what a restored save could forge --
+    # so they are reached the way the dispatch reaches them.
     assert passage.is_crossing_handler(passage.enter)
-    assert passage.is_crossing_handler(passage.ferry)
+    assert passage.is_crossing_handler(resolve_interaction(passage, "ferry"))
 
     # Negative control: a verb that does not cross must not be counted, or the
     # assertions above would pass for a predicate that returns True always.

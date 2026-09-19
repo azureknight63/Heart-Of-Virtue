@@ -1,20 +1,41 @@
 """Merchant shop endpoint checks (shop_bp).
 
 No default harness config places the player in front of a live merchant on
-session start, so this scenario focuses on the contract's error paths: every
-route must reject a bad/missing npc_id or item_id gracefully (400/404), and
-never 500. If a real merchant NPC happens to be on the current tile, the
-scenario also exercises a real /state fetch against it.
+session start, so the error-path half of this scenario focuses on the
+contract: every route must reject a bad/missing npc_id or item_id gracefully
+(400/404), and never 500. If a real merchant NPC happens to be on the current
+tile, that half also exercises a real /state fetch against it.
+
+That left the scenario with **no happy path at all** — it never once completed
+a purchase or a sale, so every bug in the transaction logic was invisible to
+rung 2. ``_check_sell_buyback_round_trip`` closes that: it seats a Merchant on
+the player's tile in-process (the same trick ``ch02_events`` uses to stage
+story events) and then drives the real HTTP routes for the full
+state → sell → state → buyback loop.
+
+It sells from a *stack*, partially, into a stock the merchant already holds,
+because that is the arrangement that broke: ``stack_inv_items`` dissolves the
+sold object into the merchant's existing same-name stack, so the buyback
+ledger can only find its way back by name (#624).
 """
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from .base import Scenario
 from ..client import GameClient
-from ..reporter import BugReport
+from ..reporter import BugReport, BugCategory, BugSeverity
 
 _BAD_NPC = "harness_nonexistent_npc"
 _BAD_ITEM = "harness_nonexistent_item"
+
+#: Merchant stock 1 + player stack 5, selling 2. The merged stack (3) differs
+#: from the seller's pre-sale count (5) on purpose: a ledger that recorded a
+#: stale, count-bearing name cannot then match the surviving stack by accident.
+_ROUND_TRIP_MERCHANT_STOCK = 1
+_ROUND_TRIP_PLAYER_STACK = 5
+_ROUND_TRIP_SELL_QTY = 2
+_ROUND_TRIP_MERCHANT_GOLD = 2000
+_ROUND_TRIP_PLAYER_GOLD = 1000
 
 
 class ShopScenario(Scenario):
@@ -133,6 +154,157 @@ class ShopScenario(Scenario):
                     "/api/shop/state", "GET", "Shop state (real merchant)", resp,
                 )
 
+        bugs += self._check_sell_buyback_round_trip(client)
+
+        return bugs
+
+    # ------------------------------------------------------------------
+    # Happy path: sell part of a stack, then buy it back
+    # ------------------------------------------------------------------
+
+    def _round_trip_bug(self, endpoint: str, method: str, title: str,
+                        expected: str, actual: str) -> BugReport:
+        """A functional-logic bug in the sell/buyback round trip."""
+        return self._bug(
+            title=title,
+            severity=BugSeverity.HIGH,
+            category=BugCategory.LOGIC,
+            endpoint=endpoint,
+            method=method,
+            expected=expected,
+            actual=actual,
+        )
+
+    def _stage_round_trip_merchant(self, client: GameClient) -> Optional[tuple]:
+        """Seat a stocked Merchant on the player's tile.
+
+        Returns ``(merchant_id, item_name, item_type)``, or None when the
+        harness session has no full universe (MinimalPlayer) — a harness
+        limitation, not a bug, exactly as ``ch02_events`` treats the same case.
+        """
+        sm = client._session_manager
+        player = sm.get_player(client.session_id)
+        if player is None:
+            return None
+        universe = getattr(player, "universe", None)
+        if universe is None:
+            return None
+        tile = universe.get_tile(player.location_x, player.location_y)
+        if tile is None:
+            return None
+
+        # Lazy imports — src modules are shimmed by bug_hunt.py's bootstrap.
+        from src.combatant import wire_handle
+        from src.items import Gold, MineralPowder
+        from src.npc._merchants import Merchant
+
+        def _powder(count: int, merchandise: bool) -> Any:
+            item = MineralPowder()
+            item.count = count
+            item.merchandise = merchandise
+            item.stack_grammar()
+            return item
+
+        merchant = Merchant(
+            name="Harness Trader",
+            description="A trader conjured by the bug-hunt harness.",
+            damage=1, aggro=False, exp_award=0, stock_count=0,
+        )
+        merchant.inventory = [
+            Gold(amt=_ROUND_TRIP_MERCHANT_GOLD),
+            _powder(_ROUND_TRIP_MERCHANT_STOCK, merchandise=True),
+        ]
+        merchant.current_room = tile
+        tile.npcs_here.append(merchant)
+
+        player.current_room = tile
+        # Replace the purse outright so the assertions below do not depend on
+        # whatever gold the starting config happened to grant. Safe to clobber:
+        # bug_hunt.py creates a fresh session per scenario, so nothing after
+        # this scenario sees the edit.
+        player.inventory = [
+            item for item in player.inventory if not isinstance(item, Gold)
+        ]
+        player.inventory.append(Gold(amt=_ROUND_TRIP_PLAYER_GOLD))
+        player.inventory.append(_powder(_ROUND_TRIP_PLAYER_STACK, merchandise=False))
+
+        return wire_handle(merchant), MineralPowder().name, MineralPowder.__name__
+
+    def _check_sell_buyback_round_trip(self, client: GameClient) -> List[BugReport]:
+        """Sell part of a stack into the merchant's own stock, then redeem it."""
+        staged = self._stage_round_trip_merchant(client)
+        if staged is None:
+            return []
+        merchant_id, item_name, item_type = staged
+        bugs: List[BugReport] = []
+
+        resp = client.get(f"/api/shop/state?npc_id={merchant_id}")
+        bug = self._check_status(
+            resp, 200, "/api/shop/state", "GET",
+            "Shop state for the harness-staged merchant",
+        )
+        if bug:
+            return [bug]
+
+        # Selected by CLASS, not name: the sell tab is keyed by opaque id in
+        # the real UI, so matching the name here would make the arm fail on
+        # any cosmetic renaming instead of on the transaction logic it exists
+        # to check.
+        sellable = [
+            entry for entry in client.parse(resp).get("sell_inventory", [])
+            if entry.get("type") == item_type
+        ]
+        if not sellable:
+            return [self._round_trip_bug(
+                "/api/shop/state", "GET",
+                f"Player's {item_name} stack is missing from the sell tab",
+                f"sell_inventory lists the player's {item_type} stack",
+                "sell_inventory does not list it at all",
+            )]
+
+        body = {
+            "npc_id": merchant_id,
+            "item_id": sellable[0]["id"],
+            "quantity": _ROUND_TRIP_SELL_QTY,
+        }
+        resp = client.post("/api/shop/sell", json=body)
+        bug = self._check_status(
+            resp, 200, "/api/shop/sell", "POST",
+            f"Sell {_ROUND_TRIP_SELL_QTY} of a {_ROUND_TRIP_PLAYER_STACK}-stack",
+            request_body=body,
+        )
+        if bug:
+            return [bug]
+
+        buyback_rows = client.parse(resp).get("shop_state", {}).get(
+            "buyback_items", []
+        )
+        if not buyback_rows:
+            return [self._round_trip_bug(
+                "/api/shop/sell", "POST",
+                "A completed sale produced no buyback offer",
+                "shop_state.buyback_items holds one row for the sold units",
+                "buyback_items is empty",
+            )]
+
+        body = {"npc_id": merchant_id, "item_id": buyback_rows[0]["id"]}
+        resp = client.post("/api/shop/buyback", json=body)
+        bug = self._check_status(
+            resp, 200, "/api/shop/buyback", "POST",
+            "Buy back the units just sold from a partial stack",
+            request_body=body,
+        )
+        if bug:
+            return [bug]
+
+        data = client.parse(resp)
+        if not data.get("success"):
+            bugs.append(self._round_trip_bug(
+                "/api/shop/buyback", "POST",
+                "Buyback of a partially-sold stack was refused",
+                "the just-sold units are redeemable from the buyback tab",
+                f"buyback refused: {data.get('error')!r}",
+            ))
         return bugs
 
     # NPCSerializer.serialize() (used for room.npcs) never emits `is_merchant`/

@@ -131,7 +131,7 @@ def resolve_class(class_ref):
         )
     try:
         module = importlib.import_module(canonical)
-        return getattr(module, cls_name)
+        resolved = getattr(module, cls_name)
     except (ImportError, AttributeError) as e:
         # A well-formed but nonexistent module/class reference (typo'd class
         # name, stale reference to a removed class) must fail the same way
@@ -139,6 +139,14 @@ def resolve_class(class_ref):
         # map_generator.load_map) only catches PlaceholderError so one bad
         # placeholder degrades gracefully instead of aborting the whole map load.
         raise PlaceholderError(f"Cannot resolve class '{class_ref}': {e}")
+    # An allowed pair can still resolve to something that is not a class --
+    # every engine module re-exports what it imports, so `story:import_module`
+    # passed the pair check as `importlib.import_module` (#620).
+    if not secure_pickle.is_trusted_engine_class(resolved):
+        raise PlaceholderSecurityError(
+            f"'{class_ref}' does not resolve to an engine class"
+        )
+    return resolved
 
 
 def _collect_class_attr(cls, attr_name, *, as_set):
@@ -427,7 +435,10 @@ def instantiate_placeholder(payload, *, player=None, tile=None, _depth=0):
 
     allowed_overrides = authored_override_names(cls)
     for key, value in overrides.items():
-        if key not in allowed_overrides:
+        # Declared overrides are data by intent; the shadowing check keeps a
+        # mis-declared one from replacing behaviour, as the legacy loader and
+        # the save loader both refuse (#620).
+        if key not in allowed_overrides or secure_pickle.shadows_class_behaviour(cls, key):
             continue
         try:
             setattr(inst, key, resolve_nested(value))

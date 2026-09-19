@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import CollapsibleRoomDescription from './CollapsibleRoomDescription'
+import { DISCLOSURE_GLYPHS, accessibility } from '../styles/theme'
 
 vi.mock('./RoomContents', () => ({
   default: ({ onInteract }) => (
@@ -123,5 +124,51 @@ describe('CollapsibleRoomDescription', () => {
 
     const paddingBottom = parseInt(scrollContainer.style.paddingBottom || '0', 10)
     expect(paddingBottom).toBe(0)
+  })
+
+  // Issue #625: this header was the weakest of the app's three fold toggles —
+  // no `type`, no aria-expanded, no aria-controls, and a rotating ▼ that
+  // announced nothing. It now wears the shared CollapsibleSectionHeader
+  // contract; these pin the parts a screen reader depends on.
+  describe('disclosure contract (issue #625)', () => {
+    const header = () => screen.getByRole('button', { name: /dark grotto/i })
+
+    it('is type="button" so it cannot submit an enclosing form', () => {
+      render(<CollapsibleRoomDescription location={loc} />)
+      expect(header().getAttribute('type')).toBe('button')
+    })
+
+    it('announces open and shut through aria-expanded', () => {
+      render(<CollapsibleRoomDescription location={loc} defaultOpen={false} />)
+      expect(header()).toHaveAttribute('aria-expanded', 'false')
+      fireEvent.click(header())
+      expect(header()).toHaveAttribute('aria-expanded', 'true')
+    })
+
+    it('points at a region that stays in the DOM while collapsed', () => {
+      // A dangling aria-controls is worse than none: it tells assistive tech
+      // there is a region to jump to and then hands it nothing.
+      render(<CollapsibleRoomDescription location={loc} defaultOpen={false} />)
+      const controls = header().getAttribute('aria-controls')
+      expect(controls).toBeTruthy()
+      expect(document.getElementById(controls)).not.toBeNull()
+    })
+
+    it('shows the fold state as a glyph, not as a rotation', () => {
+      render(<CollapsibleRoomDescription location={loc} defaultOpen={false} />)
+      expect(header().textContent).toContain(DISCLOSURE_GLYPHS.collapsed)
+      fireEvent.click(header())
+      expect(header().textContent).toContain(DISCLOSURE_GLYPHS.expanded)
+    })
+
+    it('keeps the glyph out of the accessible name', () => {
+      render(<CollapsibleRoomDescription location={loc} />)
+      expect(screen.getByRole('button', { name: 'Dark Grotto' })).toBeInTheDocument()
+    })
+
+    it('keeps the touch-target minimum height', () => {
+      render(<CollapsibleRoomDescription location={loc} />)
+      expect(header().style.minHeight).toBe(accessibility.touchTarget)
+    })
   })
 })

@@ -181,6 +181,17 @@ def event_placements() -> Tuple[Placement, ...]:
     return _placements("events")
 
 
+#: Every per-tile section the map loader instantiates classes from
+#: (``Universe._load_single_json_map``).
+PLACEMENT_SECTIONS = ("objects", "events", "items", "npcs")
+
+
+@functools.lru_cache(maxsize=1)
+def all_placements() -> Tuple[Placement, ...]:
+    """Every authored placement in every section the loader reads."""
+    return tuple(p for section in PLACEMENT_SECTIONS for p in _placements(section))
+
+
 def resolve_class(placement: Placement) -> type:
     """The class a placement names.
 

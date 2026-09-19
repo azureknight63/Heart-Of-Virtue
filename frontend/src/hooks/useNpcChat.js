@@ -166,9 +166,36 @@ const RESPOND_FAILED_MESSAGE = 'NPC did not respond'
 // straight back into the
 // throttle. Still OUR copy, not the server's — see the note above.
 const THROTTLED_MESSAGE = 'Too many messages — give it a moment.'
+// The client deadline fired: `NPC_CHAT_TIMEOUT_MS` (api/npcChat.js) elapsed
+// with no answer, so there is no response and no status to read — axios raises
+// `ECONNABORTED` instead (issue #618). Distinct copy because the two generic
+// fallbacks both describe something the SERVER did, and a player who just
+// watched a spinner run to the full deadline is owed the actual reason. Retry is live on both paths,
+// and a timed-out turn is the one most likely to succeed on a second try.
+const TIMED_OUT_MESSAGE = 'The conversation timed out — try again.'
 
-/** The fixed copy for a failure, chosen by what kind of failure it is. */
-function failureMessage(err, fallback) {
+// The server runs one chat turn per player at a time and answers 409 to a
+// second that arrives while one is running -- a Retry after a timeout, while
+// the abandoned turn is still finishing (issue #618). Only a server that runs
+// requests concurrently can answer this; production's single sync worker
+// queues the Retry instead (see `_CHAT_TURN_LOCKS` in
+// src/api/services/game_service.py).
+const STILL_COMPOSING_MESSAGE = 'Still composing a reply — give it a moment.'
+// The same 409 on `/open`: the gate is per player, not per NPC, so the turn in
+// the way belongs to a conversation Jean just walked out of. This panel has
+// asked nothing yet, so "still composing a reply" would be false here.
+const STILL_TALKING_MESSAGE = 'Jean is still finishing another conversation — give it a moment.'
+
+/**
+ * The fixed copy for a failure, chosen by what kind of failure it is.
+ *
+ * @param {*} err - What the chat call rejected with.
+ * @param {string} fallback - The copy for any failure not named below.
+ * @param {string} busy - The copy for a 409 (a turn already in flight).
+ */
+function failureMessage(err, fallback, busy) {
+  if (err?.code === 'ECONNABORTED') return TIMED_OUT_MESSAGE
+  if (err?.response?.status === 409) return busy
   return err?.response?.status === 429 ? THROTTLED_MESSAGE : fallback
 }
 
@@ -256,7 +283,7 @@ function preloadTurnPortraits(npcId, options) {
  * @param {Function} onClose - Called when the conversation auto-closes
  *   (`AUTO_CLOSE_DELAY_MS` after the caller reports the final beat rendered —
  *   see `handleFinalBeatRendered`) or when the panel is dismissed through
- *   `handleEndConversation` (whether the `/end` request succeeds or fails).
+ *   `handleEndConversation`, at once — `/end` is sent without waiting on it.
  *   It is never called directly by the panel's chrome — see
  *   `handleEndConversation`.
  * @returns {{
@@ -272,7 +299,7 @@ function preloadTurnPortraits(npcId, options) {
  *   llmAvailable: boolean,
  *   retry: ?Function,
  *   handleOptionClick: (option: Object) => Promise<void>,
- *   handleEndConversation: () => Promise<void>,
+ *   handleEndConversation: () => void,
  *   cancelAutoClose: () => void,
  *   handleFinalBeatRendered: () => void,
  * }}
@@ -322,9 +349,9 @@ export function useNpcChat(npcId, npcName, onClose) {
   // resolving into NPC B's state after a switch. Every write past an `await` in
   // `handleOptionClick` is gated on the sequence it started in.
   const turnSeqRef = useRef(0)
-  // The panel now stays on screen for the duration of `/end`, because ✕, the
-  // overlay click and Escape all route through `handleEndConversation` instead
-  // of dismissing instantly. That opens a window a second click can land in.
+  // ✕, the overlay click, Escape and the End button all route through
+  // `handleEndConversation`, and two of them can land before the close
+  // re-renders. This latch makes that one `/end` and one `onClose`.
   const endingRef = useRef(false)
   // The caller's latest `onClose`. The auto-close timer is now armed from the
   // mount effect as well as from a click, and that effect's closure is frozen
@@ -528,7 +555,7 @@ export function useNpcChat(npcId, npcName, onClose) {
         if (cancelled || !isMountedRef.current) return
         console.error('[npcChat] open failed:', apiErrorDetail(err))
         setRetry(() => openConversation)
-        setError(failureMessage(err, OPEN_FAILED_MESSAGE))
+        setError(failureMessage(err, OPEN_FAILED_MESSAGE, STILL_TALKING_MESSAGE))
         setPhase(CHAT_PHASES.FAILED)
       }
     }
@@ -599,13 +626,13 @@ export function useNpcChat(npcId, npcName, onClose) {
       // Roll back the optimistic segment — the retry re-adds it.
       setConversationSegments((prev) => prev.filter((segment) => segment !== jeanSegment))
       setRetry(() => () => handleOptionClick(option))
-      setError(failureMessage(err, RESPOND_FAILED_MESSAGE))
+      setError(failureMessage(err, RESPOND_FAILED_MESSAGE, STILL_COMPOSING_MESSAGE))
       setPhase(CHAT_PHASES.WAITING_JEAN)
     }
   }
 
   /**
-   * Close the panel, ending the server-side conversation first.
+   * Close the panel at once, and end the server-side conversation behind it.
    *
    * This is the ONLY sanctioned way out of the panel — the ✕, the overlay
    * click, Escape and the End Conversation button all route through it. Wiring
@@ -613,36 +640,27 @@ export function useNpcChat(npcId, npcName, onClose) {
    * the conversation record set server-side, which is what the dialog chrome
    * used to do on every dismissal that was not the button.
    */
-  const handleEndConversation = async () => {
-    // One dismissal, one `/end`, one `onClose` — see `endingRef`.
+  const handleEndConversation = () => {
+    // One dismissal, one `/end`, one `onClose` — see `endingRef`. Latched on
+    // every path, including the no-key one, so a double click during the
+    // opening turn cannot close twice.
     if (endingRef.current) return
-
-    // `/open` never resolved (or failed outright), so there is no server-side
-    // conversation to end — closing is the whole of the work. A response still
-    // in flight is not lost: it ends itself when it lands on an unmounted hook.
-    if (!npcKey) {
-      onClose()
-      return
-    }
-
     endingRef.current = true
-    // Claimed before the request goes out, so the unmount cleanup this close
-    // triggers does not send a second `/end` for the same conversation.
+
+    // Close NOW and send `/end` fire-and-forget (issue #618). Production runs
+    // one sync worker, so an `/end` sent while a turn is still running waits
+    // behind that turn; awaiting it kept the panel up with its button latched
+    // for the whole wait. The key is claimed first, so the unmount cleanup
+    // this close triggers does not send a second `/end`. The REF, not the
+    // `npcKey` state: `settleTurnPhase` clears it when the server has already
+    // ended the conversation, so a dismissal during the auto-close window
+    // sends nothing. With no key (`/open` never resolved, failed, or the
+    // conversation already ended) there is nothing server-side to end, and a
+    // response still in flight ends itself when it lands on an unmounted hook.
+    const key = openNpcKeyRef.current
     openNpcKeyRef.current = null
-    try {
-      await npcChat.end(npcKey)
-    } catch (err) {
-      // Closing is still the right outcome for the player, but a failed `/end`
-      // can mean an expired key or leaked server-side conversation state, and
-      // swallowing it whole made that invisible to player, dev and log pipeline
-      // at once.
-      console.error('[npcChat] end failed; closing anyway:', apiErrorDetail(err))
-    } finally {
-      // The one async path that used to close unconditionally: if the panel is
-      // already gone when `/end` settles, `onClose` would ask its owner to
-      // close a panel that no longer exists.
-      if (isMountedRef.current) onClose()
-    }
+    endAbandonedConversation(key)
+    onClose()
   }
 
   // Lets a caller suspend the "conversation ended" auto-close (e.g. while the

@@ -517,7 +517,7 @@
                     "add_status_resistance": {},
                     "gives_exp": false,
                     "event": null,
-                    "text_file_path": "src\\resources\\books\\jambos-book-of-business-wisdom.txt",
+                    "text_file_path": "src/resources/books/jambos-book-of-business-wisdom.txt",
                     "chars_per_page": 800
                 }
             }

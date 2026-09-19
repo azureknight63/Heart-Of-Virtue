@@ -3660,25 +3660,36 @@ class ApiCombatAdapter:
         # Aggregate combat drops collected during the encounter (API mode)
         drops_raw = getattr(self.player, "combat_drops", []) or []
         drops_by_name: Dict[str, int] = {}
+        handles_by_name: Dict[str, List[str]] = {}
         for d in drops_raw:
             name = (d or {}).get("name")
             qty = int((d or {}).get("quantity", 1) or 1)
             if not name:
                 continue
             drops_by_name[name] = drops_by_name.get(name, 0) + max(0, qty)
+            handles_by_name.setdefault(name, []).extend(
+                h for h in ((d or {}).get("handles") or []) if isinstance(h, str)
+            )
 
-        # Build a lookup of item objects on the current tile for detail enrichment
+        # Details come from the object the fight dropped, resolved by handle --
+        # never the first object of that name on the tile, which can be an
+        # older twin or a hidden stash the player never found (#621, the same
+        # name-is-not-an-identity mistake the collect had).
         tile = getattr(self.player, "current_room", None)
         tile_items = getattr(tile, "items_here", []) if tile else []
-        tile_by_name: Dict[str, Any] = {}
-        for _item in tile_items:
-            _name = getattr(_item, "name", None)
-            if _name and _name not in tile_by_name:
-                tile_by_name[_name] = _item
 
         def _item_details(name: str) -> Dict[str, Any]:
-            obj = tile_by_name.get(name)
-            if not obj:
+            obj = next(
+                (
+                    found
+                    for found in (
+                        find_by_handle(tile_items, h) for h in handles_by_name.get(name, ())
+                    )
+                    if found is not None
+                ),
+                None,
+            )
+            if obj is None:
                 return {}
             return {
                 "type": getattr(obj, "type", getattr(obj, "maintype", "")),

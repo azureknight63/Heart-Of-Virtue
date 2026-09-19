@@ -6,6 +6,7 @@ import {
   beatsUntilResolve,
   moveAvailability,
   moveDamagePreview,
+  nearestShortfall,
   telegraphSeverity,
   telegraphShortLabel,
   telegraphWarning,
@@ -13,6 +14,7 @@ import {
   TELEGRAPH_SEVERITIES,
   NO_REACHABLE_TARGET_REASON,
 } from './combatMoveStatus';
+import { makeTargetOption } from '../test/payloads';
 
 // Issue #586: King Slime's Tidal Surge (then 2.5x, a full-to-dead hit; 1.8x
 // since part B of the same issue, still "deadly") was
@@ -285,5 +287,67 @@ describe('moveDamagePreview', () => {
   it('treats nothing as no preview rather than crashing', () => {
     expect(moveDamagePreview(null)).toBeNull();
     expect(moveDamagePreview(undefined)).toBeNull();
+  });
+});
+
+// #614: the card already says a targeted move has nothing in reach; these
+// pin the missing half, the distance the player has to close. Every number
+// here is READ off `target_previews` -- the adapter computes `shortfall_ft`
+// against the move's live reach (`_build_target_entry`), and a client that
+// worked it out from `distance` and `mvrange` would be a second copy of the
+// engine's reach rule.
+describe('nearestShortfall', () => {
+  // The builder derives `in_range` and `shortfall_ft` from the distance the
+  // way the adapter does, so no number below restates the reach rule; the
+  // expectations are read off the same previews the function reads.
+  const far = (distance) => makeTargetOption({ id: `enemy_${distance}`, distance });
+  const reading = ({ distance, shortfall_ft }) => ({ distance, shortfall_ft });
+
+  it('reads the distance and shortfall off the single out-of-reach preview', () => {
+    const only = far(8);
+    expect(only.shortfall_ft).toBeGreaterThan(0); // out of reach, not a vacuous null
+    expect(nearestShortfall({ target_previews: [only] })).toEqual(reading(only));
+  });
+
+  it('picks the smallest shortfall rather than trusting the list order', () => {
+    const nearest = far(7);
+    expect(nearestShortfall({ target_previews: [far(14), nearest, far(20)] }))
+      .toEqual(reading(nearest));
+  });
+
+  // With something in reach the move is greyed for some other reason, and a
+  // shortfall appended to THAT sentence would name an irrelevant distance.
+  it('says nothing when any candidate is in reach', () => {
+    const inReach = makeTargetOption({ id: 'enemy_1', distance: 5 });
+    expect(inReach.in_range).toBe(true);
+    expect(nearestShortfall({ target_previews: [inReach, far(9)] })).toBeNull();
+  });
+
+  // Too close (inside range_min) publishes a null shortfall by contract --
+  // "3 ft short" is not the sentence for it -- and the client must not invent
+  // the number the adapter deliberately withheld.
+  // And with anyone too close, range is not simply "too far": "nearest 9 ft"
+  // beside an enemy standing at 1 ft would be a false sentence (every bow
+  // move has a minimum range, so this is the ordinary ranged case).
+  it('says nothing when any candidate is too close rather than inventing its number', () => {
+    const tooClose = { id: 'enemy_1', distance: 1, in_range: false, shortfall_ft: null };
+    expect(nearestShortfall({ target_previews: [tooClose] })).toBeNull();
+    expect(nearestShortfall({ target_previews: [tooClose, far(9)] })).toBeNull();
+  });
+
+  it('refuses a non-finite distance or shortfall instead of rendering NaN', () => {
+    expect(nearestShortfall({ target_previews: [{ distance: 8, in_range: false, shortfall_ft: NaN }] })).toBeNull();
+    expect(nearestShortfall({ target_previews: [{ distance: Infinity, in_range: false, shortfall_ft: 3 }] })).toBeNull();
+    expect(nearestShortfall({ target_previews: [{ distance: 8, in_range: false, shortfall_ft: 0 }] })).toBeNull();
+  });
+
+  // An untargeted move publishes `target_previews: []`, an older server none
+  // at all, and a legacy string move is not an object.
+  it('treats an absent, empty or non-list preview set as nothing to say', () => {
+    expect(nearestShortfall({ target_previews: [] })).toBeNull();
+    expect(nearestShortfall({ name: 'Spin' })).toBeNull();
+    expect(nearestShortfall({ target_previews: null })).toBeNull();
+    expect(nearestShortfall(null)).toBeNull();
+    expect(nearestShortfall(undefined)).toBeNull();
   });
 });

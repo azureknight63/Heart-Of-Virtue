@@ -24,6 +24,10 @@ Design notes (docs/development/ally-progression-design.md):
 Attributes expected on the host class (provided by NPC/Friend.__init__):
     self.name, self.intelligence, stat attributes with ``_base`` twins,
     self.known_moves, self.add_move (NPCCombatMixin)
+
+``join_party`` (module level, below) is the one way an NPC enters
+``player.combat_list_allies``; it is a plain function rather than a mixin
+method because half its callers hand it allies that never inherit the mixin.
 """
 
 import logging
@@ -34,6 +38,41 @@ logger = logging.getLogger(__name__)
 
 LEVEL_CAP = 100
 CATCH_UP_MULTIPLIER = 1.5
+
+
+def join_party(player, ally, *, temporary=False):
+    """Put ``ally`` in ``player``'s party and return it.
+
+    ``player.combat_list_allies`` is the single source of truth for the status
+    party, the battle allies and tile-following, so every join has to flag the
+    NPC a friend, place it in that list exactly once (behind the player at
+    index 0 -- the list is started with the player if there is none yet)
+    and bring it up to Jean's level.
+
+    ``sync_level`` is guarded because not every ally is an
+    ``AllyProgressionMixin`` — flavour companions and test doubles reach here
+    too, and a join is not the place to crash over missing progression.
+
+    Args:
+        player: the player whose party ``ally`` joins.
+        ally: the NPC joining.
+        temporary: True for an ally spawned for one fight only
+            (``CombatEventConfig.ally_list``, issue #427).  Those are marked
+            ``event_temp_ally`` so post-combat cleanup drops them again, start
+            un-aggroed, and are deliberately *not* levelled — banking
+            permanent growth on a throwaway spawn is not what the flag means.
+    """
+    ally.friend = True
+    if temporary:
+        ally.aggro = False
+        ally.event_temp_ally = True
+    if not isinstance(getattr(player, "combat_list_allies", None), list):
+        player.combat_list_allies = [player]
+    if ally not in player.combat_list_allies:
+        player.combat_list_allies.append(ally)
+    if not temporary and hasattr(ally, "sync_level"):
+        ally.sync_level(getattr(player, "level", 1))
+    return ally
 
 
 class AllyProgressionMixin:

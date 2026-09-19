@@ -1,4 +1,6 @@
 import logging
+import threading
+import weakref
 import uuid
 import contextlib
 import inspect
@@ -10,7 +12,7 @@ from unittest.mock import patch
 from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
 from src.api.constants import ITEM_USE_RANGE
 from src.api.services.auth_service import SaveLimitReached
-from src.combatant import find_by_handle, wire_handle
+from src.combatant import find_by_handle, index_by_handle, wire_handle
 from src.journal import Journal, existing_journal, journal_for
 from src.events import (
     map_name_for_tile,
@@ -20,7 +22,9 @@ from src.events import (
 from src.functions import (
     check_for_combat,
     end_combat_cleanup,
+    remove_by_identity,
     signal_combat_wave_pending,
+    victory_loot_pending,
 )
 from src.player._leveling import LEVEL_UP_ATTRIBUTE_NAMES
 from src.inventory_utils import get_gold
@@ -51,6 +55,69 @@ _log = logging.getLogger(__name__)
 #: Named because the number was written twice -- once in the check and once
 #: in the message the player reads -- so they could disagree.
 MAX_MANUAL_SAVES = 20
+
+#: Serializes resolving a victory's loot phase (issue #621).
+#:
+#: ``collect_combat_loot`` reads the offer, withdraws it, moves the objects and
+#: marks the victory resolved. Under the threaded Socket.IO server two requests
+#: for one session hold the SAME ``Player`` object, so a second collect could
+#: read the offer inside ``_offered_drops`` before the first cleared it, and
+#: both would then walk the same handles: the loser either reports collecting
+#: what the winner took, or races the ``item in tile.items_here`` check and
+#: raises out of ``list.remove``.
+#:
+#: NOT the combat adapter's ``_beat_lock``, which is the obvious candidate and
+#: the wrong one. Three reasons, in order of weight:
+#:
+#: 1. The adapter is not a stable object across this window. Anything that
+#:    finds ``_combat_adapter`` missing builds a NEW ``ApiCombatAdapter`` (see
+#:    ``get_combat_status``), and ``_discard_fight_state`` deletes it outright
+#:    on flee and load. Two threads could hold two different adapters' locks
+#:    and exclude nothing.
+#: 2. There need not be an adapter at all when a loot call arrives, so the
+#:    lock would have to be optional -- and a fallback lock is exactly the
+#:    second lock ordering that must not be introduced.
+#: 3. ``_beat_lock`` is held across whole move loops. Borrowing it would park
+#:    an out-of-combat request behind in-combat beat execution for nothing.
+#:
+#: A module-level lock is safe here precisely because the guarded region is
+#: closed: it acquires no other lock, performs no I/O, and only mutates lists
+#: and attributes, so it cannot be one half of a cycle. Nothing reaches
+#: ``collect_combat_loot`` while holding ``_beat_lock`` either -- its only
+#: caller is the ``/api/combat/collect-loot`` route. Global rather than
+#: per-player because the section is microseconds long and a lock table keyed
+#: on players is machinery this does not need.
+_LOOT_PHASE_LOCK = threading.Lock()
+
+#: One NPC chat turn per player at a time (#618 scrub; maintainer decision
+#: 2026-09-19). A turn the client abandoned at its deadline keeps running and
+#: commits -- Jean's line, the loquacity drain, the reputation change -- so a
+#: Retry running BESIDE it would double-commit and spend the LLM quota twice.
+#: That only happens on a server that runs requests concurrently (the threaded
+#: dev/QA server). Production's single sync worker (the Procfile) never runs two
+#: at once, so there a Retry queues behind the abandoned turn and commits a
+#: second one AFTER it; this lock cannot see that, and the turn budget is what
+#: keeps it rare. Idempotent turns are the fix, filed as a follow-up
+#: (maintainer decision 2026-09-19). Weak-keyed on the player rather than
+#: stored on it: a lock does not pickle, and the player is saved.
+_CHAT_TURN_LOCKS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+_CHAT_TURN_LOCKS_GUARD = threading.Lock()
+
+#: The refusal for a second turn while one is in flight; the route answers 409.
+_CHAT_TURN_IN_FLIGHT = {
+    "success": False,
+    "in_flight": True,
+    "error": "Still composing a reply — give it a moment.",
+}
+
+
+def _chat_turn_lock(player):
+    """``player``'s chat-turn lock, created on first use."""
+    with _CHAT_TURN_LOCKS_GUARD:
+        lock = _CHAT_TURN_LOCKS.get(player)
+        if lock is None:
+            lock = _CHAT_TURN_LOCKS[player] = threading.Lock()
+        return lock
 
 
 def _warn(message):
@@ -112,6 +179,38 @@ _ACTION_FAILED_MESSAGE = "Jean can't seem to manage that just now."
 #: combat").
 _PASSAGEWAY_IN_COMBAT_MESSAGE = "Cannot use a passageway while in combat."
 
+#: Why picking an item up or putting one down is refused mid-fight (#621).
+_FLOOR_ITEMS_IN_COMBAT_MESSAGE = (
+    "There is no time for that in the middle of a fight."
+)
+
+#: The item verbs that move a pile onto or off the floor -- and so restack
+#: it (``Item.take``, ``Item.drop``). Matched on the RESOLVED handler's
+#: name, so an authored alias for either is caught too.
+#:
+#: ``equip`` is deliberately NOT here, though equipping a floor item picks it
+#: up: it never restacks the floor, which is the hazard this gate exists for,
+#: and snatching a weapon off the ground mid-fight is a legitimate move
+#: (maintainer decision 2026-09-19).
+_FLOOR_PILE_HANDLERS = frozenset({"take", "drop"})
+
+
+def _moves_floor_items(target, action):
+    """Whether ``action`` on ``target`` picks an item up or puts one down.
+
+    Refused mid-fight (maintainer decision, 2026-09-19): an enemy's drop is
+    recorded at its death, and a pickup or stack drop on that floor before
+    the victory could merge the drop away -- or merge Jean's own units into
+    it -- before the victory's floor freeze (#621) begins.
+    """
+    from src.items import Item
+    from src.objects import resolve_interaction
+
+    if not isinstance(target, Item):
+        return False
+    handler = resolve_interaction(target, action)
+    return getattr(handler, "__name__", None) in _FLOOR_PILE_HANDLERS
+
 
 #: Cap on the client-supplied verb echoed back by
 #: :func:`_unsupported_action_message`. The /world/interact route validates
@@ -138,8 +237,9 @@ def _is_demo_end_crossing(target, handler):
     """True when `handler` is a verb that would CROSS a demo-end passageway.
 
     Gated on the resolved handler rather than on the verb, because a
-    Passageway binds its authored name words (`ferry`, `landing`) to `enter`
-    on the instance, and all of those are legitimate ways to say "use it".
+    Passageway's authored name words (`ferry`, `landing`) resolve to `enter`
+    too (through its class-declared `instance_keyword_aliases`), and all of
+    those are legitimate ways to say "use it".
     Without this the demo-end branch fired for every verb the allow-list
     permits, so merely examining the ferry to read its description ended the
     demo and set the story gate.
@@ -149,8 +249,8 @@ def _is_demo_end_crossing(target, handler):
     which delegate to it rather than alias it -- and those three are exactly
     the shipped ferry's `action_aliases`, so the miss covered every way a
     player actually crosses. (Its `keywords` list is wider than that:
-    `enter, go, leave, exit, ferry, landing`. The two name words bind to
-    `enter` directly, which is why the handler, not the verb, is the thing to
+    `enter, go, leave, exit, ferry, landing`. The two name words resolve to
+    `enter` itself, which is why the handler, not the verb, is the thing to
     ask about.)
 
     Takes the already-resolved handler rather than the verb, so one
@@ -438,10 +538,9 @@ class GameService:
             # every map. On a container, ``_dispatch_interaction``'s generic
             # arm resolves the verb to ``Container.take_all`` and calls it;
             # that is the engine's only implementation, so on any other target
-            # the same arm resolves nothing and refuses it in fiction. One
-            # exception, shared with every other verb on this list: a
-            # non-demo-end Passageway goes to the step-through confirmation arm
-            # whatever the verb. Hardening that arm is #620.
+            # the same arm resolves nothing and refuses it in fiction --
+            # passageways included, since the step-through arm takes only
+            # verbs that cross or that the placement advertises (#620).
             "take_all",
         }
     )
@@ -2485,14 +2584,27 @@ class GameService:
         has one contract to copy. The mismatch fails silently either way:
         ``append`` of a list ships ``events_triggered: [[{...}]]`` to the
         client, ``extend`` of a dict splats its keys.
+
+        Unpaid shop stock is taken back here, and the confirmation is where
+        the player is told so (issue #611). The drop's own narration reaches
+        the interact response's ``message`` as well, but the client's
+        passageway branch closes the interaction panel and returns before it
+        renders that -- so the ONLY surface the player reliably sees on this
+        path is the confirmation dialog itself, which has no close button
+        while it awaits input. Staging the lines as ``output_text`` puts them
+        there: ``EventDialog`` prefers ``output_text`` over ``description``,
+        so the description is re-joined below rather than replaced.
         """
         from src.events import PassagewayTransitionEvent
 
         player, target = request.player, request.target
         tile, session_data = request.tile, request.session_data
 
+        returned_goods = []
         if hasattr(player, "drop_merchandise_items"):
-            player.drop_merchandise_items()
+            # ``or []`` because the engine method is duck-typed here: a test
+            # double, or an older Player, may still answer None.
+            returned_goods = player.drop_merchandise_items() or []
         if target.events_before:
             for ev in target.events_before:
                 ev.process()
@@ -2504,6 +2616,17 @@ class GameService:
             passageway=target,
         )
         event_data = EventSerializer.serialize_with_input(trans_event)
+        if returned_goods:
+            # Through _apply_staged_payload, not a literal "output_text" key:
+            # _STAGED_PAYLOAD_KEYS is the authority for the staged names and
+            # a fourth copy that agrees with it today is exactly what #524
+            # was about.
+            self._apply_staged_payload(
+                event_data,
+                "\n".join([*returned_goods, "", trans_event.description]),
+                None,
+                None,
+            )
         # Dedupe-by-name is right here too: the name is the prefix plus the
         # passageway's name, so a collision is the same passageway's
         # confirmation re-armed.
@@ -2549,13 +2672,14 @@ class GameService:
 
         from src.objects import Container, Passageway, resolve_interaction
         from src.inventory_utils import transfer_item
+        from src.items import stack_sentence_label
 
-        # Resolved ONCE for the whole dispatch: the demo-end gate below and
-        # the fall-through arm both need to know what this verb means, and two
-        # calls are two sites that have to keep agreeing. None means the class
-        # implements nothing by that name -- the arms that do not consult it
-        # (container, container-item, passageway) key off the target's TYPE,
-        # not off a handler.
+        # Resolved ONCE for the whole dispatch: the demo-end arm, the
+        # step-through arm and the fall-through arm all need to know what this
+        # verb means, and two calls are two sites that have to keep agreeing.
+        # None means the class implements nothing by that name. Only the
+        # container and container-item arms key off the target's TYPE and the
+        # verb alone, never the handler.
         handler = resolve_interaction(target, action)
 
         is_container = isinstance(target, Container)
@@ -2583,7 +2707,9 @@ class GameService:
                 target._parent_container.refresh_description()
 
             if action == "take":
-                narrate(f"{player.name} takes {target.name}.")
+                # stack_sentence_label, like every other "Jean takes ..."
+                # line: the count used to ride in a name #624 stopped baking.
+                narrate(f"{player.name} takes {stack_sentence_label(target, qty_to_take)}.")
             else:
                 # Proceed with equipment logic
                 target.equip(player)
@@ -2595,7 +2721,9 @@ class GameService:
             # to) returns whether THIS call closed the demo, and that verdict
             # is the wire's `beta_end` -- the same flag the combat adapter
             # sets on the Lurker path -- so the client raises BetaEndDialog.
-            beta_end = bool(target.enter(player))
+            # The class-resolved handler, not `target.enter`: an instance
+            # lookup here was one hop past the resolver #620 closed.
+            beta_end = bool(handler(player))
         # `not _is_demo_end_passageway(target)`: this arm asks "step
         # through?", and the arm above has already handled every verb that
         # WOULD step through a demo-end passageway. What reached here is a
@@ -2604,10 +2732,23 @@ class GameService:
         # those meant confirming it ran `_commit_teleport` -- which now ends
         # the demo instead of crossing, but with `beta_end` never set, so the
         # player got the closing beat and the story gate and no BetaEndDialog.
+        #
+        # The verb test is #620. This arm used to key off the TYPE alone and
+        # never look at `handler`, so every verb on
+        # `_ALLOWED_INTERACTION_VERBS` armed a crossing confirmation on any
+        # ordinary passageway -- LOOT a city gate and
+        # `_queue_passageway_confirmation` ran `drop_merchandise_items()` and
+        # every `events_before` BEFORE the player was asked anything. Which
+        # verbs may step through is the engine's rule
+        # (`Passageway.accepts_step_through`: the verb crosses, or the
+        # placement advertises it); what stays out is exactly the hole, an
+        # allow-list verb the placement never advertised, which falls to the
+        # generic arm and is refused in fiction.
         elif (
             isinstance(target, Passageway)
             and not _is_demo_end_passageway(target)
             and session_data is not None
+            and target.accepts_step_through(handler, action)
         ):
             events_triggered.extend(
                 self._queue_passageway_confirmation(request)
@@ -2833,8 +2974,10 @@ class GameService:
         from the player's side both are "that verb does nothing here", and the
         difference (advertised vs implemented) is ours, not theirs.
         """
+        from src.objects import advertised_keywords
+
         target, action = request.target, request.action
-        advertised = hasattr(target, "keywords") and action in target.keywords
+        advertised = action in advertised_keywords(target)
         if advertised or action in self._ALLOWED_INTERACTION_VERBS:
             return None
         return {
@@ -2904,6 +3047,8 @@ class GameService:
                 "success": False,
                 "message": _PASSAGEWAY_IN_COMBAT_MESSAGE,
             }
+        if getattr(player, "in_combat", False) and _moves_floor_items(target, action):
+            return {"success": False, "message": _FLOOR_ITEMS_IN_COMBAT_MESSAGE}
 
         # Record pre-action location to detect passageway teleportation
         _pre_location = _PreInteractionLocation.capture(player)
@@ -4869,7 +5014,24 @@ class GameService:
             # old-scale rows in the save for good.
             _log.warning("loquacity recovery skipped", exc_info=True)
 
+    @staticmethod
+    def _one_chat_turn(player, turn, *args) -> Dict[str, Any]:
+        """Run ``turn(*args)`` unless this player already has one in flight."""
+        lock = _chat_turn_lock(player)
+        if not lock.acquire(blocking=False):
+            return dict(_CHAT_TURN_IN_FLIGHT)
+        try:
+            return turn(*args)
+        finally:
+            lock.release()
+
     def npc_chat_open(
+        self, player: "player_module.Player", npc_id: str
+    ) -> Dict[str, Any]:
+        """Start a conversation, one turn per player at a time (``_npc_chat_open``)."""
+        return self._one_chat_turn(player, self._npc_chat_open, player, npc_id)
+
+    def _npc_chat_open(
         self, player: "player_module.Player", npc_id: str
     ) -> Dict[str, Any]:
         """Start an LLM conversation with a human NPC.
@@ -4929,6 +5091,18 @@ class GameService:
         return self._enrich_chat_result_with_relationship(result, npc)
 
     def npc_chat_respond(
+        self,
+        player: "player_module.Player",
+        npc_key: str,
+        jean_text: str,
+        jean_tone: str = "neutral",
+    ) -> Dict[str, Any]:
+        """Jean's choice, one turn per player at a time (``_npc_chat_respond``)."""
+        return self._one_chat_turn(
+            player, self._npc_chat_respond, player, npc_key, jean_text, jean_tone
+        )
+
+    def _npc_chat_respond(
         self,
         player: "player_module.Player",
         npc_key: str,
@@ -5066,12 +5240,16 @@ class GameService:
 
         ``item_names`` comes from the client, so only names the fight offered
         can be taken (:meth:`_offered_drops`: ``player.combat_drops``, and only
-        while a won fight is unresolved), each up to as many objects as it
-        recorded, newest first. That bounds names and object counts, not units:
-        a stackable drop merged into an older pile of its kind arrives as one
-        object, and the whole pile comes with it. The drops are looked for where
-        the fight was fought, not where the player now stands
-        (:meth:`_loot_tile`).
+        while a won fight is unresolved) — and for each name, only the objects
+        that fight spawned, resolved by wire handle (issue #621). A name is not
+        an identity: resolving one against the tile hands over whatever of that
+        name is lying there, which is not the same thing as the loot. The drops
+        are looked for where the fight was fought, not where the player now
+        stands (:meth:`_loot_tile`).
+
+        The offer read, the take and the resolve run under
+        :data:`_LOOT_PHASE_LOCK` so a second request cannot be served an offer
+        the first is already spending.
 
         This call is the victory's resolve signal (:meth:`_end_loot_phase`), so
         once the tile is found the loot phase ends whatever was taken. If the
@@ -5111,12 +5289,16 @@ class GameService:
             self._end_loot_phase(player)
             return {"success": True, "collected": [], "skipped": []}
 
-        offered = self._offered_drops(player)
-        # Withdrawn as soon as it is read: a second collect in flight (another
-        # tab) then finds nothing on offer, rather than the same cap again.
-        player.combat_drops = []
-        collected, skipped = self._take_offered_drops(player, tile, item_names, offered)
-        self._end_loot_phase(player)
+        with _LOOT_PHASE_LOCK:
+            offered = self._offered_drops(player)
+            # Withdrawn as soon as it is read: a second collect in flight
+            # (another tab) then finds nothing on offer, rather than the same
+            # objects again.
+            player.combat_drops = []
+            collected, skipped = self._take_offered_drops(
+                player, tile, item_names, offered
+            )
+            self._end_loot_phase(player)
 
         if collected and hasattr(player, "stack_inv_items"):
             player.stack_inv_items()
@@ -5134,6 +5316,11 @@ class GameService:
                 "success": False,
                 "error": f"Invalid item_names parameter: expected list, got {type(item_names).__name__}",
             }
+        if len(item_names) > GameService._MAX_LOOT_REQUEST_NAMES:
+            return {
+                "success": False,
+                "error": f"Too many item names: at most {GameService._MAX_LOOT_REQUEST_NAMES}",
+            }
         for name in item_names:
             if not isinstance(name, str):
                 return {
@@ -5144,27 +5331,26 @@ class GameService:
 
     @staticmethod
     def _take_offered_drops(
-        player: Any, tile: Any, item_names: list, offered: Dict[str, int]
+        player: Any, tile: Any, item_names: list, offered: Dict[str, List[str]]
     ) -> Tuple[list, list]:
         """Move each requested, offered drop from ``tile`` into the player's
         inventory; returns ``(collected, skipped)``.
 
-        A name not on offer is ``not_offered``; one on offer but not on the
-        tile is ``not_found``; one that would breach ``weight_tolerance`` is
-        ``over_capacity`` and stays put. Each name yields up to its offered cap
-        of objects, newest first: ``spawn_item`` appends, so a non-stackable's
-        own objects are the last of their name on the tile, and an older twin
-        (perhaps a hidden one) is not this fight's to hand over.
+        A name not on offer is ``not_offered``; one on offer whose objects are
+        no longer on the tile is ``not_found``; one that would breach
+        ``weight_tolerance`` is ``over_capacity`` and stays put.
+
+        A name yields the objects the fight recorded under it and nothing else:
+        each handle is resolved with :func:`index_by_handle`, and a handle that
+        no longer answers is simply not there (issue #621). There is
+        deliberately no fallback to a same-named object on the tile — the
+        fallback is the defect. Jean having already picked the drop up by hand,
+        or having something else of that name lying beside it, must cost him a
+        ``not_found``, not somebody else's Shortsword.
         """
         inventory = get_inventory_list(player)
         capacity = float(getattr(player, "weight_tolerance", 20.0) or 20.0)
         current_weight = sum(float(getattr(i, "weight", 0) or 0) for i in inventory)
-
-        tile_by_name: Dict[str, list] = {}
-        for item in list(tile.items_here):
-            name = getattr(item, "name", None)
-            if name:
-                tile_by_name.setdefault(name, []).append(item)
 
         collected: list = []
         skipped: list = []
@@ -5174,59 +5360,75 @@ class GameService:
             if name not in offered:
                 skipped.append({"name": name, "reason": "not_offered"})
                 continue
-            newest_first = tile_by_name.get(name, [])[::-1][: offered[name]]
             any_collected = over_capacity = False
-            for item in newest_first:
+            for handle in offered[name]:
+                item, index = index_by_handle(tile.items_here, handle)
+                if item is None:
+                    continue
                 item_weight = float(getattr(item, "weight", 0) or 0)
                 if current_weight + item_weight > capacity:
                     skipped.append({"name": name, "reason": "over_capacity"})
                     over_capacity = True
                     break
-                if item in tile.items_here:
-                    tile.items_here.remove(item)
-                    inventory.append(item)
-                    collected.append(name)
-                    current_weight += item_weight
-                    any_collected = True
+                # By identity, not by the looked-up index: take and drop do
+                # not hold the loot lock, so the floor may have shifted since
+                # the lookup, and deleting by index then took a neighbour
+                # while the drop was handed over too. Never ``list.remove``
+                # either -- that is ``==``, and an equal twin is the defect
+                # resolving by handle exists to close.
+                if not remove_by_identity(tile.items_here, item, hint=index):
+                    continue
+                inventory.append(item)
+                collected.append(name)
+                current_weight += item_weight
+                any_collected = True
             if not any_collected and not over_capacity:
                 skipped.append({"name": name, "reason": "not_found"})
         return collected, skipped
 
     @classmethod
-    def _offered_drops(cls, player: Any) -> Dict[str, int]:
-        """What the player's last won fight still offers: ``{name: object cap}``.
+    def _offered_drops(cls, player: Any) -> Dict[str, List[str]]:
+        """What the player's last won fight still offers: ``{name: handles}``.
 
         Read from ``player.combat_drops`` — written only by a dying enemy as
-        ``{"name", "quantity"}`` dicts (``src/npc/_loot.py``) — and only while
-        that victory is unresolved (:meth:`_is_unresolved_victory`). A defeat
-        leaves the list behind (flee and load withdraw it, through
-        :meth:`_abandon_loot_phase`), so the victory gate is what stops a
-        fight's leftover names being collected somewhere else.
+        ``{"name", "quantity", "handles"}`` dicts (``src/npc/_loot.py``) — and
+        only while that victory is unresolved
+        (:meth:`_is_unresolved_victory`). A defeat leaves the list behind (flee
+        and load withdraw it, through :meth:`_abandon_loot_phase`), so the
+        victory gate is what stops a fight's leftover drops being collected
+        somewhere else.
 
-        The cap is the recorded quantity summed per name. It bounds how many
-        *objects* a name may yield: exact for non-stackables, which spawn one
-        object per unit, but not for a stackable drop that merged into an older
-        pile (see :meth:`collect_combat_loot`).
+        The handles are the wire identity of the objects the drop spawned, and
+        they are the whole offer: what a name may yield is those objects, not
+        that many objects of that name (issue #621). An entry carrying no
+        handles — one written before this became the contract, or by anything
+        that is not the loot mixin — offers its name with nothing behind it, so
+        the player is told ``not_found`` rather than handed a stranger's
+        property.
         """
         if not cls._is_unresolved_victory(player):
             return {}
-        offered: Dict[str, int] = {}
+        offered: Dict[str, List[str]] = {}
         drops = getattr(player, "combat_drops", None)
         drops = drops if isinstance(drops, list) else []
         for drop in drops:
             if not isinstance(drop, dict):
                 continue
-            name, quantity = drop.get("name"), drop.get("quantity", 1)
-            if isinstance(name, str) and name:
-                offered[name] = offered.get(name, 0) + max(1, int(quantity or 1))
+            name, handles = drop.get("name"), drop.get("handles")
+            if not (isinstance(name, str) and name):
+                continue
+            entry = offered.setdefault(name, [])
+            if isinstance(handles, list):
+                entry.extend(h for h in handles if isinstance(h, str) and h)
         return offered
 
     @staticmethod
     def _is_unresolved_victory(player: Any) -> bool:
         """Whether ``player``'s end-of-combat summary is a won fight not yet
-        resolved: the only state in which there is loot to hand out."""
-        summary = getattr(player, "combat_end_summary", None)
-        return isinstance(summary, dict) and summary.get("status") == "victory"
+        resolved: the only state in which there is loot to hand out. The
+        engine's answer (``functions.victory_loot_pending``), which the
+        #621 floor freeze asks too."""
+        return victory_loot_pending(player)
 
     @classmethod
     def _end_loot_phase(cls, player: Any) -> None:
@@ -5283,6 +5485,11 @@ class GameService:
         """
         if getattr(player, "combat_end_summary", None) is not None:
             player.combat_end_summary = None
+
+    #: The most distinct names one collect may ask for. A fight's offer holds
+    #: a handful; the request is client-sized and walked under the
+    #: process-wide ``_LOOT_PHASE_LOCK``, so a longer list is refused up front.
+    _MAX_LOOT_REQUEST_NAMES = 64
 
     #: Why a collect took nothing when the fight's tile could not be found.
     _LOOT_TILE_NOT_FOUND_MESSAGE = (
@@ -5579,6 +5786,16 @@ class GameService:
         ):
             return {"success": False, "error": "Cannot sell equipped items"}
 
+        # Unpaid goods -- taken from a merchant's crate or floor -- carry
+        # ``merchandise`` until bought, and ``equip_item`` refuses them the
+        # same way. The SELL list already hides them; without this a
+        # hand-built request sold the merchant its own goods.
+        if getattr(target_item, "merchandise", False):
+            return {
+                "success": False,
+                "error": f"You must purchase {target_item.name} before selling it",
+            }
+
         base_value = getattr(target_item, "value", 0)
         if not base_value:
             return {"success": False, "error": "This item has no sell value"}
@@ -5739,7 +5956,16 @@ class GameService:
 
         # Execute transfer
         transfer_gold(player.inventory, merchant.inventory, total_price)
+        carried_before = {id(i) for i in player.inventory}
         transfer_item(merchant, player, target_item, entry["count"])
+        # Buyback charges what the merchant PAID, so the units it hands back
+        # are priced the same. Split off a merchant stack a
+        # ValueModifierCondition boosted, they carried the boost and resold
+        # at a profit (#624 let these stacks reach buyback at all). Units that
+        # merged into Jean's own stack already carry his value.
+        for returned in player.inventory:
+            if id(returned) not in carried_before and hasattr(returned, "value"):
+                returned.value = entry["value"]
 
         # Remove ledger entry
         merchant._buyback_ledger.remove(entry)
@@ -5928,6 +6154,9 @@ class GameService:
         Returns:
             Dictionary with drop result or ``error``
         """
+        if getattr(player, "in_combat", False):
+            # Floor piles hold still mid-fight (#621; see _moves_floor_items).
+            return {"error": _FLOOR_ITEMS_IN_COMBAT_MESSAGE}
         tile = self.get_current_tile_object(player)
         if not tile or not hasattr(tile, "items_here"):
             return {"error": "Cannot drop item: invalid current location"}

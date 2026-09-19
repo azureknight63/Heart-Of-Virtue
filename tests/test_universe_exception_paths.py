@@ -137,6 +137,7 @@ def test_event_reinit_and_attr_synthesis_both_fail_gracefully(monkeypatch, tmp_p
     # allow-list gate (issue #290) accepts it; a standalone sys.modules entry is
     # (correctly) refused as a non-engine module.
     import src.events as _events_mod
+    _BrokenEvent.__module__ = _events_mod.__name__  # an engine class, as the loader requires (#620)
     monkeypatch.setattr(_events_mod, "BrokenEvent", _BrokenEvent, raising=False)
 
     u = Universe()
@@ -192,6 +193,7 @@ class _EventWithReadOnlyTile:
 
 def test_event_tile_assignment_exception_hits_outer_except(monkeypatch, tmp_path):
     import src.events as _events_mod
+    _EventWithReadOnlyTile.__module__ = _events_mod.__name__  # an engine class, as the loader requires (#620)
     monkeypatch.setattr(
         _events_mod, "EventWithReadOnlyTile", _EventWithReadOnlyTile, raising=False
     )
@@ -243,6 +245,7 @@ def test_item_player_assigned_and_tile_assignment_exception_swallowed(
     monkeypatch, tmp_path
 ):
     import src.items as _items_mod
+    _ItemReadOnlyTile.__module__ = _items_mod.__name__  # an engine class, as the loader requires (#620)
     monkeypatch.setattr(
         _items_mod, "ItemReadOnlyTile", _ItemReadOnlyTile, raising=False
     )
@@ -294,6 +297,7 @@ def test_npc_player_current_room_assigned_and_tile_exception_swallowed(
     monkeypatch, tmp_path
 ):
     import src.npc as _npc_mod
+    _NpcReadOnlyTile.__module__ = _npc_mod.__name__  # an engine class, as the loader requires (#620)
     monkeypatch.setattr(_npc_mod, "NpcReadOnlyTile", _NpcReadOnlyTile, raising=False)
 
     u = Universe()
@@ -342,6 +346,7 @@ class _ObjectReadOnlyTile:
 
 def test_object_tile_assignment_exception_swallowed(monkeypatch, tmp_path):
     import src.objects as _objects_mod
+    _ObjectReadOnlyTile.__module__ = _objects_mod.__name__  # an engine class, as the loader requires (#620)
     monkeypatch.setattr(
         _objects_mod, "ObjectReadOnlyTile", _ObjectReadOnlyTile, raising=False
     )

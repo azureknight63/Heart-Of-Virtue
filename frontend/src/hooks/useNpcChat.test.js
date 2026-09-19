@@ -18,7 +18,9 @@ import {
 import { portraitUrl, EMOTIONS } from '../utils/portraits'
 import { makeNpcChatOpen, makeNpcChatRespond, makeJeanOption, makeRelationship } from '../test/payloads'
 
-vi.mock('../api/npcChat', () => ({
+// The real module's constants survive; only the calls are stubbed.
+vi.mock('../api/npcChat', async (importOriginal) => ({
+  ...(await importOriginal()),
   default: {
     open: vi.fn(),
     respond: vi.fn(),
@@ -26,7 +28,11 @@ vi.mock('../api/npcChat', () => ({
   },
 }))
 
-import npcChat from '../api/npcChat'
+import npcChat, { NPC_CHAT_TIMEOUT_MS } from '../api/npcChat'
+
+/** What axios rejects with when the client deadline on a chat call fires. */
+const axiosTimeoutError = () =>
+  Object.assign(new Error(`timeout of ${NPC_CHAT_TIMEOUT_MS}ms exceeded`), { code: 'ECONNABORTED' })
 
 /** A promise plus its settle handles, so a request can be held mid-flight. */
 function deferred() {
@@ -669,6 +675,26 @@ describe('useNpcChat', () => {
       expect(result.current.error).not.toContain('Slow down')
     })
 
+    it('names the deadline when the request timed out, instead of blaming the open (#618)', async () => {
+      // ECONNABORTED is the code axios raises when its own `timeout` fires —
+      // the client deadline npcChat.js puts on every chat call. "Failed to open
+      // conversation" reads as "the server said no"; a player who waited out
+      // the whole spinner needs to be told the wait itself is what ended, or Retry
+      // looks like the same dead end rather than a fresh try.
+      npcChat.open.mockRejectedValue(axiosTimeoutError())
+      const { result } = mount()
+
+      await waitFor(() => expect(result.current.phase).toBe('failed'))
+      expect(result.current.error).toBe('The conversation timed out — try again.')
+      expect(result.current.error).not.toBe('Failed to open conversation')
+      // Still OUR fixed copy: the axios message carries the raw millisecond
+      // budget, which is diagnostics, not a sentence for a player.
+      expect(NPC_CHAT_TIMEOUT_MS).toBeGreaterThan(0) // the real constant, not mocked away
+      expect(result.current.error).not.toContain(String(NPC_CHAT_TIMEOUT_MS))
+      expect(result.current.loading).toBe(false)
+      expect(typeof result.current.retry).toBe('function')
+    })
+
     it('exposes a retry that clears the failed phase on success', async () => {
       npcChat.open.mockRejectedValueOnce(new Error('boom'))
       const { result } = mount()
@@ -943,6 +969,58 @@ describe('useNpcChat', () => {
       expect(result.current.error).toBe('Too many messages — give it a moment.')
       expect(result.current.phase).toBe('waiting_jean')
     })
+
+    it('says the NPC is still composing when a turn is already in flight (#618)', async () => {
+      // The server runs one chat turn per player at a time and answers 409 to
+      // a second -- typically a Retry after a timeout, while the abandoned
+      // turn is still finishing. Neither "did not respond" nor "timed out" is
+      // what happened.
+      npcChat.respond.mockRejectedValue({
+        response: { status: 409, data: { success: false, error: 'server copy' } },
+      })
+      const { result } = await mountOpened()
+
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
+      })
+
+      expect(result.current.error).toBe('Still composing a reply — give it a moment.')
+      expect(result.current.phase).toBe('waiting_jean')
+    })
+
+    it('says Jean is still in another conversation when /open is refused (#618)', async () => {
+      // The one-turn-per-player gate is per PLAYER, not per NPC: close NPC A
+      // mid-turn, open NPC B, and B's /open meets A's turn. "Still composing a
+      // reply" on a panel that has asked nothing yet would be false.
+      npcChat.open.mockRejectedValue({
+        response: { status: 409, data: { success: false, error: 'server copy' } },
+      })
+      const { result } = mount()
+
+      await waitFor(() => expect(result.current.phase).toBe('failed'))
+      expect(result.current.error).toBe('Jean is still finishing another conversation — give it a moment.')
+    })
+
+    it('names the deadline when the turn timed out, and hands the options back (#618)', async () => {
+      // Issue #618's actual failure: one `/respond` walked the provider chain
+      // for over 90 seconds while the panel sat at WAITING_NPC with no options,
+      // no error and an inert End Conversation button. The client deadline is
+      // what turns that into a normal failed turn.
+      npcChat.respond.mockRejectedValue(axiosTimeoutError())
+      const { result } = await mountOpened()
+
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
+      })
+
+      expect(result.current.error).toBe('The conversation timed out — try again.')
+      expect(result.current.error).not.toBe('NPC did not respond')
+      // The conversation itself survives a timed-out turn, same as any other
+      // failed respond: Jean gets her options back rather than a dead panel.
+      expect(result.current.phase).toBe('waiting_jean')
+      expect(result.current.loading).toBe(false)
+      expect(result.current.currentOptions.length).toBeGreaterThan(0)
+    })
   })
 
   // -------------------------------------------------------------------------
@@ -972,10 +1050,29 @@ describe('useNpcChat', () => {
       // expired key or leaked server-side conversation state; swallowing it
       // whole made that invisible to player, dev and log pipeline at once.
       expect(onClose).toHaveBeenCalledTimes(1)
-      expect(consoleError).toHaveBeenCalledWith(
-        '[npcChat] end failed; closing anyway:',
-        'expired key'
+      await waitFor(() =>
+        expect(consoleError).toHaveBeenCalledWith(
+          '[npcChat] end after dismissal failed:',
+          'expired key'
+        )
       )
+    })
+
+    it('closes at once, even while /end is still waiting on the server (#618)', async () => {
+      // Production runs one sync worker, so an /end sent while a turn is still
+      // running waits behind that turn. The panel used to stay up, its button
+      // latched, for the whole wait -- "walk out of a hang" only worked on the
+      // threaded dev server.
+      const pending = deferred()
+      npcChat.end.mockReturnValue(pending.promise)
+      const { result } = await mountOpened()
+
+      act(() => { result.current.handleEndConversation() })
+
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      expect(onClose).toHaveBeenCalledTimes(1)
+      await act(async () => { pending.resolve({ data: { success: true } }) })
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
 
     it('spends one /end and one close no matter how often it is invoked', async () => {
@@ -1066,6 +1163,19 @@ describe('useNpcChat', () => {
       expect(rendered.result.current.phase).toBe('ended')
       return rendered
     }
+
+    it('sends no /end when dismissed after the server has ended the conversation', async () => {
+      // The server pops its conversation marker itself when a turn ends one
+      // (settleTurnPhase clears the open key for exactly this). An /end sent
+      // from the auto-close window would pop it again -- by then possibly the
+      // NEXT conversation's.
+      const { result } = await openEndedTurn()
+
+      act(() => { result.current.handleEndConversation() })
+
+      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(npcChat.end).not.toHaveBeenCalled()
+    })
 
     it('does NOT arm the close timer just because the conversation ended', async () => {
       const { result } = await openEndedTurn()
@@ -1305,6 +1415,39 @@ describe('useNpcChat', () => {
       expect(npcChat.end).not.toHaveBeenCalled()
     })
 
+    it('sends exactly one /end when the player walks out mid-turn (#618)', async () => {
+      // The window issue #618's fix OPENS: End Conversation is no longer gated
+      // on `loading`, so a dismissal can now land while `/respond` is still in
+      // flight. `openNpcKeyRef` is cleared before `/end` goes out, so the
+      // unmount cleanup must not fire a second one — and the reply that lands
+      // afterwards must not write into a hook that is gone.
+      const pending = deferred()
+      npcChat.respond.mockReturnValue(pending.promise)
+      const { result, unmount } = await mountOpened()
+
+      act(() => {
+        result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
+      })
+      await waitFor(() => expect(result.current.phase).toBe('waiting_npc'))
+
+      await act(async () => {
+        await result.current.handleEndConversation()
+      })
+      unmount()
+
+      await act(async () => {
+        pending.resolve({ data: makeNpcChatRespond({ npc_response: 'Too late.' }) })
+      })
+
+      expect(npcChat.end).toHaveBeenCalledTimes(1)
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      // No "Cannot update an unmounted component" from the late reply either.
+      expect(consoleError).not.toHaveBeenCalledWith(
+        expect.stringContaining('unmounted'),
+        expect.anything()
+      )
+    })
+
     it('sends exactly one /end when a dismissal is what unmounted the panel', async () => {
       const { result, unmount } = await mountOpened()
 
@@ -1343,20 +1486,22 @@ describe('useNpcChat', () => {
       expect(onClose).not.toHaveBeenCalled()
     })
 
-    it('does not close after unmount when a slow /end finally settles', async () => {
-      // `handleEndConversation`'s `finally` was the one async path with no
-      // mount check: it asked the owner to close a panel that had already gone.
+    it('closes once, at the click -- a slow /end settling after unmount adds nothing', async () => {
+      // The close no longer waits for /end (#618: it queued behind a running
+      // turn on the single production worker), so the old hazard -- a
+      // `finally` asking the owner to close a panel already gone -- cannot
+      // arise; what is left to pin is that settling adds no second close.
       const pending = deferred()
       npcChat.end.mockReturnValue(pending.promise)
       const { result, unmount } = await mountOpened()
 
       act(() => { result.current.handleEndConversation() })
-      await waitFor(() => expect(npcChat.end).toHaveBeenCalledWith('npc_session_123'))
+      expect(onClose).toHaveBeenCalledTimes(1)
       unmount()
 
       await act(async () => { pending.resolve({ data: { success: true } }) })
 
-      expect(onClose).not.toHaveBeenCalled()
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
 
     it('drops a /respond response that lands after unmount', async () => {

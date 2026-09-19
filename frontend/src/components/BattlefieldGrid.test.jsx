@@ -2297,6 +2297,92 @@ describe('BattlefieldGrid', () => {
             });
         });
 
+        // #612. The hint is a promise the clamp has to keep, and the clamp
+        // collapses to [0, 0] whenever the window already covers the arena
+        // (panCellBounds, and the test above). That is not an edge case: the
+        // engine scales the arena to three columns per combatant
+        // (src/coordinate_config.py), so a two-combatant fight is 10 columns
+        // under a 13-cell frame and NOTHING can move — in either mode. The
+        // inert clamp is correct; advertising a gesture it cannot honour is
+        // the defect. So the test is written against the bounds, not the mode:
+        // a mode check would fix the reported fit-mode case and leave the
+        // identical centre-arena follow case lying.
+        describe('advertises drag-to-pan only when the camera can move (#612)', () => {
+            const PAN_HINT = 'Drag to pan the map';
+            /** The legend is a visible string AND an accessible name. A screen
+             *  reader announcing a dead gesture is the same bug as showing it,
+             *  so the two can only ever be absent or present together. */
+            const hintNodes = () => [
+                screen.queryByLabelText(PAN_HINT),
+                screen.queryByText('drag to pan'),
+            ];
+
+            // The map_size the API publishes for a two-combatant fight:
+            // max(9, min(100, 2 * 3 + 3)) = 9, i.e. 10 columns. Nearly every
+            // fight in the game is this one.
+            const SMALL_ARENA = 9;
+
+            it('hides the hint in fit mode when the frame covers the whole arena', () => {
+                render(
+                    <BattlefieldGrid combat={mockCombat} tab="overview" zoom="fit" mapSize={SMALL_ARENA} />
+                );
+
+                expect(hintNodes()).toEqual([null, null]);
+            });
+
+            it('hides the hint in follow mode when Jean sits centre-arena', () => {
+                // Not a fit-mode quirk. The 13-cell follow window swallows a
+                // 10-column arena from every position Jean can stand in, and
+                // on a larger arena it still swallows it from the middle.
+                render(
+                    <BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} mapSize={SMALL_ARENA} />
+                );
+
+                expect(hintNodes()).toEqual([null, null]);
+            });
+
+            it('shows the hint in fit mode when the frame is smaller than the arena', () => {
+                // Four combatants clustered on a 22-column arena: the fit
+                // frame quantizes to the 13-cell floor, leaving nine columns
+                // off screen for a drag to reveal. Fit-mode panning is
+                // roster-size dependent, not uniformly dead — this branch of
+                // windowPanBounds had no component-level coverage at all.
+                const clustered = {
+                    player: { ...mockCombat.player, position: { x: 10, y: 10 } },
+                    allies: [{ id: 'ally_g', name: 'Gorran', hp: 30, max_hp: 30, position: { x: 10, y: 11 } }],
+                    enemies: [
+                        { id: 'e_slime', name: 'Slime', hp: 10, max_hp: 10, position: { x: 11, y: 10 } },
+                        { id: 'e_bat', name: 'Bat', hp: 10, max_hp: 10, position: { x: 11, y: 11 } },
+                    ],
+                };
+                const { container } = render(
+                    <BattlefieldGrid combat={clustered} tab="overview" zoom="fit" mapSize={21} />
+                );
+                // The premise: every framed cell is arena, so the frame is
+                // strictly inside a 22-column map and the clamp has slack.
+                expect(onMapCells(container)).toBe(VIEW_SIZE * VIEW_SIZE);
+
+                expect(screen.getByLabelText(PAN_HINT)).toBeInTheDocument();
+                expect(screen.getByText('drag to pan')).toBeInTheDocument();
+            });
+
+            it('shows the hint in follow mode on an arena wider than the window', () => {
+                renderPannableGrid();
+
+                expect(screen.getByLabelText(PAN_HINT)).toBeInTheDocument();
+            });
+
+            it('replaces the hint with the recenter control once panned', () => {
+                const { gridEl } = renderPannableGrid();
+                expect(screen.getByLabelText(PAN_HINT)).toBeInTheDocument();
+
+                drag(gridEl, [100, 100], [60, 80]);
+
+                expect(hintNodes()).toEqual([null, null]);
+                expect(screen.getByTitle('Recenter the map')).toBeInTheDocument();
+            });
+        });
+
         it('keeps a touch pan where the player left it instead of springing back', () => {
             const { gridEl, panLayer } = renderPannableGrid();
 

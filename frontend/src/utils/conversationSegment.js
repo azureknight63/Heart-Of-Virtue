@@ -171,4 +171,17 @@ export function conversationSegment({
     }
 }
 
+/**
+ * The prose a player has to read before a beat is done: its spoken `text`, or
+ * its `flavor` on a flavor-only beat (the engine's authored closing lines ship
+ * that way, issue #618). `text` wins when both are present — it is the half
+ * that animates, and the flavor above it is already drawn.
+ *
+ * @param {?ConversationSegment} segment
+ * @returns {string}
+ */
+export function segmentReadingText(segment) {
+    return segment?.text || segment?.flavor || ''
+}
+
 export default conversationSegment

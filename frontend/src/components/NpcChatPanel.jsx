@@ -7,6 +7,7 @@ import GameText from './GameText'
 import ConversationStage from './ConversationStage'
 import ConversationHistoryDialog from './ConversationHistoryDialog'
 import { TranscriptEntry } from './ConversationTranscript'
+import { segmentReadingText } from '../utils/conversationSegment'
 import { colors, spacing, fonts, commonStyles } from '../styles/theme'
 import LiveAnnouncer from './LiveAnnouncer'
 
@@ -371,18 +372,27 @@ function ChatErrorBox({ error, retry, disabled }) {
 /**
  * ConversationActionRow — the "View History" / "End Conversation" button row.
  *
+ * End Conversation is NOT gated on `loading` (issue #618). It was, "so the
+ * player cannot double-submit" — but the double-submit hazard is already
+ * covered in the hook: `endingRef` latches one dismissal to one `/end` (none
+ * without an `npc_key`) and one `onClose`, and the panel closes without waiting
+ * on the `/end`. What the gate actually bought was a player watching a reply that
+ * never came with the only LABELLED way out greyed out, while BaseDialog's ✕,
+ * Escape and the overlay click — all wired to the same handler — stayed live.
+ * The hang is exactly when the player most needs the button, and the request it
+ * is waiting on now carries its own deadline (`NPC_CHAT_TIMEOUT_MS`).
+ *
+ * `historyOpen` still gates it: the transcript is stacked over the panel and
+ * nothing behind it may be actioned.
+ *
  * @param {Object} props
  * @param {string} props.phase - One of `CHAT_PHASES`.
- * @param {boolean} props.loading - Whether a request is in flight. Derived
- *   from `phase` in the hook, so it already covers the opening turn — the
- *   gate here used to spell out `loading || phase === 'opening'`, both halves
- *   of the same fact.
  * @param {boolean} props.historyOpen - Whether the transcript is stacked over
  *   the panel; nothing behind it may be actioned.
  * @param {Function} props.onOpenHistory
  * @param {Function} props.onEndConversation
  */
-function ConversationActionRow({ phase, loading, historyOpen, onOpenHistory, onEndConversation }) {
+function ConversationActionRow({ phase, historyOpen, onOpenHistory, onEndConversation }) {
   return (
     <div style={{ display: 'flex', gap: spacing.md, flexWrap: 'wrap' }}>
       <GameButton
@@ -399,7 +409,7 @@ function ConversationActionRow({ phase, loading, historyOpen, onOpenHistory, onE
           variant="secondary"
           size="medium"
           onClick={onEndConversation}
-          disabled={loading || historyOpen}
+          disabled={historyOpen}
           style={{
             flex: '2 1 220px',
             opacity: 0.7,
@@ -448,9 +458,26 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   // CONVERSATION_STAGE_SPEED) purely to know WHEN it finishes; ConversationStage
   // itself never fires `onComplete` in "live" mode (see its own docstring), so
   // the panel cannot simply listen for that.
+  //
+  // Issue #618: `text` alone was not what is on screen. The engine's OWN
+  // closing line — `closing_lines_when_exhausted`, used by the /open
+  // brush-off and when the model fails mid-conversation (a working model
+  // ends on its own spoken `npc_response`) — is authored, not generated, so
+  // it ships through `_flavor_only_turn` as an empty `npc_response` with the
+  // prose in `npc_flavor`. An empty string is "fully typed" the instant it
+  // lands, so this fired on the tick the payload arrived. And on EVERY path,
+  // spoken included, useTypewriter reported the new line complete for one
+  // render before its reset ran, which armed the close before a character
+  // typed; the hook now reports completion only for the text it shows
+  // (NpcChatPanel.autoClose.test.jsx drives the real hook).
+  //
+  // For a flavor beat this is a READING BUDGET, not a mirror: the stage
+  // renders flavor statically, so nothing is animating. Charging it at the
+  // same per-character rate is the point — it spends the same time on the same
+  // number of words, which is what "let the player read it" meant in #531.
   const latestSegment = conversationSegments[conversationSegments.length - 1]
   const { isComplete: latestBeatFullyTyped } = useTypewriter(
-    latestSegment?.text || '',
+    segmentReadingText(latestSegment),
     CONVERSATION_STAGE_SPEED
   )
   // Edge-triggered on purpose: `handleFinalBeatRendered` arms a fresh 2s
@@ -636,7 +663,6 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       {/* Transcript + End Conversation */}
       <ConversationActionRow
         phase={phase}
-        loading={loading}
         historyOpen={historyOpen}
         onOpenHistory={handleOpenHistory}
         onEndConversation={handleEndConversation}
