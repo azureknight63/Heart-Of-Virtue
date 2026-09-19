@@ -329,6 +329,20 @@ class MapTile:
         return obj
 
     def stack_duplicate_items(self):
+        """Collapse same-class stackable piles on this tile into one each.
+
+        Runs after every ordinary pickup (``Item.take``), so it decides what
+        the floor looks like far more often than any death does.
+
+        Piles only merge with piles of the same visibility. A hidden item is
+        a cache the player has not found yet, and folding a visible one into
+        it hides something they were shown — or, read the other way, hands
+        them the cache the moment they pick the visible one up. It also cost
+        the victory loot flow its drops: the merge kept the OLDER object and
+        discarded the newer, so a drop that landed beside a hidden pile of
+        its kind stopped existing as an object the fight could hand over
+        (issue #621).
+        """
         for (
             master_item
         ) in (
@@ -340,6 +354,8 @@ class MapTile:
                     if (
                         duplicate_item != master_item
                         and master_item.__class__ == duplicate_item.__class__
+                        and bool(getattr(duplicate_item, "hidden", False))
+                        == bool(getattr(master_item, "hidden", False))
                     ):
                         master_item.count += duplicate_item.count
                         remove_duplicates.append(duplicate_item)
