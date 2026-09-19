@@ -388,7 +388,7 @@ is **not** in the merged diff, so **#615 did not land**. Its work survives, unco
 on branch `triage/615-keyword-collapse` at `4f9e37ee` in worktree
 `.claude/worktrees/agent-a89cf38950a883a04` — 4 files, +457/−1, touching
 `src/api/serializers/object_serializer.py`, `tests/test_log_cleanup_and_object_serializer.py`,
-`tests/test_serializers_coverage.py` and a new `tests/test_object_keyword_collapse.py`.
+`tests/test_serializers_coverage.py` and one new keyword-collapse test file.
 **It is unverified — no suite has been run against it.** Finish and verify it before merging, or
 leave #615 open.
 

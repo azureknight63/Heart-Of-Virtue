@@ -57,7 +57,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from src import map_placeholders  # noqa: E402
-from src.objects import Container, Passageway  # noqa: E402
+from src.objects import Container, Passageway, resolve_interaction  # noqa: E402
 from tests._js_scan import FRONTEND_SRC  # noqa: E402
 from tests._map_scan import (  # noqa: E402
     class_ref,
@@ -273,10 +273,13 @@ def test_every_delegated_crossing_verb_is_a_crossing_handler():
             f"is_crossing_handler answers False for {verb!r}"
         )
 
-    # `enter` itself, and the instance-bound authored name words that are set
-    # to `enter` directly, must answer through that entry.
+    # `enter` itself, and the placement's own authored name words, must answer
+    # through that entry. The name words are DATA since #620's follow-up --
+    # `passage.ferry` is deliberately no longer an attribute, because an
+    # instance-stored callable is exactly what a restored save could forge --
+    # so they are reached the way the dispatch reaches them.
     assert passage.is_crossing_handler(passage.enter)
-    assert passage.is_crossing_handler(passage.ferry)
+    assert passage.is_crossing_handler(resolve_interaction(passage, "ferry"))
 
     # Negative control: a verb that does not cross must not be counted, or the
     # assertions above would pass for a predicate that returns True always.

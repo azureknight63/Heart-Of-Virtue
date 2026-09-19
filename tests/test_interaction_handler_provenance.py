@@ -171,14 +171,24 @@ def test_a_bound_method_of_some_other_object_is_not_a_handler():
     assert resolve_interaction(victim, "take") is None
 
 
-def test_an_instance_bound_method_of_the_target_is_a_handler():
-    """The ``Passageway`` carve-out, stated directly."""
+def test_an_instance_bound_method_of_the_target_is_NOT_a_handler():
+    """The carve-out this test used to pin is gone (#620 follow-up).
+
+    It asserted that ``spring.__dict__["take"] = spring.drink`` made ``take``
+    dispatch ``drink``, on the reasoning that only ``Passageway``'s name-word
+    aliases reach that shape. A restored save reaches it too, and then an
+    allow-listed verb can be pointed at any method of the object it is used
+    on. Aliases are data now; nothing instance-stored nominates a handler.
+    """
     player, game_map = live_world()
     tile = game_map[(0, 0)]
     spring = HealingSpring(player=player, tile=tile)
     spring.__dict__["take"] = spring.drink
 
-    assert resolve_interaction(spring, "take") == spring.drink
+    assert resolve_interaction(spring, "take") is None
+    # The legitimate neighbour must not have been taken with it: `clean` is a
+    # staticmethod the class declares and the placement advertises.
+    assert callable(resolve_interaction(spring, "clean"))
 
 
 def _staticmethod_keywords():
@@ -257,10 +267,14 @@ def _shipped_passageway_instance_aliases():
     """``(map, coord, name, alias)`` for every instance-bound alias the shipped
     ``Passageway`` placements install.
 
-    ``Passageway.__init__`` binds each word of the placement's own name (over
-    three letters, alphabetic) to ``self.enter`` with ``setattr``, so these
-    live in the instance ``__dict__`` and are exactly what the #620 rule has to
-    keep readmitting. Derived from the shipped maps, never listed.
+    ``Passageway`` advertises each word of the placement's own name (over three
+    letters, alphabetic) as a way to cross. Those words used to be bound onto
+    the instance with ``setattr``; since #620's follow-up they are DATA, mapped
+    to ``enter`` by the class-declared ``instance_keyword_aliases``. Reading
+    them from that table rather than from ``instance.__dict__`` is the point:
+    the scan follows where the aliases actually live, instead of quietly
+    matching nothing once they moved. Derived from the shipped maps, never
+    listed.
     """
     rows = []
     for placement in object_placements():
@@ -269,12 +283,11 @@ def _shipped_passageway_instance_aliases():
             continue
         name = placement.props.get("name")
         instance = cls(player=None, tile=None, **({"name": name} if name else {}))
-        for alias in sorted(instance.__dict__):
-            if callable(instance.__dict__[alias]):
-                rows.append((
-                    placement.map_name, placement.coord,
-                    name or cls.__name__, alias, instance,
-                ))
+        for alias in sorted(instance.instance_keyword_aliases()):
+            rows.append((
+                placement.map_name, placement.coord,
+                name or cls.__name__, alias, instance,
+            ))
     return rows
 
 
@@ -282,9 +295,10 @@ _PASSAGEWAY_ALIASES = _shipped_passageway_instance_aliases()
 
 
 def test_the_passageway_alias_population_is_real():
-    """Six aliases across the shipped maps as of #620 (ferry, landing, camp,
-    boundary, tent, jambo, flap ...). The exact count is not asserted -- new
-    passageways are authored routinely -- but an empty scan is a broken one."""
+    """Aliases like ferry, landing, camp, boundary, tent, jambo and flap exist
+    across the shipped maps. No count is asserted -- passageways are authored
+    routinely, and a count a test does not derive goes stale -- but an empty
+    scan is a broken scan, not a clean bill of health."""
     assert _PASSAGEWAY_ALIASES, (
         "no shipped Passageway installs an instance-bound name alias; the "
         "derivation has stopped matching the maps"
@@ -306,3 +320,64 @@ def test_every_shipped_passageway_name_alias_still_resolves(
 
     assert handler is not None, (map_name, coord, name, alias)
     assert instance.is_crossing_handler(handler), (map_name, coord, name, alias)
+
+
+class TestAGraftedBoundMethodIsNotAHandler:
+    """A bound method of the target, stored on the target, is still not a
+    nomination (#620 follow-up, found by the code-scrubber security pass).
+
+    The first #620 fix admitted any instance attribute whose ``__self__`` was
+    the target, on the reasoning that only ``Passageway``'s own name-word
+    aliases could be in that shape. They are not the only thing that can be:
+    ``inst.__dict__[verb] = inst.some_other_method`` satisfies it exactly, and
+    a restored save carries an instance ``__dict__`` verbatim
+    (``.claude/rules/saves-persistence.md`` treats save contents as untrusted).
+    ``SafeUnpickler``'s allow-list bounds which CLASSES may appear, not which
+    of their bound methods a dict points at.
+
+    So an allow-listed verb could be pointed at any method of the object it is
+    used on -- the surface ``_ALLOWED_INTERACTION_VERBS`` exists to close
+    (#334).
+    """
+
+    def test_a_verb_grafted_onto_another_method_is_refused(self):
+        """The reproduction: `look` grafted onto the target's own `take_all`.
+
+        A genuine BOUND method of this very target, so ``__self__ is target``
+        holds -- the exact shape the first fix readmitted. It must still be
+        refused, because the class did not nominate it.
+        """
+        from src.objects import Container, resolve_interaction
+
+        crate = Container(name="Crate", description="A crate.")
+        grafted = crate.take_all
+        assert getattr(grafted, "__self__", None) is crate, (
+            "fixture must be a real bound method of the target, or this test "
+            "passes for the wrong reason"
+        )
+        crate.__dict__["look"] = grafted
+
+        assert resolve_interaction(crate, "look") is None, (
+            "an instance-stored callable is a nomination by the map loader or "
+            "a restored save, not by the class -- never dispatch it"
+        )
+
+    def test_every_shipped_passageway_name_alias_still_crosses(self):
+        """The reason the instance carve-out existed must keep working."""
+        from src.objects import Passageway, resolve_interaction
+
+        way = Passageway(player=None, tile=None, name="Ferry Landing")
+        for word in ("ferry", "landing"):
+            assert word in way.keywords, f"{word} should be advertised"
+            assert way.is_crossing_handler(resolve_interaction(way, word)), (
+                f"{word} must still resolve to a crossing handler"
+            )
+
+    def test_is_crossing_handler_ignores_a_grafted_lookalike(self):
+        """`is_crossing_handler` must read the class too, or the two halves of
+        the dispatch disagree and #552's demo-end symptom comes back."""
+        from src.objects import Passageway
+
+        way = Passageway(player=None, tile=None, name="Ferry Landing")
+        way.__dict__["enter"] = way.is_demo_edge
+        assert not way.is_crossing_handler(way.__dict__["enter"])
