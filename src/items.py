@@ -1,5 +1,4 @@
 from __future__ import annotations
-import copy
 import importlib
 import re
 import random
@@ -455,14 +454,7 @@ class Item:
                                 items_mod = importlib.import_module("src.items")
                                 item_cls = getattr(items_mod, self.__class__.__name__)
                                 new_item = item_cls.__new__(item_cls)
-                                for _k, _v in self.__dict__.items():
-                                    try:
-                                        setattr(new_item, _k, copy.copy(_v))
-                                    except Exception:
-                                        try:
-                                            setattr(new_item, _k, _v)
-                                        except Exception:
-                                            pass
+                                functions.copy_item_state(self, new_item)
                                 if hasattr(new_item, "count"):
                                     new_item.count = take_count
                                 # Update the new item's description based on count

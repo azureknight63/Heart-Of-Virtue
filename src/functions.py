@@ -1,3 +1,4 @@
+import copy
 import math
 import inspect
 import logging
@@ -1106,6 +1107,31 @@ def stack_inv_items(target):
     if not hasattr(target, "inventory"):
         return
     stack_items_list(target.inventory)
+
+
+def copy_item_state(source, target):
+    """Copy ``source``'s instance state onto ``target`` -- a new object split
+    off it -- except its identity.
+
+    Each value is shallow-copied so the two share no mutable state (the value
+    itself when it will not copy; an attribute that will not set is skipped).
+    ``_combat_handle`` is NOT copied: a handle names exactly one object, and
+    the victory offer and the #621 floor freeze both resolve by it, so a
+    split pile mints its own. The one spelling of this copy for a partial
+    ``Item.take``, a split ``transfer_item`` and ``spawn_item(template=)``.
+    """
+    from src.combatant import COMBAT_HANDLE_ATTR
+
+    for key, value in getattr(source, "__dict__", {}).items():
+        if key == COMBAT_HANDLE_ATTR:
+            continue
+        try:
+            setattr(target, key, copy.copy(value))
+        except Exception:
+            try:
+                setattr(target, key, value)
+            except Exception:
+                pass
 
 
 def remove_by_identity(items, obj, hint=None):
