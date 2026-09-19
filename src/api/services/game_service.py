@@ -2636,6 +2636,7 @@ class GameService:
 
         from src.objects import Container, Passageway, resolve_interaction
         from src.inventory_utils import transfer_item
+        from src.items import stack_sentence_label
 
         # Resolved ONCE for the whole dispatch: the demo-end arm, the
         # step-through arm and the fall-through arm all need to know what this
@@ -2670,7 +2671,9 @@ class GameService:
                 target._parent_container.refresh_description()
 
             if action == "take":
-                narrate(f"{player.name} takes {target.name}.")
+                # stack_sentence_label, like every other "Jean takes ..."
+                # line: the count used to ride in a name #624 stopped baking.
+                narrate(f"{player.name} takes {stack_sentence_label(target, qty_to_take)}.")
             else:
                 # Proceed with equipment logic
                 target.equip(player)

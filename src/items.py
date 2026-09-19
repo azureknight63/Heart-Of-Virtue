@@ -1,14 +1,21 @@
 from __future__ import annotations
 import importlib
+import logging
 import re
 import random
 import math
 from src.narration import colored, cprint, narrate
 import src.functions as functions
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
     from src.player import Player  # noqa
+
+logger = logging.getLogger(__name__)
+
+#: Authored book paths are repo-relative (``src/resources/books/...``).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 item_types: Dict[str, Dict[str, Any]] = {
     "weapons": {
@@ -3357,16 +3364,23 @@ class Book(Special):
 
     @property
     def text(self) -> str:
-        """Lazy load text from file if needed."""
+        """Lazy load text from file if needed.
+
+        An authored path is repo-relative (``src/resources/books/...``), so it
+        is resolved against the repo, not the process's working directory --
+        #611's book read blank whenever the server started anywhere else. A
+        failure is logged for us and reads as a blank book to the player:
+        the path and the OS error are not the game's prose.
+        """
         if self._text is None and self.text_file_path:
+            path = Path(self.text_file_path)
+            if not path.is_absolute():
+                path = _REPO_ROOT / path
             try:
-                with open(self.text_file_path, "r", encoding="utf-8") as f:
+                with open(path, "r", encoding="utf-8") as f:
                     self._text = f.read()
             except Exception as e:
-                cprint(
-                    f"Error loading book text from {self.text_file_path}: {e}",
-                    "red",
-                )
+                logger.warning("Could not load book text from %s: %s", path, e)
                 self._text = "This book is mysteriously blank."
         return self._text if self._text else "This book is mysteriously blank."
 
