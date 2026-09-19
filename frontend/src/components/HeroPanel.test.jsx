@@ -1,8 +1,9 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import HeroPanel, { inRadialSlots } from './HeroPanel';
 import { makePassive, makePlayer, makeCombatant, makeStatusEffect } from '../test/payloads';
 import { accessibility } from '../styles/theme';
+import { stubPointerEnvironment } from '../test/pointerEnvironment';
 import { CATEGORY_NAV_SELECTOR } from '../utils/categories';
 
 describe('HeroPanel', () => {
@@ -213,6 +214,27 @@ describe('HeroPanel', () => {
     // arrive at the number a real browser would actually render.
     const SQUEEZE_SCALE = 0.5714; // matches the QA-reported real-world squeeze
 
+    // The compensation is gated on the POINTER now (issue #639), not on the
+    // `isMobile` prop, so each test states the device it is about. The prop is
+    // still passed, because LeftPanel still passes it for layout — but it no
+    // longer decides this, and a test that only set the prop would be
+    // asserting against a gate that is gone.
+    let env;
+
+    const pointerEnv = (opts) => {
+      env?.restore();
+      env = stubPointerEnvironment(opts);
+    };
+
+    const PHONE = { narrow: true, coarse: true };
+    const MOUSE_DESKTOP = { narrow: false, coarse: false };
+    const WIDE_TABLET = { narrow: false, coarse: true };
+
+    afterEach(() => {
+      env?.restore();
+      env = null;
+    });
+
     const ownScaleOf = (transformStr) => {
       const match = transformStr.match(/scale\(([\d.]+)\)/);
       return match ? parseFloat(match[1]) : 1;
@@ -227,6 +249,7 @@ describe('HeroPanel', () => {
     };
 
     it('keeps every combat category button at or above 44px effective size when the mobile panel is squeezed', () => {
+      pointerEnv(PHONE);
       render(<HeroPanel {...makeProps({ ...allCombatMoves, isMobile: true, heroScale: SQUEEZE_SCALE })} />);
 
       ['OFFENSIVE', 'MANEUVER', 'INVENTORY', 'SPECIAL', 'MISC', 'DEFENSIVE'].forEach((label) => {
@@ -237,6 +260,7 @@ describe('HeroPanel', () => {
     });
 
     it('does not touch the transform on desktop, even when heroScale reports a squeeze', () => {
+      pointerEnv(MOUSE_DESKTOP);
       render(<HeroPanel {...makeProps({ ...allCombatMoves, isMobile: false, heroScale: SQUEEZE_SCALE })} />);
 
       const button = screen.getByText('OFFENSIVE');
@@ -244,6 +268,7 @@ describe('HeroPanel', () => {
     });
 
     it('does not compensate when the panel is not actually shrunk (heroScale >= 1)', () => {
+      pointerEnv(PHONE);
       render(<HeroPanel {...makeProps({ ...allCombatMoves, isMobile: true, heroScale: 1 })} />);
 
       const button = screen.getByText('OFFENSIVE');
@@ -251,6 +276,7 @@ describe('HeroPanel', () => {
     });
 
     it('still meets 44px at the auto-scale floor of 0.4', () => {
+      pointerEnv(PHONE);
       render(<HeroPanel {...makeProps({ ...allCombatMoves, isMobile: true, heroScale: 0.4 })} />);
 
       const { width, height } = effectiveSize(screen.getByText('DEFENSIVE'), 0.4);
@@ -259,8 +285,22 @@ describe('HeroPanel', () => {
     });
 
     it('accessibility.touchTarget is still the declared button height regardless of compensation', () => {
+      pointerEnv(PHONE);
       render(<HeroPanel {...makeProps({ ...allCombatMoves, isMobile: true, heroScale: SQUEEZE_SCALE })} />);
       expect(screen.getByText('OFFENSIVE').style.height).toBe(accessibility.touchTarget);
+    });
+
+    it('compensates on a wide touch tablet, where the prop says desktop (issue #639)', () => {
+      // useHeroAutoScale has no width or pointer gate at all: it shrinks the
+      // panel whenever the container is tight, on any device. So a 1024px
+      // tablet in a squeezed combat layout got the ancestor's shrink with the
+      // compensation switched off — 44px declared, ~25px under a thumb.
+      pointerEnv(WIDE_TABLET);
+      render(<HeroPanel {...makeProps({ ...allCombatMoves, isMobile: false, heroScale: SQUEEZE_SCALE })} />);
+
+      const { width, height } = effectiveSize(screen.getByText('OFFENSIVE'), SQUEEZE_SCALE);
+      expect(width).toBeGreaterThanOrEqual(44);
+      expect(height).toBeGreaterThanOrEqual(44);
     });
   });
 

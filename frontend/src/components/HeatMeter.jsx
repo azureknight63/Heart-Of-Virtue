@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { accessibility, colors, fonts } from '../styles/theme'
-import { useMobile } from '../hooks/useMobile'
+import { useLargeTouchTargets } from '../hooks/useLargeTouchTargets'
 import {
   HEAT_DRIFT_NOTE,
   HEAT_GAINS,
@@ -213,7 +213,7 @@ function HeatMeter({ heat, beat, combatId }) {
  */
 function HeatRules({ band }) {
   const [expanded, setExpanded] = useState(false)
-  const isMobile = useMobile()
+  const needsLargeTargets = useLargeTouchTargets()
 
   return (
     <>
@@ -236,8 +236,10 @@ function HeatRules({ band }) {
           // issue #580: measured 89x13px on a 375px viewport, well under the
           // 44px minimum. Vertical padding plus a height floor grows the
           // tappable box without reflowing the meter above it; the label text
-          // itself is unchanged.
-          ...(isMobile ? {
+          // itself is unchanged. Issue #639: on the POINTER, not the width —
+          // at 13px tall this was the worst of the width-gated floors, and a
+          // landscape tablet was getting all 13 of them.
+          ...(needsLargeTargets ? {
             minHeight: accessibility.touchTarget,
             display: 'inline-flex',
             alignItems: 'center',

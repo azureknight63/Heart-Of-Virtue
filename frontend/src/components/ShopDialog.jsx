@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import BaseDialog from './BaseDialog'
 import { useShop } from '../hooks/useShop'
+import { useLargeTouchTargets } from '../hooks/useLargeTouchTargets'
 import { useToast } from '../context/ToastContext'
 import { colors, spacing, accessibility } from '../styles/theme'
 import { getItemIcon, formatWeight, WEIGHT_UNIT } from '../utils/itemUtils'
@@ -96,7 +97,7 @@ function WeightBar({ current, max, pendingDelta, isMobile }) {
   )
 }
 
-function ItemRow({ item, isSelected, tab, onClick, isMobile }) {
+function ItemRow({ item, isSelected, tab, onClick }) {
   // Through stackSize, like the name beside it: this row calls
   // stackDisplayName(item), which resolves `count ?? quantity` internally, so
   // a hand-picked read here means the strip and the badge answer "how many"
@@ -131,7 +132,9 @@ function ItemRow({ item, isSelected, tab, onClick, isMobile }) {
         gridTemplateColumns: '2fr 58px 68px 86px',
         alignItems: 'center',
         padding: `0 14px`,
-        minHeight: isMobile ? accessibility.touchTarget : '44px',
+        // Unconditional: both branches of the ternary this replaced were the
+        // same 44px, and the desktop one hardcoded the number past the token.
+        minHeight: accessibility.touchTarget,
         borderLeft: `3px solid ${borderColor}`,
         paddingLeft: isSelected ? '11px' : '14px',
         background: bgColor,
@@ -194,8 +197,18 @@ function ItemRow({ item, isSelected, tab, onClick, isMobile }) {
   )
 }
 
-function QtyPicker({ value, max, onChange, isMobile }) {
-  const btnSize = isMobile ? accessibility.touchTarget : '26px'
+/**
+ * The +/− steppers beside a stackable item's quantity.
+ *
+ * Asks for the touch floor itself rather than taking `isMobile` down from
+ * ShopDialog (issue #639). That prop is the LAYOUT question — it stacks the
+ * action row and stretches the buttons — and threading it through here made
+ * a 26px stepper the answer on every tablet over 767px. Nothing above this
+ * component can say whether the player is using a thumb; this can.
+ */
+function QtyPicker({ value, max, onChange }) {
+  const needsLargeTargets = useLargeTouchTargets()
+  const btnSize = needsLargeTargets ? accessibility.touchTarget : '26px'
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
       <div style={{
@@ -656,7 +669,6 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
                         isSelected={selectedId === item.id}
                         tab="buy"
                         onClick={() => handleSelectItem(item.id)}
-                        isMobile={isMobile}
                       />
                     ))}
                   </>
@@ -689,7 +701,6 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
                     isSelected={selectedId === item.id}
                     tab="buy"
                     onClick={() => handleSelectItem(item.id)}
-                    isMobile={isMobile}
                   />
                 ))}
               </>
@@ -735,7 +746,6 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
                     isSelected={selectedId === item.id}
                     tab="sell"
                     onClick={() => handleSelectItem(item.id)}
-                    isMobile={isMobile}
                   />
                 ))}
               </>
@@ -772,7 +782,7 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
                   {/* Qty picker for stackable items (not buyback) */}
                   {selectedItem.is_stackable && !selectedItem.is_buyback && maxQty > 1 && (
                     <div style={{ marginTop: '5px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                      <QtyPicker value={quantity} max={maxQty} onChange={setQuantity} isMobile={isMobile} />
+                      <QtyPicker value={quantity} max={maxQty} onChange={setQuantity} />
                       <span style={{ fontSize: '0.65rem', color: colors.gold, whiteSpace: 'nowrap' }}>
                         = {activeTab === 'buy' ? buyTotal : sellTotal} 💰
                       </span>

@@ -1,6 +1,6 @@
 import { usePreferences } from '../context/PreferencesContext'
 import { colors, accessibility } from '../styles/theme'
-import { useMobile } from '../hooks/useMobile'
+import { useLargeTouchTargets } from '../hooks/useLargeTouchTargets'
 import { COMBAT_SPEED_OPTIONS } from '../utils/combatTiming'
 import { TEXT_SPEED_OPTIONS } from '../utils/textPacing'
 import { FEATURE_FLAGS, setFlag, useFeatureFlag } from '../utils/featureFlags'
@@ -78,8 +78,8 @@ function VolumeRow({
     onToggleMute,
     volume,
     onVolumeChange,
-    mobileTouchTarget,
-    mobileTouchHeight,
+    touchTarget,
+    touchHeight,
     marginBottom,
 }) {
     return (
@@ -110,7 +110,7 @@ function VolumeRow({
                         cursor: 'pointer',
                         fontSize: '12px',
                         fontWeight: 'bold',
-                        ...mobileTouchTarget,
+                        ...touchTarget,
                     }}
                 >
                     {muted ? 'MUTED' : 'ON'}
@@ -142,7 +142,7 @@ function VolumeRow({
                         // browser draws thin and vertically centered
                         // regardless of the box height) widens the tappable
                         // corridor without the track reading as fatter.
-                        ...mobileTouchHeight,
+                        ...touchHeight,
                     }}
                     disabled={muted}
                 />
@@ -244,15 +244,16 @@ export default function SettingsDialog({ onClose }) {
         autoAdvance,
         setAutoAdvance
     } = usePreferences()
-    const isMobile = useMobile()
+    const needsLargeTargets = useLargeTouchTargets()
     // issue #542: measured 31x28px (MUSIC/SFX mute toggles) and 56x32px
     // (combat-speed segments) on a 375px viewport — both below the 44px
-    // touch-target minimum. Mobile-only so desktop's compact settings layout
-    // is untouched.
-    const mobileTouchTarget = isMobile
+    // touch-target minimum. Touch-only so a mouse keeps the compact settings
+    // layout; issue #639 made "touch" mean the POINTER rather than a
+    // `max-width`, since a landscape tablet was getting the compact one.
+    const touchTarget = needsLargeTargets
         ? { minWidth: accessibility.touchTarget, minHeight: accessibility.touchTarget }
         : {}
-    const mobileTouchHeight = isMobile
+    const touchHeight = needsLargeTargets
         ? { minHeight: accessibility.touchTarget }
         : {}
 
@@ -267,8 +268,8 @@ export default function SettingsDialog({ onClose }) {
                     onToggleMute={() => setIsMusicMuted(!isMusicMuted)}
                     volume={musicVolume}
                     onVolumeChange={setMusicVolume}
-                    mobileTouchTarget={mobileTouchTarget}
-                    mobileTouchHeight={mobileTouchHeight}
+                    touchTarget={touchTarget}
+                    touchHeight={touchHeight}
                     marginBottom="20px"
                 />
 
@@ -278,8 +279,8 @@ export default function SettingsDialog({ onClose }) {
                     onToggleMute={() => setIsSfxMuted(!isSfxMuted)}
                     volume={sfxVolume}
                     onVolumeChange={setSfxVolume}
-                    mobileTouchTarget={mobileTouchTarget}
-                    mobileTouchHeight={mobileTouchHeight}
+                    touchTarget={touchTarget}
+                    touchHeight={touchHeight}
                     marginBottom="15px"
                 />
 
@@ -289,7 +290,7 @@ export default function SettingsDialog({ onClose }) {
                     options={COMBAT_SPEED_OPTIONS}
                     value={combatSpeed}
                     onSelect={setCombatSpeed}
-                    buttonStyle={mobileTouchHeight}
+                    buttonStyle={touchHeight}
                 />
 
                 {/* Text Speed — the story is the game's primary delivery
@@ -300,7 +301,7 @@ export default function SettingsDialog({ onClose }) {
                     options={TEXT_SPEED_OPTIONS}
                     value={textSpeed}
                     onSelect={setTextSpeed}
-                    buttonStyle={mobileTouchHeight}
+                    buttonStyle={touchHeight}
                     fontSize="11px"
                 />
 
@@ -317,7 +318,7 @@ export default function SettingsDialog({ onClose }) {
                         enabled={autoAdvance}
                         onToggle={() => setAutoAdvance(!autoAdvance)}
                         ariaLabel="Auto-advance story"
-                        buttonStyle={mobileTouchTarget}
+                        buttonStyle={touchTarget}
                     />
                 </div>
 
@@ -336,7 +337,7 @@ export default function SettingsDialog({ onClose }) {
                             // 375px viewport. "Auto-advance story" above
                             // already gets this treatment; these three
                             // registry-driven rows never received it.
-                            buttonStyle={mobileTouchTarget}
+                            buttonStyle={touchTarget}
                         />
                     ))}
                 </div>
