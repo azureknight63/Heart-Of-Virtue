@@ -384,6 +384,9 @@ class MerchantShopMixin:
         - Specialty subclasses receive 3× weight.
         - RestockWeightBoostConditions further scale weights.
         - Unique-factory classes are excluded.
+        - Classes carrying ``stockable = False`` are excluded (issue #632):
+          story items, quest keys, puzzle ingredients and lore documents. The
+          flag is inherited, so it excludes whole subtrees (e.g. Book).
         - Safety cap of 1 000 iterations prevents infinite loops.
         """
         if not self.current_room:
@@ -448,8 +451,10 @@ class MerchantShopMixin:
                 # Issue #632: per-class opt-out for story items, quest keys,
                 # puzzle ingredients and lore documents. Unlike the identity
                 # test above it is inherited, so it covers whole subtrees such
-                # as Book. getattr's default keeps a test double that lacks the
-                # attribute stockable, matching this file's defensive style.
+                # as Book. getattr's default is pure belt-and-braces: every
+                # class reaching this line is an Item subclass (the issubclass
+                # check above), so it inherits Item.stockable = True and the
+                # default can never actually be taken.
                 if not getattr(obj, "stockable", True):
                     continue
                 candidates.append(obj)

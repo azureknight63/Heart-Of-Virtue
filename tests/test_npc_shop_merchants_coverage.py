@@ -21,11 +21,25 @@ class FakeRoom:
         self.items_here = []
         self.universe = None
     def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
+        """Mirror ``Room.spawn_item``: bare ``cls()``, then set ``merchandise``.
+
+        Production (``src/tiles.py``, ``_new_instance``) constructs with no
+        arguments and assigns ``merchandise`` afterwards. This used to pass
+        ``merchandise=`` to the constructor, which raises TypeError for every
+        class whose ``__init__`` takes no arguments -- all 17 story classes,
+        every Book, and the abstract bases -- so they silently never spawned
+        and any test here measuring "what gets stocked" was measuring a
+        pre-filtered universe. ``_FakeRoom`` in
+        ``tests/test_shop_stock_excludes_story_items.py`` is the same mock;
+        keep the two bodies in step.
+        """
         import src.items as items_module
         cls = getattr(items_module, item_type, None)
         if cls is None:
             return None
-        item = cls(merchandise=merchandise)
+        item = cls()
+        if hasattr(item, 'merchandise'):
+            item.merchandise = merchandise
         if not hasattr(item, 'base_value'):
             setattr(item, 'base_value', getattr(item, 'value', 1))
         self.spawned.append(item)
@@ -286,8 +300,17 @@ def test_restock_never_stocks_a_disallowed_class():
 
     # Commodity and ProtectiveGear joined the set in #632: both are abstract
     # bases that raise TypeError on the bare cls() the roller performs.
+    #
+    # This check only has teeth because FakeRoom.spawn_item now builds the way
+    # production does. While it passed ``merchandise=`` to the constructor,
+    # five of these six raised TypeError before they could ever be appended,
+    # so the assertion could not fail for them and deleting Commodity or
+    # ProtectiveGear from disallowed_classes left it green.
     banned = {Gold, Relic, Consumable, Item, Commodity, ProtectiveGear}
     assert not [i for i in m.inventory if type(i) in banned]
+
+    # …and neither may any story item, which is now spawnable here.
+    assert not [i for i in m.inventory if not type(i).stockable]
 
 
 def test_a_missing_unique_item_registry_does_not_stop_the_restock():

@@ -13,7 +13,10 @@ in a single roll.
 """
 
 import random
+from collections import Counter
 from typing import List
+
+import src.items as items_module
 
 from .base import Scenario
 from ..client import GameClient
@@ -50,13 +53,37 @@ def _find_merchant(universe, class_name: str):
     return None, None
 
 
-#: Story items by NAME, not by reading the ``stockable`` flag.
+#: Issue #632, maintainer decision (2026-09-19): three items excluded by
+#: authorial intent rather than by any measurable property -- they are
+#: instantiable, worth 600/1/5 gold, carry no level sentinel and are neither
+#: Key nor Book, so every derived assertion is blind to them.
 #:
-#: Reading the flag would make this scenario blind on unfixed code -- with the
-#: fix reverted nothing carries ``stockable = False``, so the sweep would find
-#: zero offenders and report success against the very bug it exists to catch.
-#: Naming the classes keeps it a genuine before/after discriminator.
-STORY_ITEM_NAMES = frozenset({
+#: Defined HERE rather than in the test that pins them
+#: (``tests/test_shop_stock_excludes_story_items.py``, which imports this)
+#: only because of a dependency direction: that module imports pytest, and the
+#: bug-hunt workflow installs ``requirements.txt``, which has no pytest. A tool
+#: importing the test suite would take the harness down with it. The test still
+#: owns the *assertion*; this module owns the *list*, and nothing re-types it.
+MAINTAINER_EXCLUDED_CLASSES = (
+    items_module.EnchantedGolemitePauldron,   # Luminous Grotto puzzle reward
+    items_module.FabricariumRejectionShard,   # authored evidence, grondia.json
+    items_module.GronditeMarkToken,           # found flavour, 3 Grondia maps
+)
+
+#: The same three by name.
+MAINTAINER_EXCLUDED = frozenset(c.__name__ for c in MAINTAINER_EXCLUDED_CLASSES)
+
+#: Story items named one by one as well as read off the ``stockable`` flag
+#: (see ``_story_items_in``), so the name list keeps this discriminating on
+#: unfixed code: with the fix reverted nothing carries ``stockable = False``,
+#: and a flag-only sweep would find zero offenders and report success against
+#: the very bug it exists to catch.
+#:
+#: Names are resolved against ``src.items`` below, so a rename is an
+#: AttributeError at import rather than an entry that silently stops matching.
+#: ``tests/test_shop_stock_excludes_story_items.py`` asserts this list agrees
+#: with the classes actually carrying the flag, so the two cannot drift.
+_NAMED_STORY_ITEMS = (
     "JeanWeddingBand",          # Jean's late wife's ring (#632)
     "ConclaveSignalStone",      # quest key
     "FabricariumCompactSeal",   # quest key
@@ -71,12 +98,11 @@ STORY_ITEM_NAMES = frozenset({
     "HeartkeeperNote",
     "MerchantJournalFragment",
     "QualityReport117K",
-    # Maintainer decision (#632, 2026-09-19): excluded by authorial intent
-    # rather than by any measurable property.
-    "EnchantedGolemitePauldron",  # Luminous Grotto puzzle reward
-    "FabricariumRejectionShard",  # authored evidence object in grondia.json
-    "GronditeMarkToken",          # found flavour, authored into 3 Grondia maps
-})
+)
+
+STORY_ITEM_NAMES = frozenset(
+    getattr(items_module, name).__name__ for name in _NAMED_STORY_ITEMS
+) | MAINTAINER_EXCLUDED
 
 
 def _story_items_in(items) -> List[str]:
@@ -91,6 +117,40 @@ def _story_items_in(items) -> List[str]:
         if cls.__name__ in STORY_ITEM_NAMES or not getattr(cls, "stockable", True):
             found.append(cls.__name__)
     return sorted(found)
+
+
+def _random_fill_count(merchant, containers) -> int:
+    """How many stocked items came from ``_fill_remaining_stock``.
+
+    Total inventory cannot answer this: ``update_goods()`` always appends a
+    Gold pouch and always spawns every ``always_stock`` entry, so a merchant
+    holds items even when the random fill selected nothing at all. Subtract
+    exactly those guaranteed contributions -- one instance per always_stock
+    entry, plus one Gold -- and whatever remains across the merchant and his
+    containers is the fill pass. Counter subtraction drops negatives, so an
+    always_stock entry that failed to spawn cannot push this below zero, and a
+    fourth Restorative rolled by the fill pass still counts (only the three
+    guaranteed ones are subtracted).
+
+    Unique items are skipped: ``UniqueItemInjectionCondition`` injects those
+    after the fill, and the fill pass cannot produce one (every class in
+    ``items.unique_item_factories`` is excluded from its candidate pool).
+    """
+    guaranteed = Counter(
+        (spec if isinstance(spec, type) else type(spec)).__name__
+        for spec in (getattr(merchant, "always_stock", None) or [])
+    )
+    guaranteed["Gold"] += 1
+
+    observed: Counter = Counter()
+    for items in [getattr(merchant, "inventory", [])] + [
+        getattr(ct, "inventory", []) for ct in containers
+    ]:
+        for item in items or []:
+            if getattr(item, "unique", False):
+                continue
+            observed[type(item).__name__] += 1
+    return sum((observed - guaranteed).values())
 
 
 class ShopStoryItemsScenario(Scenario):
@@ -134,9 +194,9 @@ class ShopStoryItemsScenario(Scenario):
         floor_room = getattr(merchant, "current_room", None) or room
 
         # bug_hunt runs every scenario sequentially in ONE process against the
-        # global random module. Seeding it 121 times and walking away would
-        # leave every scenario registered after this one running on a
-        # deterministic stream they were never written for, masking or
+        # global random module. Seeding it len(SWEEP_SEEDS) times and walking
+        # away would leave every scenario registered after this one running on
+        # a deterministic stream they were never written for, masking or
         # manufacturing intermittent findings. Borrow the RNG, then give it
         # back exactly as found.
         rng_state = random.getstate()
@@ -150,6 +210,7 @@ class ShopStoryItemsScenario(Scenario):
         """Restock ``merchant`` once per seed and sweep every stock surface."""
         bugs: List[BugReport] = []
         restocks = 0
+        filled_per_seed: List[tuple] = []
         for seed in SWEEP_SEEDS:
             random.seed(seed)
             try:
@@ -166,16 +227,22 @@ class ShopStoryItemsScenario(Scenario):
                 break
             restocks += 1
 
-            # Three destinations: the merchant, his containers, the floor.
-            surfaces = {
-                "merchant inventory": getattr(merchant, "inventory", []),
-                "room floor": getattr(room, "items_here", []),
-            }
-            for ct in iter_merchant_containers(room, merchant):
+            # Three destinations: the merchant, his containers, the floor. A
+            # list of pairs, not a dict: container display names are not
+            # unique, and two containers sharing one would collapse into a
+            # single key, leaving the other silently unswept.
+            surfaces = [
+                ("merchant inventory", getattr(merchant, "inventory", [])),
+                ("room floor", getattr(room, "items_here", [])),
+            ]
+            containers = list(iter_merchant_containers(room, merchant))
+            for ct in containers:
                 label = f"container '{getattr(ct, 'name', ct)}'"
-                surfaces[label] = getattr(ct, "inventory", [])
+                surfaces.append((label, getattr(ct, "inventory", [])))
 
-            for where, items in surfaces.items():
+            filled_per_seed.append((seed, _random_fill_count(merchant, containers)))
+
+            for where, items in surfaces:
                 offenders = _story_items_in(items)
                 if offenders:
                     bugs.append(self._bug(
@@ -192,17 +259,29 @@ class ShopStoryItemsScenario(Scenario):
             if bugs:
                 break
 
-        # A restock that stocks nothing would satisfy every check above.
+        # A restock whose random fill selected nothing would satisfy every
+        # check above: sweeping an empty selection proves nothing about what
+        # the selection excludes. TOTAL inventory is useless as that measure --
+        # update_goods() unconditionally appends a Gold pouch and Jambo's
+        # always_stock contributes three consumables, so "inventory is not
+        # empty" holds on every seed whether or not _fill_remaining_stock
+        # picked a single class. Only the fill portion is evidence.
         if restocks and not bugs:
-            stocked = len(getattr(merchant, "inventory", []) or [])
-            if stocked == 0:
+            barren = [seed for seed, filled in filled_per_seed if filled == 0]
+            if barren:
                 bugs.append(self._bug(
-                    title="#632 scenario is vacuous: merchant stocked nothing",
+                    title=(
+                        f"#632 scenario is vacuous: the random fill selected "
+                        f"nothing on {len(barren)} seed(s), e.g. {barren[0]}"
+                    ),
                     severity=BugSeverity.MEDIUM,
                     category=BugCategory.LOGIC,
                     endpoint="(engine) JamboHealsU.update_goods", method="-",
-                    expected="Merchant holds stock after update_goods()",
-                    actual="Merchant inventory is empty - the sweep proved nothing",
+                    expected="_fill_remaining_stock selects stock on every seed",
+                    actual=(
+                        f"0 randomly-filled items on seeds {barren[:5]} - those "
+                        f"sweeps proved nothing"
+                    ),
                 ))
 
         return bugs
