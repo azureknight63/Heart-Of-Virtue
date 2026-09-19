@@ -906,3 +906,28 @@ class TestTheCollectRequestIsBoundedAndExact:
 
         assert sum(1 for i in jean.inventory if i is item) == 1
 
+
+def test_the_victory_dialog_describes_the_drop_not_a_twin(won_fight):
+    """The dialog's details (value, description, enchantments) came from the
+    first object OF THAT NAME on the tile -- the name-as-identity mistake
+    #621 fixed for collect, and one that showed a hidden stash's details to a
+    player who never found it. They come from the dropped object now."""
+    stash = []
+
+    def hide_a_distinct_twin(tile):
+        # Before the kill, so it is already lying there -- and distinct --
+        # when the victory summary is written.
+        twin = tile.spawn_item("Shortsword", hidden=True, hfactor=90)
+        twin.value = 999
+        twin.description = "A blade someone hid here long ago."
+        stash.append(twin)
+
+    fight = won_fight(loot=_CERTAIN_SWORD, before_the_kill=hide_a_distinct_twin)
+    (twin,) = stash
+
+    (entry,) = fight.player.combat_end_summary["items_dropped"]
+
+    assert entry["name"] == "Shortsword"
+    assert entry["value"] != 999
+    assert entry["description"] != twin.description
+
