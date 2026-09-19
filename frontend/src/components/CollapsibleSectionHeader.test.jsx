@@ -9,17 +9,17 @@ import { DISCLOSURE_GLYPHS, accessibility } from '../styles/theme'
  * their own accessibility contract, and only the first carried a complete one.
  * These tests pin the contract this component now owns for all three.
  */
-const renderHeader = (props = {}) =>
-  render(
-    <CollapsibleSectionHeader
-      expanded={false}
-      onToggle={() => {}}
-      controlsId="section-body"
-      {...props}
-    >
-      <span>Section</span>
-    </CollapsibleSectionHeader>
-  )
+const header = (props = {}) => (
+  <CollapsibleSectionHeader
+    expanded={false}
+    onToggle={() => {}}
+    controlsId="section-body"
+    {...props}
+  >
+    <span>Section</span>
+  </CollapsibleSectionHeader>
+)
+const renderHeader = (props = {}) => render(header(props))
 
 describe('CollapsibleSectionHeader', () => {
   it('is a real button, and type="button" so it cannot submit a form', () => {
@@ -33,11 +33,7 @@ describe('CollapsibleSectionHeader', () => {
     const { rerender } = renderHeader({ expanded: false })
     expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false')
 
-    rerender(
-      <CollapsibleSectionHeader expanded onToggle={() => {}} controlsId="section-body">
-        <span>Section</span>
-      </CollapsibleSectionHeader>
-    )
+    rerender(header({ expanded: true }))
     expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'true')
   })
 
@@ -52,11 +48,7 @@ describe('CollapsibleSectionHeader', () => {
       new RegExp(`^${DISCLOSURE_GLYPHS.collapsed}`)
     )
 
-    rerender(
-      <CollapsibleSectionHeader expanded onToggle={() => {}} controlsId="section-body">
-        <span>Section</span>
-      </CollapsibleSectionHeader>
-    )
+    rerender(header({ expanded: true }))
     expect(screen.getByRole('button').textContent.trim()).toMatch(
       new RegExp(`^${DISCLOSURE_GLYPHS.expanded}`)
     )

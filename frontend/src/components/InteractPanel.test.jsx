@@ -1093,26 +1093,30 @@ describe('InteractPanel', () => {
       },
     });
 
+    // Merchandise the player holds, as the refetch leaves it: one piece before,
+    // none after. Sampled when the confirmation is queued, because the claim is
+    // about ORDER -- the hook awaits the refetch first, so the dialog never
+    // opens over a pre-drop inventory.
+    let heldMerchandise = 1;
+    const heldWhenQueued = [];
+
     function Harness() {
       const [open, setOpen] = React.useState(true);
       const [event, setEvent] = React.useState(null);
-      // Post-drop by the time it is read, exactly as usePlayer's is: the hook
-      // awaits onRefetch before it queues the confirmation.
-      const [inventory, setInventory] = React.useState([
-        { id: 'i1', name: 'Rusted Iron Mace', is_merchandise: true },
-      ]);
       return (
         <>
           {open && (
             <InteractPanel
               location={shopFloor}
               onClose={() => setOpen(false)}
-              onRefetch={async () => { setInventory([]); }}
-              onEventsTriggered={(events) => setEvent(events[0])}
+              onRefetch={async () => { heldMerchandise = 0; }}
+              onEventsTriggered={(events) => {
+                heldWhenQueued.push(heldMerchandise);
+                setEvent(events[0]);
+              }}
             />
           )}
           {event && <EventDialog event={event} onSubmitInput={vi.fn()} onClose={vi.fn()} />}
-          <div data-testid="held-merchandise">{inventory.filter(i => i.is_merchandise).length}</div>
         </>
       );
     }
@@ -1121,13 +1125,16 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getAllByText(/Tent Flap/i)[0]);
     fireEvent.click(screen.getByText(/^Enter$/i));
 
+    // The panel has closed by now: this is EventDialog's TypewriterOutput,
+    // reached through the testid the two share.
     const text = await settledOutput();
-    expect(screen.getByTestId('held-merchandise')).toHaveTextContent('0');
+    expect(heldWhenQueued).toEqual([0]);
     expect(text.textContent).toContain('Rusted Iron Mace');
     expect(text.textContent).toContain("unpaid goods don't leave the shop");
     // Above the button, not after it: the player reads what was taken back
     // while the crossing is still an open question.
-    expect(screen.getByText('Step through')).toBeInTheDocument();
+    const stepThrough = screen.getByRole('button', { name: 'Step through' });
+    expect(text.compareDocumentPosition(stepThrough) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('updates the selected target locally from the response object_state', async () => {

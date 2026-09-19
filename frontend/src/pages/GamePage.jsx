@@ -409,15 +409,9 @@ export default function GamePage() {
       return
     }
 
-    // No merchandise warning here any more (issue #611). A passageway's
-    // unpaid goods are taken back when the confirmation is ARMED, server-side,
-    // and the server now names each one in that confirmation's own output_text
-    // (GameService._queue_passageway_confirmation) -- which is the text the
-    // player is reading when they press this button. Deriving a warning from
-    // `player.inventory` at submit time could never work: useWorldInteract
-    // awaits onRefetch BEFORE it queues the confirmation, so by the time a
-    // human can click, the inventory snapshot is post-drop and the condition
-    // is false in every render that exists.
+    // Unpaid goods a passageway takes back are named in the confirmation's own
+    // output_text (issue #611). Don't warn from `player.inventory` here: it is
+    // already post-drop by the time this button can be pressed.
 
     // Use the hook's handler for backend events
     const result = await handleEventInput(eventId, userInput, showError)
