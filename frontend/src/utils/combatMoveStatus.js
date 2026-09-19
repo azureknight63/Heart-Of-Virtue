@@ -307,3 +307,52 @@ export function moveDamagePreview(move) {
     lethal: previews.some((p) => p.lethal),
   };
 }
+
+/**
+ * How far the nearest candidate is, and how many feet short of it the move
+ * falls — or `null` when range is not what is blocking the move (issue #614).
+ *
+ * A **read**, never a derivation. `shortfall_ft` is
+ * `int(distance - range_max)` computed in
+ * `ApiCombatAdapter._build_target_entry` (src/api/combat_adapter.py) against
+ * the move's live reach — `Move.get_effective_range_max`, which a ranged
+ * weapon extends past its `mvrange`. Subtracting `mvrange.max` here instead
+ * would put a second, drifting copy of the engine's reach rule in the UI,
+ * which is the mistake CLAUDE.md records for the inlined to-hit arithmetic.
+ * If the wire carries no number, this shows none.
+ *
+ * Only `target_previews` carries a real shortfall: `viable_targets` is the
+ * range-filtered allow-list, so every entry in it is in reach and its
+ * `shortfall_ft` is `null` by construction.
+ *
+ * Returns null unless EVERY previewed candidate is out of reach, which is
+ * exactly the state in which range is an operative lock (and the state that
+ * empties `viable_targets`). With something in reach the card is greyed for
+ * some other reason — fatigue, a cooldown — and "3 ft short" appended to
+ * that sentence would name a distance that has nothing to do with it.
+ *
+ * A candidate that is too *close* (inside `range_min`) carries a `null`
+ * shortfall by contract, not a negative one, so it is skipped rather than
+ * rendered: the adapter deliberately publishes no number for that case and
+ * the client is in no position to invent one.
+ *
+ * @param {Object} move a move entry from `available_options` / `moves`
+ * @returns {?{distance: number, shortfall_ft: number}}
+ */
+export function nearestShortfall(move) {
+  const previews = move?.target_previews;
+  if (!Array.isArray(previews) || previews.length === 0) return null;
+  if (previews.some((entry) => entry?.in_range)) return null;
+  // Smallest shortfall, not first entry: the adapter sorts previews by
+  // distance, but a client that depends on someone else's sort order breaks
+  // silently the day the sort changes.
+  let nearest = null;
+  for (const entry of previews) {
+    // Number.isFinite on both, not a truthiness test: a `null` shortfall is
+    // the too-close case above, and NaN/Infinity would render literally.
+    if (!Number.isFinite(entry?.shortfall_ft) || entry.shortfall_ft <= 0) continue;
+    if (!Number.isFinite(entry?.distance)) continue;
+    if (nearest === null || entry.shortfall_ft < nearest.shortfall_ft) nearest = entry;
+  }
+  return nearest && { distance: nearest.distance, shortfall_ft: nearest.shortfall_ft };
+}

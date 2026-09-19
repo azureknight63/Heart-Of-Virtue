@@ -447,6 +447,13 @@ class TestCombatWireContract:
 # ----------------------------------------------------------------------------
 # CombatMovePanel.jsx renders each move card off this shape.
 MOVE_CONTRACT = {
+    # What a click actually submits — `onCombatAction('move', { move_id })`.
+    # The tray keys its cards off the same field, so a rename would silently
+    # remount every cooling-down card on every poll as well as break the POST.
+    "id": (
+        Read("LeftPanel.jsx", "move_id: move.id"),
+        Read("CooldownTray.jsx", "key={move.id}"),
+    ),
     # move.name || move.display_name, via displayNameOf.
     "name": Read("CombatMovePanel.jsx", "move.name"),
     "display_name": Read("CombatMovePanel.jsx", "displayNameOf(move)"),
@@ -482,6 +489,22 @@ MOVE_CONTRACT = {
     "requires_target_selection": Read(
         "combatMoveStatus.js", "move.requires_target_selection"
     ),
+    # Every living candidate, in reach or not — the wider list `viable_targets`
+    # is filtered out of, and the ONLY one carrying a real `shortfall_ft`. The
+    # move card reads it to say how far short a range-locked move falls
+    # (#614); sub-fields in MOVE_TARGET_PREVIEW_CONTRACT below.
+    "target_previews": Read("combatMoveStatus.js", "move?.target_previews"),
+    # An area move's affected set: `moveDamagePreview` folds every entry's
+    # damage_preview into the one range the card shows.
+    "affected_preview": Read("combatMoveStatus.js", "move.affected_preview"),
+    # The tray's countdown, and the predicate LeftPanel picks the tray's moves
+    # with. Both, because the tray read alone would keep passing if nothing
+    # ever routed a cooling-down move into it.
+    "cooldown_remaining": (
+        Read("CooldownTray.jsx", "move.cooldown_remaining"),
+        Read("LeftPanel.jsx", "m.cooldown_remaining"),
+    ),
+    "cooldown_max": Read("CooldownTray.jsx", "move.cooldown_max"),
     # `category` routes the move to a radial button via CATEGORY_GROUPS
     # (utils/categories.js). A category no group claims leaves the move with no
     # button at all — that is how 8 castable moves became unreachable.
@@ -498,6 +521,57 @@ MOVE_CONTRACT = {
     # The old citation named the panel, which is a component this field could
     # be dropped from without anything here noticing.
     "stage_beats": Read("moveCommitment.js", "move?.stage_beats"),
+}
+
+
+# Fields of the move payload that NOTHING in frontend/src reads, and why that
+# is tolerable. Plain strings, not `Read`s: a citation has to name a consumer,
+# and the whole point of this dict is the fields that have none — `_all_reads`
+# rejects a bare string in a `*_CONTRACT` for exactly that reason, so the name
+# deliberately stays out of that shape.
+#
+# The exhaustiveness guard below holds the wire to the union of this and
+# MOVE_CONTRACT, which is the check that was missing: `_assert_contract` only
+# looks for the keys a contract DECLARES, so a field nobody consumes is
+# invisible to it in both directions. `target_previews` and `shortfall_ft`
+# shipped that way for two releases — computed, serialized on every poll, and
+# read by nothing (issue #614).
+MOVE_FIELDS_WITH_NO_CLIENT_READ = {
+    "index": (
+        "the move's position in `player.known_moves`, which only the legacy "
+        "`_handle_move_selection(index)` path consumes. The client submits "
+        "`move_id`, never an index — see LeftPanel.jsx's onCombatAction call."
+    ),
+    "range_ring": (
+        "the reach ring the battlefield was meant to draw for a move that "
+        "outreaches a sword. Still unconsumed: gap 4 of issue #614, which is "
+        "a battlefield-rendering job, not a move-card one."
+    ),
+}
+
+
+# One entry of a move's `target_previews` — `_build_target_entry` again, but
+# reached through `_get_target_previews`, which (unlike `_get_available_targets`)
+# keeps the candidates the move CANNOT reach. Only that list carries a real
+# `shortfall_ft`: the viable list is range-filtered, so every entry in it is in
+# range and its shortfall is `None` by construction.
+MOVE_TARGET_PREVIEW_CONTRACT = {
+    "distance": Read("combatMoveStatus.js", "distance: nearest.distance"),
+    "in_range": Read("combatMoveStatus.js", "entry?.in_range"),
+    # The number the card renders as "2 ft short" (#614). Read, never derived:
+    # the adapter computes it against `Move.get_effective_range_max`, which a
+    # ranged weapon extends past its `mvrange`, so a client subtraction would
+    # be a second copy of the engine's reach rule.
+    "shortfall_ft": Read("combatMoveStatus.js", "entry.shortfall_ft"),
+    "damage_preview": Read(
+        "combatMoveStatus.js",
+        note="no consumer reads it off THIS list. `moveDamagePreview` takes "
+        "its range from `viable_targets[0].damage_preview` and from "
+        "`affected_preview`, both built by the same `_build_target_entry`. "
+        "Held here anyway because the builder is shared: a rename would break "
+        "the two lists that are read, and this is where the builder's own "
+        "field contract is written down.",
+    ),
 }
 
 ABORTABLE_MOVE_CONTRACT = {
@@ -557,6 +631,76 @@ class TestMoveWireContract:
             MOVE_STAGE_BEATS_CONTRACT,
             "_get_available_moves()[0].stage_beats",
         )
+
+    def test_no_move_field_ships_without_a_consumer_or_a_reason(self):
+        """The other direction: every key the wire sends is accounted for.
+
+        ``_assert_contract`` walks the CONTRACT and looks each field up in the
+        payload, so a field no contract declares is invisible to it — present
+        on every poll, consumed by nobody, and no test any the wiser. That is
+        not hypothetical: ``target_previews`` and its ``shortfall_ft`` were
+        computed and serialized for two releases while the only reads of
+        either in the whole repo were test fixtures (issue #614).
+
+        The key set is taken off a real ``_get_available_moves()`` payload
+        rather than written down here, because a hand-listed set is a second
+        copy of the adapter that goes stale the moment a field is added — the
+        precise failure mode this guard exists to close. It is asserted
+        non-empty first: derived from an empty payload, every check below
+        passes while checking nothing.
+        """
+        player = Player()
+        # A living enemy, out of Attack's reach: only then does the payload
+        # carry a populated `target_previews`, and an empty list would let a
+        # renamed sub-field through the entry contract below.
+        enemy = Slime()
+        player.known_moves = [Attack(player)]
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+        player.combat_proximity = {enemy: 9}
+        enemy.combat_proximity = {player: 9}
+        enemy.combat_list = [player]
+        player.in_combat = True
+
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            adapter = ApiCombatAdapter(player)
+            move_payloads = adapter._get_available_moves()
+
+        assert move_payloads, "expected Attack to appear in available moves"
+        wire_fields = set(move_payloads[0])
+        assert wire_fields, "read no fields off the move payload"
+
+        accounted = set(MOVE_CONTRACT) | set(MOVE_FIELDS_WITH_NO_CLIENT_READ)
+        assert not wire_fields - accounted, (
+            f"_get_available_moves()[0] ships {sorted(wire_fields - accounted)} "
+            "with no entry in MOVE_CONTRACT and no entry in "
+            "MOVE_FIELDS_WITH_NO_CLIENT_READ. Either the client reads it (add "
+            "the citation to MOVE_CONTRACT) or nothing does (say so, with a "
+            "reason, in MOVE_FIELDS_WITH_NO_CLIENT_READ) — a field neither "
+            "list names is one nobody has decided about."
+        )
+        assert not set(MOVE_FIELDS_WITH_NO_CLIENT_READ) - wire_fields, (
+            "MOVE_FIELDS_WITH_NO_CLIENT_READ excuses "
+            f"{sorted(set(MOVE_FIELDS_WITH_NO_CLIENT_READ) - wire_fields)}, "
+            "which the adapter no longer sends — drop the entry."
+        )
+
+        # The preview entry itself, which is where `shortfall_ft` lives.
+        previews = move_payloads[0]["target_previews"]
+        assert previews, "expected the out-of-reach enemy to be previewed"
+        _assert_contract(
+            previews[0],
+            MOVE_TARGET_PREVIEW_CONTRACT,
+            "_get_available_moves()[0].target_previews[0]",
+        )
+        # The claim the key-only check cannot make: this entry is the
+        # out-of-reach case, so its shortfall is a real number rather than the
+        # `None` every viable-list entry carries.
+        assert previews[0]["in_range"] is False
+        assert previews[0]["shortfall_ft"] > 0
 
     def test_stage_beats_are_the_real_engine_values_not_recomputed(self):
         """Guards the Architecture rule that the engine is the source of
@@ -2411,7 +2555,7 @@ ALL_READS = tuple(_all_reads())
 # citation nobody is counting is precisely how the defect class this file was
 # converted to close got started. Change this number only alongside the note
 # that justifies it.
-EXPECTED_UNVERIFIABLE = 4
+EXPECTED_UNVERIFIABLE = 5
 
 
 def _citation_count_mismatch(reached: int, written: int) -> str:

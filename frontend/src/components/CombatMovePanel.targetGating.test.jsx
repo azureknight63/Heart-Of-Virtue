@@ -126,6 +126,99 @@ describe('CombatMovePanel — targeted moves with nothing in reach (#554)', () =
   });
 });
 
+// #614 gap 1. The card has said WHY since #554 ("No valid target in range"),
+// but never HOW FAR: the player is told to close the distance without being
+// told what the distance is. The adapter has shipped the number on every
+// out-of-reach preview since #555 -- `shortfall_ft`, computed against the
+// move's own reach in `_build_target_entry` -- and nothing in frontend/src
+// read it. These pin the reading, not the arithmetic: the panel must never
+// work a shortfall out from `distance` and `mvrange` itself (that is engine
+// logic, and CLAUDE.md puts engine logic in the engine).
+describe('CombatMovePanel — how far short a locked move falls (#614)', () => {
+  // 8 ft from a move that reaches 5: the builder derives `in_range: false`
+  // and `shortfall_ft: 3` from the distance, exactly as the adapter does.
+  const outOfReach = (overrides = {}) => makeTargetOption({ distance: 8, ...overrides });
+  const attackTooFarAway = makeAvailableOption({
+    id: '7',
+    name: 'Attack',
+    description: 'Swing at an enemy.',
+    targeted: true,
+    viable_targets: [],
+    target_previews: [outOfReach()],
+  });
+
+  it('says how far away the nearest target is and how far short the move falls', () => {
+    renderPanel([attackTooFarAway]);
+
+    const shown = reasonFor('Attack');
+    expect(shown).toHaveTextContent('No valid target in range');
+    expect(shown).toHaveTextContent('nearest 8 ft');
+    expect(shown).toHaveTextContent('3 ft short');
+  });
+
+  it('adds the distance to a server-worded range refusal too', () => {
+    renderPanel([{ ...attackTooFarAway, available: false, reason: TOO_FAR_REASON }]);
+
+    const shown = reasonFor('Attack');
+    expect(shown).toHaveTextContent(TOO_FAR_REASON);
+    expect(shown).toHaveTextContent('3 ft short');
+  });
+
+  it('measures the nearest candidate, not whichever the list happens to start with', () => {
+    renderPanel([{
+      ...attackTooFarAway,
+      target_previews: [
+        outOfReach({ id: 'enemy_9', name: 'Far Rumbler', distance: 14 }),
+        outOfReach({ id: 'enemy_2', name: 'Near Rumbler', distance: 7 }),
+      ],
+    }]);
+
+    const shown = reasonFor('Attack');
+    expect(shown).toHaveTextContent('nearest 7 ft');
+    expect(shown).toHaveTextContent('2 ft short');
+  });
+
+  // Negative control: a fatigue lock is not a range lock. Appending a
+  // shortfall to "Not enough fatigue" would name a distance that has nothing
+  // to do with why the card is greyed out.
+  it('says nothing about range when something IS in reach', () => {
+    renderPanel([makeAvailableOption({
+      id: '2',
+      name: 'Power Strike',
+      description: 'Wind up.',
+      targeted: true,
+      available: false,
+      reason: NOT_ENOUGH_FATIGUE_REASON,
+      viable_targets: [makeTargetOption()],
+      target_previews: [makeTargetOption()],
+    })]);
+
+    const shown = reasonFor('Power Strike');
+    expect(shown).toHaveTextContent(NOT_ENOUGH_FATIGUE_REASON);
+    expect(shown.textContent).not.toMatch(/ft short/i);
+  });
+
+  // A card locked with no sentence at all renders no reason line (the panel
+  // has rendered it behind `reason &&` since #565), so the suffix has nothing
+  // to hang off. It must not become a dangling em-dash in the tooltip either.
+  it('adds no dangling suffix to a lock that came with no sentence', () => {
+    renderPanel([{ ...attackTooFarAway, available: false, reason: '' }]);
+
+    expect(card('Attack')).not.toHaveAttribute('aria-describedby');
+    expect(card('Attack')).toHaveAttribute('title', '');
+  });
+
+  // The reason element IS the accessible description (aria-describedby points
+  // at it), so the number has to live in the same node rather than in a
+  // sibling a screen reader never reaches.
+  it('carries the distance in the accessible description, not beside it', () => {
+    renderPanel([attackTooFarAway]);
+
+    const describedBy = card('Attack').getAttribute('aria-describedby');
+    expect(document.getElementById(describedBy).textContent).toMatch(/3 ft short/);
+  });
+});
+
 describe('CombatMovePanel — disabled cards read as disabled (#565)', () => {
   const moves = [
     makeAvailableOption({ id: '1', name: 'Slash', description: 'A basic slash' }),

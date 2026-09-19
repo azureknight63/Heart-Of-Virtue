@@ -6,6 +6,7 @@ import {
   beatsUntilResolve,
   moveAvailability,
   moveDamagePreview,
+  nearestShortfall,
   telegraphSeverity,
   telegraphShortLabel,
   telegraphWarning,
@@ -285,5 +286,63 @@ describe('moveDamagePreview', () => {
   it('treats nothing as no preview rather than crashing', () => {
     expect(moveDamagePreview(null)).toBeNull();
     expect(moveDamagePreview(undefined)).toBeNull();
+  });
+});
+
+// #614: the card already says a targeted move has nothing in reach; these
+// pin the missing half, the distance the player has to close. Every number
+// here is READ off `target_previews` -- the adapter computes `shortfall_ft`
+// against the move's live reach (`_build_target_entry`), and a client that
+// worked it out from `distance` and `mvrange` would be a second copy of the
+// engine's reach rule.
+describe('nearestShortfall', () => {
+  const far = (distance, shortfall) => ({
+    id: `enemy_${distance}`,
+    distance,
+    in_range: false,
+    shortfall_ft: shortfall,
+  });
+
+  it('reads the distance and shortfall off the single out-of-reach preview', () => {
+    expect(nearestShortfall({ target_previews: [far(8, 3)] }))
+      .toEqual({ distance: 8, shortfall_ft: 3 });
+  });
+
+  it('picks the smallest shortfall rather than trusting the list order', () => {
+    expect(nearestShortfall({ target_previews: [far(14, 9), far(7, 2), far(20, 15)] }))
+      .toEqual({ distance: 7, shortfall_ft: 2 });
+  });
+
+  // With something in reach the move is greyed for some other reason, and a
+  // shortfall appended to THAT sentence would name an irrelevant distance.
+  it('says nothing when any candidate is in reach', () => {
+    const inReach = { id: 'enemy_1', distance: 5, in_range: true, shortfall_ft: null };
+    expect(nearestShortfall({ target_previews: [inReach, far(9, 4)] })).toBeNull();
+  });
+
+  // Too close (inside range_min) publishes a null shortfall by contract --
+  // "3 ft short" is not the sentence for it -- and the client must not invent
+  // the number the adapter deliberately withheld.
+  it('skips a candidate that is too close rather than inventing its number', () => {
+    const tooClose = { id: 'enemy_1', distance: 1, in_range: false, shortfall_ft: null };
+    expect(nearestShortfall({ target_previews: [tooClose] })).toBeNull();
+    expect(nearestShortfall({ target_previews: [tooClose, far(9, 4)] }))
+      .toEqual({ distance: 9, shortfall_ft: 4 });
+  });
+
+  it('refuses a non-finite distance or shortfall instead of rendering NaN', () => {
+    expect(nearestShortfall({ target_previews: [{ distance: 8, in_range: false, shortfall_ft: NaN }] })).toBeNull();
+    expect(nearestShortfall({ target_previews: [{ distance: Infinity, in_range: false, shortfall_ft: 3 }] })).toBeNull();
+    expect(nearestShortfall({ target_previews: [{ distance: 8, in_range: false, shortfall_ft: 0 }] })).toBeNull();
+  });
+
+  // An untargeted move publishes `target_previews: []`, an older server none
+  // at all, and a legacy string move is not an object.
+  it('treats an absent, empty or non-list preview set as nothing to say', () => {
+    expect(nearestShortfall({ target_previews: [] })).toBeNull();
+    expect(nearestShortfall({ name: 'Spin' })).toBeNull();
+    expect(nearestShortfall({ target_previews: null })).toBeNull();
+    expect(nearestShortfall(null)).toBeNull();
+    expect(nearestShortfall(undefined)).toBeNull();
   });
 });

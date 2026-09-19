@@ -7,7 +7,13 @@ import GameText from './GameText';
 import GlossaryHelpButton from './GlossaryHelpButton';
 import GlossaryText from './GlossaryText';
 import { movesInGroup } from '../utils/categories';
-import { displayNameOf, moveAvailability, autoResolvedTargetId, moveDamagePreview } from '../utils/combatMoveStatus';
+import {
+    displayNameOf,
+    moveAvailability,
+    autoResolvedTargetId,
+    moveDamagePreview,
+    nearestShortfall,
+} from '../utils/combatMoveStatus';
 import {
     STAGE_KEYS,
     getStageBeats,
@@ -152,6 +158,22 @@ function MoveCard({
   // than guessing).
   const damagePreview = moveDamagePreview(move);
 
+  // "No valid target in range" tells the player to close the distance
+  // without telling them what the distance is. `nearestShortfall` reads the
+  // two numbers off the adapter's own target previews when — and only when —
+  // range is what is blocking this card; see its docstring for why neither
+  // number is computed here (issue #614).
+  const shortfall = !isAvailable ? nearestShortfall(move) : null;
+  // Appended to the same string the reason line renders, not shown beside it:
+  // that element IS the button's accessible description (aria-describedby),
+  // so a sibling node would be text a screen reader never reaches.
+  // Gated on `reason` as well as on the shortfall, matching the render guard
+  // below: with no sentence to append to, the suffix alone would be a
+  // dangling em-dash in the tooltip of a card whose reason line never renders.
+  const reasonLine = shortfall && reason
+      ? `${reason} — nearest ${shortfall.distance} ft, ${shortfall.shortfall_ft} ft short`
+      : reason;
+
   // The card is a wrapper, not the button itself: the
   // unavailability reason carries interactive glossary terms
   // (#507), and a disabled <button> does not dispatch pointer
@@ -213,7 +235,7 @@ function MoveCard({
               }
           }}
           disabled={!isAvailable || isProcessing}
-          title={!isAvailable ? reason : ''}
+          title={!isAvailable ? reasonLine : ''}
           aria-describedby={!isAvailable && reason ? reasonId : undefined}
           style={{
               background: 'none',
@@ -274,7 +296,7 @@ function MoveCard({
       {!isAvailable && reason && (
           <GlossaryText
               id={reasonId}
-              text={`⚠ ${reason}`}
+              text={`⚠ ${reasonLine}`}
               style={{
                   color: colors.text.danger,
                   fontSize: '0.75rem',
