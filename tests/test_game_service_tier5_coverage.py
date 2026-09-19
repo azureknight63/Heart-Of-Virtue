@@ -17,6 +17,8 @@ Fixtures reused from tests/conftest_game_service.py: game_service,
 mock_universe, mock_player.
 """
 
+import inspect
+
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -28,6 +30,34 @@ from src.events import Event
 # named conftest.py), so pull in its shared fixtures (game_service,
 # mock_universe, mock_player, ...) explicitly rather than redefining them.
 pytest_plugins = ["conftest_game_service"]
+
+
+def _interaction_target(verb, handler=None, *, name="Thing", keywords=None):
+    """An interaction target that declares ``verb`` on its CLASS.
+
+    Issue #620: ``resolve_interaction`` takes the handler from the target's
+    class, and from the instance only when it is a bound method of that same
+    target. The map loader ``setattr``s every authored prop onto the instance,
+    and a prop written as the editor's ``{"__class_type__": ...}`` marker
+    deserializes to an engine CLASS -- which is callable, and so used to become
+    the verb's handler and be invoked with the player.
+
+    ``MagicMock(spec=[...])`` plus ``obj.verb = MagicMock()`` is exactly that
+    instance shape. No engine class produces it (every interactable implements
+    its verbs as methods), so the tests below now build the class shape
+    instead. The handler object is still whatever the caller passed, so
+    ``assert_called_once`` and friends keep working through ``target.<verb>``.
+
+    A plain function is wrapped in ``staticmethod`` so it is not re-bound and
+    still receives the player as its first argument -- the shape
+    ``HealingSpring.clean`` already ships.
+    """
+    handler = MagicMock() if handler is None else handler
+    declared = staticmethod(handler) if inspect.isfunction(handler) else handler
+    target = type(f"_InteractionTarget_{verb}", (), {verb: declared})()
+    target.name = name
+    target.keywords = [verb] if keywords is None else list(keywords)
+    return target
 
 
 def _make_event_fire(mock_event):
@@ -1261,16 +1291,13 @@ class TestInteractWithTargetExtra:
         container = MagicMock(spec=Container)
         container.state = "opened"
         container.name = "Chest"
-        item = MagicMock()
-        item.name = "Coin"
-        item.keywords = ["take"]
+        # target found via container scan; action "look" falls back to
+        # generic method-call branch since it's not "take"/"equip".
+        item = _interaction_target("look", name="Coin", keywords=["take"])
         container.inventory = [item]
         tile = self._tile(mock_player)
         tile.objects_here = [container]
 
-        # target found via container scan; action "look" falls back to
-        # generic method-call branch since it's not "take"/"equip".
-        item.look = MagicMock()
         with patch("inspect.signature") as mock_sig:
             mock_sig.return_value.parameters = {}
             result = game_service.interact_with_target(mock_player, wire_handle(item), "look")
@@ -1304,10 +1331,7 @@ class TestInteractWithTargetExtra:
         mock_transfer.assert_called_once()
 
     def test_no_output_take_all_fallback_message(self, game_service, mock_player):
-        obj = MagicMock(spec=["keywords", "name", "take_all"])
-        obj.keywords = ["take_all"]
-        obj.name = "Pile"
-        obj.take_all = MagicMock()
+        obj = _interaction_target("take_all", name="Pile")
         tile = self._tile(mock_player)
         tile.objects_here = [obj]
 
@@ -1320,10 +1344,7 @@ class TestInteractWithTargetExtra:
         assert "collects all" in result["message"].lower()
 
     def test_no_output_talk_fallback_message(self, game_service, mock_player):
-        npc = MagicMock(spec=["keywords", "name", "talk"])
-        npc.keywords = ["talk"]
-        npc.name = "Silent Npc"
-        npc.talk = MagicMock()
+        npc = _interaction_target("talk", name="Silent Npc")
         tile = self._tile(mock_player)
         tile.npcs_here = [npc]
 
@@ -1334,10 +1355,7 @@ class TestInteractWithTargetExtra:
         assert "does not respond" in result["message"]
 
     def test_more_events_after_action_merged_and_block_exit_stored(self, game_service, mock_player):
-        obj = MagicMock(spec=["keywords", "name", "examine"])
-        obj.keywords = ["examine"]
-        obj.name = "Statue"
-        obj.examine = MagicMock()
+        obj = _interaction_target("examine", name="Statue")
         tile = self._tile(mock_player)
         tile.objects_here = [obj]
         tile.block_exit = ["north"]
@@ -1373,10 +1391,9 @@ class TestInteractWithTargetExtra:
         interaction dialog showing "Error executing action: 'WallInscription'
         object has no attribute 'touch'".
         """
-        obj = MagicMock(spec=["keywords", "name", "examine"])
-        obj.keywords = ["examine"]
-        obj.name = "Trap"
-        obj.examine = MagicMock(side_effect=RuntimeError("kaboom"))
+        obj = _interaction_target(
+            "examine", MagicMock(side_effect=RuntimeError("kaboom")), name="Trap"
+        )
         tile = self._tile(mock_player)
         tile.objects_here = [obj]
 
@@ -1391,9 +1408,6 @@ class TestInteractWithTargetExtra:
         assert "kaboom" in caplog.text, "the detail must still reach the log"
 
     def test_teleport_detected_strips_destination_description(self, game_service, mock_player):
-        obj = MagicMock(spec=["keywords", "name", "use"])
-        obj.keywords = ["use"]
-        obj.name = "Portal"
         dest_tile = MagicMock()
         dest_tile.description = "A shadowy new room."
 
@@ -1401,7 +1415,7 @@ class TestInteractWithTargetExtra:
             player.location_x = 99
             player.location_y = 99
 
-        obj.use = fake_use
+        obj = _interaction_target("use", fake_use, name="Portal")
         tile = self._tile(mock_player)
         tile.objects_here = [obj]
         mock_player.map = {"name": "TestMap"}
@@ -1420,10 +1434,7 @@ class TestInteractWithTargetExtra:
         assert result["teleported"] is True
 
     def test_quantity_passed_to_method(self, game_service, mock_player):
-        obj = MagicMock(spec=["keywords", "name", "split"])
-        obj.keywords = ["split"]
-        obj.name = "Stack"
-        obj.split = MagicMock()
+        obj = _interaction_target("split", name="Stack")
         tile = self._tile(mock_player)
         tile.objects_here = [obj]
 
@@ -1445,10 +1456,7 @@ class TestInteractWithTargetExtra:
         assert result["success"] is True
 
     def test_combat_initiated_after_interaction(self, game_service, mock_player):
-        obj = MagicMock(spec=["keywords", "name", "trigger"])
-        obj.keywords = ["trigger"]
-        obj.name = "Trap"
-        obj.trigger = MagicMock()
+        obj = _interaction_target("trigger", name="Trap")
         tile = self._tile(mock_player)
         tile.objects_here = [obj]
         enemy = MagicMock()
@@ -1519,10 +1527,7 @@ class TestDormantTileEventNotReported:
 
             narrate("Jean examines the statue closely.")
 
-        obj = MagicMock(spec=["keywords", "name", "examine"])
-        obj.keywords = ["examine"]
-        obj.name = "Statue"
-        obj.examine = _examine
+        obj = _interaction_target("examine", _examine, name="Statue")
 
         tile = mock_player.current_room
         tile.x, tile.y = mock_player.location_x, mock_player.location_y
