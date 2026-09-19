@@ -29,7 +29,6 @@ import struct
 
 import pytest
 
-import src.objects as objects_module
 import src.secure_pickle as secure_pickle
 import src.states as states_module
 from src import map_placeholders
@@ -312,18 +311,6 @@ def test_a_restored_attribute_that_shadows_behaviour_is_dropped():
     assert dropped == ["clean", "drink"], events
 
 
-def test_a_real_world_save_loses_nothing():
-    """The engine itself never writes a shadowing attribute, so a genuine
-    save -- a whole built universe -- restores with no drop and no refusal.
-    This is the check that the rule is not wider than the hole."""
-    player, _map = live_world()
-    player.universe.build(player)
-    events = []
-
-    loaded = safe_pickle_load(
-        io.BytesIO(secure_pickle.serialize_for_save(player)), strict=True, events=events
-    )
-
-    assert loaded is not None
-    assert [e for e in events if e["kind"] in ("dropped", "rejected")] == []
-    assert objects_module.Passageway.__dict__["enter"] is Passageway.__dict__["enter"]
+# A whole built universe round-trips with no drop and no refusal:
+# tests/api/test_save_shadowing_roundtrip.py (Universe.build mutates
+# module-level registries, so it runs in the per-file job).
