@@ -2942,10 +2942,11 @@ class Relic(Consumable):
 
     It has no power except the weight of what it remembers.
     Some things are healed not by medicine but by the act of holding still.
-    Single use. Story-locked: granted in Jean's starting inventory
-    (``Player.__init__``) rather than sold or dropped by enemies — it is a
-    personal memento, not Grondelith merchandise. Excluded from merchant
-    restock via ``disallowed_classes`` in ``src/npc/_shop.py``.
+    Single use. Granted nowhere since issue #646 dropped it from Jean's
+    starting inventory: this text names Jerusalem, which the story withholds,
+    and a consumable cannot carry that lore. Kept so saves holding one still
+    load; the redesign is #646. Excluded from merchant restock via
+    ``disallowed_classes`` in ``src/npc/_shop.py``.
     """
 
     def __init__(self, count: int = 1, merchandise: bool = False) -> None:

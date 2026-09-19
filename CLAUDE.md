@@ -29,7 +29,7 @@ Python 3.11 engine · Flask 3.1 + Flask-SocketIO API · React 18 + Vite + Tailwi
 - `src/api/`: `app.py` (`create_app`), `combat_adapter.py` (engine→JSON bridge), `routes/`, `services/` (`game_service`, `session_manager`), `serializers/`, `schemas/`, `routes/debug.py` (TESTING-only).
 - `frontend/src/`: `pages/`, `components/`, `hooks/` (`useApi`, `useCombat`, …), `utils/` (contracts: `animationConfigs.js`, `categories.js`, `combatBeatSchema.js`), `styles/theme.js` (design tokens), `data/changelog.js`.
 - `tools/`: `run_api.py`, `bug_hunt.py` + `harness/scenarios/`, `inquisitor.py`, `*_fuzzer.py`, `audio_engine/` + `songs/`, `acceptance_test_generator.py`.
-- `docs/`: `lore/` (canon), `development/` (plans, mockups, history), `coverage/`, `qa/`. Root `config_*.ini` are game configs for dev/test; `.env` from `.env.example` (never commit it).
+- `docs/`: `lore/` (canon), `development/` (plans, mockups, history), `coverage/`, `qa/`. Root `config_*.ini` are game configs for dev/test, except `config_prod.ini`, which is production's (beta 2; pinned by `tests/test_prod_config.py`). `*.ini` is gitignored, so a new config needs `git add -f`. `.env` from `.env.example` (never commit it).
 
 ## Running
 
@@ -37,6 +37,7 @@ Python 3.11 engine · Flask 3.1 + Flask-SocketIO API · React 18 + Vite + Tailwi
 python tools/run_api.py [config_dev.ini]      # API on :5000; arg > CONFIG_FILE env > config_dev.ini
 cd frontend && npm install && npm run dev     # SPA on :3000
 .\tools\start_servers.ps1 [CONFIG_FILE]       # both, PowerShell
+.\deploy.ps1 [-Status | -DryRun | -Maintenance On|Off]   # production, behind a maintenance page — docs/development/deployment.md
 ```
 
 Debug logging uses one JSONL envelope (schema authority: `src/api/structured_log.py`).

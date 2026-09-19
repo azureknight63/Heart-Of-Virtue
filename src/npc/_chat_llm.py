@@ -1351,8 +1351,8 @@ _LOQUACITY_PARTY_MOD = 10
 #:   looking away -- "a wrongness he couldn't place". Jean never gets one.
 #:   Granting him an NPC-trust bonus for wearing one would contradict the
 #:   character the story is drawing.
-#: * Jean's actual devotional object is `Relic` -- a fragment of stone from the
-#:   Via Dolorosa, carried from Jerusalem. It is a `Consumable`, so it is not
+#: * The only devotional object in `src/items.py` is `Relic`, and Jean no
+#:   longer starts with it (issue #646). It is a `Consumable`, so it is not
 #:   equippable, so it cannot reach an `isequipped` scan at all no matter what
 #:   this tuple says.
 #: * His equippable accessories are `JeanWeddingBand`, `DullMedallion` and
