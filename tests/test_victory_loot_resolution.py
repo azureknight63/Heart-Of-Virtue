@@ -907,11 +907,13 @@ class TestTheCollectRequestIsBoundedAndExact:
         assert sum(1 for i in jean.inventory if i is item) == 1
 
 
-def test_the_victory_dialog_describes_the_drop_not_a_twin(won_fight):
+def test_the_victory_dialog_describes_the_drop_not_a_twin(won_fight, game_service):
     """The dialog's details (value, description, enchantments) came from the
     first object OF THAT NAME on the tile -- the name-as-identity mistake
     #621 fixed for collect, and one that showed a hidden stash's details to a
-    player who never found it. They come from the dropped object now."""
+    player who never found it. They come from the dropped object now -- and
+    from the SAME object the collect hands over (#634): two resolvers for one
+    concept is the drift this pins, not just the twin."""
     stash = []
 
     def hide_a_distinct_twin(tile):
@@ -930,4 +932,10 @@ def test_the_victory_dialog_describes_the_drop_not_a_twin(won_fight):
     assert entry["name"] == "Shortsword"
     assert entry["value"] != 999
     assert entry["description"] != twin.description
+
+    carried = {id(i) for i in fight.player.inventory}
+    game_service.collect_combat_loot(fight.player, [entry["name"]])
+    (taken,) = [i for i in fight.player.inventory if id(i) not in carried]
+    assert taken is not twin
+    assert (entry["value"], entry["description"]) == (taken.value, taken.description)
 

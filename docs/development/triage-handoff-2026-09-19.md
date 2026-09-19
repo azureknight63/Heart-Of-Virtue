@@ -123,8 +123,9 @@ Items 1-3 below are DONE (session 3, round 2 — see above). Remaining: file the
 2. (done) `/code-review` over the architecture-touching subset (`src/api/`, `GameService`, serializers,
    `combat_adapter`, `ai/llm_client.py`) — the scrubber has no Architecture dimension.
 3. (done) Full suites + `bug_hunt` (full, default config) + `--scenario victory_loot` under its config.
-4. PR per §12. Closes: #611 #612 #614 #618 #620 #621 #624 #625. NOT #613, NOT #615 (decided: leave
-   open). File the follow-ups below first so the PR body can link them.
+4. PR per §12. Closes: #611 #612 #614 #618 #620 #621 #624 #625 #633 #634. NOT #613, NOT #615
+   (decided: leave open). #633/#634 were filed mid-pass and fixed by A7/A6; round 2 added the
+   derived guards each issue asked for. File the follow-ups below first so the PR body can link them.
 
 ### Follow-up issues to file (not this branch)
 - Idempotent NPC chat turns: the single-flight lock is inert under the Procfile's sync worker, so a Retry after a client timeout commits a second turn after the abandoned one. Client mints a `turn_id` per option click; Retry reuses it; the server replays the stored result.
@@ -525,7 +526,7 @@ Verify **before** merging, and again after:
 
 ```bash
 gh pr view <N> --json closingIssuesReferences -q '.closingIssuesReferences[].number'
-for n in 611 612 614 615 618 620 621 624 625; do
+for n in 611 612 614 615 618 620 621 624 625 633 634; do
   gh issue view $n --json number,state,stateReason -q '"#\(.number)\t\(.state)\t\(.stateReason // "-")"'
 done
 ```
