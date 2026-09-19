@@ -92,9 +92,14 @@ _LOOT_PHASE_LOCK = threading.Lock()
 #: One NPC chat turn per player at a time (#618 scrub; maintainer decision
 #: 2026-09-19). A turn the client abandoned at its deadline keeps running and
 #: commits -- Jean's line, the loquacity drain, the reputation change -- so a
-#: Retry beside it double-committed and spent the LLM quota twice. Weak-keyed
-#: on the player rather than stored on it: a lock does not pickle, and the
-#: player is saved.
+#: Retry running BESIDE it would double-commit and spend the LLM quota twice.
+#: That only happens on a server that runs requests concurrently (the threaded
+#: dev/QA server). Production's single sync worker (the Procfile) never runs two
+#: at once, so there a Retry queues behind the abandoned turn and commits a
+#: second one AFTER it; this lock cannot see that, and the turn budget is what
+#: keeps it rare. Idempotent turns are the fix, filed as a follow-up
+#: (maintainer decision 2026-09-19). Weak-keyed on the player rather than
+#: stored on it: a lock does not pickle, and the player is saved.
 _CHAT_TURN_LOCKS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 _CHAT_TURN_LOCKS_GUARD = threading.Lock()
 
@@ -182,6 +187,11 @@ _FLOOR_ITEMS_IN_COMBAT_MESSAGE = (
 #: The item verbs that move a pile onto or off the floor -- and so restack
 #: it (``Item.take``, ``Item.drop``). Matched on the RESOLVED handler's
 #: name, so an authored alias for either is caught too.
+#:
+#: ``equip`` is deliberately NOT here, though equipping a floor item picks it
+#: up: it never restacks the floor, which is the hazard this gate exists for,
+#: and snatching a weapon off the ground mid-fight is a legitimate move
+#: (maintainer decision 2026-09-19).
 _FLOOR_PILE_HANDLERS = frozenset({"take", "drop"})
 
 

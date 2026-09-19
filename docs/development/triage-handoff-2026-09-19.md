@@ -41,6 +41,16 @@ G14 frontend nits · `92b42f68` c4 style Minors (E2, E4-E6, E8, E10-E12, E17, E1
 Last full runs (after `92b42f68`): backend 4 failed (pre-existing openai) / 14712 passed; frontend
 165 files / 3796 passed; flake8 `src/` clean.
 
+**Round-2 re-review (session 3):** r1 Security over the #620 root fix → **Security A, no findings**
+(every map/save write path gated at the write; root fix, not fragile). r2 Alignment/Correctness over
+the chat budget → C/C, all findings fixed in `d63483e6` except the double commit (decided above):
+clipped timeouts no longer bench models, the 400 retry is held to the turn, `bounded_by` nests by
+tightening, the turn clock starts before a cold `_get_adapter()`, End in the auto-close window sends
+no `/end`, a 409 on `/open` has its own copy. `/code-review` over the architecture subset
+(`src/api/` + `ai/llm_client.py`, 479 lines): **Architecture A**; Correctness findings folded into
+the same fixes. After `d63483e6`: backend 4 failed (openai) / 14719 passed; frontend 165 / 3798;
+flake8 clean; `bug_hunt` full 0 bugs; `--scenario victory_loot` (its config) 0 bugs.
+
 **c4/c5 findings:** all closed — see the commits above. One correction to a finding, recorded so
 it is not "fixed" back: E17 said the recenter control disappears anyway when the window grows to
 cover the arena. It does not for a sub-cell drag remainder (0 cells is still legal, so the
@@ -69,6 +79,10 @@ the loader must still apply).
 | Prod topology (session 3) | **The Procfile is production** (`gunicorn -w 1`, sync, 30s timeout, in-memory sessions): keep a turn under **~25s total**; client deadline **~28s**, pinned by a relational test to the engine budget. |
 | Retry double-commit (session 3) | **Single-flight now**: a per-player chat-turn lock in `npc_chat_open`/`npc_chat_respond`; a second request while one is in flight gets **409** and the client shows a fixed "still composing" line. |
 | #615 (session 3) | **Leave open** — its own branch, suite run and review later. Do not claim it in this PR. |
+| Re-review depth (session 3) | **Targeted, 2 agents**: c1 Security over the #620 root fix, c4 Alignment/Correctness over the chat budget + single-flight. No adversary pass (findings verified inline). |
+| Retry double commit (session 3, round 2) | **Accept + follow-up.** The single-flight lock never fires under production's sync worker (requests are serialised, so a Retry queues and commits a second turn AFTER the abandoned one). Keep the lock for threaded servers, correct the comments, file idempotent turns (`turn_id` replay) as a follow-up. |
+| Floor equip mid-fight (session 3, round 2) | **Allow it.** Equip picks a floor item up but never restacks; the take/drop gate exists for merges. Documented on `_FLOOR_PILE_HANDLERS`. |
+| #620 closure (session 3, round 2) | **Signed off by the maintainer** — close #620 in this PR (Major Security; the re-review graded Security A, no findings). |
 
 ### Committed in session 2
 `78577df1` C1 alias-word helper read off the class (repro: 21 red → green) · `5c4b608b` derived
@@ -101,17 +115,23 @@ clean, `bug_hunt` 0 bugs (full, default config), `--scenario shop` 0, `--scenari
 (freeze on) / 4-of-4 caught (freeze off).
 
 ### Pending, in order (resume here)
-1. Decide the re-review depth (ask the maintainer if budget is tight — weekly was 82% at the end of
+Items 1-3 below are DONE (session 3, round 2 — see above). Remaining: file the follow-ups, then 4.
+1. (done) Decide the re-review depth (ask the maintainer if budget is tight — weekly was 82% at the end of
    session 3): at minimum re-dispatch **c1 Security** over the #620 root fix (secure_pickle,
    universe, map_placeholders) and **c4 Alignment/Correctness** over the chat budget +
    single-flight; the skill's full rule is every below-A (chunk, dimension) pair, max 3 iterations.
-2. `/code-review` over the architecture-touching subset (`src/api/`, `GameService`, serializers,
+2. (done) `/code-review` over the architecture-touching subset (`src/api/`, `GameService`, serializers,
    `combat_adapter`, `ai/llm_client.py`) — the scrubber has no Architecture dimension.
-3. Full suites + `bug_hunt` (full, default config) + `--scenario victory_loot` under its config.
+3. (done) Full suites + `bug_hunt` (full, default config) + `--scenario victory_loot` under its config.
 4. PR per §12. Closes: #611 #612 #614 #618 #620 #621 #624 #625. NOT #613, NOT #615 (decided: leave
    open). File the follow-ups below first so the PR body can link them.
 
 ### Follow-up issues to file (not this branch)
+- Idempotent NPC chat turns: the single-flight lock is inert under the Procfile's sync worker, so a Retry after a client timeout commits a second turn after the abandoned one. Client mints a `turn_id` per option click; Retry reuses it; the server replays the stored result.
+- `SafeUnpickler.load_build` refuses BUILD onto classes/functions/modules but not onto a module-level *instance* of an engine class; refuse BUILD onto any resolved module global (security re-review residual, pre-existing).
+- `requests` applies a timeout per phase (connect, then read), so a clipped chat call can still end past the turn deadline by its own length; only dangerous with a raised `NPC_CHAT_LLM_TIMEOUT`. A wall-clock bound needs different machinery.
+- A cold `NpcChatLLMAdapter` is built on the request path (model discovery up to 20s + validation calls); the turn now counts that time, but construction itself can approach the worker timeout. Don't build on the request path while a prewarm is in flight.
+- `npc_chat_end` pops `_active_chat_npc_id` unconditionally, so a late `/end` from panel A can clear B's marker; store the npc_key with the marker (pre-existing).
 - Touch-target floor gated on viewport width, not pointer type (H3): a >767px touch tablet gets ~13px targets; gate every `useMobile`-only floor on `isMobile || isCoarse` (HeatMeter, GlossaryHelpButton.jsx:26, ShopDialog.jsx:198) with a combat-panel height check.
 - Remaining fold toggles hand-rolled (ChangelogPanel, CombatLog `<div onClick>`, SuggestedMovesPanel) — move onto CollapsibleSectionHeader (G3).
 - Per-session mutation lock over collect/take/drop/shop (root of A1/A2/A4/A5; `_LOOT_PHASE_LOCK`
