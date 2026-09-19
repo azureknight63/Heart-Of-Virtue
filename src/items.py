@@ -97,13 +97,22 @@ _BAKED_STACK_COUNT = re.compile(r"\s[x×](\d+)$", re.IGNORECASE)
 
 
 def stack_base_name(item: Any) -> str:
-    """Return ``item.name`` without the ``stack_grammar()`` count suffix.
+    """Return ``item.name`` without a baked-in stack count suffix.
 
     Engine copy of the client's ``stackDisplayName`` (frontend/src/utils/
-    stackName.js). The root cause is ``stack_grammar()`` rewriting ``name``
+    stackName.js). The root cause was ``stack_grammar()`` rewriting ``name``
     to carry the stack size -- a leftover from the terminal readout -- so any
-    caller that prints its own quantity next to the name would otherwise
-    count the stack twice ("2× Dried Crystal Sap x2").
+    caller that printed its own quantity next to the name counted the stack
+    twice ("2× Dried Crystal Sap x2").
+
+    **That mutation is gone** (#624): none of this module's 12
+    ``stack_grammar()`` implementations writes ``name`` any more, so on a
+    freshly built item this is now a no-op. It is kept as a defensive strip
+    rather than deleted for two reasons: ``name`` is ordinary pickled
+    instance state, so a save written before the fix still restores an item
+    literally named "Mineral Powder x3"; and deleting it would silently
+    re-enable the doubling the moment a future ``stack_grammar()`` reached
+    for ``name`` again.
 
     Deliberately conservative: the suffix is dropped only when it is exactly
     the digits of the stack size the item reports, so an item genuinely named
@@ -3654,6 +3663,7 @@ class MineralPowder(Commodity):
         self.count = 1
 
     def stack_grammar(self) -> None:
+        # ``name`` is deliberately left alone: see DriedCrystalSap.stack_grammar.
         if self.count == 1:
             self.description = (
                 "Fine grey-green dust in a twist of woven fiber. "
@@ -3664,9 +3674,6 @@ class MineralPowder(Commodity):
                 f"{self.count} packets of fine grey-green mineral dust, "
                 "each twisted in woven fiber. A material for careful craft."
             )
-        self.name = (
-            "Mineral Powder" if self.count == 1 else f"Mineral Powder x{self.count}"
-        )
 
 
 class DriedCrystalSap(Consumable):
@@ -3695,14 +3702,25 @@ class DriedCrystalSap(Consumable):
         self.power = 25  # Modest HP restore ("dull minor wounds")
 
     def stack_grammar(self) -> None:
+        """Adjust the stack's prose to its size. ``name`` is NOT touched.
+
+        This and ``MineralPowder`` were the only two ``stack_grammar()``
+        implementations that rewrote ``self.name`` to carry the count
+        ("Dried Crystal Sap x2") -- a habit left over from the terminal
+        readout, where the name *was* the whole display. It stopped being
+        harmless once callers began printing their own quantity beside the
+        name: every such caller double-counted, and ``GameService.shop_sell``
+        went further and recorded the baked name in the buyback ledger, where
+        the surviving stack's rename after a partial sell made the row
+        unredeemable (#624). The count belongs to the item's ``count``, which
+        every display path already has.
+        """
         if self.count == 1:
-            self.name = "Dried Crystal Sap"
             self.description = (
                 "A small, waxy amber lump, warm to the touch even in cold tunnels. "
                 "Chewing it seems to dull minor wounds."
             )
         else:
-            self.name = f"Dried Crystal Sap x{self.count}"
             self.description = (
                 f"{self.count} waxy amber lumps, each warm to the touch. "
                 "Chewing one seems to dull minor wounds."

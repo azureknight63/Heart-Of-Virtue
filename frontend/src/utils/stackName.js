@@ -29,9 +29,9 @@ export const stackSize = (item) => Number(item?.count ?? item?.quantity ?? 1);
  * The name to SHOW for a stackable item, with the engine's baked-in count
  * removed.
  *
- * The engine's `stack_grammar()` rewrites an item's own `name` to carry its
- * stack size — `src/items.py` has `MineralPowder` produce "Mineral Powder x3"
- * and `DriedCrystalSap` produce "Dried Crystal Sap x3". That is a leftover
+ * The engine's `stack_grammar()` used to rewrite an item's own `name` to carry
+ * its stack size — `src/items.py` had `MineralPowder` produce "Mineral Powder
+ * x3" and `DriedCrystalSap` produce "Dried Crystal Sap x3". That was a leftover
  * from the terminal play mode, where the name was the entire readout. The API
  * serializers ship the name verbatim *and* a separate `count`/`quantity`
  * field, so every UI that renders both rendered the quantity twice:
@@ -47,9 +47,15 @@ export const stackSize = (item) => Number(item?.count ?? item?.quantity ?? 1);
  * This is the client half of that fix. The engine mirrors it with
  * `stack_base_name()` in `src/items.py` (same match-then-compare rule) for
  * the narration it composes itself — take-all sentences and loot-dialog
- * labels — so the two strippers must stay in step. The root cause, the
- * `name` mutation in `stack_grammar()`, is still in place; once it goes,
- * both helpers become no-ops rather than needing removal.
+ * labels — so the two strippers must stay in step.
+ *
+ * The root cause, the `name` mutation in `stack_grammar()`, has since been
+ * removed (#624), so on names from a current engine this is a no-op. It stays
+ * as a defensive strip rather than being deleted: `name` is ordinary pickled
+ * instance state, so a save written before that fix still loads an item
+ * literally named "Mineral Powder x3" and ships it over the wire — and
+ * removing the strip would silently re-enable the doubling the moment a
+ * future `stack_grammar()` reached for `name` again.
  *
  * Deliberately conservative: the suffix is dropped only when the number in it
  * equals the stack size the item itself reports, so an item genuinely named
