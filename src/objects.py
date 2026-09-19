@@ -423,10 +423,16 @@ class Container(Object):
                 # ignore attribute issues during early init
                 pass
 
+    #: The description a Container carries when its map placement authors
+    #: none. ``refresh_description`` treats it as free to overwrite, so the
+    #: constructor default below must stay the same string — hence the
+    #: reference rather than a second literal.
+    _DEFAULT_DESCRIPTION = "A container. There may be something inside."
+
     def __init__(
         self,
         name: str = "Container",
-        description: str = "A container. There may be something inside.",
+        description: str = _DEFAULT_DESCRIPTION,
         hidden: bool = False,
         hide_factor: int = 0,
         start_open: bool = False,
@@ -511,10 +517,48 @@ class Container(Object):
         self.process_events()  # process initial events (triggers labeled "auto")
         self.stack_items()
 
+    def _description_is_generic(self):
+        """Whether this container's description is safe to overwrite.
+
+        Three states count as generic: nothing at all, the constructor default,
+        and the last line ``refresh_description`` itself produced. Everything
+        else is map-authored prose (issue #629) and belongs to the tile.
+
+        The third case is what keeps INCREMENTAL regeneration working. After a
+        single item is taken, the current description is the listing generated
+        before the take — not the constructor default — and it still has to be
+        rebuilt. A stateless "does it equal what I would generate right now?"
+        test would fail exactly there, because the stale listing embeds the
+        pre-take inventory.
+        """
+        current = getattr(self, "description", None)
+        return (
+            not current
+            or current == self._DEFAULT_DESCRIPTION
+            or current == getattr(self, "_generated_description", None)
+        )
+
     def refresh_description(self):
-        """Optimized description refresh using f-strings and join for better performance"""
+        """Rebuild the generated contents listing, unless the prose is authored.
+
+        A no-op for a container whose description was written by hand in the
+        map JSON. All 47 shipped ``Container``-family placements author one,
+        and every one of them used to be destroyed the first time a player
+        opened the container — permanently, since ``Player.universe`` is
+        pickled into the save (issue #629).
+
+        The guard lives here rather than at the call sites because all six
+        callers legitimately want regeneration; only the container knows
+        whether there is anything worth protecting.
+        """
+        if not self._description_is_generic():
+            return
+        # One spelling of the opening phrase for all three templates: the
+        # article is the part that was wrong ("A iron lockbox", #629/#616) and
+        # three copies of the rule is three places for it to go wrong again.
+        lead = f"{functions.indefinite_article(self.nickname).capitalize()} {self.nickname}"
         if self.state == "closed":
-            self.description = f"A {self.nickname} which may or may not have things inside. You can try to UNLOCK (if locked), OPEN, or LOOT it."
+            self.description = f"{lead} which may or may not have things inside. You can try to UNLOCK (if locked), OPEN, or LOOT it."
         elif self.inventory:
             item_descriptions = []
             for item in self.inventory:
@@ -525,11 +569,14 @@ class Container(Object):
                     desc = getattr(item, "description", str(item))
                 item_descriptions.append(desc)
             self.description = (
-                f"A {self.nickname}. Inside are the following things: \n\n"
+                f"{lead}. Inside are the following things: \n\n"
                 + "\n".join(item_descriptions)
             )
         else:
-            self.description = f"A {self.nickname}. It's empty. Very sorry."
+            self.description = f"{lead}. It's empty. Very sorry."
+        # Remember what we produced so the next refresh can tell its own output
+        # apart from prose someone wrote.
+        self._generated_description = self.description
 
     def unlock(self):
         """Optimized unlock method with early return and f-string formatting. Supports both direct object reference and nickname-based key matching."""
