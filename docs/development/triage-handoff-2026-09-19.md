@@ -49,8 +49,22 @@ shop guards (families incl. Key; every stackable keeps its name) · `d030abe8` s
 `walk_json_strings`, authored-path containment test · `65e87b7e` identity in #621 fixtures,
 keywords keyed by placement.
 
+Then: `a89f3b96` **#620 root fix** (map loader refuses shadowing props; pure-Python
+`SafeUnpickler` refuses BUILD onto classes/functions and drops shadowing state; class-marker gate
+requires a trusted class; C2/C4 per-site) · `bf430364` `accepts_step_through` + `advertised_keywords`
+(C7, D1) + stale #620 docs (C8) · `92fd5321` full-universe save round-trip moved to `tests/api/` ·
+`68a726b9` **#621 freeze** (`functions.restack_floor` is the only merge site; frozen while the
+victory is unresolved and the room holds an offered object; take/drop refused mid-fight; harness
+provokes a restack — freeze off: 4/4 runs catch it).
+
+Pre-existing, unrelated, for a follow-up issue: `--scenario combat` under
+`config_combat_testing.ini` with `active_scenario = boss` walks east twice through the aggro Fodder
+Pit and the #543 move guard refuses the second step. A11 (victory_loot identity half skipped when
+the roll drops only Gold) needs a TESTING-only loot-pinning debug op — follow-up.
+
 ### Pending, in order
-1. #620 full root fix (above) + C2/C4/C5/C6(A1 atomic pop)/C7/C8 + D1 (`Passageway.accepts_step_through`).
+1. ~~#620 full root fix + C2/C4/C7/C8 + D1~~ done. C5 (cap `item_names`) and C6/A1 (atomic pop in
+   `_take_offered_drops`) remain — do with the c2 pass.
 2. c2/c3 src fixes: A2 (`Item.take` appends before removing), A6 (VICTORY dialog details by handle, not name), A7 (skip `_combat_handle` in `__dict__` copies), A11/A12 (harness silent passes), B1, B2, B4 (`Book.text` cwd-relative; narrates path+errno), B10 (container take narration lost the count), stale comments/docstrings (T2/T3/T6/T12/T15, S10–S15), `_shop.py` extraction (T1/T4) if budget allows.
 3. #621: refuse take/drop in combat + freeze at victory (§5, all merge sites).
 4. c5 wave, c4 adversaries/fixes, targeted re-dispatch of below-A pairs, `/code-review` over the architecture-touching subset, full suites, `bug_hunt`, PR per §12.
