@@ -1259,7 +1259,7 @@
                                     "read"
                                 ],
                                 "name": "Tattered Journal",
-                                "description": "A water-stained leather journal, its pages brittle and faded. The merchant's final thoughts are barely legible.",
+                                "description": "A water-stained leather journal, its pages brittle and faded. The prospector's final thoughts are barely legible.",
                                 "value": 0,
                                 "type": "Book",
                                 "hidden": false,
@@ -1277,7 +1277,6 @@
                                 "gives_exp": false,
                                 "event": null,
                                 "text_file_path": "src/resources/books/tattered-journal.txt",
-                                "text": "",
                                 "chars_per_page": 800
                             }
                         },
