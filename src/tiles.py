@@ -329,10 +329,13 @@ class MapTile:
         return obj
 
     def stack_duplicate_items(self):
-        """Collapse same-class stackable piles on this tile into one each.
+        """Collapse same-class stackable piles on this tile into one per
+        class and visibility.
 
-        Runs after every ordinary pickup (``Item.take``), so it decides what
-        the floor looks like far more often than any death does.
+        Runs after every ordinary pickup (``Item.take``) and stack drop
+        (``Item.drop``), through ``functions.restack_floor`` -- which skips it
+        on an unresolved victory's tile (#621) -- so it decides what the
+        floor looks like far more often than any death does.
 
         Piles only merge with piles of the same visibility. A hidden item is
         a cache the player has not found yet, and folding a visible one into

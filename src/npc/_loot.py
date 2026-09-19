@@ -1,9 +1,10 @@
 """
 NPCLootMixin — death, loot table rolls, and inventory drops.
 
-Mixed into NPC (_base.py).  Contains the four methods that handle what
-happens when an NPC dies: the death hook, inventory scattering, and the
-loot-table roll.
+Mixed into NPC (_base.py). Handles what happens when an NPC dies: the death
+hook, the loot-table roll, inventory scattering and embedded arrows, the
+stacking of that death's own drops, and the bookkeeping that records what
+landed for the victory's loot offer (``player.combat_drops``, #621).
 
 Also exports the module-level `loot` object so that _base.py and
 _enemies.py can reference loot table tiers (loot.lev0, loot.lev1, etc.)
@@ -27,6 +28,13 @@ from src.narration import colored, cprint, narrate  # type: ignore
 loot = loot_tables.Loot()
 
 
+def _floor_of(room):
+    """``room.items_here`` when it is a real list, else None -- a tile double
+    or a room built without a floor has nothing to diff or restack."""
+    floor = getattr(room, "items_here", None)
+    return floor if isinstance(floor, list) else None
+
+
 class NPCLootMixin:
     """Death sequencing and loot distribution for NPC."""
 
@@ -37,9 +45,13 @@ class NPCLootMixin:
         if really_die:
             narrate(colored(self.name, color="magenta") + " exploded into fragments of light!")
 
-    def before_death(
-        self,
-    ):  # Overwrite for each NPC if they are supposed to do something special before dying
+    def before_death(self):
+        """Put this NPC's loot on the floor as it dies; True means really die.
+
+        Roll the loot table, scatter the inventory, spill embedded arrows,
+        then stack what THIS death dropped (never what was already lying
+        there -- #621). Subclasses override it to do something special first.
+        """
         dropped = []
         if self.loot:
             dropped += self.roll_loot() or []  # checks to see if an item will drop
@@ -51,7 +63,7 @@ class NPCLootMixin:
     def _spawn_drop(self, spawn):
         """Run ``spawn`` and return ``(what it returned, everything it added)``.
 
-        ``Tile.spawn_item`` returns ``spawned[0]`` only: a non-stackable of
+        ``MapTile.spawn_item`` returns ``spawned[0]`` only: a non-stackable of
         ``amt`` 2 creates two objects and hands back the first, and
         ``Loot.random_equipment`` spawns inside itself. Diffing ``items_here``
         around the call recovers the whole set without changing a return value
@@ -62,8 +74,8 @@ class NPCLootMixin:
         day one is defined — and identity is the entire point here (#621).
         """
         room = self.current_room
-        floor = getattr(room, "items_here", None)
-        if not isinstance(floor, list):
+        floor = _floor_of(room)
+        if floor is None:
             # No real floor to diff — a tile double in a test, or a room built
             # without one. Take the spawn at its word rather than raising in
             # the middle of a death.
@@ -71,7 +83,7 @@ class NPCLootMixin:
             return result, [result] if result is not None else []
         before = {id(item) for item in floor}
         result = spawn()
-        return result, [i for i in room.items_here if id(i) not in before]
+        return result, [i for i in floor if id(i) not in before]
 
     def _record_combat_drop(self, name, quantity, kind, objects):
         """Record what this death put on the floor, for the victory loot offer.
@@ -103,7 +115,7 @@ class NPCLootMixin:
         )
 
     def _stack_own_drops(self, dropped):
-        """Merge this death's own drops into one pile per kind.
+        """Merge this death's own drops into one pile per kind and visibility.
 
         This is the narrowed descendant of a whole-floor
         ``functions.stack_items_list(items_here)`` call, whose comment said
@@ -124,14 +136,15 @@ class NPCLootMixin:
         cache they had not found.
         """
         room = self.current_room
-        if room is None or not isinstance(getattr(room, "items_here", None), list):
+        if _floor_of(room) is None:
             return
         merged_away = []
         for concealed in (False, True):
             group = [d for d in dropped if bool(getattr(d, "hidden", False)) is concealed]
             survivors = list(group)
-            # The floor pass's own grouping rules (stack_key, class/name/
-            # description, merchandise), applied to a narrower population.
+            # ``functions.stack_items_list``'s grouping rules (stack_key,
+            # class/name/description, merchandise) -- the pack's, not the
+            # floor pass's, which groups by class alone.
             functions.stack_items_list(survivors)
             kept = {id(s) for s in survivors}
             merged_away += [g for g in group if id(g) not in kept]
@@ -144,10 +157,12 @@ class NPCLootMixin:
     def _forget_drop_handles(self, handles):
         """Drop merged-away objects from the loot offer.
 
-        Their units live on in the pile they were merged into, which is itself
-        one of this death's recorded drops, so the offer still adds up. Leaving
-        the dead handles in it would cost the player a ``not_found`` for loot
-        they are in fact being given.
+        Offer hygiene: their units live on in the pile they were merged into,
+        which is itself one of this death's recorded drops, so the offer keeps
+        only handles that still name an object. (A dead handle would not cost
+        the player anything today -- ``_take_offered_drops`` reports
+        ``not_found`` only when none of a name's handles resolve -- but the
+        #621 floor freeze reads these handles to find the fight's tile.)
 
         Only handles minted for *this* death's objects are passed in, so an
         earlier kill's entries in the same fight cannot be touched.
@@ -246,8 +261,6 @@ class NPCLootMixin:
                     "cyan",
                     attrs=["bold"],
                 )
-                self._record_combat_drop(
-                    getattr(drop, "name", str(drop)), dropcount, "loot", landed
-                )
+                self._record_combat_drop(drop.name, dropcount, "loot", landed)
                 return landed  # only one item in the loot table will drop
         return []
