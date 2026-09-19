@@ -11,7 +11,7 @@ from unittest.mock import patch
 from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
 from src.api.constants import ITEM_USE_RANGE
 from src.api.services.auth_service import SaveLimitReached
-from src.combatant import find_by_handle, wire_handle
+from src.combatant import find_by_handle, index_by_handle, wire_handle
 from src.journal import Journal, existing_journal, journal_for
 from src.events import (
     map_name_for_tile,
@@ -5196,7 +5196,7 @@ class GameService:
         ``weight_tolerance`` is ``over_capacity`` and stays put.
 
         A name yields the objects the fight recorded under it and nothing else:
-        each handle is resolved with :func:`find_by_handle`, and a handle that
+        each handle is resolved with :func:`index_by_handle`, and a handle that
         no longer answers is simply not there (issue #621). There is
         deliberately no fallback to a same-named object on the tile — the
         fallback is the defect. Jean having already picked the drop up by hand,
@@ -5217,7 +5217,13 @@ class GameService:
                 continue
             any_collected = over_capacity = False
             for handle in offered[name]:
-                item = find_by_handle(tile.items_here, handle)
+                # By index, not ``list.remove``: the lookup is an identity and
+                # ``remove`` is an equality: the day an ``Item`` defines
+                # ``__eq__``, removing "the object we resolved" would quietly
+                # take the first equal twin instead — undoing exactly what
+                # resolving by handle bought (``find_by_handle`` documents the
+                # same trap for ``list.index``).
+                item, index = index_by_handle(tile.items_here, handle)
                 if item is None:
                     continue
                 item_weight = float(getattr(item, "weight", 0) or 0)
@@ -5225,7 +5231,7 @@ class GameService:
                     skipped.append({"name": name, "reason": "over_capacity"})
                     over_capacity = True
                     break
-                tile.items_here.remove(item)
+                del tile.items_here[index]
                 inventory.append(item)
                 collected.append(name)
                 current_weight += item_weight

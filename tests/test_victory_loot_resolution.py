@@ -36,6 +36,7 @@ import pytest
 
 from src.api.combat_adapter import ApiCombatAdapter
 from src.api.services.game_service import GameService
+from src.combatant import wire_handle
 from src.items import Restorative
 from src.npc import Slime
 
@@ -540,6 +541,44 @@ class TestADropIsTheObjectTheFightSpawned:
         assert pile in fight.fight_tile.items_here
         assert pile.count == 3
         assert pile.hidden is True
+
+    def test_the_resolved_object_leaves_the_tile_not_an_equal_one(self):
+        """Resolving by handle and then removing by equality is not identity.
+
+        ``list.remove`` compares with ``==``. No ``Item`` defines ``__eq__``
+        today, so this is a guard rather than a live bug — but the day one
+        does, "remove the object we resolved" would quietly take the first
+        equal twin instead, which is the whole defect back again through the
+        other door. ``find_by_handle`` documents the same trap for
+        ``list.index``.
+        """
+
+        class _Twin:
+            """A pair that compares equal, as a stacked duplicate would."""
+
+            name = "Twin"
+            weight = 0.0
+
+            def __eq__(self, other):
+                return isinstance(other, _Twin)
+
+            def __hash__(self):
+                return hash("Twin")
+
+        older, dropped = _Twin(), _Twin()
+        tile = SimpleNamespace(items_here=[older, dropped])
+        jean = SimpleNamespace(inventory=[], weight_tolerance=20.0)
+        offered = {"Twin": [wire_handle(dropped)]}
+
+        collected, skipped = GameService._take_offered_drops(
+            jean, tile, ["Twin"], offered
+        )
+
+        assert (collected, skipped) == (["Twin"], [])
+        # ``is``, never ``==``: the two compare equal, so an equality
+        # assertion here would pass whichever object moved.
+        assert len(tile.items_here) == 1 and tile.items_here[0] is older
+        assert len(jean.inventory) == 1 and jean.inventory[0] is dropped
 
     def test_one_deaths_own_drops_still_merge_into_a_single_pile(
         self, make_world, grid_3x3
