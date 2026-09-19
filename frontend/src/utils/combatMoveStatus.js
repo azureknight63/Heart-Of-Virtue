@@ -190,6 +190,18 @@ export function hostileTelegraphWarning(move, isHostile) {
  */
 export const NO_REACHABLE_TARGET_REASON = 'No valid target in range';
 
+/** The adapter's own "too far" refusal (`TOO_FAR_REASON`, src/api/combat_adapter.py). */
+export const TOO_FAR_REASON = 'Enemy out of range (too far)';
+
+/**
+ * The reasons that mean RANGE is the lock -- the only sentences a shortfall
+ * may be appended to. A card locked for fatigue, a cooldown or a weapon
+ * requirement can have every target out of reach too, and "3 ft short" on
+ * "Available in 3 beats" says walking closer fixes it (#614 scrub). Both
+ * strings are the engine's, pinned by tests/test_combat_glossary_contract.py.
+ */
+export const RANGE_LOCK_REASONS = new Set([NO_REACHABLE_TARGET_REASON, TOO_FAR_REASON]);
+
 /**
  * The id the client may submit WITHOUT asking the player, or null.
  *
@@ -332,9 +344,9 @@ export function moveDamagePreview(move) {
  * that sentence would name a distance that has nothing to do with it.
  *
  * A candidate that is too *close* (inside `range_min`) carries a `null`
- * shortfall by contract, not a negative one, so it is skipped rather than
- * rendered: the adapter deliberately publishes no number for that case and
- * the client is in no position to invent one.
+ * shortfall by contract, not a negative one -- and with anyone too close,
+ * range is not simply "too far", so this says nothing at all rather than
+ * "nearest 9 ft" beside an enemy standing at 1 ft.
  *
  * @param {Object} move a move entry from `available_options` / `moves`
  * @returns {?{distance: number, shortfall_ft: number}}
@@ -343,6 +355,9 @@ export function nearestShortfall(move) {
   const previews = move?.target_previews;
   if (!Array.isArray(previews) || previews.length === 0) return null;
   if (previews.some((entry) => entry?.in_range)) return null;
+  const tooClose = (entry) =>
+    entry?.in_range === false && entry.shortfall_ft == null && Number.isFinite(entry.distance);
+  if (previews.some(tooClose)) return null;
   // Smallest shortfall, not first entry: the adapter sorts previews by
   // distance, but a client that depends on someone else's sort order breaks
   // silently the day the sort changes.
@@ -355,4 +370,23 @@ export function nearestShortfall(move) {
     if (nearest === null || entry.shortfall_ft < nearest.shortfall_ft) nearest = entry;
   }
   return nearest && { distance: nearest.distance, shortfall_ft: nearest.shortfall_ft };
+}
+
+/**
+ * The " — nearest N ft, M ft short" suffix for a locked card's reason, or ''.
+ *
+ * Only when `reason` names a range lock (`RANGE_LOCK_REASONS`) and
+ * `nearestShortfall` has a number: the one owner of this wording, so the card
+ * and its tests agree on it.
+ *
+ * @param {Object} move a move entry from `available_options` / `moves`
+ * @param {string} reason the sentence the card shows for its lock
+ * @returns {string}
+ */
+export function shortfallSuffix(move, reason) {
+  if (!RANGE_LOCK_REASONS.has(reason)) return '';
+  const shortfall = nearestShortfall(move);
+  return shortfall
+    ? ` — nearest ${shortfall.distance} ft, ${shortfall.shortfall_ft} ft short`
+    : '';
 }

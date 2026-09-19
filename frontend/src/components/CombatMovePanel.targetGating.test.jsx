@@ -198,6 +198,20 @@ describe('CombatMovePanel — how far short a locked move falls (#614)', () => {
     expect(shown.textContent).not.toMatch(/ft short/i);
   });
 
+  // The lock that holds is the one the reason names. With every target out of
+  // reach AND the card locked for fatigue or a cooldown, "3 ft short" appended
+  // to that sentence would say walking closer fixes it, which it does not.
+  it.each([
+    ['fatigue', NOT_ENOUGH_FATIGUE_REASON],
+    ['a cooldown', 'Available in 3 beats'],
+  ])('says nothing about range when %s is the lock, even out of reach', (_label, why) => {
+    renderPanel([{ ...attackTooFarAway, available: false, reason: why }]);
+
+    const shown = reasonFor('Attack');
+    expect(shown).toHaveTextContent(why);
+    expect(shown.textContent).not.toMatch(/ft short/i);
+  });
+
   // A card locked with no sentence at all renders no reason line (the panel
   // has rendered it behind `reason &&` since #565), so the suffix has nothing
   // to hang off. It must not become a dangling em-dash in the tooltip either.

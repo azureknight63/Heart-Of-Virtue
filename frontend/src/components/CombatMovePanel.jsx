@@ -12,7 +12,7 @@ import {
     moveAvailability,
     autoResolvedTargetId,
     moveDamagePreview,
-    nearestShortfall,
+    shortfallSuffix,
 } from '../utils/combatMoveStatus';
 import {
     STAGE_KEYS,
@@ -159,20 +159,17 @@ function MoveCard({
   const damagePreview = moveDamagePreview(move);
 
   // "No valid target in range" tells the player to close the distance
-  // without telling them what the distance is. `nearestShortfall` reads the
+  // without telling them what the distance is. `shortfallSuffix` reads the
   // two numbers off the adapter's own target previews when — and only when —
-  // range is what is blocking this card; see its docstring for why neither
-  // number is computed here (issue #614).
-  const shortfall = !isAvailable ? nearestShortfall(move) : null;
+  // the reason is a range lock; see `nearestShortfall` for why neither number
+  // is computed here (issue #614).
   // Appended to the same string the reason line renders, not shown beside it:
   // that element IS the button's accessible description (aria-describedby),
   // so a sibling node would be text a screen reader never reaches.
   // Gated on `reason` as well as on the shortfall, matching the render guard
   // below: with no sentence to append to, the suffix alone would be a
   // dangling em-dash in the tooltip of a card whose reason line never renders.
-  const reasonLine = shortfall && reason
-      ? `${reason} — nearest ${shortfall.distance} ft, ${shortfall.shortfall_ft} ft short`
-      : reason;
+  const reasonLine = !isAvailable && reason ? reason + shortfallSuffix(move, reason) : reason;
 
   // The card is a wrapper, not the button itself: the
   // unavailability reason carries interactive glossary terms

@@ -323,11 +323,13 @@ describe('nearestShortfall', () => {
   // Too close (inside range_min) publishes a null shortfall by contract --
   // "3 ft short" is not the sentence for it -- and the client must not invent
   // the number the adapter deliberately withheld.
-  it('skips a candidate that is too close rather than inventing its number', () => {
+  // And with anyone too close, range is not simply "too far": "nearest 9 ft"
+  // beside an enemy standing at 1 ft would be a false sentence (every bow
+  // move has a minimum range, so this is the ordinary ranged case).
+  it('says nothing when any candidate is too close rather than inventing its number', () => {
     const tooClose = { id: 'enemy_1', distance: 1, in_range: false, shortfall_ft: null };
     expect(nearestShortfall({ target_previews: [tooClose] })).toBeNull();
-    expect(nearestShortfall({ target_previews: [tooClose, far(9, 4)] }))
-      .toEqual({ distance: 9, shortfall_ft: 4 });
+    expect(nearestShortfall({ target_previews: [tooClose, far(9, 4)] })).toBeNull();
   });
 
   it('refuses a non-finite distance or shortfall instead of rendering NaN', () => {
