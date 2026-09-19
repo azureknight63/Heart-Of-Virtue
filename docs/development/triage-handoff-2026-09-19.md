@@ -3,7 +3,10 @@
 **Status:** in progress (session 3). **Read §0 first** — it supersedes §3's "where it stopped".
 **Branch:** `claude/issue-triage-a7acc5` (worktree `.claude/worktrees/issue-triage-a7acc5`)
 **Merge base:** `c8f5f17b` (== `origin/master` at pass start)
-**Nothing has been pushed. No PR exists yet.**
+**PR #645 is open** (pushed at `c363213d`). `closingIssuesReferences` verified: 611 612 614 618 620 621
+624 625 633 634 — not 613 (already closed), not 615. After merging, re-run §12's per-issue state
+check. Follow-ups filed: #636–#644. PR #635 overlaps on `game_service.py` and
+`test_wire_field_contract.py`.
 
 This file is the resume point. Update it at milestones.
 
@@ -115,7 +118,8 @@ clean, `bug_hunt` 0 bugs (full, default config), `--scenario shop` 0, `--scenari
 (freeze on) / 4-of-4 caught (freeze off).
 
 ### Pending, in order (resume here)
-Items 1-3 below are DONE (session 3, round 2 — see above). Remaining: file the follow-ups, then 4.
+ALL DONE through PR #645 (session 3). Remaining: CI green, maintainer review/merge, then §12's
+post-merge state check.
 1. (done) Decide the re-review depth (ask the maintainer if budget is tight — weekly was 82% at the end of
    session 3): at minimum re-dispatch **c1 Security** over the #620 root fix (secure_pickle,
    universe, map_placeholders) and **c4 Alignment/Correctness** over the chat budget +
