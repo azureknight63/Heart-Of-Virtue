@@ -69,8 +69,64 @@ and it is clean.
 
 ## 3. WHERE IT STOPPED — the review gate, mid-wave-1
 
-**This is the resume point.** `/code-scrubber` Steps 0–2 are done; Step 3 wave 1 was dispatched and
-interrupted before any subagent returned. **No findings exist yet. No fixes have been applied.**
+**This is the resume point.** `/code-scrubber` Steps 0–2 are done. Step 3 wave 1 ran for chunk
+**c1 only**, and **4 of its 5 dimension agents returned**. **NO FIXES HAVE BEEN APPLIED** — findings
+are recorded below and nothing has been edited.
+
+### c1-620-security — returned grades (4 of 5)
+
+`Alignment=B Correctness=B` · `DRY=C Maintainability=B` · `CleanCode=C AIFriendliness=C` ·
+`Optimization=A`. **The Security agent was interrupted and never reported — re-dispatch it first.**
+
+Findings worth carrying (full detail was in the agents' reports; these are the ones with teeth):
+
+- **[Major, pre-existing, SECURITY — needs a human]** `src/objects.py:111` — the new docstring claims
+  `__self__ is target` "readmits them and nothing else". It readmits **any bound method of the
+  target**. A restored save (untrusted input per `.claude/rules/saves-persistence.md`) could store
+  `obj.__dict__["look"] = obj.die`, and the allow-listed verb `look` would dispatch
+  `NPC.die(player)` — exactly the surface `_ALLOWED_INTERACTION_VERBS` exists to close (#334). Not
+  introduced here (bare `getattr` admitted it too), but the docstring now asserts it is closed.
+  Either soften the claim or remove the instance carve-out entirely: replace
+  `setattr(self, word, self.enter)` with a data-only `self._name_aliases` list that
+  `resolve_interaction` maps to `type(target).enter`. **Per CLAUDE.md this cannot close on model
+  judgement.**
+- **[Minor, Correctness]** `src/objects.py:1101-1104` — `is_crossing_handler` still resolves its
+  comparison targets with `getattr(self, name, None)` (instance `__dict__`) while
+  `resolve_interaction` now sources from the class. The halves can disagree: an authored prop named
+  `enter`/`go`/`leave`/`exit` poisons the comparison side, `_is_demo_end_crossing` returns False,
+  and arm 5 calls the real `enter` → `end_demo()` with `beta_end` still False (the #552 symptom).
+- **[Minor, Correctness]** `game_service.py:2695` — `action in getattr(target, "keywords", ())`
+  defends only against absence. `keywords` is a map-authored prop, so it can be `None` (TypeError
+  swallowed into `_ACTION_FAILED_MESSAGE`) or a string (substring match). The test mirror uses the
+  stricter `(getattr(instance, "keywords", None) or [])` — guard and code disagree on degenerate
+  input. Fix the production gate to match.
+- **[Major, DRY]** The step-through predicate is retyped by hand in
+  `tests/test_object_action_dispatch_contract.py:234`. Extract
+  `Passageway.accepts_step_through(handler, action)` and have both arm 4 and `_is_dispatchable` call
+  it, so the mirror cannot fail open a third time.
+- **[Major, DRY]** `combat_drops` is now a 5-key implicit schema (`name`/`quantity`/`source`/`kind`/
+  `handles`) read by key in three modules. The VICTORY dialog's count and what collect hands over
+  can diverge with nothing to catch it.
+- **[Major, CleanCode]** Two stale comments the diff invalidated: `game_service.py:476-478` still
+  says hardening the arm "is #620" (it was), and `:2611-2616` still lists `passageway` among the
+  arms that do not consult the handler (it now does).
+- **[Minor]** `tests/test_passageway_step_through_gate.py:304` regroups keywords by placement
+  *name*, so every unnamed placement pools its keywords onto one probe and rows lose identity.
+
+**Chunk scope note (not a defect):** c1 is labelled #620 but roughly half its `game_service.py`
+hunks are #621 (`_LOOT_PHASE_LOCK`, handle-based `_take_offered_drops`/`_offered_drops`) and one is
+#611. That is a file-level chunking artifact of reviewing an already-merged branch, not scope creep.
+Two agents independently checked those hunks and found nothing.
+
+**Constraints verified concretely by the Alignment agent, so they need not be re-derived:**
+`HealingSpring.clean` still resolves on all four shipped placements (`staticmethod.__get__` returns
+a plain function and `_call_interaction_handler` passes `player` positionally — identical to
+pre-fix). The three name-less crossing keywords exist as claimed and are admitted only by the
+`keywords` half: `grondia.json:1482` `["enter","go","inside"]`, `grondia.json:1804`
+`["enter","east"]`, `eastern-descent.json:43` `["enter","west"]`. `Container.take_all` resolves via
+the MRO walk; `Book.read → use` works because alias substitution precedes the class lookup. No
+shipped Passageway authors an allow-listed verb, so the `keywords` half leaves no shipped instance
+of Gap B open.
 
 Routing is correct and already checked against the rules file:
 `git diff c8f5f17b..HEAD | wc -l` = **4778**, `DIFF_REDIRECT_THRESHOLD` = 1000,
