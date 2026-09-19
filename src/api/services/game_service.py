@@ -22,6 +22,7 @@ from src.functions import (
     check_for_combat,
     end_combat_cleanup,
     signal_combat_wave_pending,
+    victory_loot_pending,
 )
 from src.player._leveling import LEVEL_UP_ATTRIBUTE_NAMES
 from src.inventory_utils import get_gold
@@ -145,6 +146,33 @@ _ACTION_FAILED_MESSAGE = "Jean can't seem to manage that just now."
 #: refuses a different thing with a different sentence ("Cannot move while in
 #: combat").
 _PASSAGEWAY_IN_COMBAT_MESSAGE = "Cannot use a passageway while in combat."
+
+#: Why picking an item up or putting one down is refused mid-fight (#621).
+_FLOOR_ITEMS_IN_COMBAT_MESSAGE = (
+    "There is no time for that in the middle of a fight."
+)
+
+#: The item verbs that move a pile onto or off the floor -- and so restack
+#: it (``Item.take``, ``Item.drop``). Matched on the RESOLVED handler's
+#: name, so an authored alias for either is caught too.
+_FLOOR_PILE_HANDLERS = frozenset({"take", "drop"})
+
+
+def _moves_floor_items(target, action):
+    """Whether ``action`` on ``target`` picks an item up or puts one down.
+
+    Refused mid-fight (maintainer decision, 2026-09-19): an enemy's drop is
+    recorded at its death, and a pickup or stack drop on that floor before
+    the victory could merge the drop away -- or merge Jean's own units into
+    it -- before the victory's floor freeze (#621) begins.
+    """
+    from src.items import Item
+    from src.objects import resolve_interaction
+
+    if not isinstance(target, Item):
+        return False
+    handler = resolve_interaction(target, action)
+    return getattr(handler, "__name__", None) in _FLOOR_PILE_HANDLERS
 
 
 #: Cap on the client-supplied verb echoed back by
@@ -2979,6 +3007,8 @@ class GameService:
                 "success": False,
                 "message": _PASSAGEWAY_IN_COMBAT_MESSAGE,
             }
+        if getattr(player, "in_combat", False) and _moves_floor_items(target, action):
+            return {"success": False, "message": _FLOOR_ITEMS_IN_COMBAT_MESSAGE}
 
         # Record pre-action location to detect passageway teleportation
         _pre_location = _PreInteractionLocation.capture(player)
@@ -5320,9 +5350,10 @@ class GameService:
     @staticmethod
     def _is_unresolved_victory(player: Any) -> bool:
         """Whether ``player``'s end-of-combat summary is a won fight not yet
-        resolved: the only state in which there is loot to hand out."""
-        summary = getattr(player, "combat_end_summary", None)
-        return isinstance(summary, dict) and summary.get("status") == "victory"
+        resolved: the only state in which there is loot to hand out. The
+        engine's answer (``functions.victory_loot_pending``), which the
+        #621 floor freeze asks too."""
+        return victory_loot_pending(player)
 
     @classmethod
     def _end_loot_phase(cls, player: Any) -> None:
@@ -6024,6 +6055,9 @@ class GameService:
         Returns:
             Dictionary with drop result or ``error``
         """
+        if getattr(player, "in_combat", False):
+            # Floor piles hold still mid-fight (#621; see _moves_floor_items).
+            return {"error": _FLOOR_ITEMS_IN_COMBAT_MESSAGE}
         tile = self.get_current_tile_object(player)
         if not tile or not hasattr(tile, "items_here"):
             return {"error": "Cannot drop item: invalid current location"}

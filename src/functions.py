@@ -1108,6 +1108,74 @@ def stack_inv_items(target):
     stack_items_list(target.inventory)
 
 
+def victory_loot_pending(player):
+    """Whether ``player``'s last fight was won and its loot is not yet
+    resolved -- the only state in which a victory offers anything.
+
+    ``combat_end_summary`` is written at victory and cleared when the loot is
+    collected or skipped (or the fight is abandoned by flee/load), so this is
+    the whole window. ``GameService`` asks here too; one spelling, not two.
+    """
+    summary = getattr(player, "combat_end_summary", None)
+    return isinstance(summary, dict) and summary.get("status") == "victory"
+
+
+def floor_merges_frozen(player, room):
+    """Whether ``room``'s floor must not merge piles right now (issue #621).
+
+    True while ``player``'s victory is unresolved and ``room`` still holds an
+    object that victory offers. ``MapTile.stack_duplicate_items`` keeps the
+    OLDER pile and folds the newer into it, so on the fight's tile a merge
+    either swallows a drop (collect answers ``not_found``) or swallows
+    something INTO a drop (collect hands it over as loot). Freezing the tile
+    closes both directions.
+
+    The fight's tile is identified by the offer itself: the recorded handles
+    are the objects the fight spawned, so the room holding one of them IS the
+    tile they were dropped on -- and once none is left there, there is nothing
+    for a merge to cost. Derived on every call from state the victory already
+    keeps, so there is no flag whose release could leak: resolving or
+    abandoning the victory clears ``combat_drops`` and the summary, and the
+    freeze is gone with them.
+    """
+    if not victory_loot_pending(player):
+        return False
+    from src.combatant import COMBAT_HANDLE_ATTR
+
+    drops = getattr(player, "combat_drops", None)
+    offered = {
+        handle
+        for entry in (drops if isinstance(drops, list) else [])
+        if isinstance(entry, dict)
+        for handle in (entry.get("handles") or ())
+        if isinstance(handle, str)
+    }
+    if not offered:
+        return False
+    floor = getattr(room, "items_here", None)
+    return any(
+        getattr(item, "__dict__", {}).get(COMBAT_HANDLE_ATTR) in offered
+        for item in (floor if isinstance(floor, list) else [])
+    )
+
+
+def restack_floor(player):
+    """Merge same-kind piles on the floor ``player`` stands on -- unless that
+    floor is frozen for an unresolved victory (:func:`floor_merges_frozen`).
+
+    The engine's only caller of ``MapTile.stack_duplicate_items``: a pickup
+    or a stack drop restacks through here, and
+    ``tests/test_victory_loot_resolution.py`` fails if another call site
+    appears, since it would merge the fight's floor around the freeze.
+    """
+    room = getattr(player, "current_room", None)
+    if not hasattr(room, "stack_duplicate_items"):
+        return
+    if floor_merges_frozen(player, room):
+        return
+    room.stack_duplicate_items()
+
+
 def learn_all_skills_from_skilltree(player: "Player"):
     """
     Learn all skills from the skill tree for the player.

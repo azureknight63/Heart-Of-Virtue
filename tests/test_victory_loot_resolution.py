@@ -669,3 +669,172 @@ class TestTwoCollectsInFlight:
         assert [bool(offer) for offer in offers_seen] == [True, False]
         assert sorted(r["collected"] for r in results) == [[], ["Shortsword"]]
         assert _units(fight.player.inventory, "Shortsword") == 1
+
+
+class TestTheFightTileHoldsStillWhileTheVictoryIsOpen:
+    """Issue #621's residual, decided 2026-09-19: floor merges on the fight's
+    tile are frozen until the victory is resolved.
+
+    ``MapTile.stack_duplicate_items`` keeps the OLDER pile and folds the newer
+    into it, and it runs after every ordinary pickup and stack drop. With a
+    visible pile of the drop's kind already lying there, one pickup folded the
+    drop away (collect then answered ``not_found``: too little); with Jean's
+    own units dropped there afterwards, they folded INTO the drop (collect
+    handed them over as loot: too much). Freezing the tile closes both.
+    """
+
+    def _with_a_visible_pile(self, won_fight, count=3):
+        stash = []
+        fight = won_fight(
+            before_the_kill=lambda tile: stash.append(
+                tile.spawn_item("Restorative", amt=count)
+            ),
+        )
+        (pile,) = stash
+        assert pile.hidden is False and pile.count == count
+        return fight, pile
+
+    def test_a_pickup_cannot_fold_the_drop_into_an_older_visible_pile(
+        self, won_fight, game_service
+    ):
+        """Too little: the residual as reported."""
+        fight, pile = self._with_a_visible_pile(won_fight)
+        (bait,) = _spawned(fight.fight_tile, "Antidote")
+
+        bait.take(fight.player)  # any pickup restacks the floor it came from
+        result = game_service.collect_combat_loot(fight.player, ["Restorative"])
+
+        assert result["collected"] == ["Restorative"], result
+        assert _units(fight.player.inventory, "Restorative") == 1
+        assert pile in fight.fight_tile.items_here and pile.count == 3
+
+    def test_jeans_own_units_cannot_fold_into_the_drop(
+        self, won_fight, game_service
+    ):
+        """Too much: units Jean drops onto the fight tile after the kill land
+        newer than the drop, so the drop was the pile they merged INTO."""
+        fight = won_fight()
+        carried = Restorative(count=3)
+        fight.player.inventory.append(carried)
+
+        carried.drop(fight.player, quantity=2)
+        result = game_service.collect_combat_loot(fight.player, ["Restorative"])
+
+        assert result["collected"] == ["Restorative"], result
+        # One from the loot, one Jean kept in his pack; the two he put down
+        # are still on the floor.
+        assert _units(fight.player.inventory, "Restorative") == 2
+        assert _units(fight.fight_tile.items_here, "Restorative") == 2
+
+    def test_merging_resumes_once_the_victory_is_resolved(
+        self, won_fight, game_service
+    ):
+        """The freeze is derived from the open victory, so resolving it is the
+        release -- nothing stored has to be remembered to be cleared."""
+        fight, pile = self._with_a_visible_pile(won_fight)
+        game_service.collect_combat_loot(fight.player, [])  # skip: resolves
+        loose = _spawned(fight.fight_tile, "Restorative")
+        (bait,) = _spawned(fight.fight_tile, "Antidote")
+
+        bait.take(fight.player)
+
+        piles = [i for i in fight.fight_tile.items_here if i.name == "Restorative"]
+        assert piles == [pile], "the floor restacks again after the victory"
+        assert pile.count == 3 + 1 + sum(i.count for i in loose)
+
+    def test_other_tiles_still_merge_while_the_victory_is_open(
+        self, won_fight, game_service
+    ):
+        fight = won_fight()
+        elsewhere = fight.game_map[(1, 0)]
+        fight.player.current_room = elsewhere
+        fight.player.location_x, fight.player.location_y = 1, 0
+        first = _spawned(elsewhere, "Restorative")
+        second = _spawned(elsewhere, "Restorative")
+        (bait,) = _spawned(elsewhere, "Antidote")
+
+        bait.take(fight.player)
+
+        piles = [i for i in elsewhere.items_here if i.name == "Restorative"]
+        assert len(piles) == 1 and piles[0] in first + second
+
+
+class TestNoFloorPilesMoveMidFight:
+    """Take and drop are refused while a fight is on (maintainer decision,
+    2026-09-19): an enemy's drop is recorded at its death, and a pickup or
+    stack drop on that floor before the victory could merge it away before
+    the victory's freeze begins."""
+
+    def _mid_fight(self, make_world, grid_3x3):
+        jean, game_map = make_world(grid_3x3)
+        tile = game_map[(0, 0)]
+        jean.in_combat = True
+        return jean, tile
+
+    def test_taking_a_floor_item_is_refused(
+        self, make_world, grid_3x3, game_service
+    ):
+        jean, tile = self._mid_fight(make_world, grid_3x3)
+        (potion,) = _spawned(tile, "Restorative")
+
+        result = game_service.interact_with_target(
+            jean, wire_handle(potion), "take", session_data={}
+        )
+
+        assert result["success"] is False, result
+        assert potion in tile.items_here and potion not in jean.inventory
+
+    def test_dropping_an_item_is_refused(self, make_world, grid_3x3, game_service):
+        jean, tile = self._mid_fight(make_world, grid_3x3)
+        carried = Restorative(count=2)
+        jean.inventory.append(carried)
+
+        result = game_service.drop_item(jean, carried)
+
+        assert "error" in result, result
+        assert carried in jean.inventory and carried not in tile.items_here
+
+    def test_both_are_allowed_once_the_fight_is_over(
+        self, make_world, grid_3x3, game_service
+    ):
+        """Control: the refusal is the fight's, not the verb's."""
+        jean, tile = self._mid_fight(make_world, grid_3x3)
+        jean.in_combat = False
+        (potion,) = _spawned(tile, "Antidote")
+
+        taken = game_service.interact_with_target(
+            jean, wire_handle(potion), "take", session_data={}
+        )
+        dropped = game_service.drop_item(jean, potion)
+
+        assert taken["success"] is True, taken
+        assert dropped.get("success") is True, dropped
+
+
+def test_every_floor_merge_goes_through_the_frozen_gate():
+    """``functions.restack_floor`` is where the #621 freeze is checked, so it
+    must be the only caller of ``stack_duplicate_items`` in the engine. A new
+    call site elsewhere would merge the fight tile's floor around the freeze.
+    Derived by AST over the engine, not a hand-kept list of files."""
+    import ast
+
+    from tests._source_scan import src_trees
+
+    callers = []
+    for source in src_trees():
+        parents = {}
+        for node in ast.walk(source.tree):
+            for child in ast.iter_child_nodes(node):
+                parents[child] = node
+        for node in ast.walk(source.tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "stack_duplicate_items"
+            ):
+                owner = node
+                while owner is not None and not isinstance(owner, ast.FunctionDef):
+                    owner = parents.get(owner)
+                callers.append((source.rel_posix, getattr(owner, "name", "<module>")))
+    assert callers, "no stack_duplicate_items call found -- the scan is broken"
+    assert callers == [("src/functions.py", "restack_floor")], callers

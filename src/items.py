@@ -324,7 +324,7 @@ class Item:
                                     )
                                 if hasattr(self, "stack_grammar"):
                                     self.stack_grammar()
-                                player.current_room.stack_duplicate_items()
+                                functions.restack_floor(player)
                             else:
                                 narrate("Jean changed his mind.")
                             break
@@ -458,8 +458,7 @@ class Item:
                                 )
 
                             functions.stack_inv_items(player)
-                            if hasattr(player.current_room, "stack_duplicate_items"):
-                                player.current_room.stack_duplicate_items()
+                            functions.restack_floor(player)
                         else:
                             narrate("Jean changed his mind.")
                         break
@@ -490,9 +489,9 @@ class Item:
 
         # Stack items if possible (in inventory)
         functions.stack_inv_items(player)
-        # Also stack in the room if the method exists
-        if hasattr(player.current_room, "stack_duplicate_items"):
-            player.current_room.stack_duplicate_items()
+        # Also restack the floor it came from (frozen on an unresolved
+        # victory's tile, #621).
+        functions.restack_floor(player)
 
     def equip(self, player: "Player") -> None:
         player.equip_item(item_object=self)
