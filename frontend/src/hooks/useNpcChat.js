@@ -627,36 +627,25 @@ export function useNpcChat(npcId, npcName, onClose) {
    * the conversation record set server-side, which is what the dialog chrome
    * used to do on every dismissal that was not the button.
    */
-  const handleEndConversation = async () => {
-    // One dismissal, one `/end`, one `onClose` — see `endingRef`.
+  const handleEndConversation = () => {
+    // One dismissal, one `/end`, one `onClose` — see `endingRef`. Latched on
+    // every path, including the no-key one, so a double click during the
+    // opening turn cannot close twice.
     if (endingRef.current) return
-
-    // `/open` never resolved (or failed outright), so there is no server-side
-    // conversation to end — closing is the whole of the work. A response still
-    // in flight is not lost: it ends itself when it lands on an unmounted hook.
-    if (!npcKey) {
-      onClose()
-      return
-    }
-
     endingRef.current = true
-    // Claimed before the request goes out, so the unmount cleanup this close
-    // triggers does not send a second `/end` for the same conversation.
+
+    // Close NOW and send `/end` fire-and-forget (issue #618). Production runs
+    // one sync worker, so an `/end` sent while a turn is still running waits
+    // behind that turn; awaiting it kept the panel up with its button latched
+    // for the whole wait. The key is claimed first, so the unmount cleanup
+    // this close triggers does not send a second `/end`. With no key (`/open`
+    // never resolved or failed) there is no server-side conversation to end,
+    // and a response still in flight ends itself when it lands on an unmounted
+    // hook.
+    const key = npcKey
     openNpcKeyRef.current = null
-    try {
-      await npcChat.end(npcKey)
-    } catch (err) {
-      // Closing is still the right outcome for the player, but a failed `/end`
-      // can mean an expired key or leaked server-side conversation state, and
-      // swallowing it whole made that invisible to player, dev and log pipeline
-      // at once.
-      console.error('[npcChat] end failed; closing anyway:', apiErrorDetail(err))
-    } finally {
-      // The one async path that used to close unconditionally: if the panel is
-      // already gone when `/end` settles, `onClose` would ask its owner to
-      // close a panel that no longer exists.
-      if (isMountedRef.current) onClose()
-    }
+    endAbandonedConversation(key)
+    onClose()
   }
 
   // Lets a caller suspend the "conversation ended" auto-close (e.g. while the

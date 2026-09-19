@@ -221,11 +221,12 @@ function HeatRules({ band }) {
     <>
       <CollapsibleSectionHeader
         expanded={expanded}
-        onToggle={() => setExpanded(!expanded)}
+        onToggle={() => setExpanded((e) => !e)}
         controlsId={rulesId}
         // issue #580: measured 89x13px on a 375px viewport, well under the
         // 44px minimum. The shared header's height floor grows the tappable
-        // box on touch; on desktop the helper stays at its native size so it
+        // box on phone-width viewports (useMobile, max-width 767px -- width,
+        // not pointer type); wider, the helper stays at its native size so it
         // does not reflow the meter above it in a panel with no spare height.
         compact={!isMobile}
         style={{

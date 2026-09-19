@@ -49,36 +49,36 @@ export default function CollapsibleRoomDescription({ location, onInteract, defau
           itself comes and goes. Same pattern as InteractPanel's category
           rows and HeatMeter's rules table. */}
       <div id={bodyId}>
-      {isOpen && (
-        <div style={{ position: 'relative' }}>
-          <div
-            ref={scrollContainerRef}
-            style={{
-              // Was a flat 200px — issue #537 measured a 200px clientHeight
-              // with 149px of unused panel space sitting empty right below
-              // it, clipping NPC/object presence lines (appended after the
-              // room description in RoomContents) that never got a chance to
-              // render. 360px lets the box grow into that space instead of
-              // capping well below what the parent panel already affords.
-              maxHeight: '360px',
-              overflowY: 'auto',
-              // Reserve room for the fade/label ScrollFadeIndicator paints
-              // at the top/bottom edge so it overlaps blank padding instead
-              // of the last (or first) visible line of real text.
-              paddingBottom: showBottom ? '44px' : 0,
-              paddingTop: showTop ? '44px' : 0,
-            }}
-          >
-            <RoomContents location={location} onInteract={onInteract} />
+        {isOpen && (
+          <div style={{ position: 'relative' }}>
+            <div
+              ref={scrollContainerRef}
+              style={{
+                // Was a flat 200px — issue #537 measured a 200px clientHeight
+                // with 149px of unused panel space sitting empty right below
+                // it, clipping NPC/object presence lines (appended after the
+                // room description in RoomContents) that never got a chance to
+                // render. 360px lets the box grow into that space instead of
+                // capping well below what the parent panel already affords.
+                maxHeight: '360px',
+                overflowY: 'auto',
+                // Reserve room for the fade/label ScrollFadeIndicator paints
+                // at the top/bottom edge so it overlaps blank padding instead
+                // of the last (or first) visible line of real text.
+                paddingBottom: showBottom ? '44px' : 0,
+                paddingTop: showTop ? '44px' : 0,
+              }}
+            >
+              <RoomContents location={location} onInteract={onInteract} />
+            </div>
+            {showTop && (
+              <ScrollFadeIndicator position="top" color={colors.primary} bgColor="rgb(10, 30, 20)" />
+            )}
+            {showBottom && (
+              <ScrollFadeIndicator position="bottom" color={colors.primary} bgColor="rgb(10, 30, 20)" />
+            )}
           </div>
-          {showTop && (
-            <ScrollFadeIndicator position="top" color={colors.primary} bgColor="rgb(10, 30, 20)" />
-          )}
-          {showBottom && (
-            <ScrollFadeIndicator position="bottom" color={colors.primary} bgColor="rgb(10, 30, 20)" />
-          )}
-        </div>
-      )}
+        )}
       </div>
     </div>
   )

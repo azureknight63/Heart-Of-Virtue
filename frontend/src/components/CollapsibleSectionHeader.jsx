@@ -33,10 +33,13 @@ import {
  *   controlsId  — id of the region this header folds.
  *   compact     — drop the height floor. The single opt-out, and it exists for
  *                 one measured case: HeatMeter's helper sits in a
- *                 vertically-budgeted combat panel and took the floor on touch
- *                 pointers only (issue #580). Don't reach for it otherwise.
+ *                 vertically-budgeted combat panel and keeps the floor on
+ *                 phone-width viewports only (`useMobile`, max-width 767px;
+ *                 issue #580). Don't reach for it otherwise.
  *   style       — merged over the base; callers own colour, borders and type
- *                 scale, never the contract above.
+ *                 scale, never the contract above: the contract's keys are
+ *                 applied AFTER `style` and any extra props, so neither can
+ *                 replace them.
  *   children    — the label. Anything the caller likes; it lands after the
  *                 glyph and is what the accessible name is built from.
  */
@@ -51,6 +54,7 @@ function CollapsibleSectionHeader({
 }) {
     return (
         <button
+            {...rest}
             type="button"
             onClick={onToggle}
             aria-expanded={expanded}
@@ -61,7 +65,6 @@ function CollapsibleSectionHeader({
                 alignItems: 'center',
                 gap: spacing.sm,
                 width: '100%',
-                minHeight: compact ? undefined : accessibility.touchTarget,
                 padding: `0 ${spacing.sm}`,
                 background: 'transparent',
                 border: 'none',
@@ -69,10 +72,11 @@ function CollapsibleSectionHeader({
                 fontWeight: 'bold',
                 textAlign: 'left',
                 cursor: 'pointer',
-                touchAction: 'manipulation',
                 ...style,
+                // The contract, after the caller's style so it cannot be undone.
+                minHeight: compact ? style?.minHeight : accessibility.touchTarget,
+                touchAction: 'manipulation',
             }}
-            {...rest}
         >
             <span aria-hidden="true">
                 {expanded ? DISCLOSURE_GLYPHS.expanded : DISCLOSURE_GLYPHS.collapsed}

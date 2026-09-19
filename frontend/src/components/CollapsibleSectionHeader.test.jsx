@@ -82,7 +82,7 @@ describe('CollapsibleSectionHeader', () => {
 
   it('drops the height floor only when a caller asks for compact', () => {
     // The one opt-out: HeatMeter's helper sits inside a vertical-budgeted
-    // combat panel and takes the floor on touch pointers only (issue #580).
+    // combat panel and takes the floor on phone-width viewports only (useMobile; issue #580).
     renderHeader({ compact: true })
     expect(screen.getByRole('button').style.minHeight).toBe('')
   })
@@ -105,4 +105,31 @@ describe('CollapsibleSectionHeader', () => {
       `${DISCLOSURE_GLYPHS.collapsed} Section`
     )
   })
+
+  // The docblock says callers own colour, borders and type scale, never the
+  // contract. Spreading the caller's style and props LAST let any of them
+  // silently replace it; nothing did yet, which is why nothing caught it.
+  it('keeps its contract when a caller passes conflicting style or props', () => {
+    const onToggle = vi.fn()
+    renderHeader({
+      expanded: true,
+      onToggle,
+      style: { minHeight: '0', touchAction: 'auto', color: 'red' },
+      type: 'submit',
+      'aria-expanded': 'false',
+      'aria-controls': 'somewhere-else',
+      onClick: () => {},
+    })
+
+    const header = screen.getByRole('button')
+    expect(header.getAttribute('type')).toBe('button')
+    expect(header).toHaveAttribute('aria-expanded', 'true')
+    expect(header).toHaveAttribute('aria-controls', 'section-body')
+    expect(header.style.minHeight).toBe(accessibility.touchTarget)
+    expect(header.style.touchAction).toBe('manipulation')
+    expect(header.style.color).toBe('red') // what callers DO own still applies
+    fireEvent.click(header)
+    expect(onToggle).toHaveBeenCalledTimes(1)
+  })
 })
+

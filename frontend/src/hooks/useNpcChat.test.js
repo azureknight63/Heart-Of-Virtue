@@ -1034,10 +1034,29 @@ describe('useNpcChat', () => {
       // expired key or leaked server-side conversation state; swallowing it
       // whole made that invisible to player, dev and log pipeline at once.
       expect(onClose).toHaveBeenCalledTimes(1)
-      expect(consoleError).toHaveBeenCalledWith(
-        '[npcChat] end failed; closing anyway:',
-        'expired key'
+      await waitFor(() =>
+        expect(consoleError).toHaveBeenCalledWith(
+          '[npcChat] end after dismissal failed:',
+          'expired key'
+        )
       )
+    })
+
+    it('closes at once, even while /end is still waiting on the server (#618)', async () => {
+      // Production runs one sync worker, so an /end sent while a turn is still
+      // running waits behind that turn. The panel used to stay up, its button
+      // latched, for the whole wait -- "walk out of a hang" only worked on the
+      // threaded dev server.
+      const pending = deferred()
+      npcChat.end.mockReturnValue(pending.promise)
+      const { result } = await mountOpened()
+
+      act(() => { result.current.handleEndConversation() })
+
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      expect(onClose).toHaveBeenCalledTimes(1)
+      await act(async () => { pending.resolve({ data: { success: true } }) })
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
 
     it('spends one /end and one close no matter how often it is invoked', async () => {
@@ -1438,20 +1457,22 @@ describe('useNpcChat', () => {
       expect(onClose).not.toHaveBeenCalled()
     })
 
-    it('does not close after unmount when a slow /end finally settles', async () => {
-      // `handleEndConversation`'s `finally` was the one async path with no
-      // mount check: it asked the owner to close a panel that had already gone.
+    it('closes once, at the click -- a slow /end settling after unmount adds nothing', async () => {
+      // The close no longer waits for /end (#618: it queued behind a running
+      // turn on the single production worker), so the old hazard -- a
+      // `finally` asking the owner to close a panel already gone -- cannot
+      // arise; what is left to pin is that settling adds no second close.
       const pending = deferred()
       npcChat.end.mockReturnValue(pending.promise)
       const { result, unmount } = await mountOpened()
 
       act(() => { result.current.handleEndConversation() })
-      await waitFor(() => expect(npcChat.end).toHaveBeenCalledWith('npc_session_123'))
+      expect(onClose).toHaveBeenCalledTimes(1)
       unmount()
 
       await act(async () => { pending.resolve({ data: { success: true } }) })
 
-      expect(onClose).not.toHaveBeenCalled()
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
 
     it('drops a /respond response that lands after unmount', async () => {
