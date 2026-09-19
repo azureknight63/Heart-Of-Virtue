@@ -2485,14 +2485,27 @@ class GameService:
         has one contract to copy. The mismatch fails silently either way:
         ``append`` of a list ships ``events_triggered: [[{...}]]`` to the
         client, ``extend`` of a dict splats its keys.
+
+        Unpaid shop stock is taken back here, and the confirmation is where
+        the player is told so (issue #611). The drop's own narration reaches
+        the interact response's ``message`` as well, but the client's
+        passageway branch closes the interaction panel and returns before it
+        renders that -- so the ONLY surface the player reliably sees on this
+        path is the confirmation dialog itself, which has no close button
+        while it awaits input. Staging the lines as ``output_text`` puts them
+        there: ``EventDialog`` prefers ``output_text`` over ``description``,
+        so the description is re-joined below rather than replaced.
         """
         from src.events import PassagewayTransitionEvent
 
         player, target = request.player, request.target
         tile, session_data = request.tile, request.session_data
 
+        returned_goods = []
         if hasattr(player, "drop_merchandise_items"):
-            player.drop_merchandise_items()
+            # ``or []`` because the engine method is duck-typed here: a test
+            # double, or an older Player, may still answer None.
+            returned_goods = player.drop_merchandise_items() or []
         if target.events_before:
             for ev in target.events_before:
                 ev.process()
@@ -2504,6 +2517,17 @@ class GameService:
             passageway=target,
         )
         event_data = EventSerializer.serialize_with_input(trans_event)
+        if returned_goods:
+            # Through _apply_staged_payload, not a literal "output_text" key:
+            # _STAGED_PAYLOAD_KEYS is the authority for the staged names and
+            # a fourth copy that agrees with it today is exactly what #524
+            # was about.
+            self._apply_staged_payload(
+                event_data,
+                "\n".join([*returned_goods, "", trans_event.description]),
+                None,
+                None,
+            )
         # Dedupe-by-name is right here too: the name is the prefix plus the
         # passageway's name, so a collision is the same passageway's
         # confirmation re-armed.

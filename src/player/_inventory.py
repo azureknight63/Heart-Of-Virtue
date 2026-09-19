@@ -38,14 +38,24 @@ class PlayerInventoryMixin:
             self.inventory.append(gold_objects[0])
 
     def drop_merchandise_items(self):
-        """Drop all merchandise items in current location with individual messages."""
+        """Drop all merchandise items in current location with individual messages.
+
+        Returns the lines it narrated, one per item, oldest first — an empty
+        list when nothing was taken back. Callers that have to TELL the player
+        what happened cannot reconstruct this afterwards: by the time anything
+        downstream looks, the merchandise is off the inventory and a
+        post-drop snapshot is empty by construction (issue #611). This method
+        is the only place that knows both which items went and how the game
+        phrased it, so it hands both back rather than leaving each caller to
+        re-derive one of them.
+        """
         try:
             current_tile = tile_exists(self.map, self.location_x, self.location_y)
         except Exception:
             current_tile = None
         if not current_tile:
-            return
-        dropped = False
+            return []
+        returned = []
         phrases = [
             "Jean sets {item} down; unpaid goods don't leave the shop.",
             "Jean places {item} carefully against the wall.",
@@ -69,10 +79,11 @@ class PlayerInventoryMixin:
                 )
                 narrate(msg)
                 time.sleep(0.15)
-                dropped = True
-        if dropped:
+                returned.append(msg)
+        if returned:
             # brief pause after dropping sequence for readability
             time.sleep(0.25)
+        return returned
 
     def equip_item(self, phrase="", item_object=None):
         """Equip an item by phrase match or a direct item object.
