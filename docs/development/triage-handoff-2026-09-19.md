@@ -14,14 +14,17 @@ This file is the resume point. Update it at milestones.
 A session whose launch worktree is a *different* one is blocked from editing this worktree's
 files. Enter it first: `EnterWorktree` with `path` = this worktree.
 
-### Scrub state
+### Scrub state (updated end of session 2)
 | Chunk | Dimension agents | Adversaries | Fixes |
 |---|---|---|---|
-| c1-620-security | 5/5 (Security re-dispatched, returned **C**) | style + security done | C1 applied (`78577df1`); rest pending |
-| c2-621-loot | 5/5 | style + security done | test-side fixes applied (`65e87b7e`); src-side pending |
-| c3-shop-items | 5/5 | style + security done | test-side fixes applied (`5c4b608b`, `d030abe8`); src-side pending |
-| c4-frontend-combat-chat | dispatched 2026-09-19 session 2 | — | — |
-| c5-dry-feedback | **not dispatched** — hold until the 5-hour window resets | — | — |
+| c1-620-security | 5/5 (Security returned **C**) | style + security done | all substantive findings fixed |
+| c2-621-loot | 5/5 | style + security done | all substantive findings fixed |
+| c3-shop-items | 5/5 | style + security done | all substantive findings fixed |
+| c4-frontend-combat-chat | 5/5 returned | **NOT RUN** — dispatch both adversaries first | none yet |
+| c5-dry-feedback | **not dispatched** | — | — |
+
+Session 2 stopped at a clean boundary at 85% of the 5-hour window. Every change is committed;
+`git status` is clean.
 
 The c1 Security re-dispatch escalated #620: the fix closed only the first hop. Handlers the class
 declares still call `self.<method>` (go/leave/exit→`self.enter`, `wash`→`self.clean`,
@@ -62,18 +65,64 @@ Pre-existing, unrelated, for a follow-up issue: `--scenario combat` under
 Pit and the #543 move guard refuses the second step. A11 (victory_loot identity half skipped when
 the roll drops only Gold) needs a TESTING-only loot-pinning debug op — follow-up.
 
-### Pending, in order
-1. ~~#620 full root fix + C2/C4/C7/C8 + D1~~ done. C5 (cap `item_names`) and C6/A1 (atomic pop in
-   `_take_offered_drops`) remain — do with the c2 pass.
-2. c2/c3 src fixes: A2 (`Item.take` appends before removing), A6 (VICTORY dialog details by handle, not name), A7 (skip `_combat_handle` in `__dict__` copies), A11/A12 (harness silent passes), B1, B2, B4 (`Book.text` cwd-relative; narrates path+errno), B10 (container take narration lost the count), stale comments/docstrings (T2/T3/T6/T12/T15, S10–S15), `_shop.py` extraction (T1/T4) if budget allows.
-3. #621: refuse take/drop in combat + freeze at victory (§5, all merge sites).
-4. c5 wave, c4 adversaries/fixes, targeted re-dispatch of below-A pairs, `/code-review` over the architecture-touching subset, full suites, `bug_hunt`, PR per §12.
+Then: `31890ca3` C5 (`_MAX_LOOT_REQUEST_NAMES`), C6 (remove the drop by identity, not the stale
+index), A2 (`Item.take` leaves the floor before entering the pack) via
+`functions.remove_by_identity` · `3d4357d8` A7 split piles mint their own handle
+(`functions.copy_item_state`) · `e0676418` A6 VICTORY dialog details by handle · `5aff2126` c2
+docstrings + `_floor_of` · `48216303` **B1/B2 shop economy** · `88e76fe5` B10 container-take count,
+B4 `Book.text` repo-relative + no path/errno in narration · `1cb61379` c3 comments,
+`_NEVER_STOCK_EXACT_CLASSES` rename. Every fix above had a red test first; security ones were
+revert-proved. Last full run: backend **4 failed (pre-existing openai) / 14693 passed**, flake8 `src/`
+clean, `bug_hunt` 0 bugs (full, default config), `--scenario shop` 0, `--scenario victory_loot` 0
+(freeze on) / 4-of-4 caught (freeze off).
 
-Deferred with reason: B8 (pre-#624 saves keep baked names) — save compat is suspended for beta,
-but the docstrings claim old saves are handled; correct the claim or add normalisation. A9/A10
-downgraded to Nit (embedded arrows unrecorded; `_forget_drop_handles` has no observable effect —
-fix its docstring). B12 moot (pytest-randomly reseeds per test). Per-session mutation lock
-(root of A1/A2/A4/A5) → follow-up issue.
+### Pending, in order (resume here)
+1. **c4 adversaries** (style + security) over the c4 findings below, then fix. c4 grades:
+   Opt=A · Security=B · DRY=C Maint=B · Clean=B AIF=C · Alignment=C Correctness=C. The Majors:
+   - **#618's closing-line fix is inert in the real app** (`NpcChatPanel.jsx:478-495`):
+     `useTypewriter` still reports the PREVIOUS text complete on the render the closing payload
+     lands (its reset runs in an effect after the render; React 18 batches), so the 2s close arms
+     at once. Always on the /open brush-off; usually on the /respond fallback. The tests mock
+     `useTypewriter` statelessly, so they cannot see it. Fix: count the beat done only when
+     `isComplete && displayedText === trackedText`; test with the REAL hook.
+   - **The 45s client deadline is below the server's worst case** (`npcChat.js:35`): the last stage
+     may start near 18s and `_call_llm` walks the whole provider chain without a deadline check
+     (openrouter x3 attempts, groq, cerebras, ollama at 6s each). Human decision: bound the engine's
+     chain walk by the turn deadline, or raise the constant. Also pin `max_attempts = 3` and
+     `_DEFAULT_ROUND_TIMEOUT_SECONDS = 6.0` as citations. Replace the hand-derived 45000 with a
+     relational Python test.
+   - Minors: shortfall suffix appended to non-range locks (cooldown/fatigue/weapon) — suffix only
+     for a range lock; "nearest" wrong when a candidate is too CLOSE; /open timeout leaves
+     `_active_chat_npc_id` set (send best-effort /end); End mid-turn waits behind a sync gunicorn
+     worker (close immediately, /end fire-and-forget); server single-flight guard for chat turns
+     (timed-out turn keeps running; Retry double-spends LLM quota); `!npcKey` path unlatched
+     (double `onClose`); `MOVE_FIELDS_WITH_NO_CLIENT_READ` duplicates `Read(note=)`; flavor-only
+     tests copy the #531 pair; `/end` called LLM-backed; `ECONNABORTED`/"45s" literals;
+     `PanAffordance`/`formatShortfallSuffix`/`segmentReadingText` extractions.
+   - Pre-existing, noted: Procfile runs one sync gunicorn worker with the default 30s timeout, so
+     in production neither 24s nor 45s is the binding limit.
+2. **c5 wave** (5 dimension agents, then both adversaries). Paths: `git diff c8f5f17b..HEAD --`
+   the c5 list in §3's table. Regenerate the chunk diff first (§3).
+3. Targeted re-dispatch of below-A (chunk, dimension) pairs, per the skill's Step 4.5.
+4. `/code-review` over the architecture-touching subset (`src/api/`, `GameService`, serializers,
+   `combat_adapter`) — the scrubber has no Architecture dimension.
+5. #615: decide per §12 (finish+verify `triage/615-keyword-collapse` or leave #615 open).
+6. PR per §12. Issues this branch closes: #611 #612 #614 #618 #620 #621 #624 #625 (#618 only once
+   the c4 closing-line Major is fixed). Not #613, not #615 unless step 5 lands it.
+
+### Follow-up issues to file (not this branch)
+- Per-session mutation lock over collect/take/drop/shop (root of A1/A2/A4/A5; `_LOOT_PHASE_LOCK`
+  only serialises collects).
+- Save loader: REDUCE may call any allow-listed engine global with arbitrary arguments during
+  load (pre-existing; #13's territory).
+- `victory_loot` identity half is skipped when the roll drops only Gold — needs a TESTING-only
+  loot-pinning debug op (A11).
+- `--scenario combat` under `active_scenario = boss` walks through the aggro Fodder Pit and the
+  #543 move guard refuses the second step.
+- B8: a pre-#624 save's stacks keep a baked name ("Mineral Powder x3") that nothing resyncs.
+  Save compat is suspended for beta; decide whether to normalise in `__setstate__`.
+- Style Minors left from c1–c3 (T1 `_fill_remaining_stock` extraction, T4 `_spawn_merchandise`,
+  T11 harness `_live_player_tile`, T16 harness shop.py, S7/S9 victory_loot helpers, S1/S2).
 
 ---
 
