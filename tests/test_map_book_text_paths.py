@@ -21,7 +21,8 @@ game and the API both run from the repo root; the test pins that with
 ``chdir`` rather than inheriting whatever directory pytest was invoked from.
 """
 
-from typing import Any, Iterator, List, NamedTuple
+import os
+from typing import Any, Iterator, List, NamedTuple, Set
 
 import pytest
 
@@ -35,16 +36,19 @@ from tests._source_scan import ROOT
 BLANK_BOOK = "This book is mysteriously blank."
 
 #: Authored paths whose target file is not written yet. Exempt entries are
-#: SUBTRACTED from the offenders rather than asserted to BE offenders: issue
-#: #631 is writing ``tattered-journal.txt``, and an equality-asserted
-#: allow-list would start failing the moment that lands. A newly dangling path
-#: is still a failure -- only these exact authored strings are excused, so
-#: re-authoring one with Windows separators would not slip through either.
-KNOWN_UNWRITTEN = {
-    # #631 -- the Dark Grotto's tattered journal has a placement but no text
-    # file behind it yet; being written separately.
-    "src/resources/books/tattered-journal.txt",
-}
+#: SUBTRACTED from the offenders rather than asserted to BE offenders, so an
+#: entry can be retired in the commit that writes its file instead of failing
+#: alongside it. A newly dangling path is still a failure -- only these exact
+#: authored strings are excused, so re-authoring one with Windows separators
+#: would not slip through either.
+#:
+#: **Empty is the healthy state, and it is the state today.** An exemption is
+#: a hole in this guard for that one path: while it sits here, deleting or
+#: renaming the file behind it keeps this test green. Add one only while a
+#: book is genuinely mid-write, and delete it in the commit that lands the
+#: file -- issue #631's ``tattered-journal.txt`` entry outlived its own change
+#: set exactly that way.
+KNOWN_UNWRITTEN: Set[str] = set()
 
 #: Positive-control floor. Three ``text_file_path`` references ship today; if
 #: the walk below ever matches fewer, the key was renamed or the authored
@@ -115,6 +119,33 @@ def test_walk_finds_the_authored_book_paths():
     )
 
 
+def test_guard_reads_through_a_real_book_open(tmp_path):
+    """Control for the check itself: ``BLANK_BOOK`` has to be discriminating.
+
+    A readable file must come back as its contents, and an authored path with
+    nothing behind it must come back blank. Without this pair, the offender
+    test below could be comparing against a constant that never matches -- or
+    one that always does. Both paths here are absolute and natively spelled,
+    so unlike the separator control this holds on every platform.
+    """
+    book_file = tmp_path / "control.txt"
+    book_file.write_text("readable", encoding="utf-8")
+
+    assert Book(text_file_path=str(book_file)).text == "readable"
+    assert Book(text_file_path=str(tmp_path / "absent.txt")).text == BLANK_BOOK
+
+
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason=(
+        "Windows resolves '\\' and '/' interchangeably, so the backslashed "
+        "spelling below opens there by design and no control can tell the two "
+        "apart. That is not a gap in the guard: the defect it exists for -- "
+        "authored on Windows, blank on Linux -- is POSIX-only, and CI runs on "
+        "Linux. test_guard_reads_through_a_real_book_open keeps the rest of "
+        "this control cross-platform."
+    ),
+)
 def test_guard_does_not_normalise_separators(at_repo_root, tmp_path):
     """Control for the check itself: it must read paths the way the engine does.
 
