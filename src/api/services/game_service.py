@@ -1,4 +1,5 @@
 import logging
+import threading
 import uuid
 import contextlib
 import inspect
@@ -10,7 +11,7 @@ from unittest.mock import patch
 from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
 from src.api.constants import ITEM_USE_RANGE
 from src.api.services.auth_service import SaveLimitReached
-from src.combatant import find_by_handle, wire_handle
+from src.combatant import find_by_handle, index_by_handle, wire_handle
 from src.journal import Journal, existing_journal, journal_for
 from src.events import (
     map_name_for_tile,
@@ -51,6 +52,39 @@ _log = logging.getLogger(__name__)
 #: Named because the number was written twice -- once in the check and once
 #: in the message the player reads -- so they could disagree.
 MAX_MANUAL_SAVES = 20
+
+#: Serializes resolving a victory's loot phase (issue #621).
+#:
+#: ``collect_combat_loot`` reads the offer, withdraws it, moves the objects and
+#: marks the victory resolved. Under the threaded Socket.IO server two requests
+#: for one session hold the SAME ``Player`` object, so a second collect could
+#: read the offer inside ``_offered_drops`` before the first cleared it, and
+#: both would then walk the same handles: the loser either reports collecting
+#: what the winner took, or races the ``item in tile.items_here`` check and
+#: raises out of ``list.remove``.
+#:
+#: NOT the combat adapter's ``_beat_lock``, which is the obvious candidate and
+#: the wrong one. Three reasons, in order of weight:
+#:
+#: 1. The adapter is not a stable object across this window. Anything that
+#:    finds ``_combat_adapter`` missing builds a NEW ``ApiCombatAdapter`` (see
+#:    ``get_combat_status``), and ``_discard_fight_state`` deletes it outright
+#:    on flee and load. Two threads could hold two different adapters' locks
+#:    and exclude nothing.
+#: 2. There need not be an adapter at all when a loot call arrives, so the
+#:    lock would have to be optional -- and a fallback lock is exactly the
+#:    second lock ordering that must not be introduced.
+#: 3. ``_beat_lock`` is held across whole move loops. Borrowing it would park
+#:    an out-of-combat request behind in-combat beat execution for nothing.
+#:
+#: A module-level lock is safe here precisely because the guarded region is
+#: closed: it acquires no other lock, performs no I/O, and only mutates lists
+#: and attributes, so it cannot be one half of a cycle. Nothing reaches
+#: ``collect_combat_loot`` while holding ``_beat_lock`` either -- its only
+#: caller is the ``/api/combat/collect-loot`` route. Global rather than
+#: per-player because the section is microseconds long and a lock table keyed
+#: on players is machinery this does not need.
+_LOOT_PHASE_LOCK = threading.Lock()
 
 
 def _warn(message):
@@ -5118,12 +5152,16 @@ class GameService:
 
         ``item_names`` comes from the client, so only names the fight offered
         can be taken (:meth:`_offered_drops`: ``player.combat_drops``, and only
-        while a won fight is unresolved), each up to as many objects as it
-        recorded, newest first. That bounds names and object counts, not units:
-        a stackable drop merged into an older pile of its kind arrives as one
-        object, and the whole pile comes with it. The drops are looked for where
-        the fight was fought, not where the player now stands
-        (:meth:`_loot_tile`).
+        while a won fight is unresolved) — and for each name, only the objects
+        that fight spawned, resolved by wire handle (issue #621). A name is not
+        an identity: resolving one against the tile hands over whatever of that
+        name is lying there, which is not the same thing as the loot. The drops
+        are looked for where the fight was fought, not where the player now
+        stands (:meth:`_loot_tile`).
+
+        The offer read, the take and the resolve run under
+        :data:`_LOOT_PHASE_LOCK` so a second request cannot be served an offer
+        the first is already spending.
 
         This call is the victory's resolve signal (:meth:`_end_loot_phase`), so
         once the tile is found the loot phase ends whatever was taken. If the
@@ -5163,12 +5201,16 @@ class GameService:
             self._end_loot_phase(player)
             return {"success": True, "collected": [], "skipped": []}
 
-        offered = self._offered_drops(player)
-        # Withdrawn as soon as it is read: a second collect in flight (another
-        # tab) then finds nothing on offer, rather than the same cap again.
-        player.combat_drops = []
-        collected, skipped = self._take_offered_drops(player, tile, item_names, offered)
-        self._end_loot_phase(player)
+        with _LOOT_PHASE_LOCK:
+            offered = self._offered_drops(player)
+            # Withdrawn as soon as it is read: a second collect in flight
+            # (another tab) then finds nothing on offer, rather than the same
+            # objects again.
+            player.combat_drops = []
+            collected, skipped = self._take_offered_drops(
+                player, tile, item_names, offered
+            )
+            self._end_loot_phase(player)
 
         if collected and hasattr(player, "stack_inv_items"):
             player.stack_inv_items()
@@ -5196,27 +5238,26 @@ class GameService:
 
     @staticmethod
     def _take_offered_drops(
-        player: Any, tile: Any, item_names: list, offered: Dict[str, int]
+        player: Any, tile: Any, item_names: list, offered: Dict[str, List[str]]
     ) -> Tuple[list, list]:
         """Move each requested, offered drop from ``tile`` into the player's
         inventory; returns ``(collected, skipped)``.
 
-        A name not on offer is ``not_offered``; one on offer but not on the
-        tile is ``not_found``; one that would breach ``weight_tolerance`` is
-        ``over_capacity`` and stays put. Each name yields up to its offered cap
-        of objects, newest first: ``spawn_item`` appends, so a non-stackable's
-        own objects are the last of their name on the tile, and an older twin
-        (perhaps a hidden one) is not this fight's to hand over.
+        A name not on offer is ``not_offered``; one on offer whose objects are
+        no longer on the tile is ``not_found``; one that would breach
+        ``weight_tolerance`` is ``over_capacity`` and stays put.
+
+        A name yields the objects the fight recorded under it and nothing else:
+        each handle is resolved with :func:`index_by_handle`, and a handle that
+        no longer answers is simply not there (issue #621). There is
+        deliberately no fallback to a same-named object on the tile — the
+        fallback is the defect. Jean having already picked the drop up by hand,
+        or having something else of that name lying beside it, must cost him a
+        ``not_found``, not somebody else's Shortsword.
         """
         inventory = get_inventory_list(player)
         capacity = float(getattr(player, "weight_tolerance", 20.0) or 20.0)
         current_weight = sum(float(getattr(i, "weight", 0) or 0) for i in inventory)
-
-        tile_by_name: Dict[str, list] = {}
-        for item in list(tile.items_here):
-            name = getattr(item, "name", None)
-            if name:
-                tile_by_name.setdefault(name, []).append(item)
 
         collected: list = []
         skipped: list = []
@@ -5226,51 +5267,65 @@ class GameService:
             if name not in offered:
                 skipped.append({"name": name, "reason": "not_offered"})
                 continue
-            newest_first = tile_by_name.get(name, [])[::-1][: offered[name]]
             any_collected = over_capacity = False
-            for item in newest_first:
+            for handle in offered[name]:
+                # By index, not ``list.remove``: the lookup is an identity and
+                # ``remove`` is an equality: the day an ``Item`` defines
+                # ``__eq__``, removing "the object we resolved" would quietly
+                # take the first equal twin instead — undoing exactly what
+                # resolving by handle bought (``find_by_handle`` documents the
+                # same trap for ``list.index``).
+                item, index = index_by_handle(tile.items_here, handle)
+                if item is None:
+                    continue
                 item_weight = float(getattr(item, "weight", 0) or 0)
                 if current_weight + item_weight > capacity:
                     skipped.append({"name": name, "reason": "over_capacity"})
                     over_capacity = True
                     break
-                if item in tile.items_here:
-                    tile.items_here.remove(item)
-                    inventory.append(item)
-                    collected.append(name)
-                    current_weight += item_weight
-                    any_collected = True
+                del tile.items_here[index]
+                inventory.append(item)
+                collected.append(name)
+                current_weight += item_weight
+                any_collected = True
             if not any_collected and not over_capacity:
                 skipped.append({"name": name, "reason": "not_found"})
         return collected, skipped
 
     @classmethod
-    def _offered_drops(cls, player: Any) -> Dict[str, int]:
-        """What the player's last won fight still offers: ``{name: object cap}``.
+    def _offered_drops(cls, player: Any) -> Dict[str, List[str]]:
+        """What the player's last won fight still offers: ``{name: handles}``.
 
         Read from ``player.combat_drops`` — written only by a dying enemy as
-        ``{"name", "quantity"}`` dicts (``src/npc/_loot.py``) — and only while
-        that victory is unresolved (:meth:`_is_unresolved_victory`). A defeat
-        leaves the list behind (flee and load withdraw it, through
-        :meth:`_abandon_loot_phase`), so the victory gate is what stops a
-        fight's leftover names being collected somewhere else.
+        ``{"name", "quantity", "handles"}`` dicts (``src/npc/_loot.py``) — and
+        only while that victory is unresolved
+        (:meth:`_is_unresolved_victory`). A defeat leaves the list behind (flee
+        and load withdraw it, through :meth:`_abandon_loot_phase`), so the
+        victory gate is what stops a fight's leftover drops being collected
+        somewhere else.
 
-        The cap is the recorded quantity summed per name. It bounds how many
-        *objects* a name may yield: exact for non-stackables, which spawn one
-        object per unit, but not for a stackable drop that merged into an older
-        pile (see :meth:`collect_combat_loot`).
+        The handles are the wire identity of the objects the drop spawned, and
+        they are the whole offer: what a name may yield is those objects, not
+        that many objects of that name (issue #621). An entry carrying no
+        handles — one written before this became the contract, or by anything
+        that is not the loot mixin — offers its name with nothing behind it, so
+        the player is told ``not_found`` rather than handed a stranger's
+        property.
         """
         if not cls._is_unresolved_victory(player):
             return {}
-        offered: Dict[str, int] = {}
+        offered: Dict[str, List[str]] = {}
         drops = getattr(player, "combat_drops", None)
         drops = drops if isinstance(drops, list) else []
         for drop in drops:
             if not isinstance(drop, dict):
                 continue
-            name, quantity = drop.get("name"), drop.get("quantity", 1)
-            if isinstance(name, str) and name:
-                offered[name] = offered.get(name, 0) + max(1, int(quantity or 1))
+            name, handles = drop.get("name"), drop.get("handles")
+            if not (isinstance(name, str) and name):
+                continue
+            entry = offered.setdefault(name, [])
+            if isinstance(handles, list):
+                entry.extend(h for h in handles if isinstance(h, str) and h)
         return offered
 
     @staticmethod

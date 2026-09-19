@@ -18,6 +18,7 @@ from unittest.mock import patch
 import pytest
 
 import src.items as items
+from src.combatant import wire_handle
 from src.npc._loot import NPCLootMixin
 
 from tests._gs_fixtures import live_world
@@ -180,12 +181,16 @@ class TestDropInventory:
         random.seed(0)
         npc.drop_inventory()
 
+        assert len(tile.items_here) == 1, "the pile the record must point at"
         assert player.combat_drops == [
             {
                 "name": "Wooden Arrow",
                 "quantity": 7,
                 "source": "Bandit",
                 "kind": "inventory",
+                # The offer is an identity, not a name: the handles of the
+                # objects this drop actually spawned (#621).
+                "handles": [wire_handle(tile.items_here[0])],
             }
         ]
 
@@ -239,6 +244,7 @@ class TestRollLoot:
                 "quantity": 3,
                 "source": "Bandit",
                 "kind": "loot",
+                "handles": [wire_handle(tile.items_here[0])],
             }
         ]
 
@@ -283,13 +289,16 @@ class TestRollLoot:
         assert len(tile.items_here) == 1
         spawned = tile.items_here[0]
         assert isinstance(spawned, items.Item)
-        # The victory summary must name the item that actually spawned.
+        # The victory summary must name — and now identify — the item that
+        # actually spawned, even though the spawn happened inside
+        # ``Loot.random_equipment`` rather than in ``roll_loot`` itself.
         assert player.combat_drops == [
             {
                 "name": spawned.name,
                 "quantity": 1,
                 "source": "Bandit",
                 "kind": "loot",
+                "handles": [wire_handle(spawned)],
             }
         ]
 
@@ -303,9 +312,18 @@ class TestRollLoot:
 
 
 class TestBeforeDeath:
-    def test_the_full_death_sequence_leaves_one_stacked_pile(self, world):
+    def test_the_full_death_sequence_leaves_one_pile_per_visibility(self, world):
         """``before_death`` rolls loot, scatters inventory, drops arrows, then
-        stacks the floor so duplicates merge into one entry."""
+        stacks what it dropped — but never across the hidden line.
+
+        It used to leave a single pile of 11. Scattered inventory spawns
+        ``hidden``, a loot roll and embedded arrows do not, and merging those
+        two either conceals loot the player was shown or reveals a cache they
+        have not found (#621) — so the corpse leaves one visible pile and one
+        hidden one. Still one pile *per kind and visibility*: the point of the
+        stacking pass, that a corpse must not leave a dozen one-arrow entries,
+        is unchanged.
+        """
         player, tile = world
         npc = LootableNPC(tile, player, loot={"WoodenArrow": {"chance": 100, "qty": 2}})
         carried = items.WoodenArrow()
@@ -316,12 +334,13 @@ class TestBeforeDeath:
         random.seed(0)
         assert npc.before_death() is True
 
-        # 2 (loot roll) + 7 (inventory survivors at this seed, the loot roll
-        # having consumed the first draws) + 2 (embedded), stacked into a
-        # single WoodenArrow entry rather than three separate piles.
-        assert len(tile.items_here) == 1
-        assert type(tile.items_here[0]).__name__ == "WoodenArrow"
-        assert tile.items_here[0].count == 11
+        assert {type(i).__name__ for i in tile.items_here} == {"WoodenArrow"}
+        visible = [i for i in tile.items_here if not i.hidden]
+        hidden = [i for i in tile.items_here if i.hidden]
+        # 2 (loot roll) + 2 (embedded) in plain sight; 7 (inventory survivors
+        # at this seed, the loot roll having consumed the first draws) hidden.
+        assert [i.count for i in visible] == [4]
+        assert [i.count for i in hidden] == [7]
 
     def test_no_loot_table_means_no_loot_roll(self, world):
         player, tile = world

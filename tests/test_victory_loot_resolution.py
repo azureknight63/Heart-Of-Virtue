@@ -1,4 +1,8 @@
-"""Regression tests for issue #610 — the victory that never resolves.
+"""Regression tests for issues #610 and #621 — what a won fight hands over.
+
+#610 (below) bounded the offer to the names the fight recorded. #621 is the
+other half: a name is not an identity. ``TestADropIsTheObjectTheFightSpawned``
+covers it.
 
 Defect 1
     ``player.combat_end_summary`` is written by
@@ -23,12 +27,17 @@ and the real ``ApiCombatAdapter`` settling the victory. Expectations are read
 back out of engine state rather than restating the implementation.
 """
 
+import threading
+import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 from src.api.combat_adapter import ApiCombatAdapter
+from src.api.services.game_service import GameService
+from src.combatant import wire_handle
+from src.items import Restorative
 from src.npc import Slime
 
 
@@ -36,6 +45,10 @@ from src.npc import Slime
 #: is deterministic without patching ``random`` (``randomize_amount("1")`` is
 #: plain ``int("1")``; the chance test is ``100 >= randint(0, 100)``).
 _CERTAIN_LOOT = {"Restorative": {"chance": 100, "qty": 1}}
+
+#: The same certainty for a NON-stackable drop: ``Shortsword`` has no ``count``,
+#: so it spawns one object per unit and never merges with anything.
+_CERTAIN_SWORD = {"Shortsword": {"chance": 100, "qty": 1}}
 
 
 def _named(items, names):
@@ -52,9 +65,13 @@ def won_fight(make_world, grid_3x3):
     ``None`` throughout. No real fight ends that way (``check_for_combat``
     reads ``current_room`` and ``start_combat`` sets it); this drives the
     defensive coordinate fallback in ``GameService._loot_tile`` directly.
+    ``won_fight(loot=...)`` — a different loot table for the dying enemy.
+    ``won_fight(before_the_kill=fn)`` — ``fn(tile)`` runs with the fight tile
+    as it was BEFORE the enemy died, for tests that need something already
+    lying there when the drop lands (#621).
     """
 
-    def _build(player_knows_the_room=True):
+    def _build(player_knows_the_room=True, loot=None, before_the_kill=None):
         jean, game_map = make_world(grid_3x3)
         fight_tile = game_map[(0, 0)]
 
@@ -71,13 +88,20 @@ def won_fight(make_world, grid_3x3):
         with patch("src.api.combat_adapter.CombatStrategist"):
             jean._combat_adapter = ApiCombatAdapter(jean)
 
-        # A real NPC rolling a real loot table: this both spawns the item onto
-        # the tile and appends the ``combat_drops`` entry the loot dialog reads.
+        if before_the_kill is not None:
+            before_the_kill(fight_tile)
+
+        # A real NPC dying over a real loot table: this both spawns the item
+        # onto the tile and appends the ``combat_drops`` entry the loot dialog
+        # reads. ``before_death`` rather than ``roll_loot`` because the whole
+        # death sequence -- the roll, the inventory scatter and the stacking
+        # pass that follows them -- is what decides which objects exist to be
+        # collected (#621).
         slime = Slime()
-        slime.loot = dict(_CERTAIN_LOOT)
+        slime.loot = dict(_CERTAIN_LOOT if loot is None else loot)
         slime.current_room = fight_tile
         slime.player_ref = jean
-        slime.roll_loot()
+        slime.before_death()
 
         drop_names = sorted({d["name"] for d in jean.combat_drops})
         assert drop_names, "fixture must produce at least one drop"
@@ -298,26 +322,6 @@ class TestOnlyThisFightsDropsCanBeCollected:
         assert lying_here in jean.current_room.items_here
         assert result["collected"] == []
 
-    def test_a_drop_takes_only_as_many_objects_as_it_recorded(
-        self, won_fight, game_service
-    ):
-        """One Shortsword dropped; another was already lying on the tile.
-
-        Non-stackable items spawn one object per unit, so the recorded quantity
-        bounds how many objects this fight may hand over. Stackable drops merge
-        into piles already on the floor and are not bounded here — splitting a
-        pile by its recorded share is a separate change.
-        """
-        fight = won_fight()
-        swords = _spawned(fight.fight_tile, "Shortsword", amt=2)
-        assert len(swords) == 2, "a non-stackable spawns one object per unit"
-        fight.player.combat_drops.append({"name": swords[0].name, "quantity": 1})
-
-        game_service.collect_combat_loot(fight.player, [swords[0].name])
-
-        taken = [s for s in swords if s in fight.player.inventory]
-        assert len(taken) == 1
-
 
 class TestTheOfferEndsWithTheVictory:
     """``combat_drops`` is only an offer while a won fight is unresolved.
@@ -347,22 +351,6 @@ class TestTheOfferEndsWithTheVictory:
 
         assert result["collected"] == []
         assert _named(fight.fight_tile.items_here, fight.drop_names)
-
-    def test_a_non_stackable_drop_is_the_one_taken_not_an_older_twin(
-        self, won_fight, game_service
-    ):
-        """``spawn_item`` appends, so the fight's own object is the newest of
-        its name on the tile; an older same-named one — perhaps a hidden item
-        the player never found — is not the fight's to hand over."""
-        fight = won_fight()
-        (older,) = _spawned(fight.fight_tile, "Shortsword")
-        (dropped,) = _spawned(fight.fight_tile, "Shortsword")
-        fight.player.combat_drops.append({"name": dropped.name, "quantity": 1})
-
-        game_service.collect_combat_loot(fight.player, [dropped.name])
-
-        assert dropped in fight.player.inventory
-        assert older in fight.fight_tile.items_here
 
 
 class TestOnlyAVictoryIsResolvedByTheLootCall:
@@ -417,3 +405,265 @@ def test_each_requested_name_is_handled_once(won_fight, game_service):
         {"name": "", "reason": "not_offered"},
         {"name": gone, "reason": "not_found"},
     ]
+
+
+def _units(items, name):
+    """How many units of ``name`` sit in ``items``, counting stack sizes."""
+    return sum(int(getattr(i, "count", 1) or 1) for i in items if i.name == name)
+
+
+class TestADropIsTheObjectTheFightSpawned:
+    """Issue #621: a name is not an identity.
+
+    #610 bounded the offer to the names the fight recorded, and resolved those
+    names against the tile newest-first. Newest-of-that-name is a guess, and it
+    is wrong in every case where the fight's own object is no longer the newest
+    one: something else of that name landed afterwards, the player picked the
+    drop up by hand first, or the drop was merged into a pile that was already
+    lying there. Each of those hands over an object the fight never dropped --
+    at worst a hidden one the player never found.
+
+    The offer therefore records ``wire_handle`` for every object a drop
+    spawned, and the collect resolves those handles (``src/npc/_loot.py``,
+    ``GameService._take_offered_drops``).
+    """
+
+    def test_something_dropped_afterwards_is_not_mistaken_for_the_loot(
+        self, won_fight, game_service
+    ):
+        """Two Shortswords dropped; a third lands on the tile before Jean
+        collects, so the fight's own pair is no longer the newest of its name.
+
+        ``Tile.spawn_item`` returns only the first object it creates, so a drop
+        of two is exactly the case an identity record is most likely to miss.
+        """
+        fight = won_fight(loot={"Shortsword": {"chance": 100, "qty": 2}})
+        dropped = _named(fight.fight_tile.items_here, ["Shortsword"])
+        assert len(dropped) == 2, "a non-stackable spawns one object per unit"
+        (latecomer,) = _spawned(fight.fight_tile, "Shortsword")
+
+        result = game_service.collect_combat_loot(fight.player, ["Shortsword"])
+
+        assert result["collected"] == ["Shortsword", "Shortsword"]
+        assert all(sword in fight.player.inventory for sword in dropped)
+        assert latecomer in fight.fight_tile.items_here
+        assert latecomer not in fight.player.inventory
+
+    def test_taking_the_drop_by_hand_leaves_every_twin_alone(
+        self, won_fight, game_service
+    ):
+        """Jean takes the dropped Shortsword with an ordinary ``take``, then
+        collects. The fight's object is already in his pack, so there is
+        nothing left for the offer to hand over -- and the hidden twin beside
+        it, which he never found, is no substitute.
+
+        ``Item.take`` is the engine method the API dispatches the ``take`` verb
+        to (``GameService._call_interaction_handler``).
+        """
+        stash = []
+        fight = won_fight(
+            loot=_CERTAIN_SWORD,
+            before_the_kill=lambda tile: stash.append(
+                tile.spawn_item("Shortsword", hidden=True, hfactor=90)
+            ),
+        )
+        (twin,) = stash
+        (dropped,) = [
+            i
+            for i in _named(fight.fight_tile.items_here, ["Shortsword"])
+            if i is not twin
+        ]
+
+        dropped.take(fight.player)
+        result = game_service.collect_combat_loot(fight.player, ["Shortsword"])
+
+        assert dropped in fight.player.inventory, "the ordinary take stands"
+        assert twin in fight.fight_tile.items_here
+        assert twin not in fight.player.inventory
+        assert twin.hidden is True, "a hidden twin stays hidden"
+        assert result["collected"] == []
+        assert result["skipped"] == [{"name": "Shortsword", "reason": "not_found"}]
+
+    def test_a_drop_beside_a_hidden_pile_hands_over_only_its_own_units(
+        self, won_fight, game_service
+    ):
+        """A hidden stash of three Restoratives is already on the tile when the
+        enemy drops one more.
+
+        ``before_death`` used to stack the whole floor, which merged the drop
+        into the first pile of its kind -- ignoring ``hidden`` -- so collecting
+        the name emptied the stash too. The drop is one unit; one unit is what
+        the fight may hand over.
+        """
+        stash = []
+        fight = won_fight(
+            before_the_kill=lambda tile: stash.append(
+                tile.spawn_item("Restorative", amt=3, hidden=True, hfactor=90)
+            ),
+        )
+        (pile,) = stash
+        assert pile.count == 3 and pile.hidden is True
+        dropped_units = sum(d["quantity"] for d in fight.player.combat_drops)
+        assert dropped_units == 1, "the loot table rolled exactly one"
+
+        result = game_service.collect_combat_loot(fight.player, ["Restorative"])
+
+        assert result["collected"] == ["Restorative"]
+        assert _units(fight.player.inventory, "Restorative") == dropped_units
+        assert pile in fight.fight_tile.items_here, "the stash stays on the floor"
+        assert pile.count == 3, "and keeps every unit it had"
+        assert pile.hidden is True, "and stays hidden"
+
+    def test_a_later_pickup_cannot_fold_the_drop_into_the_hidden_pile(
+        self, won_fight, game_service
+    ):
+        """Every ordinary pickup restacks the floor it was taken from
+        (``Item.take`` -> ``MapTile.stack_duplicate_items``), so keeping the
+        death's own stacking pass off the hidden stash is not enough on its
+        own: picking up anything at all on the fight's tile used to fold the
+        visible drop into that stash, where it was neither collectable nor
+        visible.
+        """
+        stash = []
+        fight = won_fight(
+            before_the_kill=lambda tile: stash.append(
+                tile.spawn_item("Restorative", amt=3, hidden=True, hfactor=90)
+            ),
+        )
+        (pile,) = stash
+        (bait,) = _spawned(fight.fight_tile, "Antidote")
+
+        bait.take(fight.player)  # any pickup at all restacks this floor
+        result = game_service.collect_combat_loot(fight.player, ["Restorative"])
+
+        assert result["collected"] == ["Restorative"]
+        assert _units(fight.player.inventory, "Restorative") == 1
+        assert pile in fight.fight_tile.items_here
+        assert pile.count == 3
+        assert pile.hidden is True
+
+    def test_the_resolved_object_leaves_the_tile_not_an_equal_one(self):
+        """Resolving by handle and then removing by equality is not identity.
+
+        ``list.remove`` compares with ``==``. No ``Item`` defines ``__eq__``
+        today, so this is a guard rather than a live bug — but the day one
+        does, "remove the object we resolved" would quietly take the first
+        equal twin instead, which is the whole defect back again through the
+        other door. ``find_by_handle`` documents the same trap for
+        ``list.index``.
+        """
+
+        class _Twin:
+            """A pair that compares equal, as a stacked duplicate would."""
+
+            name = "Twin"
+            weight = 0.0
+
+            def __eq__(self, other):
+                return isinstance(other, _Twin)
+
+            def __hash__(self):
+                return hash("Twin")
+
+        older, dropped = _Twin(), _Twin()
+        tile = SimpleNamespace(items_here=[older, dropped])
+        jean = SimpleNamespace(inventory=[], weight_tolerance=20.0)
+        offered = {"Twin": [wire_handle(dropped)]}
+
+        collected, skipped = GameService._take_offered_drops(
+            jean, tile, ["Twin"], offered
+        )
+
+        assert (collected, skipped) == (["Twin"], [])
+        # ``is``, never ``==``: the two compare equal, so an equality
+        # assertion here would pass whichever object moved.
+        assert len(tile.items_here) == 1 and tile.items_here[0] is older
+        assert len(jean.inventory) == 1 and jean.inventory[0] is dropped
+
+    def test_one_deaths_own_drops_still_merge_into_a_single_pile(
+        self, make_world, grid_3x3
+    ):
+        """The stacking pass in ``before_death`` is narrowed, not deleted.
+
+        It was added so that one death's several drops of a kind arrive as one
+        pile rather than several (commit 2d0f625, "items dropped by enemies now
+        stack immediately after NPC death"). That still holds; only merging
+        into what was already lying there stops.
+        """
+        _jean, game_map = make_world(grid_3x3)
+        tile = game_map[(0, 0)]
+        slime = Slime()
+        slime.loot = {}  # the inventory scatter is the path under test
+        slime.current_room = tile
+        slime.inventory = [Restorative(count=2), Restorative(count=3)]
+
+        # drop_inventory rolls per unit for survival; 0.0 keeps every one.
+        with patch("random.random", return_value=0.0):
+            slime.before_death()
+
+        piles = [i for i in tile.items_here if i.name == "Restorative"]
+        assert len(piles) == 1, "two scattered rows, one pile"
+        assert piles[0].count == 5
+        assert piles[0].hidden is True, "scattered inventory is hidden, as before"
+
+
+class TestTwoCollectsInFlight:
+    """Two requests for one victory must not both be served the offer.
+
+    The offer is withdrawn as soon as it is read, but under the threaded
+    Socket.IO server a second collect can read it before the first clears it
+    (#621). Both requests then believe they may take the same objects.
+    """
+
+    def test_only_one_of_two_concurrent_collects_is_served(
+        self, won_fight, game_service
+    ):
+        """Forced interleave: the first collect is held inside the offer read
+        while the second one runs at it.
+
+        Not a probabilistic race hunt -- the pause makes the losing order the
+        only order. With the read-and-withdraw serialized, the second request
+        cannot reach the read at all until the first has finished with it.
+        """
+        fight = won_fight(loot=_CERTAIN_SWORD)
+        offers_seen = []
+        results = []
+        first_is_reading = threading.Event()
+        second_has_started = threading.Event()
+        original = GameService._offered_drops.__func__
+
+        def held_open(cls, player):
+            offer = original(cls, player)
+            offers_seen.append(dict(offer))
+            if not first_is_reading.is_set():
+                first_is_reading.set()
+                # Hand the window to the second request, and hold it open long
+                # enough for that request to reach the read it must not make.
+                second_has_started.wait(2.0)
+                time.sleep(0.1)
+            return offer
+
+        def collect():
+            results.append(
+                game_service.collect_combat_loot(fight.player, ["Shortsword"])
+            )
+
+        def second():
+            assert first_is_reading.wait(2.0), "the first collect never read the offer"
+            second_has_started.set()
+            collect()
+
+        with patch.object(GameService, "_offered_drops", classmethod(held_open)):
+            threads = [
+                threading.Thread(target=collect),
+                threading.Thread(target=second),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(10)
+            assert not any(t.is_alive() for t in threads), "a collect never returned"
+
+        assert [bool(offer) for offer in offers_seen] == [True, False]
+        assert sorted(r["collected"] for r in results) == [[], ["Shortsword"]]
+        assert _units(fight.player.inventory, "Shortsword") == 1

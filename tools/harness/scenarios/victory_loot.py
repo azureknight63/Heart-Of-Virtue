@@ -29,6 +29,8 @@ _EXTRA_SLIMES = 2
 _MAX_ROUNDS = 50
 #: Back to the Proving Grounds (0, 0) from the Fodder Pit (1, 0).
 _WALK_AWAY = "west"
+#: And the return trip.
+_BACK_TO_THE_FIGHT = "east"
 
 
 class VictoryLootScenario(Scenario):
@@ -94,7 +96,17 @@ class VictoryLootScenario(Scenario):
             d["name"] for d in end_state.get("items_dropped", []) if d.get("name")
         })
 
-        # 3. Walk away -----------------------------------------------------
+        # 3. Plant a twin the fight did not drop ---------------------------
+        floor_before = self._floor(client)
+        fight_drop_ids = {
+            item_id: name
+            for item_id, name in (floor_before or {}).items()
+            if name in drop_names
+        }
+        twin_id, twin_bugs = self._plant_a_twin(client, drop_names, floor_before)
+        bugs += twin_bugs
+
+        # 4. Walk away -----------------------------------------------------
         body = {"direction": _WALK_AWAY}
         resp = client.post("/api/world/move", json=body)
         bug = self._check_status(resp, 200, "/api/world/move", "POST",
@@ -103,7 +115,7 @@ class VictoryLootScenario(Scenario):
             bugs.append(bug)
             return bugs
 
-        # 4. Collect -------------------------------------------------------
+        # 5. Collect -------------------------------------------------------
         body = {"item_names": drop_names}
         resp = client.post("/api/combat/collect-loot", json=body)
         bug = self._check_status(resp, 200, "/api/combat/collect-loot", "POST",
@@ -160,6 +172,11 @@ class VictoryLootScenario(Scenario):
                 actual="end_state still present",
                 response=resp,
             ))
+
+        # 6. Identity ------------------------------------------------------
+        bugs += self._check_only_the_fights_objects_left(
+            client, fight_drop_ids, twin_id
+        )
 
         if not drop_names:
             print(
@@ -220,6 +237,134 @@ class VictoryLootScenario(Scenario):
         bug = self._check_status(resp, 200, "/api/debug/player/restore", "POST",
                                  "Restore Jean before the fight")
         return [bug] if bug else []
+
+    def _floor(self, client: GameClient) -> Optional[dict]:
+        """``{wire id: name}`` for everything on the tile Jean stands on.
+
+        Ids, not names: the whole point of the identity half of this scenario
+        is that two objects can share a name (issue #621).
+        """
+        resp = client.get("/api/world")
+        if resp.status_code != 200:
+            return None
+        room = client.parse(resp).get("room", {})
+        return {
+            i["id"]: i.get("name")
+            for i in room.get("items", [])
+            if isinstance(i, dict) and i.get("id")
+        }
+
+    def _plant_a_twin(self, client: GameClient, drop_names, floor_before):
+        """Leave a second object of a dropped name on the fight tile.
+
+        Jean is still standing where the fight ended, and this config starts
+        him carrying one each of the level-0 table's consumables, so he drops
+        his own — and the tile then holds two objects of one name: the one the
+        fight dropped, and one it never did. Collecting that name must move
+        the fight's object and leave Jean's.
+
+        Returns ``(twin id, bugs)``. ``(None, [])`` means the setup could not
+        be arranged this run — the loot roll is random, and a run that drops
+        only Gold (which cannot be dropped) or a random equipment piece has no
+        twin candidate. That is not a defect, so it is printed, not reported.
+        """
+        candidates = {n for n in drop_names if n and n != "Gold"}
+        if not candidates or floor_before is None:
+            print(
+                "[VictoryLootScenario] No twin candidate this run (drops: "
+                f"{drop_names}); collect-loot identity not exercised."
+            )
+            return None, []
+
+        # A single unit: dropping a stack restacks the whole floor, which
+        # would merge the twin into the drop instead of leaving it beside it.
+        # ``quantity`` is the inventory serializer's spelling of ``count``.
+        held = client.parse(client.get("/api/inventory")).get("inventory", {})
+        carried = next(
+            (
+                i
+                for i in held.get("items", [])
+                if isinstance(i, dict)
+                and i.get("name") in candidates
+                and i.get("quantity") == 1
+            ),
+            None,
+        )
+        if carried is None:
+            print(
+                "[VictoryLootScenario] Jean carries no single spare of a "
+                f"dropped name (drops: {drop_names}); identity not exercised."
+            )
+            return None, []
+
+        body = {"item_id": carried["id"]}
+        resp = client.post("/api/inventory/drop", json=body)
+        bug = self._check_status(resp, 200, "/api/inventory/drop", "POST",
+                                 "Drop the twin on the fight tile", request_body=body)
+        if bug:
+            return None, [bug]
+
+        planted = [
+            item_id
+            for item_id, name in (self._floor(client) or {}).items()
+            if item_id not in floor_before and name == carried.get("name")
+        ]
+        if len(planted) != 1:
+            print(
+                "[VictoryLootScenario] The twin did not land as its own object "
+                f"({len(planted)} new of that name); identity not exercised."
+            )
+            return None, []
+        return planted[0], []
+
+    def _walk_back_to_the_fight(self, client: GameClient) -> List[BugReport]:
+        body = {"direction": _BACK_TO_THE_FIGHT}
+        resp = client.post("/api/world/move", json=body)
+        bug = self._check_status(resp, 200, "/api/world/move", "POST",
+                                 "Walk back to the fight tile", request_body=body)
+        return [bug] if bug else []
+
+    def _check_only_the_fights_objects_left(
+        self, client: GameClient, fight_drop_ids: dict, twin_id: Optional[str]
+    ) -> List[BugReport]:
+        """The collect moved the objects the fight spawned — and only those.
+
+        Resolving a requested name against the tile instead of against the
+        fight's own objects handed over whatever of that name was lying there
+        (issue #621), which is what the planted twin stands in for.
+        """
+        if twin_id is None:
+            return []
+        bugs = self._walk_back_to_the_fight(client)
+        if bugs:
+            return bugs
+        floor_after = self._floor(client)
+        if floor_after is None:
+            return []
+
+        if twin_id not in floor_after:
+            bugs.append(self._bug(
+                title="collect-loot took an object the fight never dropped",
+                severity=BugSeverity.HIGH,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/combat/collect-loot",
+                method="POST",
+                expected="Only the objects the fight spawned leave the tile; "
+                         "a same-named object Jean left there stays",
+                actual=f"the planted twin {twin_id} is gone from the tile",
+            ))
+        still_there = [i for i in fight_drop_ids if i in floor_after]
+        if still_there:
+            bugs.append(self._bug(
+                title="collect-loot left the fight's own drop behind",
+                severity=BugSeverity.HIGH,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/combat/collect-loot",
+                method="POST",
+                expected=f"the fight's drops {sorted(fight_drop_ids.values())} collected",
+                actual=f"still on the tile: {[fight_drop_ids[i] for i in still_there]}",
+            ))
+        return bugs
 
     def _roster(self, client: GameClient) -> Optional[list]:
         resp = client.get("/api/debug/arena")
