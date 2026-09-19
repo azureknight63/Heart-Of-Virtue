@@ -20,8 +20,8 @@ files. Enter it first: `EnterWorktree` with `path` = this worktree.
 | c1-620-security | 5/5 | done | all substantive findings fixed |
 | c2-621-loot | 5/5 | done | all substantive findings fixed |
 | c3-shop-items | 5/5 | done | all substantive findings fixed |
-| c4-frontend-combat-chat | 5/5 | done | Majors F1, F2 (+F13), F4, F5, single-flight fixed; Minors below remain |
-| c5-dry-feedback | 5/5 (Opt A, Sec A, DRY/Maint B/B, Clean/AIF C/B, Align/Corr A/B) | done | **none yet** — list below |
+| c4-frontend-combat-chat | 5/5 | done | all Majors and confirmed Minors fixed (F7, E2, E4-E6, E8, E10-E12, E16, E17, E19) |
+| c5-dry-feedback | 5/5 (Opt A, Sec A, DRY/Maint B/B, Clean/AIF C/B, Align/Corr A/B) | done | all fixed (G1, G4, G6, G8-G12, G14, H1, H2); G3/H3 are follow-up issues; G5/G13 advisory |
 
 **Session 3 commits:** `b9d1b151` F1 typewriter completes only once shown (hook fix +
 real-hook panel tests `NpcChatPanel.autoClose.test.jsx`) · `2f897cec` F4/F5 range shortfall only on
@@ -31,41 +31,20 @@ range locks (`RANGE_LOCK_REASONS`, `shortfallSuffix`, contract pin in
 spent, personality inside the budget, `_TURN_CEILING_SECONDS = 21.0`, client `NPC_CHAT_TIMEOUT_MS
 = 28000`, `tests/test_npc_chat_turn_budget.py` derives both bounds incl. the Procfile worker
 timeout) · `000f3ff1` **single-flight chat turns** (`GameService._one_chat_turn`, weak-keyed
-per-player lock, 409 via `_chat_status`, client "Still composing a reply — give it a moment.").
-Last full runs: backend 4 failed (pre-existing openai) / 14708 passed; frontend 165 files / 3791
-passed; flake8 `src/` clean. (One transient frontend failure seen once under agent load; 0 on rerun.)
+per-player lock, 409 via `_chat_status`, client "Still composing a reply — give it a moment.") ·
+`8c2b1e1c` c5 backend (G6 `join_party` seeds the party, H1 call-site test, H2 fail-open log-dir
+probe, G8 `MERCHANDISE_RETURN_PHRASES`, G11, G12, G14) · `3e3ed707` c5 frontend (G1, G4 contract
+keys applied after caller props/style, G10) + **F7** End closes at once, `/end` fire-and-forget ·
+`46f245c2` comments that still described await-then-close (E16 moot: every path now latches) ·
+`136f1f0c` G9 #611 test samples the holding when the confirmation is queued (revert-proved) +
+G14 frontend nits · `92b42f68` c4 style Minors (E2, E4-E6, E8, E10-E12, E17, E19).
+Last full runs (after `92b42f68`): backend 4 failed (pre-existing openai) / 14712 passed; frontend
+165 files / 3796 passed; flake8 `src/` clean.
 
-**c4 Minors still open (confirmed by adversaries):** F7 — End mid-turn waits behind the sync
-worker; close the panel immediately and send `/end` fire-and-forget via
-`endAbandonedConversation`. Style: E2 flavor-only tests copy the #531 pair (→ `it.each`); E4/E5/E6/E8
-test fixture dups; E10 split `test_wire_field_contract` shortfall test; E11 hoist `showReason` in
-CombatMovePanel; E12 `segmentReadingText()`; E16 NpcChatPanel docstring overclaims `endingRef`
-(the `!npcKey` path is unlatched); E17 BattlefieldGrid comments (third panBounds consumer
-`measureGesture`, recenter rationale, "fit mode guarantees" overbroad); E19 duplicated rationale
-prose. Advisory/Nit: E1 (now resolved by the relational test), E3, E7, E9, E13, E14 (done), F3/F6/F8/F12.
-
-**c5 findings to fix (adversary dispositions applied):** G1 CollapsibleRoomDescription.jsx:52-81
-not re-indented under the new wrapper (Minor) · G4 CollapsibleSectionHeader spreads `style`/`rest`
-AFTER the contract keys — spread them first, `minHeight` after `...style`; extend the test to pass
-`minHeight: '0'` · G6 `join_party` should seed `combat_list_allies = [player]` when missing (delete
-the events.py guard; its docstring promises index 0) · G8 `test_issue_611_merchandise_return_feedback.py:32-35`
-comment false ("every phrase says not paid": 2 of 6) + hardcoded "six" → module constant
-`MERCHANDISE_RETURN_PHRASES` in `_inventory.py`, test iterates it · G9 InteractPanel.test.jsx
-harness `inventory`/`held-merchandise` asserts only the harness; "above the button" not asserted ·
-G10/H3 comments say "touch pointers" but the gate is `useMobile()` (max-width 767px) —
-CollapsibleSectionHeader.jsx:36-37, its test :84-85, HeatMeter.jsx:227-230 → "phone-width viewport";
-the behaviour change (floor on `isMobile || isCoarse`) is a FOLLOW-UP issue · G11
-`test_run_api_log_dir.py:14-17` cites CLAUDE.md for "four known openai failures" (it doesn't say
-that) · G12 `_inventory.py:58` `returned` → `narrated_lines` · G14 nits (test rerender dup,
-`settledOutput` docstring, `_progression.py` history + "five times", GamePage 9-line tombstone
-comment, HeatMeter non-functional updater, `test_join_party_helper.py` dup/import/unused param) ·
-**H1** add a test: AfterGorranIntro with Gorran already in `combat_list_allies` → count stays 1
-(fails pre-fix; the only player-visible drift #625 fixed has no call-site test) · **H2**
-`test_run_api_log_dir.py` can fail open: the child inherits `LOG_JSONL_DIR`/`FLASK_ENV`, and
-`load_project_env()` (run_api.py:35, before the guard) refills absent keys from `.env` — stub
-`src.env_bootstrap` in the probe script, strip both keys from the child env, assert
-`== str(_ROOT/"logs"/"backend")`; the docstring's "cannot fail open" claim is false. G5/G13
-advisory (leave). G7 downgraded Nit.
+**c4/c5 findings:** all closed — see the commits above. One correction to a finding, recorded so
+it is not "fixed" back: E17 said the recenter control disappears anyway when the window grows to
+cover the arena. It does not for a sub-cell drag remainder (0 cells is still legal, so the
+re-clamp effect returns early), which is why the control stays ungated on `canPan`.
 
 The c1 Security re-dispatch escalated #620: the fix closed only the first hop. Handlers the class
 declares still call `self.<method>` (go/leave/exit→`self.enter`, `wash`→`self.clean`,
@@ -122,15 +101,14 @@ clean, `bug_hunt` 0 bugs (full, default config), `--scenario shop` 0, `--scenari
 (freeze on) / 4-of-4 caught (freeze off).
 
 ### Pending, in order (resume here)
-1. c5 fixes (list above), then the c4 Minors (F7 first).
-2. Decide the re-review depth (ask the maintainer if budget is tight — weekly was 82% at the end of
+1. Decide the re-review depth (ask the maintainer if budget is tight — weekly was 82% at the end of
    session 3): at minimum re-dispatch **c1 Security** over the #620 root fix (secure_pickle,
    universe, map_placeholders) and **c4 Alignment/Correctness** over the chat budget +
    single-flight; the skill's full rule is every below-A (chunk, dimension) pair, max 3 iterations.
-3. `/code-review` over the architecture-touching subset (`src/api/`, `GameService`, serializers,
+2. `/code-review` over the architecture-touching subset (`src/api/`, `GameService`, serializers,
    `combat_adapter`, `ai/llm_client.py`) — the scrubber has no Architecture dimension.
-4. Full suites + `bug_hunt` (full, default config) + `--scenario victory_loot` under its config.
-5. PR per §12. Closes: #611 #612 #614 #618 #620 #621 #624 #625. NOT #613, NOT #615 (decided: leave
+3. Full suites + `bug_hunt` (full, default config) + `--scenario victory_loot` under its config.
+4. PR per §12. Closes: #611 #612 #614 #618 #620 #621 #624 #625. NOT #613, NOT #615 (decided: leave
    open). File the follow-ups below first so the PR body can link them.
 
 ### Follow-up issues to file (not this branch)
