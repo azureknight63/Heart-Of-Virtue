@@ -3,14 +3,27 @@
 Every assertion here but one derives its expectation from an authority
 *outside* ``src/npc/_shop.py`` — the type system, the item's own economics,
 its instantiability, ``loot_tables``' level sentinel, or Jean's authored
-starting kit. Nothing below reads ``disallowed_classes`` or the ``stockable``
-flag: a test that hand-lists what the code hand-lists only proves the list was
-copied correctly, not that the right things are excluded.
+starting kit. No *exclusion* assertion below reads ``disallowed_classes`` or
+the ``stockable`` flag: a test that hand-lists what the code hand-lists only
+proves the list was copied correctly, not that the right things are excluded.
+(``test_the_harness_scenarios_story_item_names_track_the_stockable_flags`` does
+read the flag, deliberately and for a different job: it is not judging what
+should be excluded, it is holding the harness scenario's hand-written copy of
+the list to the original so the two cannot drift.)
 
 The exception is ``test_maintainer_excluded_items_are_not_stockable``, which
 pins three items excluded by authorial intent alone. No measurable property
 separates them from ordinary stock, so there is nothing to derive from; it is
 labelled a maintainer decision rather than dressed up as an invariant.
+
+KNOWN GAP -- exclusion is opt-in. ``Item.stockable`` defaults to True, so a
+story item is only kept out of stock if someone remembers to flag it. The
+derived assertions below catch a *new* story item only when it happens to be a
+Key, a Book, worth nothing, or marked ``level = 99``. A future non-zero-value
+story ``Special`` -- the ``GronditeMarkToken`` shape -- is stockable by default
+and NO assertion in this file would notice. That shape needs a deliberate flag
+plus a line in the harness scenario's ``MAINTAINER_EXCLUDED_CLASSES``; nothing
+here covers it automatically.
 """
 
 import os
@@ -123,6 +136,12 @@ def test_the_pool_is_not_empty_and_still_holds_ordinary_trade_goods(pool, pool_n
     collapses, so a scan that matched nothing would approve of everything.
     This pins the floor and names one representative of each merchandise
     family that a merchant must still be able to stock.
+
+    The floor is 60 against a real pool of 68, i.e. 8 classes of headroom:
+    flagging a 9th class ``stockable = False`` fails this test on purpose, so
+    that a steady drip of exclusions has to be re-argued rather than waved
+    through one commit at a time. Raise the floor deliberately (and say why)
+    if the pool itself grows.
     """
     assert len(pool) >= 60, f"stock pool collapsed to {len(pool)}"
     for cls_name in (
@@ -204,26 +223,27 @@ def test_no_item_marked_never_randomly_generated_is_stockable(pool):
 
 # ── Authority: Jean's authored starting kit ─────────────────────────────────
 
-#: Issue #632, maintainer decision (2026-09-19). These three are excluded by
-#: authorial intent, NOT by any measurable property: they are instantiable,
-#: worth 600/1/5 gold, carry no level sentinel, are neither Key nor Book, and
-#: are absent from Jean's starting kit. Every derived assertion above is blind
-#: to them, and map authorship does not separate them either -- 45 of the 68
-#: pool members are authored into map JSON, including Longsword and IronHelm.
-#: So this list is a deliberate registry of a judgement call, not a
-#: derivation, and it is labelled as such so no reader mistakes it for one.
-MAINTAINER_EXCLUDED = {
-    # Luminous Grotto puzzle reward: the one-use GeminateGeode spawns it on
-    # success (src/objects.py:1562). Buying one defeats the puzzle.
-    "EnchantedGolemitePauldron",
-    # Authored evidence object placed in grondia.json to be found and EXAMINEd.
-    "FabricariumRejectionShard",
-    # Found flavour, authored into three Grondia maps, not trade goods.
-    "GronditeMarkToken",
-}
+# Issue #632, maintainer decision (2026-09-19). Three items are excluded by
+# authorial intent, NOT by any measurable property: they are instantiable,
+# worth 600/1/5 gold, carry no level sentinel, are neither Key nor Book, and
+# are absent from Jean's starting kit. Every derived assertion above is blind
+# to them, and map authorship does not separate them either -- 45 of the 68
+# pool members are authored into map JSON, including Longsword and IronHelm.
+# So they are a deliberate registry of a judgement call, not a derivation, and
+# they are labelled as such so no reader mistakes them for one.
+#
+# That registry is written down ONCE, in
+# ``tools/harness/scenarios/shop_story_items.py``
+# (``MAINTAINER_EXCLUDED_CLASSES``, held as class objects so a rename is an
+# AttributeError at import rather than a name that silently stops matching).
+# It lives there rather than here purely for dependency direction: this module
+# imports pytest, the bug-hunt workflow installs only ``requirements.txt``,
+# which has none, and a harness importing the test suite would take the harness
+# down with it. This file still owns the assertion -- the test below imports
+# the registry instead of re-typing it.
 
 
-def test_maintainer_excluded_items_are_not_stockable(pool_names):
+def test_maintainer_excluded_items_are_not_stockable(pool):
     """The judgement-call exclusions, pinned because nothing else pins them.
 
     This is the one assertion in this file that does not derive its
@@ -231,8 +251,53 @@ def test_maintainer_excluded_items_are_not_stockable(pool_names):
     three look exactly like ordinary merchandise by every property the other
     tests measure. Without this test, deleting their ``stockable = False``
     would leave the whole suite green.
+
+    Matched on class identity rather than name, so renaming one of the three
+    cannot quietly turn this into a comparison that matches nothing.
     """
-    assert MAINTAINER_EXCLUDED & pool_names == set()
+    from tools.harness.scenarios.shop_story_items import MAINTAINER_EXCLUDED_CLASSES
+
+    assert MAINTAINER_EXCLUDED_CLASSES, "the judgement-call registry is empty"
+    offenders = sorted(c.__name__ for c in pool if c in MAINTAINER_EXCLUDED_CLASSES)
+    assert offenders == []
+
+
+def test_the_harness_scenarios_story_item_names_track_the_stockable_flags():
+    """The #632 harness scenario hand-lists story items by name on purpose.
+
+    ``tools/harness/scenarios/shop_story_items.py`` cannot derive its list from
+    the ``stockable`` flags alone: reverting the fix clears every flag, and a
+    flag-only sweep would then find no offenders and report success against the
+    exact bug it exists to catch. So it names them -- and the price of that
+    deliberate duplication is drift. Flag an 18th class, or unflag one, and the
+    scenario would go on testing yesterday's list without a word.
+
+    This is the assertion that makes the copy keep up with the original. It is
+    deliberately the one place in this file that reads the flag: it is not
+    asserting that the right things are excluded (the tests above do that from
+    outside authorities), it is asserting that two lists of the same thing
+    agree.
+    """
+    from tools.harness.scenarios.shop_story_items import STORY_ITEM_NAMES
+
+    # The EFFECTIVE flag, not ``"stockable" in c.__dict__``: the flag is
+    # inherited, Book sets it for its whole subtree, and a derivation that
+    # counted only per-class declarations would shrink the moment a redundant
+    # restatement is removed -- silently dropping names from the scenario's
+    # discriminator instead of failing.
+    flagged = {
+        c.__name__
+        for c in vars(items_module).values()
+        if isinstance(c, type)
+        and issubclass(c, items_module.Item)
+        and not c.stockable
+    }
+    assert flagged, "no class carries stockable = False - the #632 fix is gone"
+    assert STORY_ITEM_NAMES == flagged, (
+        "the harness scenario's story-item names have drifted from the classes "
+        f"flagged stockable = False: only in scenario={sorted(STORY_ITEM_NAMES - flagged)}, "
+        f"only flagged={sorted(flagged - STORY_ITEM_NAMES)}"
+    )
 
 
 def test_jeans_personal_effects_are_not_merchandise(pool_names):

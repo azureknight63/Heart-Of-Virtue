@@ -3286,8 +3286,13 @@ class Book(Special):
     # Issue #632: set on the base because the WHOLE subtree is excluded -- every
     # Book subclass is a single authored testimony, placed to be found, and all
     # are value 0 so they would sell for nothing anyway. The bare Book itself
-    # also instantiates to a literal placeholder named "Book". Subclasses
-    # restate this for the reader; the inheritance covers any new one.
+    # also instantiates to a literal placeholder named "Book".
+    #
+    # Subclasses do NOT restate it. Six of them did, in six byte-identical
+    # lines that changed no behaviour and invited the next author to cargo-cult
+    # a seventh. The guard in tests/test_shop_stock_excludes_story_items.py
+    # reads the EFFECTIVE flag rather than per-class declarations, so this one
+    # line covers every existing subclass and every future one.
     stockable = False
 
     #: Room-based interactions dispatch through ``src.objects.resolve_interaction``,
@@ -3612,7 +3617,7 @@ class EnchantedGolemitePauldron(Armor):
     """
 
     # Issue #632: puzzle reward, not merchandise. The one-use GeminateGeode
-    # object spawns it on success (src/objects.py:1562) and then removes
+    # object spawns it on success (src/objects.py:1609) and then removes
     # itself, so buying one off a shelf defeats the Luminous Grotto puzzle
     # outright. A leaf class -- nothing inherits from it, so flagging it costs
     # no legitimate armour.
@@ -3827,9 +3832,6 @@ class ElderWritOfCleansing(Book):
     References pool water as the sacred medium for pre-ritual purification.
     """
 
-    # Issue #632: authored single-copy testimony (value 0) -- found, never sold.
-    stockable = False
-
     def __init__(self) -> None:
         text = (
             "ELDER'S WRIT OF CLEANSING — Office of the Conclave, inner rites.\n\n"
@@ -3866,9 +3868,6 @@ class DissentingRecord(Book):
     A hidden personal archive from Conclave Elder Vreth, recording how a previous
     pool Dormancy was resolved — not by ritual, but by physical investigation.
     """
-
-    # Issue #632: authored single-copy testimony (value 0) -- found, never sold.
-    stockable = False
 
     def __init__(self) -> None:
         text = (
@@ -3917,9 +3916,6 @@ class HeartkeeperNote(Book):
     Second independent witness to pipe contamination before the pool closure.
     """
 
-    # Issue #632: authored single-copy testimony (value 0) -- found, never sold.
-    stockable = False
-
     def __init__(self) -> None:
         text = (
             "We moved to the upper tier two weeks ago. The pipe water started smelling "
@@ -3955,9 +3951,6 @@ class QualityReport117K(Book):
     Fabricarium quality report for Batch 117-K — the first hard documentary evidence
     connecting pool-output contamination to production failures.
     """
-
-    # Issue #632: authored single-copy testimony (value 0) -- found, never sold.
-    stockable = False
 
     def __init__(self) -> None:
         text = (
@@ -4003,9 +3996,6 @@ class CompactOfSilence(Book):
     A secret pact between Fabricarium masters to suppress the Batch 117-K contamination
     findings from outside traders. Found hidden in a floor channel grate.
     """
-
-    # Issue #632: authored single-copy testimony (value 0) -- found, never sold.
-    stockable = False
 
     def __init__(self) -> None:
         text = (
@@ -4298,9 +4288,6 @@ class MerchantJournalFragment(Book):
     """A fragment of a merchant's journal found at the Far Reach on the eastern slope.
     Readable lore item revealing context about the eastern road and creature behavior.
     """
-
-    # Issue #632: authored single-copy testimony (value 0) -- found, never sold.
-    stockable = False
 
     def __init__(self) -> None:
         journal_text = (
