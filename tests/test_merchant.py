@@ -223,9 +223,8 @@ def test_fill_remaining_stock_respects_container_capacity(monkeypatch):
 
 
 def test_relic_excluded_from_random_restock(monkeypatch):
-    """Relic (issue #340) is a story-locked grief cure granted in Jean's starting
-    inventory (see Player.__init__) — it must never appear as random merchant
-    stock. Restrict the candidate pool to just {Relic, Restorative}: if Relic
+    """Relic (issue #340) is a personal memento awaiting a redesign (#646),
+    not merchandise -- it must never appear as random merchant stock. Restrict the candidate pool to just {Relic, Restorative}: if Relic
     weren't filtered by disallowed_classes, it would win roughly half the
     weighted draws; instead every slot should deterministically resolve to
     the only remaining candidate, Restorative.

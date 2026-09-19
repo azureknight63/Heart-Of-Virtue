@@ -21,6 +21,7 @@ All notable changes to Heart of Virtue will be documented in this file.
 - Combat animations play per target concurrently; layered animations no longer compound.
 - World movement and passageway teleport are refused during combat, with a message that says how to escape.
 - Logout asks for confirmation; START OVER begins a new run instead of logging out.
+- Jean no longer starts with the Relic: its text named what the story withholds, and Hollowed's cure awaits a redesign (#646). Hollowed still lapses on its own.
 - `starting_level` opens a session at level N, with the points spent by policy (`even`, for QA configs) or left to the player (`player`, for production). The Grondia loadout carries a blunt weapon.
 - **Deploys** pin the server's backend to the commit the frontend was built from (`git reset --hard`, not `git pull`: tracked edits on the server are discarded), and refuse unless the local checkout is `origin/master` with nothing outside `HEAD` able to reach the bundle — no modified, untracked or ignored files that the build reads, no `VITE_*`, `NODE_OPTIONS` or non-production `NODE_ENV` in the environment. Every build is stamped with its commit, so a rollback names the backend that matches the frontend it restores. `-Version` defaults to the `VERSION` file. A failure once the maintenance page is up leaves it up and prints the recovery commands for the state the deploy stopped in; a failure before that changes nothing on the server.
 

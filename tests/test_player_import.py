@@ -54,13 +54,12 @@ def test_starting_attributes(fresh_player, attribute, expected):
 
 
 def test_starting_inventory_contents(fresh_player):
-    """Jean starts with his ring, the relic, cloth armour and a purse."""
+    """Jean starts with his ring, cloth armour and a purse (no Relic: #646)."""
     names = sorted(type(item).__name__ for item in fresh_player.inventory)
     assert names == [
         "ClothHood",
         "Gold",
         "JeanWeddingBand",
-        "Relic",
         "TatteredCloth",
     ]
 
