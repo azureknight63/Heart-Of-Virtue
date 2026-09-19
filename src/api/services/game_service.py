@@ -21,6 +21,7 @@ from src.events import (
 from src.functions import (
     check_for_combat,
     end_combat_cleanup,
+    remove_by_identity,
     signal_combat_wave_pending,
     victory_loot_pending,
 )
@@ -5247,6 +5248,11 @@ class GameService:
                 "success": False,
                 "error": f"Invalid item_names parameter: expected list, got {type(item_names).__name__}",
             }
+        if len(item_names) > GameService._MAX_LOOT_REQUEST_NAMES:
+            return {
+                "success": False,
+                "error": f"Too many item names: at most {GameService._MAX_LOOT_REQUEST_NAMES}",
+            }
         for name in item_names:
             if not isinstance(name, str):
                 return {
@@ -5288,12 +5294,6 @@ class GameService:
                 continue
             any_collected = over_capacity = False
             for handle in offered[name]:
-                # By index, not ``list.remove``: the lookup is an identity and
-                # ``remove`` is an equality: the day an ``Item`` defines
-                # ``__eq__``, removing "the object we resolved" would quietly
-                # take the first equal twin instead — undoing exactly what
-                # resolving by handle bought (``find_by_handle`` documents the
-                # same trap for ``list.index``).
                 item, index = index_by_handle(tile.items_here, handle)
                 if item is None:
                     continue
@@ -5302,7 +5302,14 @@ class GameService:
                     skipped.append({"name": name, "reason": "over_capacity"})
                     over_capacity = True
                     break
-                del tile.items_here[index]
+                # By identity, not by the looked-up index: take and drop do
+                # not hold the loot lock, so the floor may have shifted since
+                # the lookup, and deleting by index then took a neighbour
+                # while the drop was handed over too. Never ``list.remove``
+                # either -- that is ``==``, and an equal twin is the defect
+                # resolving by handle exists to close.
+                if not remove_by_identity(tile.items_here, item, hint=index):
+                    continue
                 inventory.append(item)
                 collected.append(name)
                 current_weight += item_weight
@@ -5410,6 +5417,11 @@ class GameService:
         """
         if getattr(player, "combat_end_summary", None) is not None:
             player.combat_end_summary = None
+
+    #: The most distinct names one collect may ask for. A fight's offer holds
+    #: a handful; the request is client-sized and walked under the
+    #: process-wide ``_LOOT_PHASE_LOCK``, so a longer list is refused up front.
+    _MAX_LOOT_REQUEST_NAMES = 64
 
     #: Why a collect took nothing when the fight's tile could not be found.
     _LOOT_TILE_NOT_FOUND_MESSAGE = (

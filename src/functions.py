@@ -1108,6 +1108,35 @@ def stack_inv_items(target):
     stack_items_list(target.inventory)
 
 
+def remove_by_identity(items, obj, hint=None):
+    """Remove ``obj`` itself from ``items``; return False if it is not there.
+
+    By identity, never ``==`` (``list.remove`` and ``in`` compare with ``==``,
+    which would take an equal twin the day an ``Item`` defines ``__eq__``).
+    And by pop-then-verify rather than check-then-delete: ``list.pop`` is one
+    atomic step under the GIL, so if another request shifted the list since
+    ``obj`` was found -- a take or a drop landing on the same floor -- the
+    wrong object comes out, is put back, and ``obj`` is looked for again,
+    instead of a neighbour being deleted in its place. ``hint`` is where it
+    was last seen.
+    """
+    for _attempt in range(3):
+        if hint is None or not (0 <= hint < len(items) and items[hint] is obj):
+            hint = next((i for i, item in enumerate(items) if item is obj), None)
+        if hint is None:
+            return False
+        try:
+            popped = items.pop(hint)
+        except IndexError:
+            hint = None
+            continue
+        if popped is obj:
+            return True
+        items.insert(hint, popped)  # not ours: put it back and look again
+        hint = None
+    return False
+
+
 def victory_loot_pending(player):
     """Whether ``player``'s last fight was won and its loot is not yet
     resolved -- the only state in which a victory offers anything.

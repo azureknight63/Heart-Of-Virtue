@@ -36,7 +36,7 @@ import pytest
 
 from src.api.combat_adapter import ApiCombatAdapter
 from src.api.services.game_service import GameService
-from src.combatant import wire_handle
+from src.combatant import index_by_handle, wire_handle
 from src.items import Restorative
 from src.npc import Slime
 
@@ -838,3 +838,71 @@ def test_every_floor_merge_goes_through_the_frozen_gate():
                 callers.append((source.rel_posix, getattr(owner, "name", "<module>")))
     assert callers, "no stack_duplicate_items call found -- the scan is broken"
     assert callers == [("src/functions.py", "restack_floor")], callers
+
+
+class TestTheCollectRequestIsBoundedAndExact:
+    """Scrub findings on the collect path (#621 review)."""
+
+    def test_an_oversized_request_is_refused_before_anything_moves(
+        self, won_fight, game_service
+    ):
+        """The request is client-sized and walked under a process-wide lock,
+        so a list longer than any fight's offer is refused up front."""
+        fight = won_fight()
+        names = [f"name{i}" for i in range(GameService._MAX_LOOT_REQUEST_NAMES + 1)]
+
+        result = game_service.collect_combat_loot(fight.player, names)
+
+        assert result["success"] is False, result
+        assert fight.player.combat_drops, "a refused request withdraws nothing"
+
+    def test_the_drop_itself_leaves_even_if_the_floor_shifts_mid_collect(self):
+        """Collect looks the drop up, weighs it, then removes it. Take and drop
+        do not hold the loot lock, so another request can land an object on
+        the floor in between -- and a delete by the looked-up INDEX then took
+        the neighbour instead, while the drop was handed over as well."""
+        class _Thing:
+            name = "Thing"
+            weight = 0.0
+
+        neighbour, dropped, latecomer = _Thing(), _Thing(), _Thing()
+        tile = SimpleNamespace(items_here=[neighbour, dropped])
+        jean = SimpleNamespace(inventory=[], weight_tolerance=20.0)
+        offered = {"Thing": [wire_handle(dropped)]}
+        real_lookup = index_by_handle
+
+        def a_drop_lands_in_the_window(items, handle):
+            found = real_lookup(items, handle)
+            items.insert(0, latecomer)
+            return found
+
+        with patch("src.api.services.game_service.index_by_handle",
+                   a_drop_lands_in_the_window):
+            collected, _skipped = GameService._take_offered_drops(
+                jean, tile, ["Thing"], offered
+            )
+
+        assert collected == ["Thing"]
+        assert len(jean.inventory) == 1 and jean.inventory[0] is dropped
+        assert not any(i is dropped for i in tile.items_here)
+        assert any(i is neighbour for i in tile.items_here)
+        assert any(i is latecomer for i in tile.items_here)
+
+    @pytest.mark.parametrize("item_type,count", [("Shortsword", 1), ("Restorative", 2)])
+    def test_a_take_that_lost_the_race_does_not_carry_the_item_twice(
+        self, make_world, grid_3x3, item_type, count
+    ):
+        """A take resolved its target, then a collect (which holds the loot
+        lock; take does not) moved that very object into the pack. The take
+        appended it anyway -- the pack held one object twice, and could sell
+        it twice. Pre-existing; the stack take-all path had it too."""
+        jean, game_map = make_world(grid_3x3)
+        tile = game_map[(0, 0)]
+        (item,) = _spawned(tile, item_type, amt=count)
+        tile.items_here.remove(item)       # the collect that won the race
+        jean.inventory.append(item)
+
+        item.take(jean)
+
+        assert sum(1 for i in jean.inventory if i is item) == 1
+

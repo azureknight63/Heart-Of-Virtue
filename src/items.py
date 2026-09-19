@@ -373,6 +373,25 @@ class Item:
             return False
         return carried + (_as_number(getattr(self, "weight", 0)) or 0) * count > capacity
 
+    def _leave_floor(self, player: "Player") -> bool:
+        """Take this object off the floor it lies on, by identity.
+
+        False when it is already in ``player``'s pack: a victory's collect
+        holds the loot lock and take does not, so a collect can move this
+        very object between the take resolving it and the take running --
+        and appending it again carried one object twice, sellable twice.
+        Off the floor FIRST, then into the pack, so the two cannot both
+        hold it. An object on neither is still taken: callers hand ``take``
+        items that were never placed on a floor.
+        """
+        floor = getattr(getattr(player, "current_room", None), "items_here", None)
+        if isinstance(floor, list) and functions.remove_by_identity(floor, self):
+            return True
+        if any(item is self for item in getattr(player, "inventory", None) or []):
+            narrate(f"{player.name} already has the {self.name}.")
+            return False
+        return True
+
     def take(self, player: "Player", quantity: Optional[int] = None) -> None:
         """Take the item from the ground."""
         # An item is only real shop goods when a genuine merchant NPC is
@@ -415,11 +434,11 @@ class Item:
 
                             if take_count == getattr(self, "count"):
                                 # Take all
+                                if not self._leave_floor(player):
+                                    break
                                 if hasattr(self, "merchandise"):
                                     self.merchandise = is_in_shop
                                 player.inventory.append(self)
-                                if self in player.current_room.items_here:
-                                    player.current_room.items_here.remove(self)
                                 cprint(
                                     f"{player.name} picks up {take_count} x {self.name}.",
                                     "green",
@@ -476,14 +495,13 @@ class Item:
             cprint("It's too heavy to carry!", "red")
             return
 
+        if not self._leave_floor(player):
+            return
+
         # Add to inventory
         if hasattr(self, "merchandise"):
             self.merchandise = is_in_shop
         player.inventory.append(self)
-
-        # Remove from room
-        if self in player.current_room.items_here:
-            player.current_room.items_here.remove(self)
 
         cprint(f"{player.name} picks up the {self.name}.", "green")
 
