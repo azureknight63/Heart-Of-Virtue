@@ -1583,6 +1583,7 @@ class TestShopSuccessPaths:
         item.count = 1
         item.is_equipped = False
         item.isequipped = False
+        item.merchandise = False  # a MagicMock's own would be truthy: unpaid goods
         item.description = "sturdy"
         item.power = 10
         item.subtype = "Sword"

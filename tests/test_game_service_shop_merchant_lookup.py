@@ -286,3 +286,65 @@ class TestPartialSellOfStackableKeepsBuybackRedeemable:
             item_cls().name, result["gold_gained"]
         )
         assert result["message"] == expected
+
+
+# ---------------------------------------------------------------------------
+# The shop pays only for what Jean owns, and buys back what he sold
+# ---------------------------------------------------------------------------
+
+
+class TestTheShopEconomyBalances:
+    """Scrub findings on the #611/#624 shop code (both Minor security)."""
+
+    @pytest.mark.parametrize("item_cls", NAME_BAKING_STACKABLES)
+    def test_bought_back_units_carry_the_value_they_were_sold_at(
+        self, game_service, item_cls
+    ):
+        """Buyback charges the SELLER's price, but it handed back units split
+        off the merchant's stack -- which a ValueModifierCondition may have
+        boosted. Sell the whole stack, buy it back, resell: profit. Before
+        #624 the baked name kept these two classes out of buyback entirely."""
+        boosted = _stack_of(item_cls, 1, merchandise=True)
+        boosted.value = item_cls().value * 3
+        player, _game_map, merchant = live_shop(
+            stock=[Gold(amt=MERCHANT_STOCK_GOLD), boosted],
+            player_gold=PLAYER_PURSE_GOLD,
+        )
+        sellable = _stack_of(item_cls, 2)
+        sold_value = sellable.value
+        player.inventory.append(sellable)
+
+        sold = game_service.shop_sell(
+            player, wire_handle(merchant), wire_handle(sellable), 2
+        )
+        assert sold["success"] is True, sold.get("error")
+        (entry,) = merchant._buyback_ledger
+        bought = game_service.shop_buyback(
+            player, wire_handle(merchant), wire_handle(entry)
+        )
+        assert bought["success"] is True, bought.get("error")
+
+        returned = [i for i in player.inventory if isinstance(i, item_cls)]
+        assert returned, "the buyback returned nothing"
+        assert [i.value for i in returned] == [sold_value] * len(returned)
+
+    def test_unpaid_merchandise_cannot_be_sold(self, game_service):
+        """Goods taken from a merchant's crate or floor carry
+        ``merchandise=True`` until paid for. Only the UI filtered them out of
+        the SELL list, so a direct POST sold the merchant its own goods."""
+        player, _game_map, merchant = live_shop(
+            stock=[Gold(amt=MERCHANT_STOCK_GOLD)],
+            player_gold=PLAYER_PURSE_GOLD,
+        )
+        unpaid = _stack_of(MineralPowder, 1, merchandise=True)
+        player.inventory.append(unpaid)
+
+        result = game_service.shop_sell(
+            player, wire_handle(merchant), wire_handle(unpaid), 1
+        )
+
+        assert result["success"] is False, result
+        assert unpaid in player.inventory
+        assert not getattr(merchant, "_buyback_ledger", [])
+        assert get_player_gold(player) == PLAYER_PURSE_GOLD
+

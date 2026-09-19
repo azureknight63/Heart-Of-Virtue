@@ -5718,6 +5718,16 @@ class GameService:
         ):
             return {"success": False, "error": "Cannot sell equipped items"}
 
+        # Unpaid goods -- taken from a merchant's crate or floor -- carry
+        # ``merchandise`` until bought, and ``equip_item`` refuses them the
+        # same way. The SELL list already hides them; without this a
+        # hand-built request sold the merchant its own goods.
+        if getattr(target_item, "merchandise", False):
+            return {
+                "success": False,
+                "error": f"You must purchase {target_item.name} before selling it",
+            }
+
         base_value = getattr(target_item, "value", 0)
         if not base_value:
             return {"success": False, "error": "This item has no sell value"}
@@ -5878,7 +5888,16 @@ class GameService:
 
         # Execute transfer
         transfer_gold(player.inventory, merchant.inventory, total_price)
+        carried_before = {id(i) for i in player.inventory}
         transfer_item(merchant, player, target_item, entry["count"])
+        # Buyback charges what the merchant PAID, so the units it hands back
+        # are priced the same. Split off a merchant stack a
+        # ValueModifierCondition boosted, they carried the boost and resold
+        # at a profit (#624 let these stacks reach buyback at all). Units that
+        # merged into Jean's own stack already carry his value.
+        for returned in player.inventory:
+            if id(returned) not in carried_before and hasattr(returned, "value"):
+                returned.value = entry["value"]
 
         # Remove ledger entry
         merchant._buyback_ledger.remove(entry)
