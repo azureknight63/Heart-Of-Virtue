@@ -28,11 +28,11 @@ const BASE = '/npc/chat'
  */
 export const NPC_CHAT_TIMEOUT_MS = 28000
 
-// Every chat call the panel waits on carries the deadline. `/end` is not
-// LLM-backed, but it needs one as much as the other two: `handleEndConversation`
-// (hooks/useNpcChat.js) latches
-// `endingRef` before awaiting, so a hung `/end` makes a second click a no-op
-// and strands the panel on screen with no way out at all.
+// Every chat call carries the deadline. `/end` is not LLM-backed, and nothing
+// on screen waits on it any more: `handleEndConversation` (hooks/useNpcChat.js)
+// closes the panel first and sends it fire-and-forget. The deadline still
+// bounds it, so an `/end` the worker never answers settles and is logged
+// instead of hanging with no limit but the browser's own.
 const TURN_CONFIG = { timeout: NPC_CHAT_TIMEOUT_MS }
 
 const npcChat = {

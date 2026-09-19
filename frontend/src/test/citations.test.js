@@ -148,8 +148,8 @@ const CITATIONS = [
     cite({
         where: 'api/npcChat.js',
         about: 'hooks/useNpcChat.js',
-        anchor: 'endingRef.current = true',
-        claim: 'the end handler latches before awaiting, so a hung /end strands the panel',
+        anchor: 'endAbandonedConversation(key)',
+        claim: 'the end handler closes the panel first and sends /end fire-and-forget',
     }),
     cite({
         where: 'styles/keyframes.test.js',

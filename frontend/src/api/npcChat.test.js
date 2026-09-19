@@ -110,9 +110,9 @@ describe('npcChat', () => {
     it.each([
       ['open', () => npcChat.open('Mynx')],
       ['respond', () => npcChat.respond('npc_session_123', 'Hello there')],
-      // `/end` needs the bound as much as the other two: `handleEndConversation`
-      // latches `endingRef` BEFORE awaiting, so a hung `/end` makes a second
-      // click a no-op and genuinely strands the panel on screen.
+      // `/end` carries the same bound. Nothing on screen waits on it (the
+      // panel closes first and sends it fire-and-forget), but an unanswered
+      // one should still settle and be logged rather than hang.
       ['end', () => npcChat.end('npc_session_123')],
     ])('aborts a /%s the server never answers', async (_label, call) => {
       const settled = vi.fn();

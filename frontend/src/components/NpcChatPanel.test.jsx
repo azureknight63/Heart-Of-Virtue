@@ -361,7 +361,7 @@ describe('NpcChatPanel', () => {
     // Issue #618. This assertion used to read `toBeDisabled()`, justified as
     // "so the player cannot double-submit" — but the double-submit hazard is
     // already covered by the hook's `endingRef` latch (one dismissal, one
-    // `/end`, one `onClose`) and by its `!npcKey -> onClose()` short circuit.
+    // `/end`, one `onClose`; no `/end` at all without an `npcKey`).
     // What the gate actually bought was a player watching a reply that never
     // came with the ONLY labelled way out greyed out. BaseDialog's ✕, Escape
     // and the overlay click all route to the same handler and were never

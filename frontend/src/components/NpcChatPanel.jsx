@@ -373,9 +373,9 @@ function ChatErrorBox({ error, retry, disabled }) {
  *
  * End Conversation is NOT gated on `loading` (issue #618). It was, "so the
  * player cannot double-submit" — but the double-submit hazard is already
- * covered in the hook: `endingRef` latches one dismissal to one `/end` and one
- * `onClose`, and with no `npc_key` yet the handler short-circuits straight to
- * `onClose`. What the gate actually bought was a player watching a reply that
+ * covered in the hook: `endingRef` latches one dismissal to one `/end` (none
+ * without an `npc_key`) and one `onClose`, and the panel closes without waiting
+ * on the `/end`. What the gate actually bought was a player watching a reply that
  * never came with the only LABELLED way out greyed out, while BaseDialog's ✕,
  * Escape and the overlay click — all wired to the same handler — stayed live.
  * The hang is exactly when the player most needs the button, and the request it

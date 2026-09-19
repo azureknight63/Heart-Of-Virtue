@@ -336,9 +336,9 @@ export function useNpcChat(npcId, npcName, onClose) {
   // resolving into NPC B's state after a switch. Every write past an `await` in
   // `handleOptionClick` is gated on the sequence it started in.
   const turnSeqRef = useRef(0)
-  // The panel now stays on screen for the duration of `/end`, because ✕, the
-  // overlay click and Escape all route through `handleEndConversation` instead
-  // of dismissing instantly. That opens a window a second click can land in.
+  // ✕, the overlay click, Escape and the End button all route through
+  // `handleEndConversation`, and two of them can land before the close
+  // re-renders. This latch makes that one `/end` and one `onClose`.
   const endingRef = useRef(false)
   // The caller's latest `onClose`. The auto-close timer is now armed from the
   // mount effect as well as from a click, and that effect's closure is frozen
