@@ -16,6 +16,7 @@ import time
 import random
 
 from src.events import Event, tile_identity
+from src.npc._progression import join_party
 import src.objects as objects
 from src.functions import await_input
 from src.story.effects import MemoryFlash
@@ -827,8 +828,7 @@ class Ch01PostRumbler3(RumblerChainEvent):
         )
         if gorran is None:
             gorran = self.tile.spawn_npc("Gorran", delay=0)
-            self.player.combat_list_allies.append(gorran)
-        gorran.sync_level(getattr(self.player, "level", 1))
+        join_party(self.player, gorran)
         gorran.in_combat = True
         gorran.reset_combat_moves()
 
@@ -984,10 +984,7 @@ class AfterGorranIntro(Event):
         await_input()
         for gorran in self.tile.npcs_here:
             if gorran.name == "Gorran":
-                self.player.combat_list_allies.append(gorran)
-                gorran.friend = True
-                if hasattr(gorran, "sync_level"):
-                    gorran.sync_level(getattr(self.player, "level", 1))
+                join_party(self.player, gorran)
                 # Reset moves if joining mid-combat
                 if self.player.in_combat:
                     gorran.reset_combat_moves()

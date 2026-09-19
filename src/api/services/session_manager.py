@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Tuple, Any
 from src.config_manager import ConfigManager
+from src.npc._progression import join_party
 
 _log = logging.getLogger(__name__)
 
@@ -792,11 +793,7 @@ class SessionManager:
                     f"[SessionManager] [ERROR] Could not spawn starting party member {npc_type}: {e}",
                 )
                 continue
-            ally.friend = True
-            if hasattr(ally, "sync_level"):
-                ally.sync_level(getattr(player, "level", 1))
-            if ally not in player.combat_list_allies:
-                player.combat_list_allies.append(ally)
+            join_party(player, ally)
             if npc_type == "Gorran":
                 # Without this, Gorran's name property falls back to "Rock-Man"
                 # until the Ch01 story event would have naturally set it.
