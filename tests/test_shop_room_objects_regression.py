@@ -17,11 +17,19 @@ silently found nothing:
 
 The rooms in these tests therefore use the *real* ``objects_here`` attribute and
 a coordinate-keyed dict map, exactly like the live engine.
+
+The same walk is where issue #611's two restock defects lived, so their
+regressions are here too: unplaceable random stock abandoned on the merchant's
+floor, and never-stock families (``Special`` above all) filtered by exact
+membership instead of by subclass.
 """
 
 import logging
 import random
+from contextlib import contextmanager
 from unittest.mock import MagicMock
+
+import pytest
 
 from src.items import (
     AncientRelic,
@@ -30,15 +38,14 @@ from src.items import (
     DragonHeartGem,
     Draught,
     MineralSolvent,
-    Relic,
     Restorative,
     SlimeFlask,
-    Special,
     Weapon,
     unique_item_factories,
     unique_items_spawned,
 )
 from src.npc import Merchant
+from src.npc._shop import _NEVER_STOCK_FAMILIES
 from src.objects import Container
 from src.shop_conditions import UniqueItemInjectionCondition, ValueModifierCondition
 
@@ -340,18 +347,9 @@ def test_update_goods_always_stock_items_land_in_inventory_not_container():
     # crate once six new test files shifted xdist's --dist loadfile grouping and
     # with it the per-worker random state; the shop path itself never changed.
     # Marking every factory as already spawned empties `available_factories`,
-    # so the pass returns [] deterministically. Derived from
-    # `unique_item_factories`, not a hand-written list of the three names, so a
-    # fourth unique cannot quietly reopen this hole.
-    assert unique_item_factories, "no unique factories to isolate -- check the import"
-    spawned_before = set(unique_items_spawned)
-    unique_items_spawned.update(f.__name__ for f in unique_item_factories)
-
-    try:
+    # so the pass returns [] deterministically (`_unique_injection_disarmed`).
+    with _unique_injection_disarmed():
         merchant.update_goods()
-    finally:
-        unique_items_spawned.clear()
-        unique_items_spawned.update(spawned_before)
 
     inventory_names = {type(it).__name__ for it in merchant.inventory}
     crate_names = [type(it).__name__ for it in crate.inventory]
@@ -406,28 +404,48 @@ def _jambo_like_merchant():
     return merchant, room, crate
 
 
-def _restock_without_unique_injection(merchant, seed):
-    """Run ``update_goods`` deterministically with the unique pass neutralised.
+@contextmanager
+def _unique_injection_disarmed():
+    """Neutralise ``UniqueItemInjectionCondition`` for the duration.
 
-    ``_fill_remaining_stock`` picks with ``random.choice``/``random.uniform``,
-    so the roll is seeded rather than left to the engine's ~220 unseeded
-    ``random.*`` calls. ``UniqueItemInjectionCondition`` is disarmed the same
-    way the issue-#546 test above does it -- by marking every factory as
-    already spawned, derived from ``unique_item_factories`` rather than a
-    hand-kept list of names.
+    Its pick is a bare ``random.choice(available_factories)`` into a
+    merchant-owned container, so leaving it live makes a restock assertion
+    depend on an unseeded roll. Marking every factory as already spawned
+    empties ``available_factories``. Derived from ``unique_item_factories``,
+    not a hand-written list of names, so a new unique cannot reopen the hole.
     """
     assert unique_item_factories, "no unique factories to isolate -- check the import"
     spawned_before = set(unique_items_spawned)
     unique_items_spawned.update(f.__name__ for f in unique_item_factories)
-    random.seed(seed)
     try:
-        merchant.update_goods()
+        yield
     finally:
         unique_items_spawned.clear()
         unique_items_spawned.update(spawned_before)
 
 
-def test_restock_leaves_no_merchandise_on_the_merchants_floor():
+def _restock_without_unique_injection(merchant, seed):
+    """Run ``update_goods`` deterministically with the unique pass neutralised.
+
+    ``_fill_remaining_stock`` picks with ``random.choice``/``random.uniform``,
+    so the roll is seeded rather than left to the engine's ~220 unseeded
+    ``random.*`` calls.
+    """
+    with _unique_injection_disarmed():
+        random.seed(seed)
+        merchant.update_goods()
+
+
+def _floor_merchandise(room):
+    return [it for it in room.items_here if getattr(it, "merchandise", False)]
+
+
+#: The leak is roll-dependent, so one seed is not evidence of a fix.
+_LEAK_SEEDS = range(5)
+
+
+@pytest.mark.parametrize("seed", _LEAK_SEEDS)
+def test_restock_leaves_no_merchandise_on_the_merchants_floor(seed):
     """Regression test for issue #611 (unexplained floor items in Jambo's tent).
 
     ``_fill_remaining_stock`` spawns each candidate into ``current_room``
@@ -440,28 +458,16 @@ def test_restock_leaves_no_merchandise_on_the_merchants_floor():
     """
     merchant, room, crate = _jambo_like_merchant()
 
-    _restock_without_unique_injection(merchant, seed=0)
+    _restock_without_unique_injection(merchant, seed=seed)
 
     # The restock must actually have happened, or "no litter" proves nothing.
     assert crate.inventory, "the Crate took no stock -- the fill pass never ran"
-    litter = [it for it in room.items_here if getattr(it, "merchandise", False)]
+    litter = _floor_merchandise(room)
     assert litter == [], (
-        "restocking must not abandon merchandise in the merchant's room; "
-        f"{len(litter)} item(s) were left on the floor: "
+        f"seed {seed}: restocking must not abandon merchandise in the "
+        f"merchant's room; {len(litter)} item(s) were left on the floor: "
         f"{sorted(type(it).__name__ for it in litter)}"
     )
-
-
-def test_restock_leaves_no_floor_litter_across_several_seeds():
-    """The leak is roll-dependent, so one seed is not evidence of a fix."""
-    for seed in range(5):
-        merchant, room, crate = _jambo_like_merchant()
-        _restock_without_unique_injection(merchant, seed=seed)
-        litter = [it for it in room.items_here if getattr(it, "merchandise", False)]
-        assert litter == [], (
-            f"seed {seed} left {len(litter)} merchandise item(s) on the floor: "
-            f"{sorted(type(it).__name__ for it in litter)}"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -489,51 +495,50 @@ def _merchant_with_only_container(allowed, cap=20):
     return merchant, room, container
 
 
-def test_random_stock_never_contains_special_family_items():
+def test_the_never_stock_families_are_declared():
+    """Non-vacuity for the parametrized test below: an emptied tuple would
+    parametrize it over nothing and pass."""
+    assert _NEVER_STOCK_FAMILIES, "no never-stock families declared"
+
+
+@pytest.mark.parametrize(
+    "family", _NEVER_STOCK_FAMILIES, ids=lambda cls: cls.__name__
+)
+def test_random_stock_never_contains_a_never_stock_family(family):
     """Regression test for issue #611 (an unbuyable, unreadable book in Jambo's tent).
 
-    ``disallowed_classes`` lists ``Special``, but the filter was ``obj in
-    disallowed_classes`` -- exact membership, not a subclass test. Every one of
-    ``Special``'s 18 concrete subclasses therefore stayed a valid random-stock
+    The old ``disallowed_classes`` set listed ``Special``, but the filter was
+    ``obj in disallowed_classes`` -- exact membership, not a subclass test.
+    Every concrete ``Special`` subclass therefore stayed a valid random-stock
     candidate: quest tokens, lore fragments, and bare ``Book`` (name "Book",
     value 5, ``text_file_path=None``), which spawns merchandise-flagged,
     invisible to the Buy panel, and reads as "This book is mysteriously blank."
+
+    Parametrized over the engine's own ``_NEVER_STOCK_FAMILIES``, so a family
+    added there is covered here without anyone remembering to. ``Relic`` has
+    no subclasses today; its row asserts the rule rather than a live leak.
     """
-    merchant, room, case = _merchant_with_only_container(Special)
+    merchant, _room, case = _merchant_with_only_container(family)
 
     _restock_without_unique_injection(merchant, seed=0)
 
     stocked = sorted(type(it).__name__ for it in case.inventory)
     assert stocked == [], (
-        "no Special-family item may be rolled as random stock; the pass "
-        f"stocked {stocked}"
+        f"no {family.__name__}-family item may be rolled as random stock; "
+        f"the pass stocked {stocked}"
     )
-
-
-def test_random_stock_never_contains_relics():
-    """``Relic`` carries the same never-stock intent as ``Special``.
-
-    It has no subclasses today, so this asserts the rule rather than catching a
-    live leak -- the point is that adding one cannot quietly reopen the hole.
-    """
-    merchant, room, case = _merchant_with_only_container(Relic)
-
-    _restock_without_unique_injection(merchant, seed=0)
-
-    stocked = sorted(type(it).__name__ for it in case.inventory)
-    assert stocked == [], f"no Relic may be rolled as random stock; got {stocked}"
 
 
 def test_random_stock_still_contains_ordinary_merchandise():
     """Positive control: the exclusion must not have emptied the candidate pool.
 
-    ``Weapon`` is in the same disallowed list as ``Special``, but for the
-    opposite reason -- it is an abstract base nobody should instantiate
-    directly, while its 18 concrete subclasses are exactly what an armourer
-    sells. A subclass test applied to the whole list would take those with it,
-    so this is the test that fails if the fix is made too broad.
+    ``Weapon`` is excluded too, but by exact membership and for the opposite
+    reason -- it is an abstract base nobody should instantiate directly, while
+    its concrete subclasses are exactly what an armourer sells. A subclass test
+    applied to it would take those with it, so this is the test that fails if
+    the fix is made too broad.
     """
-    merchant, room, case = _merchant_with_only_container(Weapon)
+    merchant, _room, case = _merchant_with_only_container(Weapon)
 
     _restock_without_unique_injection(merchant, seed=0)
 

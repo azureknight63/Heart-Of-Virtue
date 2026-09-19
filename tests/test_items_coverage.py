@@ -31,6 +31,7 @@ self.power in __init__, so calling .use() raised AttributeError. Fixed by
 adding `self.power = 25` (see src/items.py).
 """
 
+import inspect
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
@@ -1083,7 +1084,9 @@ class TestMineralPowder:
         item = items.MineralPowder()
         item.count = 3
         item.stack_grammar()
+        # The count lives in the description, never the name (#624).
         assert "3 packets" in item.description
+        assert item.name == "Mineral Powder"
 
     def test_stack_grammar_singular(self):
         item = items.MineralPowder()
@@ -1093,6 +1096,65 @@ class TestMineralPowder:
         item.stack_grammar()  # back to singular
         assert item.name == "Mineral Powder"
         assert "3 packets" not in item.description
+
+
+# ---------------------------------------------------------------------------
+# #624: stack_grammar() adjusts prose, never the name
+# ---------------------------------------------------------------------------
+
+
+def _constructible_stackables():
+    """Every ``src.items`` class with a ``stack_grammar()`` that can be built
+    without arguments -- the population a real floor or pack can hold.
+
+    Derived, not listed: the next stackable is covered the day it lands. The
+    abstract bases (``Consumable``, ``Commodity``, ``Arrow``) need constructor
+    arguments and are skipped; every implementation they carry that a real
+    item can reach is reached through a concrete subclass here.
+    """
+    found = []
+    for _name, cls in inspect.getmembers(items, inspect.isclass):
+        if cls.__module__ != items.__name__ or not hasattr(cls, "stack_grammar"):
+            continue
+        try:
+            cls()
+        except TypeError:
+            continue
+        found.append(cls)
+    return found
+
+
+_STACKABLES = _constructible_stackables()
+
+#: The two classes whose ``stack_grammar()`` baked the count into ``name``
+#: before #624. Named on purpose: they anchor the derived population above
+#: and carry the characterization tests below.
+_FORMERLY_NAME_BAKING = ["MineralPowder", "DriedCrystalSap"]
+
+
+def test_the_stackable_population_is_real():
+    names = {cls.__name__ for cls in _STACKABLES}
+    assert set(_FORMERLY_NAME_BAKING) <= names, (
+        f"the derived stackable scan lost {sorted(set(_FORMERLY_NAME_BAKING) - names)}"
+    )
+    assert len(names) > len(_FORMERLY_NAME_BAKING), (
+        "the scan found only the two anchors -- it has stopped deriving"
+    )
+
+
+@pytest.mark.parametrize("cls", _STACKABLES, ids=lambda cls: cls.__name__)
+def test_stack_grammar_never_rewrites_the_name(cls):
+    """``name`` is identity -- the buyback ledger and the sell message key on
+    it -- so the stack count belongs in the description only (#624)."""
+    item = cls()
+    base_name = item.name
+    for count in (3, 1):
+        item.count = count
+        item.stack_grammar()
+        assert item.name == base_name, (
+            f"{cls.__name__}.stack_grammar() rewrote name to {item.name!r} "
+            f"at count {count}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1119,7 +1181,7 @@ class TestStackablesMergeOnStackKeyNotName:
     rather than in a save file.
     """
 
-    @pytest.mark.parametrize("cls_name", ["MineralPowder", "DriedCrystalSap"])
+    @pytest.mark.parametrize("cls_name", _FORMERLY_NAME_BAKING)
     def test_loose_item_merges_into_an_existing_stack(self, cls_name):
         cls = getattr(items, cls_name)
         loose = cls()
@@ -1133,7 +1195,7 @@ class TestStackablesMergeOnStackKeyNotName:
         assert len(items_list) == 1
         assert items_list[0].count == 3
 
-    @pytest.mark.parametrize("cls_name", ["MineralPowder", "DriedCrystalSap"])
+    @pytest.mark.parametrize("cls_name", _FORMERLY_NAME_BAKING)
     def test_stack_key_does_not_follow_a_renamed_item(self, cls_name):
         """``stack_key`` is independent of ``name``, not merely equal to it.
 
@@ -1153,7 +1215,7 @@ class TestStackablesMergeOnStackKeyNotName:
 
         assert item.stack_key == base_name
 
-    @pytest.mark.parametrize("cls_name", ["MineralPowder", "DriedCrystalSap"])
+    @pytest.mark.parametrize("cls_name", _FORMERLY_NAME_BAKING)
     def test_a_legacy_baked_name_still_merges_into_a_fresh_stack(self, cls_name):
         """A pre-#624 save's baked name must not strand its stack.
 
