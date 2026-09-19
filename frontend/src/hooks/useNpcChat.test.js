@@ -965,6 +965,24 @@ describe('useNpcChat', () => {
       expect(result.current.phase).toBe('waiting_jean')
     })
 
+    it('says the NPC is still composing when a turn is already in flight (#618)', async () => {
+      // The server runs one chat turn per player at a time and answers 409 to
+      // a second -- typically a Retry after a timeout, while the abandoned
+      // turn is still finishing. Neither "did not respond" nor "timed out" is
+      // what happened.
+      npcChat.respond.mockRejectedValue({
+        response: { status: 409, data: { success: false, error: 'server copy' } },
+      })
+      const { result } = await mountOpened()
+
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
+      })
+
+      expect(result.current.error).toBe('Still composing a reply — give it a moment.')
+      expect(result.current.phase).toBe('waiting_jean')
+    })
+
     it('names the deadline when the turn timed out, and hands the options back (#618)', async () => {
       // Issue #618's actual failure: one `/respond` walked the provider chain
       // for over 90 seconds while the panel sat at WAITING_NPC with no options,

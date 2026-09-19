@@ -170,13 +170,19 @@ const THROTTLED_MESSAGE = 'Too many messages — give it a moment.'
 // with no answer, so there is no response and no status to read — axios raises
 // `ECONNABORTED` instead (issue #618). Distinct copy because the two generic
 // fallbacks both describe something the SERVER did, and a player who just
-// watched a 45s spinner is owed the actual reason. Retry is live on both paths,
+// watched a spinner run to the full deadline is owed the actual reason. Retry is live on both paths,
 // and a timed-out turn is the one most likely to succeed on a second try.
 const TIMED_OUT_MESSAGE = 'The conversation timed out — try again.'
+
+// The server runs one chat turn per player at a time and answers 409 to a
+// second -- usually a Retry after a timeout, while the abandoned turn is still
+// finishing (issue #618). Nothing failed; the reply is on its way.
+const STILL_COMPOSING_MESSAGE = 'Still composing a reply — give it a moment.'
 
 /** The fixed copy for a failure, chosen by what kind of failure it is. */
 function failureMessage(err, fallback) {
   if (err?.code === 'ECONNABORTED') return TIMED_OUT_MESSAGE
+  if (err?.response?.status === 409) return STILL_COMPOSING_MESSAGE
   return err?.response?.status === 429 ? THROTTLED_MESSAGE : fallback
 }
 

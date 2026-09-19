@@ -1,5 +1,6 @@
 import logging
 import threading
+import weakref
 import uuid
 import contextlib
 import inspect
@@ -87,6 +88,31 @@ MAX_MANUAL_SAVES = 20
 #: per-player because the section is microseconds long and a lock table keyed
 #: on players is machinery this does not need.
 _LOOT_PHASE_LOCK = threading.Lock()
+
+#: One NPC chat turn per player at a time (#618 scrub; maintainer decision
+#: 2026-09-19). A turn the client abandoned at its deadline keeps running and
+#: commits -- Jean's line, the loquacity drain, the reputation change -- so a
+#: Retry beside it double-committed and spent the LLM quota twice. Weak-keyed
+#: on the player rather than stored on it: a lock does not pickle, and the
+#: player is saved.
+_CHAT_TURN_LOCKS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+_CHAT_TURN_LOCKS_GUARD = threading.Lock()
+
+#: The refusal for a second turn while one is in flight; the route answers 409.
+_CHAT_TURN_IN_FLIGHT = {
+    "success": False,
+    "in_flight": True,
+    "error": "Still composing a reply — give it a moment.",
+}
+
+
+def _chat_turn_lock(player):
+    """``player``'s chat-turn lock, created on first use."""
+    with _CHAT_TURN_LOCKS_GUARD:
+        lock = _CHAT_TURN_LOCKS.get(player)
+        if lock is None:
+            lock = _CHAT_TURN_LOCKS[player] = threading.Lock()
+        return lock
 
 
 def _warn(message):
@@ -4978,7 +5004,24 @@ class GameService:
             # old-scale rows in the save for good.
             _log.warning("loquacity recovery skipped", exc_info=True)
 
+    @staticmethod
+    def _one_chat_turn(player, turn, *args) -> Dict[str, Any]:
+        """Run ``turn(*args)`` unless this player already has one in flight."""
+        lock = _chat_turn_lock(player)
+        if not lock.acquire(blocking=False):
+            return dict(_CHAT_TURN_IN_FLIGHT)
+        try:
+            return turn(*args)
+        finally:
+            lock.release()
+
     def npc_chat_open(
+        self, player: "player_module.Player", npc_id: str
+    ) -> Dict[str, Any]:
+        """Start a conversation, one turn per player at a time (``_npc_chat_open``)."""
+        return self._one_chat_turn(player, self._npc_chat_open, player, npc_id)
+
+    def _npc_chat_open(
         self, player: "player_module.Player", npc_id: str
     ) -> Dict[str, Any]:
         """Start an LLM conversation with a human NPC.
@@ -5038,6 +5081,18 @@ class GameService:
         return self._enrich_chat_result_with_relationship(result, npc)
 
     def npc_chat_respond(
+        self,
+        player: "player_module.Player",
+        npc_key: str,
+        jean_text: str,
+        jean_tone: str = "neutral",
+    ) -> Dict[str, Any]:
+        """Jean's choice, one turn per player at a time (``_npc_chat_respond``)."""
+        return self._one_chat_turn(
+            player, self._npc_chat_respond, player, npc_key, jean_text, jean_tone
+        )
+
+    def _npc_chat_respond(
         self,
         player: "player_module.Player",
         npc_key: str,
