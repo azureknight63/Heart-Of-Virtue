@@ -20,6 +20,8 @@ a coordinate-keyed dict map, exactly like the live engine.
 """
 
 import logging
+import random
+from unittest.mock import MagicMock
 
 from src.items import (
     AncientRelic,
@@ -27,7 +29,12 @@ from src.items import (
     Consumable,
     DragonHeartGem,
     Draught,
+    MineralSolvent,
+    Relic,
     Restorative,
+    SlimeFlask,
+    Special,
+    Weapon,
     unique_item_factories,
     unique_items_spawned,
 )
@@ -358,4 +365,205 @@ def test_update_goods_always_stock_items_land_in_inventory_not_container():
     assert not crate_names, (
         "always_stock items must never be routed into a container; found "
         f"{crate_names} in the Crate instead of merchant.inventory"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Issue #611 — unplaceable random stock must not be abandoned on the floor
+# ---------------------------------------------------------------------------
+
+
+def _jambo_like_merchant():
+    """Build the shipped Jambo configuration: 5 always_stock, 1 spare slot.
+
+    Mirrors ``grondia-jambos_shop.json`` tile (2, 2) -- ``stock_count`` 6
+    against five ``always_stock`` potions, so exactly one merchant slot is
+    free, plus the tile (3, 2) storage Crate that accepts ``[Consumable]``
+    only with a cap of 12. That combination is what makes the random-fill
+    pass roll far more classes than it can house.
+    """
+    merchant, room = _merchant_in_world(
+        name="Jambo",
+        stock_count=6,
+        always_stock=[
+            Restorative(count=5, merchandise=True),
+            Draught(count=4, merchandise=True),
+            Antidote(count=3, merchandise=True),
+            SlimeFlask(count=1, merchandise=True),
+            MineralSolvent(count=1, merchandise=True),
+        ],
+        specialties=[Consumable],
+        enchantment_rate=0.0,
+    )
+    room.spawn_item = _stub_spawn_item(room)
+    crate = Container(
+        name="Jambo's Tent Storage",
+        merchant=merchant,
+        allowed_subtypes=[Consumable],
+        stock_count=12,
+    )
+    room.objects_here.append(crate)
+    return merchant, room, crate
+
+
+def _restock_without_unique_injection(merchant, seed):
+    """Run ``update_goods`` deterministically with the unique pass neutralised.
+
+    ``_fill_remaining_stock`` picks with ``random.choice``/``random.uniform``,
+    so the roll is seeded rather than left to the engine's ~220 unseeded
+    ``random.*`` calls. ``UniqueItemInjectionCondition`` is disarmed the same
+    way the issue-#546 test above does it -- by marking every factory as
+    already spawned, derived from ``unique_item_factories`` rather than a
+    hand-kept list of names.
+    """
+    assert unique_item_factories, "no unique factories to isolate -- check the import"
+    spawned_before = set(unique_items_spawned)
+    unique_items_spawned.update(f.__name__ for f in unique_item_factories)
+    random.seed(seed)
+    try:
+        merchant.update_goods()
+    finally:
+        unique_items_spawned.clear()
+        unique_items_spawned.update(spawned_before)
+
+
+def test_restock_leaves_no_merchandise_on_the_merchants_floor():
+    """Regression test for issue #611 (unexplained floor items in Jambo's tent).
+
+    ``_fill_remaining_stock`` spawns each candidate into ``current_room``
+    first and places it afterwards. When neither an eligible container nor a
+    free merchant slot accepted the roll it used to ``continue``, skipping
+    ``_remove_placed_item_from_room`` -- so the item stayed in
+    ``room.items_here``, merchandise-flagged, takeable, and absent from the
+    Buy panel. With the shipped Jambo numbers that abandoned roughly 23 items
+    per restock on the tent entrance tile.
+    """
+    merchant, room, crate = _jambo_like_merchant()
+
+    _restock_without_unique_injection(merchant, seed=0)
+
+    # The restock must actually have happened, or "no litter" proves nothing.
+    assert crate.inventory, "the Crate took no stock -- the fill pass never ran"
+    litter = [it for it in room.items_here if getattr(it, "merchandise", False)]
+    assert litter == [], (
+        "restocking must not abandon merchandise in the merchant's room; "
+        f"{len(litter)} item(s) were left on the floor: "
+        f"{sorted(type(it).__name__ for it in litter)}"
+    )
+
+
+def test_restock_leaves_no_floor_litter_across_several_seeds():
+    """The leak is roll-dependent, so one seed is not evidence of a fix."""
+    for seed in range(5):
+        merchant, room, crate = _jambo_like_merchant()
+        _restock_without_unique_injection(merchant, seed=seed)
+        litter = [it for it in room.items_here if getattr(it, "merchandise", False)]
+        assert litter == [], (
+            f"seed {seed} left {len(litter)} merchandise item(s) on the floor: "
+            f"{sorted(type(it).__name__ for it in litter)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Issue #611 — the Special family must never be random merchant stock
+# ---------------------------------------------------------------------------
+
+
+def _merchant_with_only_container(allowed, cap=20):
+    """A merchant with no shelves of his own and one container accepting ``allowed``.
+
+    ``stock_count=0`` means every roll has to find a home in the container or
+    nowhere, so the container's contents are a direct readout of which classes
+    the random-fill pass considers stockable -- no dependence on which roll
+    happened to land in a merchant slot.
+    """
+    merchant, room = _merchant_in_world(name="Curio Dealer", stock_count=0)
+    room.spawn_item = _stub_spawn_item(room)
+    container = Container(
+        name="Curio Case",
+        merchant=merchant,
+        allowed_subtypes=[allowed],
+        stock_count=cap,
+    )
+    room.objects_here.append(container)
+    return merchant, room, container
+
+
+def test_random_stock_never_contains_special_family_items():
+    """Regression test for issue #611 (an unbuyable, unreadable book in Jambo's tent).
+
+    ``disallowed_classes`` lists ``Special``, but the filter was ``obj in
+    disallowed_classes`` -- exact membership, not a subclass test. Every one of
+    ``Special``'s 18 concrete subclasses therefore stayed a valid random-stock
+    candidate: quest tokens, lore fragments, and bare ``Book`` (name "Book",
+    value 5, ``text_file_path=None``), which spawns merchandise-flagged,
+    invisible to the Buy panel, and reads as "This book is mysteriously blank."
+    """
+    merchant, room, case = _merchant_with_only_container(Special)
+
+    _restock_without_unique_injection(merchant, seed=0)
+
+    stocked = sorted(type(it).__name__ for it in case.inventory)
+    assert stocked == [], (
+        "no Special-family item may be rolled as random stock; the pass "
+        f"stocked {stocked}"
+    )
+
+
+def test_random_stock_never_contains_relics():
+    """``Relic`` carries the same never-stock intent as ``Special``.
+
+    It has no subclasses today, so this asserts the rule rather than catching a
+    live leak -- the point is that adding one cannot quietly reopen the hole.
+    """
+    merchant, room, case = _merchant_with_only_container(Relic)
+
+    _restock_without_unique_injection(merchant, seed=0)
+
+    stocked = sorted(type(it).__name__ for it in case.inventory)
+    assert stocked == [], f"no Relic may be rolled as random stock; got {stocked}"
+
+
+def test_random_stock_still_contains_ordinary_merchandise():
+    """Positive control: the exclusion must not have emptied the candidate pool.
+
+    ``Weapon`` is in the same disallowed list as ``Special``, but for the
+    opposite reason -- it is an abstract base nobody should instantiate
+    directly, while its 18 concrete subclasses are exactly what an armourer
+    sells. A subclass test applied to the whole list would take those with it,
+    so this is the test that fails if the fix is made too broad.
+    """
+    merchant, room, case = _merchant_with_only_container(Weapon)
+
+    _restock_without_unique_injection(merchant, seed=0)
+
+    stocked = [type(it).__name__ for it in case.inventory]
+    assert stocked, "the random-fill pass stocked no weapons at all"
+    assert all(
+        issubclass(type(it), Weapon) and type(it) is not Weapon for it in case.inventory
+    ), f"a Weapon-only container took something else: {stocked}"
+
+
+def test_container_matching_still_honours_a_spoofed_dunder_class():
+    """The instance-level match must keep ``isinstance`` semantics.
+
+    ``_containers_accepting_type`` began as a plain ``isinstance`` call and is
+    now a wrapper over the class-level rule. ``isinstance`` consults
+    ``__class__`` and ``type()`` bypasses it, so writing the wrapper with
+    ``type(item)`` would silently stop honouring the exact test-double pattern
+    CLAUDE.md prescribes ("to pass an engine ``isinstance``, set
+    ``mock.__class__`` to the real class"). Nothing in the suite happened to
+    exercise that, which is why it gets a test of its own rather than trust.
+    """
+    merchant, room = _merchant_in_world()
+    crate = Container(
+        name="Potion Crate", merchant=merchant, allowed_subtypes=[Consumable]
+    )
+    double = MagicMock()
+    double.__class__ = Restorative
+
+    assert isinstance(double, Consumable), "the double no longer spoofs its class"
+    assert merchant._containers_accepting_type([crate], double) == [crate], (
+        "a double whose __class__ is a real Consumable must match a "
+        "Consumable-only container, exactly as isinstance would"
     )
