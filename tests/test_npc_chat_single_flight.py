@@ -82,7 +82,7 @@ def test_a_real_concurrent_turn_is_refused(world):
     assert npc.calls == ["open"]
 
 
-def test_the_gate_opens_again_after_a_turn_even_one_that_raised(world):
+def test_the_gate_opens_again_after_a_turn_that_failed(world):
     game_service, player, npc = world
 
     def boom(_player):
@@ -90,6 +90,22 @@ def test_the_gate_opens_again_after_a_turn_even_one_that_raised(world):
 
     npc.chat_open = boom
     game_service.npc_chat_open(player, "Tal")  # its own handler reports the failure
+
+    result = game_service.npc_chat_respond(player, "Tal", "Hello?", "neutral")
+    assert result.get("in_flight") is not True, result
+
+
+def test_the_gate_opens_again_after_a_turn_that_raised_through_it(world):
+    """The entry points catch their own failures, so the test above never lets
+    an exception escape the lock. This one does: the release is in a
+    ``finally``, and without it the player could never talk to anyone again."""
+    game_service, player, _npc = world
+
+    def escapes():
+        raise RuntimeError("raised past the turn's own handler")
+
+    with pytest.raises(RuntimeError):
+        game_service._one_chat_turn(player, escapes)
 
     result = game_service.npc_chat_respond(player, "Tal", "Hello?", "neutral")
     assert result.get("in_flight") is not True, result

@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Tuple, Any
 from src.config_manager import ConfigManager
-from src.npc._progression import join_party
 
 _log = logging.getLogger(__name__)
 
@@ -784,6 +783,8 @@ class SessionManager:
                 flush=True,
             )
             return
+
+        from src.npc._progression import join_party
 
         for npc_type in members:
             try:

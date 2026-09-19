@@ -462,7 +462,9 @@ _warned_round_timeout: Optional[float] = None
 #                                     two-call adapter only)
 #
 # Named so :func:`_turn_deadline` funds what ``_CHAT_DEADLINE_SECONDS``
-# enumerates. The two had drifted: the budget widened to *two* round timeouts
+# enumerates -- at healthy latencies; ``_TURN_CEILING_SECONDS`` caps the total
+# below four FULL round timeouts, so a turn whose calls all run to the limit
+# loses its last stage (see :func:`_turn_deadline`). The two had drifted: the budget widened to *two* round timeouts
 # while the constant's comment listed these four, and since
 # :func:`_no_stage_budget` refuses to open a stage unless a whole round timeout
 # still fits, a 12s budget stopped admitting stages six seconds in. At the
@@ -472,7 +474,7 @@ _warned_round_timeout: Optional[float] = None
 _MAX_TURN_STAGES = 4
 
 
-def _turn_deadline(adapter: Any) -> float:
+def _turn_deadline(adapter: Any, started: Optional[float] = None) -> float:
     """The instant after which this turn may open no further provider stage.
 
     ``_CHAT_DEADLINE_SECONDS`` is a fixed number, but the per-call timeout
@@ -496,7 +498,7 @@ def _turn_deadline(adapter: Any) -> float:
     if round_timeout > _DEFAULT_ROUND_TIMEOUT_SECONDS:
         _warn_round_timeout_over_budget(round_timeout, budget)
     budget = min(_TURN_CEILING_SECONDS, max(_CHAT_DEADLINE_SECONDS, budget))
-    return time.monotonic() + budget
+    return (time.monotonic() if started is None else started) + budget
 
 
 def _warn_round_timeout_over_budget(round_timeout: float, widened: float) -> None:
@@ -4535,12 +4537,17 @@ class ConversationalNPCMixin:
         NPC's first turn -- outside every budget. ``scope`` holds the adapter's
         calls to the deadline (``bounded_by``); an adapter without one (a test
         double, a legacy adapter) gets a no-op scope and the stage gate alone.
+
+        The clock starts before ``_get_adapter``: on a cold singleton that
+        builds the adapter, discovering and validating models on this request,
+        and that time is the turn's as much as any call's.
         """
+        started = time.monotonic()
         try:
             adapter = self._get_adapter()
         except Exception:  # the entry point's own handler reports it
             adapter = None
-        deadline = _turn_deadline(adapter)
+        deadline = _turn_deadline(adapter, started)
         bounded = getattr(adapter, "bounded_by", None)
         scope = bounded(deadline) if callable(bounded) else contextlib.nullcontext()
         return deadline, scope

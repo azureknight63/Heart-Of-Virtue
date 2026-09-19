@@ -663,6 +663,23 @@ _WINDOW_COUNTER_KEYS = ("requests", "successes", "rate_limited", "errors")
 _DEFAULT_USAGE_WINDOW_SECONDS = 24 * 60 * 60
 
 
+#: The deadline (``time.monotonic()``) of the NPC chat turn this thread is
+#: serving, if any. Thread-local because adapter instances are shared across
+#: players, and each request is served on its own thread (#618 scrub).
+_TURN_BUDGET = threading.local()
+
+#: A provider call with less than this left of the turn is not started:
+#: ``requests`` refuses a timeout <= 0, and a sub-second connect to a remote
+#: host is a certain failure that would only spend quota.
+_MIN_CALL_SECONDS = 0.5
+
+
+def _turn_budget_left() -> Optional[float]:
+    """Seconds left in this thread's chat turn, or None outside one."""
+    deadline = getattr(_TURN_BUDGET, "deadline", None)
+    return None if deadline is None else deadline - time.monotonic()
+
+
 def _post_chat_completion(
     url: str,
     payload: Dict[str, Any],
@@ -715,6 +732,16 @@ def _post_chat_completion(
         drop.add("response_format")
     if not drop:
         return resp
+    # Inside an NPC chat turn the retry is held to what the turn has left, like
+    # every other call (NpcChatLLMAdapter.bounded_by): ``timeout`` was worked
+    # out before the first POST, and reusing it let the retry end a whole
+    # clipped timeout past the deadline. Returned unmetered here -- the caller
+    # meters the response it gets back.
+    left = _turn_budget_left()
+    if left is not None:
+        if left < _MIN_CALL_SECONDS:
+            return resp
+        timeout = min(timeout, left)
 
     retry = {k: v for k, v in payload.items() if k not in drop}
     logger.info(
@@ -2262,6 +2289,7 @@ class GenericLLMClient:
         payload: Dict[str, Any],
         headers: Dict[str, str],
         timeout: float,
+        bench_on_timeout: bool = True,
     ) -> Optional[str]:
         """One model attempt against OpenRouter: POST, classify, meter, bench.
 
@@ -2274,6 +2302,9 @@ class GenericLLMClient:
 
         Returns the reply text on success; None benches the model (2 minutes for
         a 429, the default otherwise) and lets the caller try the next candidate.
+        ``bench_on_timeout=False`` is for a call whose timeout the caller cut
+        short: a timeout then says the caller ran out of time, not that the
+        model is slow, and it is neither benched nor counted as an error.
         """
         response = None
         try:
@@ -2326,6 +2357,16 @@ class GenericLLMClient:
                     self._last_served_model = model_id
                     return content
         except Exception as e:
+            if (
+                not bench_on_timeout
+                and requests is not None
+                and isinstance(e, requests.exceptions.Timeout)
+            ):
+                logger.info(
+                    "OpenRouter model %s ran out of a clipped timeout (%.1fs); "
+                    "not benched.", model_id, timeout,
+                )
+                return None
             logger.warning("OpenRouter model %s failed: %s", model_id, e)
         # Everything that reaches here failed. Count it, or the saturation line
         # reports openrouter with 0 errors while every call 404s on a retired
@@ -3189,23 +3230,6 @@ def _reserved_given_names() -> FrozenSet[str]:
         return names
     _file_reserved_given_names.cache_clear()
     return _reserved_names_from(_WORLD_FACTS_STUB)
-
-
-#: The deadline (``time.monotonic()``) of the NPC chat turn this thread is
-#: serving, if any. Thread-local because adapter instances are shared across
-#: players, and each request is served on its own thread (#618 scrub).
-_TURN_BUDGET = threading.local()
-
-#: A provider call with less than this left of the turn is not started:
-#: ``requests`` refuses a timeout <= 0, and a sub-second connect to a remote
-#: host is a certain failure that would only spend quota.
-_MIN_CALL_SECONDS = 0.5
-
-
-def _turn_budget_left() -> Optional[float]:
-    """Seconds left in this thread's chat turn, or None outside one."""
-    deadline = getattr(_TURN_BUDGET, "deadline", None)
-    return None if deadline is None else deadline - time.monotonic()
 
 
 class NpcChatLLMAdapter(GenericLLMClient):
@@ -4078,9 +4102,12 @@ class NpcChatLLMAdapter(GenericLLMClient):
         client's deadline and the production worker's timeout (#618 scrub).
         Inside this scope each call's network timeout is clipped to what the
         turn has left (:meth:`_call_timeout`) and the chain stops once it is
-        spent. Restores the previous deadline on exit, so scopes nest.
+        spent. A nested scope can only tighten the deadline -- a later one, or
+        None, keeps the outer -- and the previous one is restored on exit.
         """
         previous = getattr(_TURN_BUDGET, "deadline", None)
+        if previous is not None and (deadline is None or previous < deadline):
+            deadline = previous
         _TURN_BUDGET.deadline = deadline
         try:
             yield
@@ -4586,8 +4613,13 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 "NpcChatLLMAdapter._call_openrouter attempting model_id=%s attempt=%s/%s",
                 model_id, attempt_no, max_attempts,
             )
+            # Clipped to the turn (bounded_by): a model that times out on a
+            # clipped call ran out of the TURN's time, and benching it would
+            # take a healthy model out of everyone's rotation.
+            timeout = self._call_timeout()
             return self._openrouter_attempt(
-                model_id, payload, headers, self._call_timeout()
+                model_id, payload, headers, timeout,
+                bench_on_timeout=timeout >= self._round_timeout(),
             )
 
         content = self._rotate_openrouter(models_to_try, max_attempts, attempt)

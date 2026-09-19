@@ -176,8 +176,10 @@ def _procfile_worker_timeout():
 
 def test_a_turn_fits_inside_the_production_worker_timeout():
     """The Procfile's single sync worker is killed past its timeout, and with
-    it every in-memory session. A turn may overrun its deadline by at most one
-    clipped call, so budget plus one nominal call must stay inside."""
+    it every in-memory session. Every call is clipped to the deadline, but
+    ``requests`` applies a timeout per phase (connect, then read), so one call
+    can still end past it by up to its own length: budget plus one nominal
+    call must stay inside."""
     worst = chat_llm._TURN_CEILING_SECONDS + chat_llm._DEFAULT_ROUND_TIMEOUT_SECONDS
     assert worst < _procfile_worker_timeout()
 
@@ -196,3 +198,154 @@ def test_the_client_waits_at_least_as_long_as_a_turn_can_run():
         "past the worker timeout the client never gets to time out: the worker "
         "is killed first"
     )
+
+
+# ---------------------------------------------------------------------------
+# Re-review of the budget (#618 scrub, round 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fresh_bench():
+    """Model benches are class-level and shared by every client; start and
+    end clean so a bench planted here cannot leak into another test."""
+    from ai.llm_client import GenericLLMClient
+
+    GenericLLMClient.reset_class_state()
+    yield
+    GenericLLMClient.reset_class_state()
+
+
+def _openrouter_ready(adapter, monkeypatch, outcome):
+    """Wire ``_call_openrouter`` to one candidate whose POST does ``outcome``."""
+    import ai.llm_client as llm
+
+    adapter._openrouter_api_key = "test-key"
+    adapter._get_openrouter_model = lambda: "vendor/model:free"
+    adapter._openrouter_candidates = lambda primary: [primary]
+    adapter._build_openrouter_headers = lambda: {}
+    adapter._chat_payload = lambda **_kw: {"model": "vendor/model:free"}
+    monkeypatch.setattr(llm, "_post_chat_completion", outcome)
+
+
+def test_a_clipped_call_that_times_out_does_not_bench_the_model(
+    clock, monkeypatch, fresh_bench
+):
+    """Clipping is the turn running out, not the model failing. Benching on it
+    took healthy models out of the rotation for ten minutes -- for every
+    player, and for the combat and Mynx clients that share the bench."""
+    import requests
+
+    monkeypatch.setenv("NPC_CHAT_LLM_TIMEOUT", "6")
+    adapter = _adapter(["openrouter"])
+
+    def clipped_out(*_args, **_kwargs):
+        raise requests.exceptions.ReadTimeout("read timed out (3.0s)")
+
+    _openrouter_ready(adapter, monkeypatch, clipped_out)
+    with adapter.bounded_by(clock.now + 3.0):
+        assert adapter._call_openrouter("system", "user", 64, 0.5) is None
+
+    assert not adapter._is_model_failed("vendor/model:free")
+
+
+def test_a_full_length_timeout_still_benches_the_model(
+    clock, monkeypatch, fresh_bench
+):
+    """Control: a model that cannot answer inside its NOMINAL timeout is slow,
+    and the rotation should stop dialling it."""
+    import requests
+
+    monkeypatch.setenv("NPC_CHAT_LLM_TIMEOUT", "6")
+    adapter = _adapter(["openrouter"])
+
+    def timed_out(*_args, **_kwargs):
+        raise requests.exceptions.ReadTimeout("read timed out (6.0s)")
+
+    _openrouter_ready(adapter, monkeypatch, timed_out)
+    assert adapter._call_openrouter("system", "user", 64, 0.5) is None
+
+    assert adapter._is_model_failed("vendor/model:free")
+
+
+class _Response:
+    def __init__(self, status_code, text=""):
+        self.status_code = status_code
+        self.text = text
+
+
+def test_the_400_retry_is_held_to_what_the_turn_has_left(clock, monkeypatch):
+    """``_post_chat_completion`` retried with the timeout it computed before
+    the first POST, so a retry could end a whole clipped timeout past the
+    deadline -- past the worker timeout with a raised NPC_CHAT_LLM_TIMEOUT."""
+    import ai.llm_client as llm
+
+    sent = []
+
+    def post(_url, json, headers, timeout):
+        sent.append(timeout)
+        clock.now += 4.0
+        return _Response(400, "reasoning is mandatory for this endpoint")
+
+    monkeypatch.setattr(llm.requests, "post", post)
+    adapter = _adapter(["openrouter"])
+    with adapter.bounded_by(clock.now + 5.0):
+        llm._post_chat_completion("url", {"model": "m", "reasoning": {}}, {}, 5.0)
+
+    assert sent == [5.0, pytest.approx(1.0)]
+
+
+def test_the_400_retry_is_not_sent_once_the_turn_is_spent(clock, monkeypatch):
+    import ai.llm_client as llm
+
+    sent = []
+
+    def post(_url, json, headers, timeout):
+        sent.append(timeout)
+        clock.now += 5.0
+        return _Response(400, "reasoning is mandatory for this endpoint")
+
+    monkeypatch.setattr(llm.requests, "post", post)
+    adapter = _adapter(["openrouter"])
+    with adapter.bounded_by(clock.now + 5.2):
+        response = llm._post_chat_completion("url", {"model": "m", "reasoning": {}}, {}, 5.2)
+
+    assert sent == [5.2], "a retry was dialled with no turn left to run it"
+    assert response.status_code == 400
+
+
+def test_an_inner_scope_never_widens_the_turn(clock, monkeypatch):
+    """``bounded_by`` restores on exit, so scopes nest -- but an inner scope
+    with a later deadline, or none, used to REPLACE the outer one."""
+    monkeypatch.setenv("NPC_CHAT_LLM_TIMEOUT", "6")
+    adapter = _adapter(["openrouter"])
+
+    with adapter.bounded_by(clock.now + 2.0):
+        with adapter.bounded_by(clock.now + 10.0):
+            assert adapter._call_timeout() == pytest.approx(2.0)
+        with adapter.bounded_by(None):
+            assert adapter._call_timeout() == pytest.approx(2.0)
+        with adapter.bounded_by(clock.now + 1.0):
+            assert adapter._call_timeout() == pytest.approx(1.0)
+        assert adapter._call_timeout() == pytest.approx(2.0)
+
+
+def test_the_turn_clock_starts_before_the_adapter_is_built(clock):
+    """A cold ``get_instance()`` discovers and validates models on the request
+    path. That time is the turn's too: the deadline is counted from before it,
+    not after."""
+
+    class _Adapter:
+        @staticmethod
+        def _round_timeout():
+            return chat_llm._DEFAULT_ROUND_TIMEOUT_SECONDS
+
+    class _ColdNpc:
+        def _get_adapter(self):
+            clock.now += 15.0  # model discovery on a cold singleton
+            return _Adapter()
+
+    started = clock.now
+    deadline, _scope = chat_llm.ConversationalNPCMixin._turn_budget(_ColdNpc())
+
+    assert deadline == pytest.approx(started + chat_llm._TURN_CEILING_SECONDS)

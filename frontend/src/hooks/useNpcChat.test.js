@@ -988,6 +988,19 @@ describe('useNpcChat', () => {
       expect(result.current.phase).toBe('waiting_jean')
     })
 
+    it('says Jean is still in another conversation when /open is refused (#618)', async () => {
+      // The one-turn-per-player gate is per PLAYER, not per NPC: close NPC A
+      // mid-turn, open NPC B, and B's /open meets A's turn. "Still composing a
+      // reply" on a panel that has asked nothing yet would be false.
+      npcChat.open.mockRejectedValue({
+        response: { status: 409, data: { success: false, error: 'server copy' } },
+      })
+      const { result } = mount()
+
+      await waitFor(() => expect(result.current.phase).toBe('failed'))
+      expect(result.current.error).toBe('Jean is still finishing another conversation — give it a moment.')
+    })
+
     it('names the deadline when the turn timed out, and hands the options back (#618)', async () => {
       // Issue #618's actual failure: one `/respond` walked the provider chain
       // for over 90 seconds while the panel sat at WAITING_NPC with no options,
@@ -1150,6 +1163,19 @@ describe('useNpcChat', () => {
       expect(rendered.result.current.phase).toBe('ended')
       return rendered
     }
+
+    it('sends no /end when dismissed after the server has ended the conversation', async () => {
+      // The server pops its conversation marker itself when a turn ends one
+      // (settleTurnPhase clears the open key for exactly this). An /end sent
+      // from the auto-close window would pop it again -- by then possibly the
+      // NEXT conversation's.
+      const { result } = await openEndedTurn()
+
+      act(() => { result.current.handleEndConversation() })
+
+      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(npcChat.end).not.toHaveBeenCalled()
+    })
 
     it('does NOT arm the close timer just because the conversation ended', async () => {
       const { result } = await openEndedTurn()
