@@ -98,7 +98,8 @@ def get_base_damage_type(item: Any) -> str:
 
 
 # A space, then `x` or `×`, then digits, at the very end of a name -- the
-# suffix ``stack_grammar()`` bakes into ``item.name`` ("Dried Crystal Sap x2").
+# suffix ``stack_grammar()`` used to bake into ``item.name`` ("Dried Crystal
+# Sap x2") before #624, and a pre-#624 save still carries.
 _BAKED_STACK_COUNT = re.compile(r"\s[x×](\d+)$", re.IGNORECASE)
 
 
@@ -111,8 +112,8 @@ def stack_base_name(item: Any) -> str:
     caller that printed its own quantity next to the name counted the stack
     twice ("2× Dried Crystal Sap x2").
 
-    **That mutation is gone** (#624): none of this module's 12
-    ``stack_grammar()`` implementations writes ``name`` any more, so on a
+    **That mutation is gone** (#624): no ``stack_grammar()`` in this module
+    writes ``name`` any more, so on a
     freshly built item this is now a no-op. It is kept as a defensive strip
     rather than deleted for two reasons: ``name`` is ordinary pickled
     instance state, so a save written before the fix still restores an item
@@ -125,7 +126,7 @@ def stack_base_name(item: Any) -> str:
     "Potion x3" sitting two-to-a-stack keeps its name. The comparison is on
     strings, not ints: ``int()`` on a pathological digit run raises on 3.11+
     (4300-digit cap), and it also means a zero-padded "x02" is *not* treated
-    as a baked count -- ``stack_grammar()`` never pads, so that suffix is the
+    as a baked count -- the pre-#624 bake never padded, so that suffix is the
     item's own name. Both are intended.
     """
     name = getattr(item, "name", "")
@@ -1252,7 +1253,12 @@ class Consumable(Item):
         self.interactions = ["take", "use", "drop"]
 
     def stack_grammar(self) -> None:
-        """Checks the stack count for the item and changes the verbiage accordingly"""
+        """Adjust the prose for the stack count -- description, announce.
+
+        Never ``name``: it is identity, and the buyback ledger and the sell
+        message key on it (#624). ``tests/test_items_coverage.py`` checks
+        every constructible stackable against this rule.
+        """
         pass
 
     def __str__(self) -> str:  # pragma: no cover - display logic
@@ -1354,7 +1360,12 @@ class Commodity(Special):
         self.interactions = ["drop"]
 
     def stack_grammar(self) -> None:
-        """Checks the stack count for the item and changes the verbiage accordingly"""
+        """Adjust the prose for the stack count -- description, announce.
+
+        Never ``name``: it is identity, and the buyback ledger and the sell
+        message key on it (#624). ``tests/test_items_coverage.py`` checks
+        every constructible stackable against this rule.
+        """
         pass
 
     def __str__(self) -> str:  # pragma: no cover - display logic

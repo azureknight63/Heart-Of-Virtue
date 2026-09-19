@@ -58,12 +58,15 @@ from src.shop_conditions import (  # type: ignore
 # different tests. Collapsing them into one list is how issue #611 happened.
 
 #: Families that must never reach a shop at all, excluded by ``issubclass``
-#: because the *family* is the point. ``Special`` covers 18 concrete quest
-#: tokens, lore fragments, curios and books -- including a bare ``Book`` (name
+#: because the *family* is the point. ``Special`` covers every concrete quest
+#: token, lore fragment, curio and book -- including a bare ``Book`` (name
 #: "Book", value 5, ``text_file_path=None``), which is what rolled into Jambo's
 #: tent as an item that could be neither bought nor read (issue #611). ``Key``
 #: is itself a ``Special`` and is named anyway so the intent survives any
-#: reparenting. ``Relic`` has no subclasses today and is listed by intent: it is
+#: reparenting. ``Commodity`` (``Crystals``, ``MineralPowder``) is a ``Special``
+#: too and is excluded deliberately: creature loot meant to be sold TO a
+#: merchant; one that should carry it names it in ``always_stock``, which
+#: bypasses this filter. ``Relic`` has no subclasses today and is listed by intent: it is
 #: a single-use, story-locked memento granted in Jean's starting inventory, and
 #: its ``value=0`` would make it sell for free, so a future subclass must not
 #: quietly reopen the hole.
@@ -71,11 +74,11 @@ _NEVER_STOCK_FAMILIES: tuple[type[Item], ...] = (Special, Key, Relic)
 
 #: Classes excluded by exact membership only, because the shop stocks *through*
 #: them: these are the abstract bases whose concrete subclasses are the
-#: merchandise (``Weapon``'s 18 subclasses are an armourer's whole trade,
-#: ``Consumable``'s 13 are Jambo's), plus concrete singletons with no meaningful
+#: merchandise (``Weapon``'s subclasses are an armourer's whole trade,
+#: ``Consumable``'s are Jambo's), plus concrete singletons with no meaningful
 #: subclass tree. Applying a subclass test here would empty the candidate pool
 #: of everything sellable.
-_NOT_STOCKABLE_AS_ROLLED: frozenset[type[Item]] = frozenset({
+_NEVER_STOCK_EXACT_CLASSES: frozenset[type[Item]] = frozenset({
     Gold,
     Rock,
     Fists,
@@ -96,10 +99,10 @@ class MerchantShopMixin:
     #: Hard ceiling on random-fill rolls in a single ``_fill_remaining_stock``
     #: pass. A roll is not guaranteed to make progress -- the class may fail to
     #: spawn, or the instance may be rejected by every open home -- so the loop
-    #: needs a bound. This is a safety valve, not a balance knob: a shop that
-    #: cannot fill within this many rolls has a container whose
-    #: ``allowed_item_types`` no stockable class can satisfy, which is an
-    #: authoring fault rather than a number to tune.
+    #: needs a bound. This is a safety valve, not a balance knob. (A container
+    #: no stockable class can satisfy no longer reaches it: once the
+    #: merchant's own shelves are full the roll is drawn only from classes an
+    #: open container accepts, and an empty pool ends the pass at once.)
     _MAX_RESTOCK_ROLLS = 1000
 
     # ── Player-merchandise absorption ─────────────────────────────────────────
@@ -445,8 +448,12 @@ class MerchantShopMixin:
         - Base weight 1 per candidate class.
         - Specialty subclasses receive 3× weight.
         - RestockWeightBoostConditions further scale weights.
-        - Unique-factory classes are excluded.
-        - Safety cap of 1 000 iterations prevents infinite loops.
+        - Unique-factory classes are excluded; so is ``_NEVER_STOCK_EXACT_CLASSES``
+          by exact membership and ``_NEVER_STOCK_FAMILIES`` by subclass (#611).
+        - Once the merchant's own shelves are full, only classes an open
+          container accepts are rolled; an empty pool ends the pass.
+        - Each spawn leaves the room at once, placed or not (#611).
+        - Capped at ``_MAX_RESTOCK_ROLLS`` rolls.
         """
         if not self.current_room:
             return
@@ -477,7 +484,7 @@ class MerchantShopMixin:
             try:
                 if obj is Item or not issubclass(obj, Item):
                     continue
-                if obj in unique_factories or obj in _NOT_STOCKABLE_AS_ROLLED:
+                if obj in unique_factories or obj in _NEVER_STOCK_EXACT_CLASSES:
                     continue
                 # Family exclusion, not membership: the subclasses are the
                 # whole reason these are listed (issue #611).
@@ -539,9 +546,9 @@ class MerchantShopMixin:
                 if self._containers_accepting_class(houses, cls)
             }
 
-        safety = 0
-        while not all_full() and safety < self._MAX_RESTOCK_ROLLS:
-            safety += 1
+        rolls = 0
+        while not all_full() and rolls < self._MAX_RESTOCK_ROLLS:
+            rolls += 1
             if merchant_slots_remaining() > 0:
                 pool = weight_map
             else:
@@ -584,9 +591,9 @@ class MerchantShopMixin:
                 random.choice(elig).inventory.append(spawned)
             elif merchant_slots_remaining() > 0:
                 self.inventory.append(spawned)
-            # else: nothing accepted it, so the spawn is discarded. `pool`
-            # above makes that near-unreachable; it survives as the branch for
-            # a container that accepts a class but rejects the instance.
+            # Otherwise nothing accepted it and the spawn is dropped -- reachable
+            # only when ``spawn_item`` (which resolves by ``cls.__name__``)
+            # returns an instance of a different class than the one rolled.
 
     # ── Shop conditions ────────────────────────────────────────────────────────
 

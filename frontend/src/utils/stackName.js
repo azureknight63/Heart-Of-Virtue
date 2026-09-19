@@ -17,8 +17,8 @@ const BAKED_COUNT = /\s[x×](\d+)$/i;
  * and the combat adapter -- and both are live. `stackDisplayName` reads them
  * itself, so before this existed every badge call site re-picked the spelling
  * by hand. Picking the absent one is silent: `Number(undefined) > 1` is false,
- * the badge renders '', and `stackDisplayName` still strips the baked "x3" off
- * the name, so the count disappears from the UI with nothing thrown.
+ * the badge renders '', and `stackDisplayName` still strips a baked "x3" off
+ * a pre-#624 save's name, so the count disappears from the UI with nothing thrown.
  *
  * @param {{count?: number, quantity?: number}|null} item
  * @returns {number} the stack size, 1 when the payload says nothing
