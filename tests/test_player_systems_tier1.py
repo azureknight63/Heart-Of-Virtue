@@ -1061,3 +1061,25 @@ class TestApplyStartingLevel:
         from src.player._leveling import STARTING_LEVEL_ALLOCATIONS
 
         assert "even" in STARTING_LEVEL_ALLOCATIONS
+
+    def test_player_allocation_leaves_every_point_for_the_level_up_dialog(self, player):
+        """``player``: the climb happens and the spend does not. The session
+        opens on the LEVEL UP dialog holding every point the climb awarded,
+        and the dialog lists the level-ups that awarded them."""
+        import random
+
+        random.seed(4)
+        names = self._spendable()
+        before = {n: getattr(player, n) for n in names}
+
+        events = player.apply_starting_level(4, allocation="player")
+
+        assert player.level == 4
+        assert [e["new_level"] for e in events] == [2, 3, 4]
+        assert player.pending_attribute_points == sum(int(e["points_awarded"]) for e in events)
+        assert player.pending_level_ups == events
+        # Only the random per-level bonuses moved an attribute: nothing was spent.
+        bonuses = sum(sum(e["bonuses"].values()) for e in events)
+        assert sum(getattr(player, n) - before[n] for n in names) == bonuses
+        assert player.hp == player.maxhp
+        assert player.fatigue == player.maxfatigue

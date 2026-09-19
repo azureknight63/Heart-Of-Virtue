@@ -2,6 +2,39 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.2.1.0] - 2026-09-18
+
+### Added
+- **Beta 2**: production runs `config_prod.ini`. The game opens at the entrance to Grondia, with the Lurker dead and Gorran in the party, and the beta ends at the ferry in the nomad camp. Jean starts at level 4 and the player spends his starting points (`starting_level_allocation = player`); spending them restores him to full health.
+- **Combat previews**: hit chance, damage range and lethality are shown before a move is committed, and area moves report a per-target outcome instead of one roll for everyone.
+- **Disrupt**: a player interrupt for enemy wind-ups. Heavy enemy moves telegraph their severity on the battlefield and in the log.
+- **Combat glossary**: a panel with tooltips and a `?` shortcut on the game surface. Heat is surfaced as a momentum meter; the beat timeline is on by default, with a reduced-motion toggle.
+- **Battlefield**: HP numerals reveal on hover or tap; drag-to-pan moves the camera and reveals more of the map.
+- **Story**: a return passageway from the Eastern Descent to Grondia; the demo ends at the ferry with the real end-of-beta dialogue; story event pacing, chrome and the journal were reworked.
+- **NPC chat**: LLM-backed conversations with human NPCs (opt-in via `NPC_CHAT_LLM_ENABLED`), with two-axis chat options for Jean — tone and subject.
+- **Interact menu** targets grouped into collapsible categories; the shop warns before you leave holding unpurchased merchandise.
+- **Audio**: a glancing-blow cue, and a new track for the Iron & Oath tradepost at the nomad camp.
+- **Maintenance mode for deploys**: `deploy.ps1` stages the new build beside the live one, shows a maintenance page while the backend is replaced, and lifts it only after the API answers through the public URL and the new bundle is served. New modes: `-Status` (read-only drift report), `-Maintenance On|Off`, `-DryRun`. Runbook: `docs/development/deployment.md`.
+
+### Changed
+- **Facing** convention corrected and wired to damage; to-hit rebased. Area moves no longer damage Jean's own allies.
+- Combat animations play per target concurrently; layered animations no longer compound.
+- World movement and passageway teleport are refused during combat, with a message that says how to escape.
+- Logout asks for confirmation; START OVER begins a new run instead of logging out.
+- Jean no longer starts with the Relic: its text named what the story withholds, and Hollowed's cure awaits a redesign (#646). Hollowed still lapses on its own.
+- `starting_level` opens a session at level N, with the points spent by policy (`even`, for QA configs) or left to the player (`player`, for production). The Grondia loadout carries a blunt weapon.
+- **Deploys** pin the server's backend to the commit the frontend was built from (`git reset --hard`, not `git pull`: tracked edits on the server are discarded), and refuse unless the local checkout is `origin/master` with nothing outside `HEAD` able to reach the bundle — no modified, untracked or ignored files that the build reads, no `VITE_*`, `NODE_OPTIONS` or non-production `NODE_ENV` in the environment. Every build is stamped with its commit, so a rollback names the backend that matches the frontend it restores. `-Version` defaults to the `VERSION` file. A failure once the maintenance page is up leaves it up and prints the recovery commands for the state the deploy stopped in; a failure before that changes nothing on the server.
+
+### Fixed
+- **Combat**: victory no longer fires on a wave transition; a deferred victory whose event was abandoned is rescued; reinforcement spawns no longer trap the combat loop; a mid-fight reload is recognised as reload recovery and combat no longer replays its log and animations afterwards; loot is collected from the tile the fight ended on.
+- NPC move cooldowns are now enforced — they never were.
+- Leaving combat no longer bakes a departed state's stat bonus into Jean's stats.
+- **Accessibility**: landmarks and headings across the game panels, visible focus rings, 44px touch targets on the d-pad and settings, buffed/debuffed attributes marked with +/− rather than colour alone, accessible names on the vital bars.
+- Dozens of live-QA fixes across dialogs, inventory, shop, save naming and event handling (#551–#603, #609–#613).
+
+### Security
+- The session token moved from `localStorage` to an HttpOnly cookie; a report-only Content-Security-Policy is emitted; strict save unpickling is the default; a provider-chain credential leak was closed; `deploy.ps1` no longer exports the SSH password for the whole run (where `npm ci`'s install scripts inherited it) — only `sshpass` receives it, set around each ssh/scp call.
+
 ## [0.2.0.0] - 2026-08-25
 
 ### Added

@@ -1463,6 +1463,17 @@ PLAYER_STATUS_CONTRACT = {
     "level": Read("StatsPanel.jsx", "player.level"),
     "exp": Read("StatsPanel.jsx", "player.exp"),
     "max_exp": Read("StatsPanel.jsx", "player.max_exp"),
+    "pending_attribute_points": Read("LevelUpModal.jsx", "player?.pending_attribute_points"),
+    "pending_level_ups": Read("LevelUpModal.jsx", "player?.pending_level_ups"),
+}
+
+# Each element of player.pending_level_ups: the level-up dicts
+# Player._level_up_api returns, which a `player`-policy starting level hands to
+# the LEVEL UP modal (beta 2).
+LEVEL_UP_ITEM_CONTRACT = {
+    "old_level": Read("LevelUpModal.jsx", "lu.old_level"),
+    "new_level": Read("LevelUpModal.jsx", "lu.new_level"),
+    "points_awarded": Read("LevelUpModal.jsx", "lu.points_awarded"),
 }
 
 PLAYER_STATS_CONTRACT = {
@@ -1499,6 +1510,15 @@ class TestPlayerWireContract:
         gs = GameService()
         payload = gs.get_player_status(player)
         _assert_contract(payload, PLAYER_STATUS_CONTRACT, "get_player_status()")
+
+    def test_pending_level_up_item_fields(self):
+        """Only a starting level left to the player fills pending_level_ups,
+        so build one rather than contract an empty list."""
+        player = Player()
+        player.apply_starting_level(3, allocation="player")
+        payload = GameService().get_player_status(player)
+        assert payload["pending_level_ups"], "expected the climb's level-ups to be pending"
+        _assert_contract(payload["pending_level_ups"][0], LEVEL_UP_ITEM_CONTRACT, "player.pending_level_ups[0]")
 
     def test_get_player_stats_fields(self):
         player = Player()

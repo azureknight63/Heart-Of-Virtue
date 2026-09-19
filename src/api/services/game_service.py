@@ -4331,6 +4331,14 @@ class GameService:
                 "error": "Could not apply the allocation. Please try again.",
             }
 
+        # After the refresh, so the raised maxima are the ones restored to.
+        if player.pending_attribute_points == 0:
+            complete_starting_allocation = getattr(
+                player, "complete_starting_allocation", None
+            )
+            if callable(complete_starting_allocation):
+                complete_starting_allocation()
+
         return {
             "success": True,
             "remaining_points": int(player.pending_attribute_points),

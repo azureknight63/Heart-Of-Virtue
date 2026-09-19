@@ -67,8 +67,8 @@ from src.shop_conditions import (  # type: ignore
 #: too and is excluded deliberately: creature loot meant to be sold TO a
 #: merchant; one that should carry it names it in ``always_stock``, which
 #: bypasses this filter. ``Relic`` has no subclasses today and is listed by intent: it is
-#: a single-use, story-locked memento granted in Jean's starting inventory, and
-#: its ``value=0`` would make it sell for free, so a future subclass must not
+#: a single-use personal memento awaiting a redesign (issue #646), and its
+#: ``value=0`` would make it sell for free, so a future subclass must not
 #: quietly reopen the hole.
 _NEVER_STOCK_FAMILIES: tuple[type[Item], ...] = (Special, Key, Relic)
 

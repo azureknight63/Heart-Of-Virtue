@@ -18,13 +18,12 @@ class TestPlayerCore:
         assert player.level == 1
         assert player.is_alive() is True
 
-    def test_player_starts_with_relic(self, player):
-        """Jean carries the Via Dolorosa stone from the start (issue #340):
-        Relic cures Hollowed (apathy), which the Lurker's Soul Drain inflicts,
-        so it must not depend on a shop/loot roll the player might never see."""
-        relics = [item for item in player.inventory if isinstance(item, items.Relic)]
-        assert len(relics) == 1
-        assert relics[0].merchandise is False
+    def test_player_starts_without_the_relic(self, player):
+        """Dropped from the starting kit (issue #646). Its text named
+        Jerusalem, which the story withholds until the chapter 2 memory flash,
+        and a single-use consumable cannot carry that lore. Hollowed has no
+        active cure until #646 is designed; it lapses on its own."""
+        assert not [item for item in player.inventory if isinstance(item, items.Relic)]
 
     def test_player_vulnerable_to_slimed(self, player):
         """Jean must be vulnerable to Slimed (statustype 'slimed'), inflicted by

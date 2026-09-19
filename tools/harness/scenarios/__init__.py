@@ -23,6 +23,7 @@ from .logs import LogsScenario
 from .feedback import FeedbackScenario
 from .debug_ops import DebugOpsScenario
 from .victory_loot import VictoryLootScenario
+from .beta2_start import Beta2StartScenario
 
 _ALL_SCENARIOS = [
     HealthScenario(),
@@ -48,6 +49,7 @@ _ALL_SCENARIOS = [
     FeedbackScenario(),
     DebugOpsScenario(),
     VictoryLootScenario(),
+    Beta2StartScenario(),
 ]
 
 

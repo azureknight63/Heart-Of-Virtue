@@ -329,6 +329,36 @@ class TestAllocateLevelUpPoints:
 
         assert player.pending_level_ups == []
 
+    def test_spending_a_starting_level_s_points_opens_the_game_at_full_health(
+        self, game_service, player
+    ):
+        """``starting_level_allocation = player`` hands the points to this
+        route. Strength raises max HP and endurance max fatigue, so without a
+        restore a player who spends on them opens the game below full."""
+        player.apply_starting_level(4, allocation="player")
+        points = player.pending_attribute_points
+        maxhp_before, maxfatigue_before = player.maxhp, player.maxfatigue
+
+        game_service.allocate_level_up_points(player, "strength_base", points - 1)
+        game_service.allocate_level_up_points(player, "endurance_base", 1)
+
+        assert player.pending_attribute_points == 0
+        assert player.maxhp > maxhp_before and player.maxfatigue > maxfatigue_before
+        assert player.hp == player.maxhp
+        assert player.fatigue == player.maxfatigue
+
+    def test_an_in_play_level_up_s_points_do_not_heal(self, game_service, player):
+        """The restore belongs to the starting level alone -- including the
+        level-ups that come after it."""
+        player.apply_starting_level(4, allocation="player")
+        game_service.allocate_level_up_points(player, "randomize", None)
+        player.pending_attribute_points = 3
+        player.hp = 10
+
+        game_service.allocate_level_up_points(player, "strength_base", 3)
+
+        assert player.hp == 10
+
     def test_a_partial_spend_leaves_the_queue_alone(self, game_service, player):
         player.pending_attribute_points = 3
         player.pending_level_ups = [2]

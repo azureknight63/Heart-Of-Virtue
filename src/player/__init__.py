@@ -60,10 +60,8 @@ class Player(
             items.TatteredCloth(),
             items.ClothHood(),
             items.JeanWeddingBand(),
-            # Jean already carries this stone from the Via Dolorosa when the
-            # game begins (see items.Relic docstring) — it cures Hollowed
-            # (apathy), the grief-state the Lurker's Soul Drain inflicts.
-            items.Relic(),
+            # No Relic (issue #646): its text named Jerusalem, which the story
+            # withholds, and Hollowed's cure awaits a design.
         ]
         # Equip starting gear
         for item in self.inventory:
