@@ -381,3 +381,77 @@ class TestAGraftedBoundMethodIsNotAHandler:
         way = Passageway(player=None, tile=None, name="Ferry Landing")
         way.__dict__["enter"] = way.is_demo_edge
         assert not way.is_crossing_handler(way.__dict__["enter"])
+
+
+def _passageway_with_shadowed_alias_words(vector):
+    """A ``Passageway`` whose instance ``__dict__`` shadows the class's
+    ``_name_alias_words`` staticmethod with the nominated engine class.
+
+    ``vector`` is how it got there: ``"map"`` through the real legacy loader
+    (an authored class-marker prop), ``"save"`` as a restored save's
+    ``__dict__`` carries it (written directly, as unpickling does).
+    """
+    player, game_map = live_world()
+    tile = game_map[(0, 0)]
+    if vector == "map":
+        payload = {
+            "__class__": "Passageway",
+            "__module__": "objects",
+            "props": {
+                "name": "Ferry Landing",
+                "_name_alias_words": {"__class_type__": _NOMINATED[0]},
+            },
+        }
+        with capture_narration():
+            way = player.universe._deserialize_saved_instance(payload, tile=tile)
+        assert way is not None, "the loader refused the payload outright"
+    else:
+        way = Passageway(player=player, tile=tile, name="Ferry Landing")
+        way.__dict__["_name_alias_words"] = _NOMINATED[1]
+    assert way.__dict__.get("_name_alias_words") is _NOMINATED[1], (
+        f"the {vector} vector no longer stores a class over _name_alias_words; "
+        "this guard has stopped reproducing the hole it exists for"
+    )
+    way.tile, way.player = tile, player
+    tile.objects_here = [way]
+    return player, way
+
+
+@pytest.mark.parametrize("vector", ["map", "save"])
+@pytest.mark.parametrize("verb", _HOSTILE_VERBS)
+def test_the_alias_word_helper_is_never_read_off_the_instance(
+    game_service, verb, vector, monkeypatch
+):
+    """``instance_keyword_aliases`` is class-declared so that what an alias
+    word MEANS cannot come from the instance -- but it derived the words by
+    calling ``self._name_alias_words``, and a ``staticmethod`` is a non-data
+    descriptor, so an instance entry of that name wins the lookup. Every verb
+    no class declares then CALLED the instance-supplied object, with the
+    instance-supplied name as its argument: #620's primitive, one hop inside
+    the resolver that closed it."""
+    player, way = _passageway_with_shadowed_alias_words(vector)
+    constructed = []
+    real_init = states_module.Clean.__init__
+
+    def spy(self, *args, **kwargs):
+        constructed.append(args)
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(states_module.Clean, "__init__", spy)
+
+    with capture_narration():
+        game_service.interact_with_target(
+            player, wire_handle(way), verb, session_data={}
+        )
+
+    assert constructed == [], (
+        f"{verb!r} on a Passageway called an instance-stored "
+        f"_name_alias_words ({vector} vector): {constructed}"
+    )
+
+
+def test_the_alias_words_still_cross_when_the_helper_is_shadowed():
+    """The class-declared helper keeps working for the words themselves."""
+    _player, way = _passageway_with_shadowed_alias_words("save")
+    for word in ("ferry", "landing"):
+        assert way.is_crossing_handler(resolve_interaction(way, word)), word

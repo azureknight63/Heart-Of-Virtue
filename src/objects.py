@@ -1056,7 +1056,7 @@ class Passageway(Object):
         self.keywords.append("enter")
         self.action_aliases.extend(Passageway._DELEGATED_CROSSING_VERBS)
         self.keywords.extend(self.action_aliases)
-        for _word in self._name_alias_words(name):
+        for _word in type(self)._name_alias_words(name):
             # Advertised as data only. The word is instance-supplied; what it
             # means is fixed by `instance_keyword_aliases` on the class (#620).
             if hasattr(self, _word) or _word in self.action_aliases:
@@ -1121,8 +1121,13 @@ class Passageway(Object):
         the words are instance data and a map or a save may influence them, but
         every one of them maps to ``enter`` and nothing else, so neither can
         point a verb at an arbitrary method (#620).
+
+        The helper is read off the CLASS as well. A ``staticmethod`` is a
+        non-data descriptor, so ``self._name_alias_words`` would let an
+        instance ``__dict__`` entry of that name -- a map prop, a save --
+        win the lookup and be called here.
         """
-        return {word: "enter" for word in self._name_alias_words(self.name)}
+        return {word: "enter" for word in type(self)._name_alias_words(self.name)}
 
     def is_crossing_handler(self, handler):
         """True when ``handler`` is one of this passageway's crossing methods.
