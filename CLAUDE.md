@@ -37,6 +37,7 @@ Python 3.11 engine · Flask 3.1 + Flask-SocketIO API · React 18 + Vite + Tailwi
 python tools/run_api.py [config_dev.ini]      # API on :5000; arg > CONFIG_FILE env > config_dev.ini
 cd frontend && npm install && npm run dev     # SPA on :3000
 .\tools\start_servers.ps1 [CONFIG_FILE]       # both, PowerShell
+.\deploy.ps1 [-Status | -DryRun | -Maintenance On|Off]   # production, behind a maintenance page — docs/development/deployment.md
 ```
 
 Debug logging uses one JSONL envelope (schema authority: `src/api/structured_log.py`).

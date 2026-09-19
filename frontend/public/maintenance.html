@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<!--
+  Maintenance page. deploy.ps1 puts it in place of index.html while the
+  backend is replaced (docs/development/deployment.md). No script, no bundle,
+  no third-party request: it is what shows while things are down.
+
+  Colours and the font restate styles/theme.js by value; each carries a
+  `theme:` annotation that src/test/maintenancePage.test.js resolves. The
+  keyframes and the dots copy styles/index.css and LoadingScreen.jsx. The
+  favicon path is vite.config.js's BASE, written out because public/ is
+  copied verbatim. The deploy's contract with this page is
+  tests/test_deploy_script.py::TestTheMaintenancePage.
+-->
+<html lang="en" data-hov-maintenance="1">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="refresh" content="30">
+  <meta name="robots" content="noindex">
+  <title>Heart of Virtue — updating</title>
+  <link rel="icon" type="image/png" href="/games/HeartOfVirtue/hero-heart.png">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #0a0a0a; /* theme: colors.bg.main */
+      color: #e0e0e0; /* theme: colors.text.main */
+      font-family: 'Courier New', monospace; /* theme: fonts.main */
+      -webkit-font-smoothing: antialiased;
+    }
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    main {
+      max-width: 36rem;
+      width: 100%;
+      text-align: center;
+    }
+    .frame {
+      border: 1px solid #00ccff; /* theme: colors.accent */
+      padding: 24px 16px 20px;
+    }
+    .label {
+      margin: 0 0 12px;
+      font-size: 0.75rem;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: #ffaa00; /* theme: colors.secondary */
+    }
+    h1 {
+      margin: 0 0 20px;
+      font-size: clamp(1.75rem, 6vw, 2.5rem);
+      font-weight: 400;
+      letter-spacing: 0.04em;
+      color: #00ff88; /* theme: colors.primary */
+      animation: pulse-glow 2s infinite;
+    }
+    .dots {
+      display: flex;
+      justify-content: center;
+      gap: 8px; /* theme: spacing.sm */
+      margin: 0 0 20px;
+    }
+    .dots span {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ffaa00; /* theme: colors.secondary */
+      animation: bounce 1s infinite;
+    }
+    .dots span:nth-child(2) { animation-delay: 0.2s; }
+    .dots span:nth-child(3) { animation-delay: 0.4s; }
+    p {
+      margin: 0 0 12px;
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+    .muted {
+      color: #888888; /* theme: colors.text.muted */
+      font-size: 0.85rem;
+    }
+    @keyframes pulse-glow {
+      0%, 100% { text-shadow: 0 0 10px rgba(0, 255, 136, 0.5); } /* theme: colors.primary */
+      50%      { text-shadow: 0 0 20px rgba(0, 255, 136, 1); } /* theme: colors.primary */
+    }
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-10px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      h1, .dots span { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="frame" role="status">
+      <p class="label">Maintenance in progress</p>
+      <h1>Heart of Virtue</h1>
+      <div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>
+      <p>The game is down for maintenance.</p>
+      <p>Your saved games are kept on the server. If the update restarts the game server, anything you had not saved is lost and you will need to sign in again.</p>
+      <p class="muted">This page refreshes itself every 30 seconds.</p>
+    </div>
+  </main>
+</body>
+</html>

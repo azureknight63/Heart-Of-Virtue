@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import * as theme from './theme'
+import { FRONTEND_DIR, THEME_ANNOTATION, normalizeCssValue, resolveThemePath } from '../test/themeAudit'
 
 /**
  * index.css's `:root` custom properties, pinned against the theme.js tokens
@@ -33,16 +34,12 @@ import * as theme from './theme'
  * deliberate argument; it can no longer cost nothing.
  *
  * jsdom loads no stylesheets, so `getComputedStyle` cannot resolve these — the
- * file is read from source, off the vitest root, for the same reason
- * ConversationTranscript.test.jsx reads it that way.
+ * file is read from source, via FRONTEND_DIR (test/themeAudit.js).
  */
 
-const INDEX_CSS = readFileSync(join(process.cwd(), 'src', 'styles', 'index.css'), 'utf8')
+const INDEX_CSS = readFileSync(join(FRONTEND_DIR, 'src', 'styles', 'index.css'), 'utf8')
 
-/** `#FFAA00` / `rgba(255, 170, 0, .1)` and their respellings compare equal. */
-function normalise(value) {
-    return value.trim().toLowerCase().replace(/\s+/g, '')
-}
+const TRAILING_ANNOTATION = new RegExp(`^\\s*${THEME_ANNOTATION.source}`)
 
 /** The body of index.css's `:root` block, or `''` when it no longer parses. */
 function rootBlock() {
@@ -76,21 +73,19 @@ function customPropertyLines() {
 function rootDeclarations() {
     const declarations = []
     for (const line of rootBlock().split('\n')) {
-        const m = line.match(/^\s*(--[\w-]+)\s*:\s*([^;]+);\s*(?:\/\*\s*theme:\s*([\w.]+)\s*\*\/)?/)
-        if (m) declarations.push({ property: m[1], value: m[2], themePath: m[3] || null })
+        const m = line.match(/^\s*(--[\w-]+)\s*:\s*([^;]+);/)
+        // The annotation must TRAIL the declaration: on a line holding two,
+        // the first may not borrow the second's.
+        const trailing = line.slice(m ? m[0].length : 0).match(TRAILING_ANNOTATION)
+        if (m) declarations.push({ property: m[1], value: m[2], themePath: trailing ? trailing[1] : null })
     }
     return declarations
-}
-
-/** Walk a dotted path (`colors.border.light`) through the theme module. */
-function resolveThemePath(path) {
-    return path.split('.').reduce((node, key) => (node == null ? undefined : node[key]), theme)
 }
 
 /** Every string leaf in every token table theme.js exports. */
 function everyThemeValue(node = theme, seen = new Set()) {
     if (typeof node === 'string') {
-        seen.add(normalise(node))
+        seen.add(normalizeCssValue(node))
     } else if (node && typeof node === 'object') {
         for (const value of Object.values(node)) everyThemeValue(value, seen)
     }
@@ -135,10 +130,10 @@ describe('index.css :root mirrors styles/theme.js', () => {
                 `${property} is annotated \`theme: ${themePath}\`, which resolves to nothing in styles/theme.js`
             ).toBeTypeOf('string')
             expect(
-                normalise(value),
+                normalizeCssValue(value),
                 `${property} is ${value.trim()} but ${themePath} is ${themeValue} — ` +
                 'the stylesheet and the JS token have drifted apart'
-            ).toBe(normalise(themeValue))
+            ).toBe(normalizeCssValue(themeValue))
         }
     })
 
@@ -153,7 +148,7 @@ describe('index.css :root mirrors styles/theme.js', () => {
         for (const { property, value, themePath } of declarations) {
             if (themePath) continue
             expect(
-                themeValues.has(normalise(value)),
+                themeValues.has(normalizeCssValue(value)),
                 `${property} is ${value.trim()}, which styles/theme.js also defines. Annotate ` +
                 'it with a trailing `theme: <path>` comment so the two are pinned, or change one of them.'
             ).toBe(false)
@@ -172,7 +167,7 @@ describe('index.css :root mirrors styles/theme.js', () => {
 
 /** `#666` and `#666666` compare equal; everything else is left alone. */
 function expandShortHex(value) {
-    return normalise(value).replace(
+    return normalizeCssValue(value).replace(
         /#([0-9a-f])([0-9a-f])([0-9a-f])\b/g,
         (_, r, g, b) => `#${r}${r}${g}${g}${b}${b}`
     )
