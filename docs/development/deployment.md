@@ -71,7 +71,12 @@ before the window on the two marked ★):
   (`HOV_STATUS_HOST_REACHES_PUBLIC`) — ssh #2 fetches the new bundle through it;
 - ★ the live directory is not itself a mount point
   (`HOV_STATUS_LIVE_IS_MOUNTPOINT`) — the promote renames it;
-- the `.venv` under the app checkout.
+- the `.venv` under the app checkout;
+- the app's `.env` sets `CONFIG_FILE=config_prod.ini`, the tracked beta-2
+  config (`tests/test_prod_config.py`). Before beta 2 it named an untracked
+  `config_dev.ini` that started at the Dark Grotto; nothing the deploy
+  checks reads this line, so after changing it confirm the start in a
+  browser.
 
 ## The deploy, step by step
 

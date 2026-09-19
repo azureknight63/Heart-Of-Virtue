@@ -5,6 +5,7 @@ All notable changes to Heart of Virtue will be documented in this file.
 ## [0.2.1.0] - 2026-09-18
 
 ### Added
+- **Beta 2**: production runs `config_prod.ini`. The game opens at the entrance to Grondia, with the Lurker dead and Gorran in the party, and the beta ends at the ferry in the nomad camp. Jean starts at level 4 and the player spends his starting points (`starting_level_allocation = player`); spending them restores him to full health.
 - **Combat previews**: hit chance, damage range and lethality are shown before a move is committed, and area moves report a per-target outcome instead of one roll for everyone.
 - **Disrupt**: a player interrupt for enemy wind-ups. Heavy enemy moves telegraph their severity on the battlefield and in the log.
 - **Combat glossary**: a panel with tooltips and a `?` shortcut on the game surface. Heat is surfaced as a momentum meter; the beat timeline is on by default, with a reduced-motion toggle.
@@ -20,7 +21,7 @@ All notable changes to Heart of Virtue will be documented in this file.
 - Combat animations play per target concurrently; layered animations no longer compound.
 - World movement and passageway teleport are refused during combat, with a message that says how to escape.
 - Logout asks for confirmation; START OVER begins a new run instead of logging out.
-- The beta begins at level 3 (`starting_level`), and the Grondia loadout carries a blunt weapon.
+- `starting_level` opens a session at level N, with the points spent by policy (`even`, for QA configs) or left to the player (`player`, for production). The Grondia loadout carries a blunt weapon.
 - **Deploys** pin the server's backend to the commit the frontend was built from (`git reset --hard`, not `git pull`: tracked edits on the server are discarded), and refuse unless the local checkout is `origin/master` with nothing outside `HEAD` able to reach the bundle — no modified, untracked or ignored files that the build reads, no `VITE_*`, `NODE_OPTIONS` or non-production `NODE_ENV` in the environment. Every build is stamped with its commit, so a rollback names the backend that matches the frontend it restores. `-Version` defaults to the `VERSION` file. A failure once the maintenance page is up leaves it up and prints the recovery commands for the state the deploy stopped in; a failure before that changes nothing on the server.
 
 ### Fixed

@@ -48,13 +48,21 @@ def _even_allocation(points, names):
     }
 
 
-#: Named policies for spending a pre-allocated starting level's points
-#: (issue #581). Each maps ``(points, attribute_names) -> {name: amount}``
-#: with the amounts summing to ``points``. Add a "combat-heavy" entry here
-#: and ``config_manager`` accepts it the same day -- the config validates
-#: against this registry, not a list of its own.
+def _player_allocation(points, names):
+    """Spend nothing: every point stays pending for the player's LEVEL UP
+    dialog, which the client opens once no story event is on screen (beta 2)."""
+    return {}
+
+
+#: Named policies for spending a starting level's points (issue #581). Each
+#: maps ``(points, attribute_names) -> {name: amount}`` with the amounts
+#: summing to at most ``points``; whatever a policy leaves unspent stays
+#: pending for the player to spend in the LEVEL UP dialog. Add a
+#: "combat-heavy" entry here and ``config_manager`` accepts it the same day --
+#: the config validates against this registry, not a list of its own.
 STARTING_LEVEL_ALLOCATION_POLICIES = {
     "even": _even_allocation,
+    "player": _player_allocation,
 }
 
 #: The policy names ``starting_level_allocation`` may take.
@@ -63,6 +71,11 @@ STARTING_LEVEL_ALLOCATIONS = tuple(STARTING_LEVEL_ALLOCATION_POLICIES)
 
 class PlayerLevelingMixin:
     """Experience gain, leveling-up, and skill-tree learning for the Player."""
+
+    #: True while a starting level's points wait for the player to spend them;
+    #: ``complete_starting_allocation`` acts on it once. Class-level so a
+    #: player restored from an older save reads False.
+    starting_allocation_pending = False
 
     def gain_exp(self, amt, exp_type="Basic", api_mode=False):
         """
@@ -149,7 +162,7 @@ class PlayerLevelingMixin:
         }
 
     def apply_starting_level(self, target_level, allocation="even"):
-        """Climb to ``target_level`` and pre-spend every attribute point.
+        """Climb to ``target_level`` and spend its attribute points by policy.
 
         The config-driven counterpart of ``starting_exp`` for a level-N start
         (issue #581). ``starting_exp`` cannot open a session at a higher level
@@ -157,10 +170,16 @@ class PlayerLevelingMixin:
         and the client blocks on a LEVEL UP modal until they are spent. This
         path climbs through the same ``_level_up_api`` loop -- so the random
         per-level stat bonuses land exactly as they would in play -- then
-        spends the points itself with the named ``allocation`` policy (see
-        ``STARTING_LEVEL_ALLOCATION_POLICIES``), clears any pending level-up
-        records, recomputes derived stats the way a manual allocation would,
-        and starts Jean at full health and fatigue.
+        spends the points with the named ``allocation`` policy (see
+        ``STARTING_LEVEL_ALLOCATION_POLICIES``), recomputes derived stats the
+        way a manual allocation would, and starts Jean at full health and
+        fatigue.
+
+        A policy that spends every point (``even``) clears any pending
+        level-up records, so no modal opens. One that leaves points (``player``)
+        hands them to that modal on purpose: the climb's level-ups become
+        ``pending_level_ups`` for it to list, and spending the last point
+        restores health and fatigue (``complete_starting_allocation``).
 
         Progress toward the next level (``exp``) is preserved rather than
         debited, so a ``starting_exp`` below the first boundary still counts.
@@ -194,7 +213,10 @@ class PlayerLevelingMixin:
         self.exp = exp_before
 
         self._spend_pending_attribute_points(policy)
-        if getattr(self, "pending_level_ups", None):
+        if self.pending_attribute_points:
+            self.pending_level_ups = list(events)
+            self.starting_allocation_pending = True
+        elif getattr(self, "pending_level_ups", None):
             self.pending_level_ups = []
 
         functions.refresh_stat_bonuses(self)
@@ -202,13 +224,29 @@ class PlayerLevelingMixin:
         self.fatigue = self.maxfatigue
         return events
 
+    def complete_starting_allocation(self):
+        """Restore health and fatigue once a starting level's points are spent.
+
+        Strength raises max HP and endurance max fatigue, so the points
+        ``apply_starting_level`` left to the player would otherwise open the
+        game below full. Acts once, and only for those points: an in-play
+        level-up heals nothing. The caller spends the last point and refreshes
+        stat bonuses first, so the maxima are current.
+        """
+        if not self.starting_allocation_pending:
+            return
+        self.starting_allocation_pending = False
+        self.hp = self.maxhp
+        self.fatigue = self.maxfatigue
+
     def _spend_pending_attribute_points(self, policy):
-        """Spend every pending point via ``policy`` (see the registry above).
+        """Spend pending points via ``policy`` (see the registry above).
 
         Mirrors the explicit branch of ``GameService.allocate_level_up_points``
         -- the ``*_base`` attribute is raised and the pending pool debited --
-        without the per-request validation. The caller refreshes stat bonuses.
-        Returns ``{attribute: amount}`` for what was spent.
+        without the per-request validation. Points the policy leaves stay
+        pending. The caller refreshes stat bonuses. Returns
+        ``{attribute: amount}`` for what was spent.
         """
         points = int(getattr(self, "pending_attribute_points", 0) or 0)
         if points <= 0:
@@ -221,7 +259,7 @@ class PlayerLevelingMixin:
                 continue
             setattr(self, name, int(getattr(self, name, 0) or 0) + amount)
             spent[name] = amount
-        self.pending_attribute_points = 0
+        self.pending_attribute_points = points - sum(spent.values())
         return spent
 
     def learn_skill(self, skill):
