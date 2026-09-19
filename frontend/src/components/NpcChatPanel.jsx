@@ -459,14 +459,16 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   // the panel cannot simply listen for that.
   //
   // Issue #618: `text` alone was not what is on screen. The engine's OWN
-  // closing line — `closing_lines_when_exhausted`, the line that ends a
-  // conversation the player talked dry — is authored, not generated, so it
-  // ships through `_flavor_only_turn` as an empty `npc_response` with the
+  // closing line — `closing_lines_when_exhausted`, used by the /open
+  // brush-off and when the model fails mid-conversation (a working model
+  // ends on its own spoken `npc_response`) — is authored, not generated, so
+  // it ships through `_flavor_only_turn` as an empty `npc_response` with the
   // prose in `npc_flavor`. An empty string is "fully typed" the instant it
-  // lands (useTypewriter short-circuits `!text`), so this fired on the tick
-  // the payload arrived and the whole 2s window was the entire time the line
-  // was readable. #531's fix was a no-op on exactly the path that always
-  // produces a closing line.
+  // lands, so this fired on the tick the payload arrived. And on EVERY path,
+  // spoken included, useTypewriter reported the new line complete for one
+  // render before its reset ran, which armed the close before a character
+  // typed; the hook now reports completion only for the text it shows
+  // (NpcChatPanel.autoClose.test.jsx drives the real hook).
   //
   // For a flavor beat this is a READING BUDGET, not a mirror: the stage
   // renders flavor statically, so nothing is animating. Charging it at the
