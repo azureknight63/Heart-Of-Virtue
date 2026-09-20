@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { StrictMode } from 'react'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import {
   useNpcChat,
@@ -446,6 +447,85 @@ describe('useNpcChat', () => {
           in_conversation: true,
         },
       ])
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Issue #661: the open effect's `cancelled` flag only gates which closure
+  // APPLIES a response -- it never stopped a second closure from firing a
+  // second real `POST /npc/chat/open`. React 18 StrictMode intentionally
+  // double-invokes an effect (mount -> cleanup -> mount) on dev, so mounting
+  // this hook fired two real requests for the same npcId every time. The
+  // server's one-turn-per-player lock (`_chat_turn_lock`, game_service.py) is
+  // non-blocking, so the second request could land on the first one still
+  // being processed and come back 409 -- which the NOT-cancelled (second)
+  // closure then rendered as STILL_TALKING_MESSAGE, even though Jean never
+  // actually had a prior conversation open.
+  // -------------------------------------------------------------------------
+  describe('React 18 StrictMode double-invoke (#661)', () => {
+    /** Mount wrapped in StrictMode, which double-invokes mount effects in dev. */
+    const mountStrict = (npcId = 'Mynx', npcName = 'Mynx') =>
+      renderHook(({ id, name }) => useNpcChat(id, name, onClose), {
+        initialProps: { id: npcId, name: npcName },
+        wrapper: StrictMode,
+      })
+
+    it('fires exactly one /open request for the npcId, not one per StrictMode invocation', async () => {
+      const { result } = mountStrict()
+
+      await waitFor(() => expect(result.current.phase).toBe('waiting_jean'))
+
+      expect(npcChat.open).toHaveBeenCalledTimes(1)
+    })
+
+    it('never shows "still finishing another conversation" from its own duplicate open call', async () => {
+      // The first (real) call is held open, standing in for the per-player
+      // lock still being processed server-side. If a second real request
+      // fires, it is refused exactly the way the server refuses a genuine
+      // collision: 409, "in flight".
+      let calls = 0
+      npcChat.open.mockImplementation(() => {
+        calls += 1
+        if (calls === 1) return new Promise(() => {})
+        return Promise.reject({
+          response: { status: 409, data: { success: false, error: 'server copy' } },
+        })
+      })
+
+      const { result } = mountStrict()
+
+      // Let both StrictMode-invoked effects (and any microtasks their promises
+      // settle) run.
+      await act(async () => {})
+
+      expect(npcChat.open).toHaveBeenCalledTimes(1)
+      expect(result.current.phase).not.toBe('failed')
+      expect(result.current.error).not.toBe(
+        'Jean is still finishing another conversation — give it a moment.'
+      )
+    })
+
+    it('still lands the served turn normally once the shared request resolves', async () => {
+      let calls = 0
+      npcChat.open.mockImplementation(() => {
+        calls += 1
+        // Whichever closure asks first gets the real network promise; a
+        // second real call here would mean the dedupe failed.
+        if (calls === 1) return Promise.resolve({ data: openData })
+        return Promise.reject(new Error('a second /open call went out for the same npcId'))
+      })
+
+      const { result } = mountStrict()
+
+      // Both StrictMode-invoked closures await the same settled promise
+      // (post-fix) or their own separate ones (pre-fix); either way, one
+      // microtask flush is enough for both to land.
+      await act(async () => {})
+
+      expect(npcChat.open).toHaveBeenCalledTimes(1)
+      expect(result.current.phase).toBe('waiting_jean')
+      expect(result.current.displayName).toBe('Mynx the Swift')
+      expect(result.current.error).toBeNull()
     })
   })
 
