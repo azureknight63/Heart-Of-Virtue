@@ -325,17 +325,16 @@ class CombatEvent(Event):
             # `event_temp_ally` marks them so post-combat cleanup drops them
             # from combat_list_allies instead of letting them follow Jean.
             if self.config and getattr(self.config, "ally_list", None):
-                if not hasattr(self.player, "combat_list_allies"):
-                    self.player.combat_list_allies = [self.player]
+                # Local import: src.npc pulls in src.npc._friends, which
+                # imports this module — at module scope the cycle breaks
+                # src.events outright (issue #625).
+                from src.npc._progression import join_party
+
                 for ally_name, count in self.config.ally_list:
                     for _ in range(count):
                         ally = self.tile.spawn_npc(ally_name)
                         if ally:
-                            ally.friend = True
-                            ally.aggro = False
-                            ally.event_temp_ally = True
-                            if ally not in self.player.combat_list_allies:
-                                self.player.combat_list_allies.append(ally)
+                            join_party(self.player, ally, temporary=True)
 
             # Stash this encounter's scenario/grid overrides on the player so
             # ApiCombatAdapter.initialize_combat can honor them instead of its

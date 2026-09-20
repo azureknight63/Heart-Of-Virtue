@@ -5,11 +5,10 @@ so the engine and web API can share them without depending on any terminal UI.
 They contain no user-facing I/O; error conditions are logged rather than printed.
 """
 
-import copy as _copy
 import logging
 from typing import TYPE_CHECKING, Optional, Union
 
-from src.functions import stack_inv_items
+from src.functions import copy_item_state, stack_inv_items
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, avoids circular imports
     from src.player import Player
@@ -226,15 +225,7 @@ def transfer_item(
                 item.stack_grammar()
             # Create a shallow copy of the item object then set count to qty
             new_item = item.__class__.__new__(item.__class__)
-            if hasattr(item, "__dict__"):
-                for k, v in item.__dict__.items():
-                    try:
-                        setattr(new_item, k, _copy.copy(v))
-                    except Exception:
-                        try:
-                            setattr(new_item, k, v)
-                        except Exception:
-                            pass
+            copy_item_state(item, new_item)
             setattr(new_item, "count", qty)
             if hasattr(new_item, "stack_grammar") and callable(new_item.stack_grammar):
                 new_item.stack_grammar()

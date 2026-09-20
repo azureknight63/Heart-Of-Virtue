@@ -15,6 +15,64 @@ from src.items import Item, stack_sentence_label  # noqa; Item is used in type h
 #####
 
 
+#: ``_class_declared_handler``'s "no class in the MRO declares this name" answer,
+#: distinct from a class that declares it as ``None`` (``Container.open_message``
+#: is exactly that) — the two take different branches below.
+_NOT_DECLARED = object()
+
+
+def _class_declared_handler(target, name):
+    """What ``name`` resolves to when looked up on ``target``'s CLASS alone.
+
+    Attribute lookup, minus the instance ``__dict__``: walks the MRO for the
+    first class that declares ``name`` and applies the descriptor protocol to
+    whatever it finds, so a plain method comes back BOUND to ``target``, a
+    ``staticmethod`` comes back as its plain function and a ``property`` comes
+    back as its computed value — the same three shapes ``getattr`` would hand
+    back, just sourced where map JSON cannot reach.
+
+    Returns :data:`_NOT_DECLARED` when no class in the MRO declares the name.
+
+    The descriptor is invoked off ``type(raw)`` rather than ``raw.__get__``
+    because that is what the interpreter does, and the difference is
+    load-bearing here: a map-authored value that happens to carry a ``__get__``
+    attribute of its own must not be treated as a descriptor.
+    """
+    owner = type(target)
+    for klass in owner.__mro__:
+        if name not in klass.__dict__:
+            continue
+        raw = klass.__dict__[name]
+        descriptor_get = getattr(type(raw), "__get__", None)
+        if descriptor_get is None:
+            return raw
+        try:
+            return descriptor_get(raw, target, owner)
+        except Exception:
+            # A property that raises is not a handler. Answering "declared,
+            # but nothing usable" (rather than falling through to the
+            # instance) keeps a raising class attribute from being a way to
+            # reach the instance lookup.
+            return None
+    return _NOT_DECLARED
+
+
+def advertised_keywords(target):
+    """The verbs ``target`` advertises, as a frozenset of strings.
+
+    ``keywords`` is map-authored and restored from saves, so it is not trusted
+    to be a list: ``None`` advertises nothing, a bare string is one keyword
+    (never a haystack ``in`` would substring-match), and non-string entries
+    are ignored.
+    """
+    keywords = getattr(target, "keywords", None)
+    if isinstance(keywords, str):
+        return frozenset({keywords})
+    if not isinstance(keywords, (list, tuple, set, frozenset)):
+        return frozenset()
+    return frozenset(k for k in keywords if isinstance(k, str))
+
+
 def resolve_interaction(target, action):
     """Return the bound callable implementing ``action`` on ``target``, or None.
 
@@ -36,14 +94,59 @@ def resolve_interaction(target, action):
       the map loader ``setattr``s every authored prop onto the instance, so an
       instance-readable table would let map JSON redirect one verb onto any
       other method.
-    * The handler is then looked up on the **instance**, so instance-bound
-      aliases still work — which is how ``Passageway``'s per-name aliases
-      (``setattr(self, word, self.enter)``) keep resolving.
+    * The handler comes from the **class**, and from nowhere else. An
+      instance-supplied word can reach a method only through a
+      class-declared ``instance_keyword_aliases`` table, whose values the
+      class fixes.
+
+    That second rule is issue #620. The handler used to be a bare
+    ``getattr(target, ...)`` accepted on ``callable()`` alone, and the legacy
+    map loader ``setattr``s every authored prop onto the instance — including
+    ``{"__class_type__": "module:Class"}`` props, which deserialize to engine
+    CLASSES, and a class is callable. So a placement authored with a prop named
+    after an interaction verb turned that class into the verb's handler, and
+    the API's dispatch then called it with the player as its first argument.
+    Nothing shipped does this, which is the only reason it was a hole rather
+    than a bug report.
+
+    The handler is sourced from the class and NOWHERE else. An earlier pass at
+    #620 kept a carve-out for instance attributes whose ``__self__`` was the
+    target, on the reasoning that only ``Passageway``'s name-word aliases could
+    take that shape. They are not the only thing that can: an instance
+    ``__dict__`` entry pointing at another of the target's own bound methods
+    satisfies it exactly, and a restored save carries ``__dict__`` verbatim --
+    ``SafeUnpickler``'s allow-list bounds which CLASSES may appear, not which of
+    their methods a dict points at. So ``look`` could be grafted onto ``die``,
+    which is the surface the verb allow-list exists to close (#334).
+
+    ``Passageway``'s name-word aliases survive as DATA instead: the words come
+    from the instance, but ``instance_keyword_aliases`` is declared on the
+    class and hardcodes what they map to, so map JSON or a save can supply a
+    word and never the method it reaches. ``HealingSpring.clean`` is admitted by
+    the ordinary class lookup -- it is a ``staticmethod``, so it never had a
+    ``__self__`` to match in the first place.
     """
     aliases = {}
     for klass in reversed(type(target).__mro__):
         aliases.update(klass.__dict__.get("KEYWORD_METHOD_ALIASES") or {})
-    handler = getattr(target, aliases.get(action, action), None)
+    name = aliases.get(action, action)
+    handler = _class_declared_handler(target, name)
+    if handler is _NOT_DECLARED:
+        # No class declares it. The instance may still name a per-placement
+        # alias -- but only through a CLASS-declared table, so what the alias
+        # RESOLVES TO is never instance-supplied. Nothing else on the instance
+        # is a nomination; the map loader and a restored save both write there.
+        handler = _NOT_DECLARED
+        hook = _class_declared_handler(target, "instance_keyword_aliases")
+        if callable(hook):
+            try:
+                mapped = hook().get(action)
+            except Exception:
+                mapped = None
+            if isinstance(mapped, str) and mapped:
+                handler = _class_declared_handler(target, mapped)
+        if handler is _NOT_DECLARED:
+            return None
     return handler if callable(handler) else None
 
 
@@ -1014,8 +1117,9 @@ class Passageway(Object):
     #: distinct bound methods, so an identity test against ``enter`` alone
     #: answers False for all three -- which is how a demo-end passageway
     #: stayed crossable by the only three verbs the shipped map authors
-    #: (#552). The authored name words (``ferry``, ``landing``) ARE bound to
-    #: ``enter`` itself and so answer through that entry.
+    #: (#552). The authored name words (``ferry``, ``landing``) resolve to
+    #: ``enter`` itself (``instance_keyword_aliases``) and so answer through
+    #: that entry.
     CROSSING_METHOD_NAMES = ("enter", *_DELEGATED_CROSSING_VERBS)
 
     def __init__(
@@ -1053,12 +1157,13 @@ class Passageway(Object):
         self.keywords.append("enter")
         self.action_aliases.extend(Passageway._DELEGATED_CROSSING_VERBS)
         self.keywords.extend(self.action_aliases)
-        _name_words = name.lower().replace("'s", "").replace("'", "").split()
-        for _word in _name_words:
-            if len(_word) > 3 and _word.isalpha() and not hasattr(self, _word):
-                setattr(self, _word, self.enter)
-                self.action_aliases.append(_word)
-                self.keywords.append(_word)
+        for _word in type(self)._name_alias_words(name):
+            # Advertised as data only. The word is instance-supplied; what it
+            # means is fixed by `instance_keyword_aliases` on the class (#620).
+            if hasattr(self, _word) or _word in self.action_aliases:
+                continue
+            self.action_aliases.append(_word)
+            self.keywords.append(_word)
         self.events_before = events_before if events_before is not None else []
         self.events_after = events_after if events_after is not None else []
         self.teleport_map = teleport_map if teleport_map is not None else ""
@@ -1099,6 +1204,32 @@ class Passageway(Object):
     def demo_end_ready_flag(self, value):
         self._authored_ready_flag = value
 
+    @staticmethod
+    def _name_alias_words(name):
+        """The words of a placement's own name that also mean "enter".
+
+        A player who sees "Ferry Landing" may reasonably type FERRY. Derived
+        from the name on demand rather than stored, so an instance restored
+        from a save that predates this resolves identically.
+        """
+        cleaned = str(name or "").lower().replace("'s", "").replace("'", "")
+        return [w for w in cleaned.split() if len(w) > 3 and w.isalpha()]
+
+    def instance_keyword_aliases(self):
+        """``{authored word: method name}`` for this placement's own name words.
+
+        Read by :func:`resolve_interaction`. Declared on the CLASS on purpose:
+        the words are instance data and a map or a save may influence them, but
+        every one of them maps to ``enter`` and nothing else, so neither can
+        point a verb at an arbitrary method (#620).
+
+        The helper is read off the CLASS as well. A ``staticmethod`` is a
+        non-data descriptor, so ``self._name_alias_words`` would let an
+        instance ``__dict__`` entry of that name -- a map prop, a save --
+        win the lookup and be called here.
+        """
+        return {word: "enter" for word in type(self)._name_alias_words(self.name)}
+
     def is_crossing_handler(self, handler):
         """True when ``handler`` is one of this passageway's crossing methods.
 
@@ -1114,10 +1245,32 @@ class Passageway(Object):
         # comparisons consistent" with the `ally is self.player` checks in
         # combat_adapter.py; those compare entities, this compares bound
         # methods.
+        # Class-declared, matching `resolve_interaction`. Reading the instance
+        # here while the resolver reads the class let the two halves disagree:
+        # an authored prop named `enter` poisoned only the comparison, so
+        # `_is_demo_end_crossing` answered False and the demo edge was crossed
+        # with `beta_end` unset -- #552's symptom, via a different door.
         return any(
-            handler == getattr(self, name, None)
-            for name in self.CROSSING_METHOD_NAMES
+            handler == _class_declared_handler(self, name)
+            for name in type(self).CROSSING_METHOD_NAMES
         )
+
+    def accepts_step_through(self, handler, action):
+        """Whether ``action`` -- already resolved to ``handler`` -- should ask
+        "step through?" on this passageway (#620).
+
+        The API's confirmation arm asks here rather than spelling the rule
+        itself, so the dispatch contract test can ask the same question
+        instead of retyping it (a retyped mirror has failed open twice).
+        Two ways in, because neither alone is right: the verb crosses
+        (``is_crossing_handler``: ``enter``, its delegators, the name words),
+        or the placement ADVERTISES it -- an authored keyword is the author
+        saying "this verb uses it", which is how grondia's ``inside``/``east``
+        and eastern-descent's ``west`` cross while resolving to nothing. What
+        stays out is exactly the hole: an allow-listed verb the placement
+        never advertised.
+        """
+        return self.is_crossing_handler(handler) or action in advertised_keywords(self)
 
     def is_demo_edge(self, ready_flag=None):
         """True when this passageway is where the demo stops -- and, given

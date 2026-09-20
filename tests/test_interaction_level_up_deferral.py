@@ -30,6 +30,21 @@ from src.objects import Object  # noqa: E402
 from tests._gs_fixtures import live_world  # noqa: E402
 
 
+class _Sconce(Object):
+    """A wall sconce that implements its own ``touch``.
+
+    On the CLASS, not the instance: issue #620 restricts ``resolve_interaction``
+    to handlers a class declares, because the map loader ``setattr``s authored props onto the instance and a
+    prop holding a deserialized class is callable. This fixture used to do
+    ``obj.touch = lambda _player: None``, which is that same instance shape and
+    is now refused before the interaction ever reaches the combat check the
+    tests are about.
+    """
+
+    def touch(self, player):
+        return None
+
+
 @pytest.fixture
 def game_service():
     return GameService()
@@ -41,7 +56,7 @@ def world_with_a_touchable_object():
     player, game_map = live_world()
     tile = game_map[(0, 0)]
 
-    obj = Object(
+    obj = _Sconce(
         name="Wall Sconce",
         description="A sconce juts from the wall.",
         hidden=False,
@@ -52,7 +67,6 @@ def world_with_a_touchable_object():
         tile=tile,
     )
     obj.keywords.append("touch")
-    obj.touch = lambda _player: None
     tile.objects_here.append(obj)
 
     return player, tile, obj

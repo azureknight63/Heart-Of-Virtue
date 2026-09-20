@@ -161,8 +161,10 @@ def wire_handle(entity):
 
     The handle is a plain ``str`` in ``__dict__``, so it pickles with the rest
     of the entity (``Combatant.__getstate__`` strips only the transient
-    animation channel) and survives a save/load round trip. Nothing in the
-    engine reads it -- it exists solely as the API's entity identity.
+    animation channel) and survives a save/load round trip. It is the API's
+    entity identity; the engine's one reader is the victory loot offer
+    (``src/npc/_loot.py`` records a drop's handles, and
+    ``functions.floor_merges_frozen`` finds the fight's tile by them, #621).
 
     The mint goes through ``__dict__.setdefault`` rather than ``setattr``
     because it is racy otherwise: the combat poll and the socket beat emitter

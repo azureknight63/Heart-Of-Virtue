@@ -1,6 +1,11 @@
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import InteractPanel, { actionKeywords, TARGET_CATEGORIES } from './InteractPanel';
+// The real dialog, not a stand-in: the #611 test below is about what the
+// player actually reads after a passageway crossing is armed, and a stub that
+// rendered `event.output_text` would be asserting the stub's own field choice
+// rather than EventDialog's (output_text || message || description).
+import EventDialog from './EventDialog';
 import apiEndpoints from '../api/endpoints';
 import { PASSAGEWAY_TRANSITION_EVENT_TYPE } from '../utils/eventIds';
 import { colors, accessibility } from '../styles/theme';
@@ -1038,6 +1043,98 @@ describe('InteractPanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onRefetch).toHaveBeenCalledTimes(1);
     expect(onEventsTriggered).toHaveBeenCalledWith([transitionEvent]);
+  });
+
+  it('shows the returned-goods narration once the post-drop refetch has landed (#611)', async () => {
+    // Issue #611: unpaid shop stock is confiscated server-side the moment a
+    // Passageway confirmation is ARMED, and the player was told nothing. The
+    // narration does reach `data.message`, but this branch returns before
+    // `setInteractionOutput` and has already called `onClose()`, so the panel
+    // that would render it is gone. The server therefore stages the lines onto
+    // the confirmation event itself (GameService._queue_passageway_confirmation
+    // -> output_text; pinned by tests/test_issue_611_merchandise_return_feedback.py),
+    // and this test is the client half: the real interact() passageway branch
+    // has to carry that event, intact, into the dialog the player reads.
+    //
+    // The refetch here is deliberately NOT a stub. It does what the real one
+    // does -- re-reads the player and comes back post-drop, with an empty
+    // inventory -- because the previous version of this regression test (in
+    // GamePage.test.jsx) stubbed `refetch` to a no-op so its mocked inventory
+    // kept a merchandise flag forever, and derived the warning from that. That
+    // warning could not fire in the real app under any circumstances, and the
+    // test could not fail. The assertion below runs against the same empty
+    // inventory the real player has at that moment.
+    const shopFloor = {
+      ...mockLocation,
+      npcs: [],
+      items: [],
+      objects: [{ id: 'flap1', name: 'Tent Flap', description: 'The way out.', keywords: ['Enter'] }],
+    };
+    const transitionEvent = {
+      type: PASSAGEWAY_TRANSITION_EVENT_TYPE,
+      event_id: 'passage-611',
+      name: 'Passage_Tent Flap',
+      description: 'Jean steps through the tent flap...',
+      output_text:
+        "Jean sets Rusted Iron Mace down; unpaid goods don't leave the shop."
+        + '\n\nJean steps through the tent flap...',
+      needs_input: true,
+      input_type: 'choice',
+      input_prompt: 'Step through?',
+      input_options: [{ value: 'continue', label: 'Step through' }],
+    };
+    apiEndpoints.world.interact.mockResolvedValue({
+      data: {
+        success: true,
+        // What the server really returns here — the drop narration, which the
+        // passageway branch discards. Nothing may depend on it.
+        message: "Jean sets Rusted Iron Mace down; unpaid goods don't leave the shop.",
+        events_triggered: [transitionEvent],
+      },
+    });
+
+    // Merchandise the player holds, as the refetch leaves it: one piece before,
+    // none after. Sampled when the confirmation is queued, because the claim is
+    // about ORDER -- the hook awaits the refetch first, so the dialog never
+    // opens over a pre-drop inventory.
+    let heldMerchandise = 1;
+    const heldWhenQueued = [];
+
+    function Harness() {
+      const [open, setOpen] = React.useState(true);
+      const [event, setEvent] = React.useState(null);
+      return (
+        <>
+          {open && (
+            <InteractPanel
+              location={shopFloor}
+              onClose={() => setOpen(false)}
+              onRefetch={async () => { heldMerchandise = 0; }}
+              onEventsTriggered={(events) => {
+                heldWhenQueued.push(heldMerchandise);
+                setEvent(events[0]);
+              }}
+            />
+          )}
+          {event && <EventDialog event={event} onSubmitInput={vi.fn()} onClose={vi.fn()} />}
+        </>
+      );
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getAllByText(/Tent Flap/i)[0]);
+    fireEvent.click(screen.getByText(/^Enter$/i));
+
+    // The panel has closed by now: this is EventDialog's TypewriterOutput,
+    // reached through the testid the two share.
+    const text = await settledOutput();
+    expect(heldWhenQueued).toEqual([0]);
+    expect(text.textContent).toContain('Rusted Iron Mace');
+    expect(text.textContent).toContain("unpaid goods don't leave the shop");
+    // Above the button, not after it: the player reads what was taken back
+    // while the crossing is still an open question.
+    const stepThrough = screen.getByRole('button', { name: 'Step through' });
+    expect(text.compareDocumentPosition(stepThrough) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('updates the selected target locally from the response object_state', async () => {

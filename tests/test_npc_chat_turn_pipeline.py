@@ -71,12 +71,19 @@ class _WideTimeoutAdapter:
 
 
 class TestTurnBudgetScalesWithTheRoundTimeout:
-    def test_budget_fits_every_documented_stage(self):
+    def test_budget_scales_with_the_round_timeout_up_to_the_ceiling(self):
+        """It used to scale without limit: a 20s per-call timeout funded an
+        80s turn, i.e. 80 seconds of spinner for one reply. The maintainer's
+        rule (2026-09-19) caps it at ``_TURN_CEILING_SECONDS`` -- later stages
+        are refused instead. (The cap was first justified by a 30s worker kill
+        read off the Procfile; production runs an eventlet worker with
+        --timeout 120, so the cap is a player bound. See
+        deploy/heart-of-virtue.service.)"""
         adapter = _WideTimeoutAdapter()
         remaining = _chat_llm._turn_deadline(adapter) - time.monotonic()
-        assert remaining >= (
-            _chat_llm._MAX_TURN_STAGES * adapter.round_timeout - 0.5
-        )
+        wanted = _chat_llm._MAX_TURN_STAGES * adapter.round_timeout
+        assert wanted > _chat_llm._TURN_CEILING_SECONDS, "the fixture no longer exercises the cap"
+        assert remaining == pytest.approx(_chat_llm._TURN_CEILING_SECONDS, abs=0.5)
 
     def test_budget_never_drops_below_the_fixed_floor(self):
         # No adapter: _round_timeout falls back to its 6s default.

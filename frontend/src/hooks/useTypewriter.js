@@ -68,7 +68,14 @@ export default function useTypewriter(text, speed = 30) {
 
     return {
         displayedText,
-        isComplete,
+        // Complete means THIS text is fully shown. The reset above runs in an
+        // effect, after the render that brings a new text, so for that one
+        // render the state still says the PREVIOUS text finished -- and a
+        // consumer arming a timer on completion (the NPC chat auto-close,
+        // #618) fired before a character of the new line appeared. Once
+        // typing finishes, displayedText equals the text on every path (a
+        // missing text shows as '').
+        isComplete: isComplete && displayedText === (text || ''),
         finishImmediately,
         reset
     }

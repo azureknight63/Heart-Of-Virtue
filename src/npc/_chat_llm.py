@@ -43,6 +43,7 @@ Instance attributes (set by _init_chat_attrs):
     self._chat_npc_key       str | None (persistence key)
 """
 
+import contextlib
 import json
 import logging
 import re
@@ -461,7 +462,9 @@ _warned_round_timeout: Optional[float] = None
 #                                     two-call adapter only)
 #
 # Named so :func:`_turn_deadline` funds what ``_CHAT_DEADLINE_SECONDS``
-# enumerates. The two had drifted: the budget widened to *two* round timeouts
+# enumerates -- at healthy latencies; ``_TURN_CEILING_SECONDS`` caps the total
+# below four FULL round timeouts, so a turn whose calls all run to the limit
+# loses its last stage (see :func:`_turn_deadline`). The two had drifted: the budget widened to *two* round timeouts
 # while the constant's comment listed these four, and since
 # :func:`_no_stage_budget` refuses to open a stage unless a whole round timeout
 # still fits, a 12s budget stopped admitting stages six seconds in. At the
@@ -471,7 +474,7 @@ _warned_round_timeout: Optional[float] = None
 _MAX_TURN_STAGES = 4
 
 
-def _turn_deadline(adapter: Any) -> float:
+def _turn_deadline(adapter: Any, started: Optional[float] = None) -> float:
     """The instant after which this turn may open no further provider stage.
 
     ``_CHAT_DEADLINE_SECONDS`` is a fixed number, but the per-call timeout
@@ -494,7 +497,8 @@ def _turn_deadline(adapter: Any) -> float:
     budget = _MAX_TURN_STAGES * round_timeout
     if round_timeout > _DEFAULT_ROUND_TIMEOUT_SECONDS:
         _warn_round_timeout_over_budget(round_timeout, budget)
-    return time.monotonic() + max(_CHAT_DEADLINE_SECONDS, budget)
+    budget = min(_TURN_CEILING_SECONDS, max(_CHAT_DEADLINE_SECONDS, budget))
+    return (time.monotonic() if started is None else started) + budget
 
 
 def _warn_round_timeout_over_budget(round_timeout: float, widened: float) -> None:
@@ -505,13 +509,14 @@ def _warn_round_timeout_over_budget(round_timeout: float, widened: float) -> Non
     _warned_round_timeout = round_timeout
     logger.warning(
         "NPC chat per-call timeout is %.1fs, wider than the %.1fs the turn "
-        "budget is sized around, so one conversation round may now run for up "
-        "to %.1fs (%d provider stages). Lower NPC_CHAT_LLM_TIMEOUT to keep a "
-        "round short.",
+        "budget is sized around: %d provider stages would want %.1fs, but a "
+        "turn is capped at %.1fs, so later stages will be refused. Lower "
+        "NPC_CHAT_LLM_TIMEOUT to keep every stage.",
         round_timeout,
         _DEFAULT_ROUND_TIMEOUT_SECONDS,
-        widened,
         _MAX_TURN_STAGES,
+        widened,
+        _TURN_CEILING_SECONDS,
     )
 
 
@@ -712,8 +717,10 @@ _MIN_TRUNCATION_KEEP_RATIO = 0.5
 # player watching a spinner.
 #
 # A stage is opened only while a full round timeout still fits in the remaining
-# budget (see :func:`_no_stage_budget`), so the real ceiling is this value plus
-# one chain walk — the tail of the last stage to start. Once the budget is
+# budget (see :func:`_no_stage_budget`), and inside a stage every provider call
+# is clipped to what the turn has left and the chain stops once it is spent
+# (``NpcChatLLMAdapter.bounded_by``), so the turn ends at its deadline plus at
+# most one clipped call. Once the budget is
 # spent the turn drops to the deterministic fallbacks that already exist
 # (_get_fallback_npc_line, _chat_guard.hedge_npc_text, and the rewrite-mode QC
 # salvage in _run_npc_turn) rather than opening another stage.
@@ -721,8 +728,27 @@ _MIN_TRUNCATION_KEEP_RATIO = 0.5
 # This is the FLOOR of the budget, not the whole rule: the per-call timeout it
 # is measured against is operator-tunable and unbounded, so
 # :func:`_turn_deadline` sizes the budget at one round timeout per stage in
-# :data:`_MAX_TURN_STAGES` and takes whichever is larger.
+# :data:`_MAX_TURN_STAGES` and takes whichever is larger -- up to
+# :data:`_TURN_CEILING_SECONDS`.
 _CHAT_DEADLINE_SECONDS = 12.0
+
+# The most a turn's budget may be, however the per-call timeout is tuned.
+#
+# Why 21s is a PLAYER bound, not a survival one. This was first sized against
+# the Procfile -- one sync worker, 30s timeout, sessions in memory -- where a
+# request that outlived the timeout killed the worker and every player's
+# session with it. Production turned out to run something else entirely
+# (deploy/heart-of-virtue.service, read from the server 2026-09-19): an
+# eventlet worker, where requests are concurrent greenlets and --timeout 120
+# is a liveness heartbeat rather than a per-request deadline. So nothing kills
+# a long turn; the ceiling stays because a player should not watch a spinner
+# for half a minute (maintainer decision 2026-09-19: keep a turn under ~25s).
+# The ceiling plus one nominal call must still stay inside the worker timeout
+# -- a stalled worker IS killed, and a unit switched back to sync would make
+# the old hazard real again -- and the client's NPC_CHAT_TIMEOUT_MS must
+# outwait the turn; both are derived from this by
+# tests/test_npc_chat_turn_budget.py rather than restated.
+_TURN_CEILING_SECONDS = 21.0
 
 # Meta-speech markers ("[Option 2]", "As Jean, I...") that mean the model
 # broke character while generating one of Jean's dialogue options. Hoisted to
@@ -4512,8 +4538,37 @@ class ConversationalNPCMixin:
         else:
             narrate(self._display_name() + " has nothing to say.")
 
+    def _turn_budget(self):
+        """``(deadline, scope)`` for one turn, opened before anything calls out.
+
+        The deadline used to be set after ``_prepare_turn_context``, whose
+        ``_ensure_personality`` makes a whole provider chain walk for a generic
+        NPC's first turn -- outside every budget. ``scope`` holds the adapter's
+        calls to the deadline (``bounded_by``); an adapter without one (a test
+        double, a legacy adapter) gets a no-op scope and the stage gate alone.
+
+        The clock starts before ``_get_adapter``: on a cold singleton that
+        builds the adapter, discovering and validating models on this request,
+        and that time is the turn's as much as any call's.
+        """
+        started = time.monotonic()
+        try:
+            adapter = self._get_adapter()
+        except Exception:  # the entry point's own handler reports it
+            adapter = None
+        deadline = _turn_deadline(adapter, started)
+        bounded = getattr(adapter, "bounded_by", None)
+        scope = bounded(deadline) if callable(bounded) else contextlib.nullcontext()
+        return deadline, scope
+
     def chat_open(self, player) -> Dict[str, Any]:
         """Start conversation. Returns opening line + 3 Jean options."""
+        deadline, scope = self._turn_budget()
+        with scope:
+            return self._chat_open(player, deadline)
+
+    def _chat_open(self, player, deadline: float) -> Dict[str, Any]:
+        """``chat_open`` inside its turn budget."""
         try:
             npc_key = self._load_turn_state(player)
 
@@ -4536,10 +4591,6 @@ class ConversationalNPCMixin:
                 )
 
             system, adapter, llm_available = self._prepare_turn_context(player)
-            # Set once the adapter is known: the budget is sized against that
-            # adapter's per-call timeout (see :func:`_turn_deadline`), and the
-            # brush-off path above never opens a provider stage at all.
-            deadline = _turn_deadline(adapter)
             logger.info(
                 "chat_open start npc=%s llm_available=%s has_adapter=%s history_len=%s",
                 self.name,
@@ -4620,6 +4671,14 @@ class ConversationalNPCMixin:
             return {"success": False, "error": "Conversation failed — try again."}
 
     def chat_respond(self, player, jean_text: str, jean_tone: str) -> Dict[str, Any]:
+        """Process Jean's response inside its turn budget (``_chat_respond``)."""
+        deadline, scope = self._turn_budget()
+        with scope:
+            return self._chat_respond(player, jean_text, jean_tone, deadline)
+
+    def _chat_respond(
+        self, player, jean_text: str, jean_tone: str, deadline: float
+    ) -> Dict[str, Any]:
         """Process Jean's response. Returns NPC reply + 3 new Jean options.
 
         ``jean_tone`` is accepted for API shape only and deliberately unused.
@@ -4654,7 +4713,6 @@ class ConversationalNPCMixin:
             npc_key = self._load_turn_state(player)
             self._record_jean_line(player, jean_text)
             system, adapter, llm_available = self._prepare_turn_context(player)
-            deadline = _turn_deadline(adapter)
             logger.info(
                 "chat_respond start npc=%s llm_available=%s history_len=%s jean_text_chars=%s",
                 self.name,

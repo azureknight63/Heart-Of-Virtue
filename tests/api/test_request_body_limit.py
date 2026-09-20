@@ -4,8 +4,10 @@ Nothing bounded it before. The two routes that matter are the two an
 unauthenticated client can reach — ``POST /api/logs/browser`` (the frontend
 logger posts there without a session, including via ``sendBeacon``) and
 ``POST /api/auth/register`` — and this deployment runs a single gunicorn
-worker with nothing in front of it (``src/api/rate_limiter.py`` documents the
-absent proxy), so an arbitrarily large body had nowhere to be stopped.
+worker process (``deploy/heart-of-virtue.service``), so an arbitrarily large
+body had nowhere to be stopped. (``src/api/rate_limiter.py`` says there is no
+proxy in front. There is one, and the limiter is keyed wrongly because of it —
+issue #654. It is not a body-size bound either way.)
 
 Two mechanisms, tested separately below because only one of them is enough on
 its own:
@@ -393,10 +395,13 @@ class TestTheChunkedReadStaysOnItsOwnPath:
 
         The chunked test used to stand alone, so any request carrying
         ``Transfer-Encoding: chunked`` had its body read to completion before
-        dispatch -- on every route, method-independent. This deployment runs a
-        single gunicorn worker with nothing in front of it, so a GET whose
-        chunks arrive slowly occupies that worker until the server's timeout,
-        from an unauthenticated client, against the one route a monitor polls.
+        dispatch -- on every route, method-independent. A GET whose chunks
+        arrive slowly then occupies a worker greenlet until the server's
+        timeout, from an unauthenticated client, against the one route a
+        monitor polls -- and cheaply enough to open by the hundred. On the sync
+        worker this file used to assume, one was enough to stop the process
+        answering at all (``deploy/heart-of-virtue.service`` records the real
+        worker).
 
         Conjoining the method with the chunked test cannot bring back the hang
         the docstring warns about: that needs a length-less POST *without* the

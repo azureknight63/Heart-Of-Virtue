@@ -38,6 +38,16 @@ tzdata>=2024.1
 # the cap and answered 400 -- the exact bug that branch exists to fix.
 gunicorn>=20.1
 
+# The worker class production actually runs (deploy/heart-of-virtue.service:
+# `--worker-class eventlet`). Without it gunicorn refuses to boot, so the API
+# was one venv rebuild away from not starting: it was installed on the server
+# by hand (0.40.0, verified 2026-09-19) and declared nowhere. The eventlet
+# worker also monkey-patches the stdlib, which is what makes the threading
+# locks in GameService green rather than blocking -- so this line is part of
+# the concurrency model, not just a runner. Held to the unit by
+# tests/test_npc_chat_turn_budget.py.
+eventlet>=0.40
+
 # Pinned because _register_request_limits argues its correctness against a
 # specific Werkzeug rather than against a documented contract: that
 # LimitedStream.readall stops at the cap and RETURNS instead of raising, and

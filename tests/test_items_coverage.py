@@ -31,6 +31,7 @@ self.power in __init__, so calling .use() raised AttributeError. Fixed by
 adding `self.power = 25` (see src/items.py).
 """
 
+import inspect
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
@@ -41,6 +42,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import pytest  # noqa: E402
+import src.functions as functions  # noqa: E402
 import src.items as items  # noqa: E402
 from src.player import Player  # noqa: E402
 
@@ -1040,7 +1042,9 @@ class TestDriedCrystalSap:
         item = items.DriedCrystalSap()
         item.count = 3
         item.stack_grammar()
-        assert "3" in item.name
+        # The count lives in the description, never the name (#624).
+        assert "3 waxy amber lumps" in item.description
+        assert item.name == "Dried Crystal Sap"
 
     def test_stack_grammar_singular(self):
         item = items.DriedCrystalSap()
@@ -1071,6 +1075,167 @@ class TestDriedCrystalSap:
         item.use(player)
 
         assert item.count == 1
+
+
+class TestMineralPowder:
+    """``MineralPowder`` had no test of any kind before #624."""
+
+    def test_stack_grammar_plural_describes_the_count(self):
+        item = items.MineralPowder()
+        item.count = 3
+        item.stack_grammar()
+        # The count lives in the description, never the name (#624).
+        assert "3 packets" in item.description
+        assert item.name == "Mineral Powder"
+
+    def test_stack_grammar_singular(self):
+        item = items.MineralPowder()
+        item.count = 3
+        item.stack_grammar()  # plural first
+        item.count = 1
+        item.stack_grammar()  # back to singular
+        assert item.name == "Mineral Powder"
+        assert "3 packets" not in item.description
+
+
+# ---------------------------------------------------------------------------
+# #624: stack_grammar() adjusts prose, never the name
+# ---------------------------------------------------------------------------
+
+
+def _constructible_stackables():
+    """Every ``src.items`` class with a ``stack_grammar()`` that can be built
+    without arguments -- the population a real floor or pack can hold.
+
+    Derived, not listed: the next stackable is covered the day it lands. The
+    abstract bases (``Consumable``, ``Commodity``, ``Arrow``) need constructor
+    arguments and are skipped; every implementation they carry that a real
+    item can reach is reached through a concrete subclass here.
+    """
+    found = []
+    for _name, cls in inspect.getmembers(items, inspect.isclass):
+        if cls.__module__ != items.__name__ or not hasattr(cls, "stack_grammar"):
+            continue
+        try:
+            cls()
+        except TypeError:
+            continue
+        found.append(cls)
+    return found
+
+
+_STACKABLES = _constructible_stackables()
+
+#: The two classes whose ``stack_grammar()`` baked the count into ``name``
+#: before #624. Named on purpose: they anchor the derived population above
+#: and carry the characterization tests below.
+_FORMERLY_NAME_BAKING = ["MineralPowder", "DriedCrystalSap"]
+
+
+def test_the_stackable_population_is_real():
+    names = {cls.__name__ for cls in _STACKABLES}
+    assert set(_FORMERLY_NAME_BAKING) <= names, (
+        f"the derived stackable scan lost {sorted(set(_FORMERLY_NAME_BAKING) - names)}"
+    )
+    assert len(names) > len(_FORMERLY_NAME_BAKING), (
+        "the scan found only the two anchors -- it has stopped deriving"
+    )
+
+
+@pytest.mark.parametrize("cls", _STACKABLES, ids=lambda cls: cls.__name__)
+def test_stack_grammar_never_rewrites_the_name(cls):
+    """``name`` is identity -- the buyback ledger and the sell message key on
+    it -- so the stack count belongs in the description only (#624)."""
+    item = cls()
+    base_name = item.name
+    for count in (3, 1):
+        item.count = count
+        item.stack_grammar()
+        assert item.name == base_name, (
+            f"{cls.__name__}.stack_grammar() rewrote name to {item.name!r} "
+            f"at count {count}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Characterization: what actually makes stackables merge (#624)
+# ---------------------------------------------------------------------------
+
+
+class TestStackablesMergeOnStackKeyNotName:
+    """Characterization test. This passed before #624's fix and after it.
+
+    Issue #624 predicted that a ``stack_grammar()`` count baked into
+    ``item.name`` would defeat ``functions.stack_items_list``, leaving a loose
+    item and an "x2" stack side by side forever. It never did: the stacker's
+    name+description key is a *fallback*, reached only when the item has no
+    ``stack_key``, and both count-baking classes set ``stack_key`` from the
+    constructor argument before ``Item.__init__`` assigns ``self.name``. The
+    key therefore never saw the mutated name.
+
+    Nothing asserted that, so the contract carrying the whole behaviour was
+    invisible. These tests pin it: if ``stack_key`` is ever dropped from
+    ``Consumable``/``Commodity``, or reassigned from ``self.name`` after the
+    fact, the fallback key starts varying with ``description`` too (which
+    ``stack_grammar`` legitimately still rewrites) and merging breaks here
+    rather than in a save file.
+    """
+
+    @pytest.mark.parametrize("cls_name", _FORMERLY_NAME_BAKING)
+    def test_loose_item_merges_into_an_existing_stack(self, cls_name):
+        cls = getattr(items, cls_name)
+        loose = cls()
+        stack = cls()
+        stack.count = 2
+        stack.stack_grammar()
+
+        items_list = [loose, stack]
+        functions.stack_items_list(items_list)
+
+        assert len(items_list) == 1
+        assert items_list[0].count == 3
+
+    @pytest.mark.parametrize("cls_name", _FORMERLY_NAME_BAKING)
+    def test_stack_key_does_not_follow_a_renamed_item(self, cls_name):
+        """``stack_key`` is independent of ``name``, not merely equal to it.
+
+        Asserting ``stack_key == item.name`` after calling ``stack_grammar()``
+        would pass for free now that nothing renames the item -- it would
+        compare two values that no longer have any way to diverge. So the
+        rename is applied by hand here: this is exactly the state a pre-#624
+        save restores, and the state ``stack_items_list`` must still group
+        correctly.
+        """
+        cls = getattr(items, cls_name)
+        item = cls()
+        base_name = item.name
+        item.count = 7
+        item.stack_grammar()
+        item.name = f"{base_name} x7"  # as a pre-fix save would have stored it
+
+        assert item.stack_key == base_name
+
+    @pytest.mark.parametrize("cls_name", _FORMERLY_NAME_BAKING)
+    def test_a_legacy_baked_name_still_merges_into_a_fresh_stack(self, cls_name):
+        """A pre-#624 save's baked name must not strand its stack.
+
+        ``name`` is pickled instance state, so removing the mutation does not
+        retroactively clean existing saves; the stacker has to keep grouping a
+        restored "Mineral Powder x2" with a freshly spawned one. It does,
+        because the key never read ``name`` -- which is the whole point.
+        """
+        cls = getattr(items, cls_name)
+        legacy = cls()
+        legacy.count = 2
+        legacy.stack_grammar()
+        legacy.name = f"{legacy.name} x2"  # pre-fix on-disk spelling
+        fresh = cls()
+
+        items_list = [legacy, fresh]
+        functions.stack_items_list(items_list)
+
+        assert len(items_list) == 1
+        assert items_list[0].count == 3
 
 
 # ---------------------------------------------------------------------------

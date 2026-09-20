@@ -24,6 +24,7 @@ class TestDropItemHardening:
         item.name = "Test Item"
         item.isequipped = False
         player = Mock()
+        player.in_combat = False  # a bare Mock's is truthy
         player.inventory = [item]
         player.universe = Mock()
         tile = Mock()
@@ -45,6 +46,7 @@ class TestDropItemHardening:
         item.name = "Test Item"
         item.isequipped = False
         player = Mock()
+        player.in_combat = False  # a bare Mock's is truthy
         player.inventory = [item]
         player.universe = None
 
@@ -79,6 +81,7 @@ class TestDropItemHardening:
         item.name = "Test Item"
         item.isequipped = False
         player = Mock()
+        player.in_combat = False  # a bare Mock's is truthy
         player.inventory = [item]
         player.universe = Mock()
         player.universe.get_tile = Mock(return_value=None)
@@ -98,6 +101,7 @@ class TestDropItemHardening:
         item.name = "Test Item"
         item.isequipped = False
         player = Mock()
+        player.in_combat = False  # a bare Mock's is truthy
         player.inventory = [item]
         player.universe = Mock()
         tile = Mock(spec=[])  # No items_here attribute
@@ -118,6 +122,7 @@ class TestDropItemHardening:
         item.name = "Ghost"
         item.isequipped = False
         player = Mock()
+        player.in_combat = False  # a bare Mock's is truthy
         player.inventory = []
         player.universe = Mock()
         tile = Mock()
@@ -137,6 +142,7 @@ class TestDropItemHardening:
         item.name = "Sword"
         item.isequipped = True
         player = Mock()
+        player.in_combat = False  # a bare Mock's is truthy
         player.inventory = [item]
         player.universe = Mock()
         tile = Mock()
@@ -696,6 +702,7 @@ class TestRegressionScenarios:
         potion.isequipped = False
 
         player = Mock()
+        player.in_combat = False  # a bare Mock's is truthy
         player.inventory = [sword, potion]
         player.universe = Mock()
         tile = Mock()

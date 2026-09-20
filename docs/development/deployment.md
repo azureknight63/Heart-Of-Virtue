@@ -9,7 +9,7 @@ what "green" means, and what to do when it stops.
 | Piece | Where | Notes |
 |---|---|---|
 | SPA (built `frontend/dist`) | container `webserver`, `/var/www/html/wp-content/HeartOfVirtue` | static files beside WordPress; the web server must rewrite every `/games/HeartOfVirtue/*` route to `index.html` |
-| API (gunicorn, `wsgi.py`) | host, systemd unit `heart-of-virtue`, port 5000 | checkout at `/home/alex/heart-of-virtue`, `.venv`; `FLASK_ENV=production` comes from the unit or the server's `.env` (`wsgi.py` refuses anything else) |
+| API (gunicorn, `wsgi.py`) | host, systemd unit `heart-of-virtue`, port 5000 | checkout at `/home/alex/heart-of-virtue`, `.venv`; `FLASK_ENV=production` comes from the unit or the server's `.env` (`wsgi.py` refuses anything else). The unit is mirrored in this repo at `deploy/heart-of-virtue.service` — an **eventlet** worker, `-w 1`, `--timeout 120`. `deploy.ps1` restarts that unit but does not install it, so changing the file means copying it to the server yourself; `tests/test_npc_chat_turn_budget.py` holds the Procfile and the chat budget to it |
 | `/games/HeartOfVirtue/api/*` | proxied by the web server to the host API | the SPA's own `/api/info` fetch proves this path works |
 
 Not in this repo and not visible from here: the web server's config inside the

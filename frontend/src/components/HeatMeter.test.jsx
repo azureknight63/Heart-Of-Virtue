@@ -4,7 +4,7 @@ import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
 import HeatMeter, { DELTA_HOLD_MS } from './HeatMeter'
 import { HEAT_BANDS, heatBand, heatFillRatio, NEUTRAL_MARK_RATIO } from '../utils/heat'
 import { GLOSSARY_ENTRIES } from '../data/combatGlossary'
-import { accessibility } from '../styles/theme'
+import { DISCLOSURE_GLYPHS, accessibility } from '../styles/theme'
 import { stubWideTouchTablet } from '../test/pointerEnvironment'
 
 const mobileMock = vi.hoisted(() => ({ isMobile: false }))
@@ -227,6 +227,28 @@ describe('HeatMeter — discoverable rules', () => {
     fireEvent.click(screen.getByRole('button'))
     fireEvent.click(screen.getByRole('button'))
     expect(screen.queryByTestId('heat-rules')).toBeNull()
+  })
+
+  // Issue #625: the helper moved onto the shared CollapsibleSectionHeader,
+  // which gains it the aria-controls it never had. That only works if the
+  // region it names stays mounted while the table is folded away.
+  it('points at a region that stays in the DOM while the rules are folded', () => {
+    renderMeter({ heat: 1.62 })
+    const controls = screen.getByRole('button').getAttribute('aria-controls')
+    expect(controls).toBeTruthy()
+    expect(document.getElementById(controls)).not.toBeNull()
+
+    fireEvent.click(screen.getByRole('button'))
+    expect(document.getElementById(controls)).toContainElement(
+      screen.getByTestId('heat-rules')
+    )
+  })
+
+  it('shows the fold state as the shared ▾/▸ glyph', () => {
+    renderMeter({ heat: 1.62 })
+    expect(screen.getByRole('button').textContent).toContain(DISCLOSURE_GLYPHS.collapsed)
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByRole('button').textContent).toContain(DISCLOSURE_GLYPHS.expanded)
   })
 })
 

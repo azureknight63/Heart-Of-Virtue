@@ -48,7 +48,9 @@ def dummy_modules(monkeypatch):
     # them to the canonical src.* modules, so attach the dummy classes there.
     import src.items
     import src.npc
+    DummyItem.__module__ = src.items.__name__  # an engine class, as the loader requires (#620)
     monkeypatch.setattr(src.items, 'DummyItem', DummyItem, raising=False)
+    DummyMerchant.__module__ = src.npc.__name__  # an engine class, as the loader requires (#620)
     monkeypatch.setattr(src.npc, 'DummyMerchant', DummyMerchant, raising=False)
     yield
 

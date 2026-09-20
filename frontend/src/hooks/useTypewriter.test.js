@@ -63,4 +63,47 @@ describe('useTypewriter', () => {
         expect(result.current.displayedText).toBe('abcdef')
         expect(result.current.isComplete).toBe(true)
     })
+
+    it('never reports a new text complete on the render that brings it (#618)', () => {
+        // The reset runs in an effect, AFTER the render that carries the new
+        // text -- so that one render used to return the PREVIOUS text's
+        // isComplete=true. A consumer arming a timer on completion (the NPC
+        // chat panel's auto-close) fired before a single new character typed.
+        const seen = []
+        const { rerender } = renderHook(
+            ({ text }) => {
+                const state = useTypewriter(text, 20)
+                seen.push({ text, ...state })
+                return state
+            },
+            { initialProps: { text: 'ab' } },
+        )
+        act(() => { vi.advanceTimersByTime(200) })
+        expect(seen.at(-1).isComplete).toBe(true)
+
+        seen.length = 0
+        rerender({ text: 'a closing line nobody has read yet' })
+
+        const falselyComplete = seen.filter(
+            (s) => s.isComplete && s.displayedText !== s.text,
+        )
+        expect(falselyComplete).toEqual([])
+    })
+
+    it('reports an empty new text complete at once', () => {
+        const seen = []
+        const { rerender } = renderHook(
+            ({ text }) => {
+                const state = useTypewriter(text, 20)
+                seen.push(state.isComplete)
+                return state
+            },
+            { initialProps: { text: 'ab' } },
+        )
+        act(() => { vi.advanceTimersByTime(200) })
+
+        rerender({ text: '' })
+
+        expect(seen.at(-1)).toBe(true)
+    })
 })

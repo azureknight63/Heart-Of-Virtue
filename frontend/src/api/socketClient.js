@@ -42,26 +42,31 @@ export function createCombatSocket({ url } = {}) {
     // otherwise — first blaming CSP, then "the deployment cannot serve an
     // upgrade at all". Both were false.
     //
-    // The pin is about what happens AFTER a successful upgrade. engineio's
+    // The pin was about what happens AFTER a successful upgrade. engineio's
     // websocket handler parks the WSGI request thread in
     // `while True: websocket_wait()` for the whole life of the connection
-    // (engineio/socket.py). The Procfile runs `gunicorn -w 1 ... wsgi:app`:
-    // one sync worker, one connection at a time, notifying the arbiter only
-    // at the top of its accept loop. A parked worker therefore stops
-    // notifying and the arbiter SIGKILLs it at the default 30s timeout — and
-    // `src/api/services/session_manager.py` holds sessions in memory, so that
-    // kill drops every live session and force-logs-out every connected
-    // player. Polling keeps each request short, so the worker keeps returning
-    // to its accept loop.
+    // (engineio/socket.py), and the reasoning ran: the Procfile runs
+    // `gunicorn -w 1`, one SYNC worker, which notifies the arbiter only at
+    // the top of its accept loop, so a parked worker is SIGKILLed at the 30s
+    // default -- taking every in-memory session with it.
     //
-    // CAVEAT, stated plainly because the previous two rationales were
-    // confidently wrong: `gunicorn` appears in NO requirements file in this
-    // repo, so the Procfile invokes a binary we never install, and CLAUDE.md
-    // says production hosting is configured outside this repo. The process
-    // model above is read off the Procfile, not verified against a running
-    // deployment. If production turns out to run something else — several
-    // workers, a threaded worker class, a real async worker — this reasoning
-    // has to be re-derived rather than patched.
+    // THAT REASON IS VOID (issue #653). The process model was read off the
+    // Procfile and never verified; the real one was read from the server on
+    // 2026-09-19 and is now mirrored at `deploy/heart-of-virtue.service`:
+    //
+    //     gunicorn --worker-class eventlet -w 1 --timeout 120 wsgi:app
+    //
+    // An eventlet worker serves requests concurrently as greenlets, so a
+    // parked connection holds a greenlet rather than the worker, and for a
+    // non-sync worker `--timeout` is a liveness heartbeat rather than a
+    // per-request deadline. Nothing here kills the worker at 30s.
+    //
+    // The pin STAYS for now regardless, because the decision it encodes has
+    // not been re-made: whether long-polling is still the right transport on
+    // the real deployment (proxy upgrade headers, `async_mode="threading"`
+    // under an eventlet worker) is #653's job. Do not read this pin as
+    // load-bearing until that lands, and do not delete it on the strength of
+    // the paragraph above either.
     //
     // (The pin also avoids the spurious 500 — "write() before
     // start_response" — that Werkzeug's threaded dev server logs when a
@@ -73,9 +78,9 @@ export function createCombatSocket({ url } = {}) {
     // the page's own origin, and both Blink and Gecko implement that — so
     // `'self'` would permit a same-origin upgrade just fine.
     //
-    // tests/test_socket_transport_pin_contract.py ties this line to the two
-    // facts that actually live in this repo, so the two cannot drift apart
-    // unnoticed.
+    // tests/test_socket_transport_pin_contract.py holds this pin to the
+    // verified unit and to #653, so the prose and the deployment cannot drift
+    // apart again.
     transports: ['polling'],
   });
 }

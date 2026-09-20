@@ -874,9 +874,12 @@ def _register_request_limits(app):
         #
         # AND-ed with the method, because the chunked test alone put a body
         # read on EVERY path. ``GET /health`` with ``Transfer-Encoding:
-        # chunked`` and a body that arrives slowly held the single gunicorn
-        # worker for as long as the client cared to dawdle — an unauthenticated
-        # denial of service on the one route a monitor polls. As a conjunction
+        # chunked`` and a body that arrives slowly held its worker greenlet for
+        # as long as the client cared to dawdle — cheap to open by the hundred,
+        # so still an unauthenticated denial of service on the one route a
+        # monitor polls, and on the sync worker this comment used to assume
+        # (deploy/heart-of-virtue.service now records the real one) a single
+        # dawdling client was enough to stop the process answering at all. As a conjunction
         # it cannot reintroduce the hang described above: that needs a
         # length-less POST *without* the chunked header, and this branch still
         # requires the header.

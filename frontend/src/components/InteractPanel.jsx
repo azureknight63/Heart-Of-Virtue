@@ -9,6 +9,7 @@ import GameText from './GameText'
 import GamePanel from './GamePanel'
 import TypewriterOutput from './TypewriterOutput'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
+import CollapsibleSectionHeader from './CollapsibleSectionHeader'
 import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, commonStyles, fonts, shadows, accessibility } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
@@ -232,40 +233,22 @@ function TargetRow({ target, onSelect }) {
 function TargetCategorySection({ category, rows, expanded, rowsId, onToggle, children }) {
     return (
         <div>
-            <button
-                type="button"
-                onClick={onToggle}
-                aria-expanded={expanded}
-                aria-controls={rowsId}
+            <CollapsibleSectionHeader
+                expanded={expanded}
+                onToggle={onToggle}
+                controlsId={rowsId}
                 style={{
-                    ...commonStyles.eyebrowLabel,
-                    width: '100%',
-                    minHeight: accessibility.touchTarget,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: spacing.sm,
-                    padding: `0 ${spacing.sm}`,
-                    background: 'transparent',
-                    border: 'none',
                     borderBottom: `1px solid ${colors.border.light}`,
                     color: getEntityColor(category.type),
-                    fontWeight: 'bold',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    touchAction: 'manipulation',
                 }}
             >
-                {/* The glyph is the state, readable without colour or
-                    aria — same ▾/▸ pair HeatMeter uses. */}
-                <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-                {/* Literal spaces: flex `gap` spaces the spans visually but
+                <span>{category.label}</span>
+                {/* Literal space: flex `gap` spaces the spans visually but
                     leaves the DOM text as "NPCs(1)", which is what assistive
                     tech would read. Whitespace-only nodes are not flex items. */}
                 {' '}
-                <span>{category.label}</span>
-                {' '}
                 <span style={{ color: colors.text.muted, fontWeight: 'normal' }}>({rows.length})</span>
-            </button>
+            </CollapsibleSectionHeader>
             {/* Always mounted so aria-controls always resolves; the
                 rows themselves come and go. Spacing only while there
                 are rows to space, or a folded header trails a blank. */}

@@ -661,3 +661,35 @@ class TestGlossaryEntriesAreWellFormed:
         # fraction that does not land on a whole percent would read oddly.
         percent = CONSTANTS["restRecoveryFraction"] * 100
         assert math.isclose(percent, round(percent))
+
+
+def test_the_client_names_the_engines_range_lock_reasons():
+    """A locked card appends "nearest N ft, M ft short" only when its reason is
+    one of ``RANGE_LOCK_REASONS`` (combatMoveStatus.js), so those strings must
+    be the adapter's own. A reworded engine sentence would otherwise make the
+    distance vanish from every range-locked card with nothing failing (#614
+    scrub: the gate exists because a cooldown or fatigue lock with every target
+    out of reach used to get the distance appended too).
+    """
+    from src.api.combat_adapter import NO_TARGET_IN_RANGE_REASON, TOO_FAR_REASON
+
+    js = (
+        _ROOT / "frontend" / "src" / "utils" / "combatMoveStatus.js"
+    ).read_text(encoding="utf-8")
+    for name, engine_text in (
+        ("NO_REACHABLE_TARGET_REASON", NO_TARGET_IN_RANGE_REASON),
+        ("TOO_FAR_REASON", TOO_FAR_REASON),
+    ):
+        match = re.search(rf"export const {name} = '([^']*)';", js)
+        assert match is not None, (
+            f"{name} is no longer an `export const` string in "
+            "combatMoveStatus.js -- update this grep, do not delete it."
+        )
+        assert match.group(1) == engine_text, (
+            f"the client's {name} is {match.group(1)!r}; the adapter says {engine_text!r}"
+        )
+    assert re.search(
+        r"RANGE_LOCK_REASONS = new Set\(\[NO_REACHABLE_TARGET_REASON, TOO_FAR_REASON\]\)",
+        js,
+    ), "RANGE_LOCK_REASONS no longer names exactly the two pinned reasons"
+

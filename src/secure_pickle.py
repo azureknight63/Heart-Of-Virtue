@@ -41,6 +41,7 @@ import struct
 import hashlib
 import pickle
 import logging
+import re
 import importlib
 import pkgutil
 from collections import Counter
@@ -334,6 +335,75 @@ def _resolved_global_is_trusted(obj):
     return _is_allowed(owner, getattr(obj, "__name__", "") or "")
 
 
+def is_trusted_engine_class(obj):
+    """True when ``obj`` is a CLASS that resolves from a trusted module.
+
+    The gate for a map's ``module:Class`` reference (``__class_type__``
+    markers, legacy ``__class__``/``__module__`` payloads, placeholder
+    ``class`` fields). ``_is_allowed`` alone vets only the pair the map
+    names, and every engine module re-exports what it imports -- so
+    ``story:import_module`` passed it and resolved to
+    ``importlib.import_module``. A map only ever names classes, so anything
+    else, however it got there, is refused (issue #620).
+    """
+    return isinstance(obj, type) and _resolved_global_is_trusted(obj)
+
+
+#: An attribute name an instance may never carry when a class in its MRO
+#: declares it as a policy constant (``KEYWORD_METHOD_ALIASES``,
+#: ``CROSSING_METHOD_NAMES``, ``_DELEGATED_CROSSING_VERBS``, ...).
+_POLICY_CONSTANT_NAME = re.compile(r"_*[A-Z][A-Z0-9_]*")
+
+
+def _is_behaviour(raw):
+    """Whether a class-dict entry is BEHAVIOUR an instance must not shadow:
+    anything callable (functions, nested classes), a static/classmethod, or
+    any other non-data descriptor. A data descriptor (``property`` with a
+    setter) is not: attribute lookup consults it before the instance
+    ``__dict__``, and setting through it runs the class's own validation."""
+    if isinstance(raw, (staticmethod, classmethod)) or callable(raw):
+        return True
+    kind = type(raw)
+    return hasattr(kind, "__get__") and not (
+        hasattr(kind, "__set__") or hasattr(kind, "__delete__")
+    )
+
+
+def shadows_class_behaviour(cls, name):
+    """True when an instance attribute ``name`` on a ``cls`` instance would
+    shadow behaviour the class declares -- and so must never be restored
+    from a save or applied from a map prop (issue #620).
+
+    Interaction handlers are resolved from the class, but the methods they
+    run call ``self.<method>`` (``go`` -> ``self.enter``, ``wash`` ->
+    ``self.clean``, ``take_all`` -> ``self.refresh_description``), and an
+    instance ``__dict__`` entry wins over any non-data descriptor. So the
+    map loader and the save loader both refuse, at the one point each writes
+    instance state:
+
+    * dunder names (``__class__`` reassigns the instance's type outright);
+    * a name the nearest declaring class in the MRO binds to behaviour
+      (:func:`_is_behaviour`);
+    * a name that class binds to an UPPER_CASE policy constant.
+
+    Plain data defaults (``hidden = False``, ``keywords``) and data
+    descriptors stay writable -- that is what map props and saved state are
+    for.
+    """
+    if not isinstance(name, str):
+        return False
+    if name.startswith("__") and name.endswith("__"):
+        return True
+    for klass in getattr(cls, "__mro__", ()):
+        declared = vars(klass)
+        if name in declared:
+            return bool(
+                _is_behaviour(declared[name])
+                or _POLICY_CONSTANT_NAME.fullmatch(name)
+            )
+    return False
+
+
 # Explicit opt-out values. Anything else -- including an unset variable, an empty
 # value, and a typo -- leaves strict enforcement ON. Fail closed: a misspelled
 # deploy variable must not silently retire the allow-list, which is precisely how
@@ -410,7 +480,24 @@ _PLACEHOLDER_ATTRS = {
 }
 
 
-class SafeUnpickler(pickle.Unpickler):
+#: What BUILD may never apply state to. BUILD's slot-state branch is a bare
+#: ``setattr`` on whatever sits beneath it on the stack, and a class or a
+#: function gets there through ``find_class`` exactly like any other global --
+#: so ``GLOBAL src.objects Passageway`` + ``BUILD (None, {"enter": ...})``
+#: rewrote ``Passageway.enter`` for every session in the process, and a
+#: function's ``__defaults__`` the same way. No save this engine writes ever
+#: builds one of these (issue #620).
+_UNBUILDABLE = (
+    type,
+    types.FunctionType,
+    types.BuiltinFunctionType,
+    types.MethodType,
+    types.ModuleType,
+    types.CodeType,
+)
+
+
+class SafeUnpickler(pickle._Unpickler):
     """Unpickler that redirects legacy modules and gates class resolution.
 
     Strategy:
@@ -422,15 +509,91 @@ class SafeUnpickler(pickle.Unpickler):
          never synthesize placeholders.
       4. In legacy (non-strict) mode, synthesize a benign, tagged placeholder
          class for anything unresolved so old saves still load.
+      5. In every mode, gate BUILD (:meth:`load_build`): refuse it on a class,
+         function or module, and drop any restored instance attribute that
+         would shadow behaviour its class declares
+         (:func:`shadows_class_behaviour`).
 
-    Every rewrite / placeholder / rejection is recorded on ``self.events`` and
-    emitted via :mod:`logging`.
+    Built on the pure-Python ``pickle._Unpickler`` because step 5 needs the
+    BUILD opcode, which the C unpickler gives no hook for. Measured on a full
+    17-map world save (440 KiB): 6 ms in C, 54 ms here, paid once per load.
+
+    Every rewrite / placeholder / rejection / drop is recorded on
+    ``self.events`` and emitted via :mod:`logging`.
     """
+
+    #: What the pure-Python ``find_class`` reads before ``load`` has set it.
+    #: The C unpickler kept these internally, so an instance built through
+    #: ``__new__`` (which several callers do to exercise ``find_class`` on
+    #: its own) resolved classes fine; without these it raised
+    #: ``AttributeError``, read here as "unresolved", and was rejected.
+    proto = 0
+    fix_imports = True
 
     def __init__(self, file, *, strict=None, events=None):
         super().__init__(file)
         self.strict = strict_mode_enabled() if strict is None else bool(strict)
         self.events = events if events is not None else []
+
+    def load(self):
+        """Unpickle, keeping the loader's documented failure contract.
+
+        The pure-Python engine reports a corrupt stream as whatever broke --
+        ``KeyError`` for an unknown opcode, ``IndexError`` for a stack
+        underflow -- where the C one raised ``UnpicklingError``. Callers
+        catch the documented types, so the rest are re-raised as
+        ``UnpicklingError``.
+        """
+        try:
+            return super().load()
+        except (pickle.UnpicklingError, EOFError, MemoryError, RecursionError):
+            raise
+        except Exception as exc:
+            raise pickle.UnpicklingError(
+                f"Corrupt save payload ({type(exc).__name__}: {exc})"
+            ) from exc
+
+    def load_build(self):
+        """BUILD, gated (issue #620): never onto a class, function or module,
+        and never an attribute that shadows what the instance's class
+        declares. Refused and dropped in every mode -- strictness governs
+        which classes may appear, and no save this engine writes needs
+        either of these."""
+        stack = self.stack
+        if len(stack) >= 2:
+            inst = stack[-2]
+            if isinstance(inst, _UNBUILDABLE):
+                label = getattr(inst, "__qualname__", type(inst).__name__)
+                self._record("rejected", getattr(inst, "__module__", "?"), label,
+                             reason="BUILD on a non-instance")
+                raise RestrictedUnpicklingError(
+                    f"Refusing to restore state onto {label!r}: saves restore "
+                    "instances, never classes, functions or modules"
+                )
+            stack[-1] = self._without_shadowing(type(inst), stack[-1])
+        pickle._Unpickler.load_build(self)
+
+    dispatch = dict(pickle._Unpickler.dispatch)
+    dispatch[pickle.BUILD[0]] = load_build
+
+    def _without_shadowing(self, cls, state):
+        """``state`` minus every key :func:`shadows_class_behaviour` refuses,
+        in both the ``__dict__`` and the slot-state halves."""
+        def clean(part):
+            if not isinstance(part, dict):
+                return part
+            kept = {}
+            for key, value in part.items():
+                if shadows_class_behaviour(cls, key):
+                    self._record("dropped", cls.__module__, cls.__qualname__,
+                                 attribute=key)
+                    continue
+                kept[key] = value
+            return kept
+
+        if isinstance(state, tuple) and len(state) == 2:
+            return (clean(state[0]), clean(state[1]))
+        return clean(state)
 
     # ``find_class`` is sometimes exercised on instances built via ``__new__``
     # (bypassing ``__init__``); read state through getattr so those callers,
@@ -444,8 +607,9 @@ class SafeUnpickler(pickle.Unpickler):
             self.events = events
         events.append(event)
         _TELEMETRY[kind] += 1
-        if kind == "rejected":
-            logger.warning("SafeUnpickler rejected %s.%s", module, name)
+        if kind in ("rejected", "dropped"):
+            logger.warning("SafeUnpickler %s %s.%s %s", kind, module, name,
+                           extra.get("attribute") or extra.get("reason") or "")
         else:
             logger.debug("SafeUnpickler %s: %s.%s", kind, module, name)
 

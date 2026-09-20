@@ -283,7 +283,9 @@ class TestDeserializeSavedInstance:
 
         import src.items
         import src.npc
+        DummyItem.__module__ = src.items.__name__  # an engine class, as the loader requires (#620)
         monkeypatch.setattr(src.items, 'DummyItem', DummyItem, raising=False)
+        DummyNPC.__module__ = src.npc.__name__  # an engine class, as the loader requires (#620)
         monkeypatch.setattr(src.npc, 'DummyNPC', DummyNPC, raising=False)
         yield
 
@@ -444,6 +446,7 @@ class TestDeserializeSavedInstance:
             def __init__(self, required):  # never satisfiable from these props
                 self.required = required
 
+        Fragile.__module__ = src.items.__name__  # an engine class, as the loader requires (#620)
         monkeypatch.setattr(src.items, 'Fragile', Fragile, raising=False)
 
         obj = universe._deserialize_saved_instance({

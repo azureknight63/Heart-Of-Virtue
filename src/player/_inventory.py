@@ -10,6 +10,18 @@ from src.universe import tile_exists as tile_exists
 from src.narration import cprint, narrate
 
 
+#: How Jean puts unpaid shop goods back as he leaves a merchant's tile, one
+#: picked at random per item. Each names the item through ``{item}``.
+MERCHANDISE_RETURN_PHRASES = (
+    "Jean sets {item} down; unpaid goods don't leave the shop.",
+    "Jean places {item} carefully against the wall.",
+    "Jean pauses and returns {item} to the shop floor.",
+    "With a quiet sigh Jean lays {item} aside—he hasn't bought it yet.",
+    "Jean leaves {item} behind for the shopkeeper.",
+    "Jean props {item} where the merchant will easily find it.",
+)
+
+
 class PlayerInventoryMixin:
     """Item management for the Player: equip, use, take, weight, and gold stacking."""
 
@@ -38,22 +50,24 @@ class PlayerInventoryMixin:
             self.inventory.append(gold_objects[0])
 
     def drop_merchandise_items(self):
-        """Drop all merchandise items in current location with individual messages."""
+        """Drop all merchandise items in current location with individual messages.
+
+        Returns the lines it narrated, one per item, oldest first — an empty
+        list when nothing was taken back. Callers that have to TELL the player
+        what happened cannot reconstruct this afterwards: by the time anything
+        downstream looks, the merchandise is off the inventory and a
+        post-drop snapshot is empty by construction (issue #611). This method
+        is the only place that knows both which items went and how the game
+        phrased it, so it hands both back rather than leaving each caller to
+        re-derive one of them.
+        """
         try:
             current_tile = tile_exists(self.map, self.location_x, self.location_y)
         except Exception:
             current_tile = None
         if not current_tile:
-            return
-        dropped = False
-        phrases = [
-            "Jean sets {item} down; unpaid goods don't leave the shop.",
-            "Jean places {item} carefully against the wall.",
-            "Jean pauses and returns {item} to the shop floor.",
-            "With a quiet sigh Jean lays {item} aside—he hasn't bought it yet.",
-            "Jean leaves {item} behind for the shopkeeper.",
-            "Jean props {item} where the merchant will easily find it.",
-        ]
+            return []
+        narrated_lines = []
         for item in self.inventory[:]:
             if getattr(item, "merchandise", False):
                 try:
@@ -64,15 +78,16 @@ class PlayerInventoryMixin:
                         item.stack_grammar()
                 except ValueError:
                     continue
-                msg = random.choice(phrases).format(
+                msg = random.choice(MERCHANDISE_RETURN_PHRASES).format(
                     item=getattr(item, "name", str(item))
                 )
                 narrate(msg)
                 time.sleep(0.15)
-                dropped = True
-        if dropped:
+                narrated_lines.append(msg)
+        if narrated_lines:
             # brief pause after dropping sequence for readability
             time.sleep(0.25)
+        return narrated_lines
 
     def equip_item(self, phrase="", item_object=None):
         """Equip an item by phrase match or a direct item object.

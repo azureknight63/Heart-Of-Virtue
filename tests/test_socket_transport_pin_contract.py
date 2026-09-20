@@ -1,62 +1,63 @@
-"""The Socket.IO transport pin is a DEPLOYMENT constraint, not a dev nicety.
+"""The Socket.IO transport pin, held to the deployment that was VERIFIED.
 
-``createCombatSocket`` pins ``transports: ['polling']``. Two earlier rationales
-for that pin were confidently wrong, so this file records what is actually
-checked and what is merely asserted.
+``createCombatSocket`` pins ``transports: ['polling']``. Three rationales for
+that pin have now been wrong, so this file records what is checked, what is
+merely asserted, and which claim was retired when.
 
 Wrong reason #1 --- CSP. CSP Level 3 relaxed ``connect-src 'self'`` to match the
 ``ws:``/``wss:`` variants of the page's own origin, and both engines implement
 it (Blink's ``CSPSourceMatchesAsSelf`` in ``csp_source.cc``; Gecko's
 ``permitsScheme`` special case in ``nsCSPUtils.cpp``). ``'self'`` would permit a
-same-origin upgrade. The contrary intuition comes from Chromium's
-*network-service* CSP implementation, which still has pre-CSP3 behaviour and is
-not the code path a document's ``connect-src`` check takes.
+same-origin upgrade.
 
 Wrong reason #2 --- "the deployment cannot serve an upgrade at all". It can, and
 it advertises that it can. engineio's threading driver sets
 ``'websocket': SimpleWebSocketWSGI`` (``async_drivers/threading.py``) and
 ``BaseServer._upgrades()`` returns ``['websocket']`` whenever that entry is
-non-None, consulting nothing about the WSGI server; simple_websocket even has a
-dedicated ``mode == 'gunicorn'`` hijack path that engineio's
-``_websocket_wsgi.py`` drives with ``raise StopIteration()``. The handshake
-advertises a websocket upgrade in production today.
+non-None, consulting nothing about the WSGI server.
 
-The actual reason is what happens *after* a successful upgrade: engineio parks
-the WSGI request thread in ``while True: websocket_wait()`` (``socket.py``) for
-the life of the connection. The Procfile runs ``gunicorn -w 1``; a sync worker
-serves one connection at a time and notifies the arbiter only at the top of its
-accept loop, so a parked worker is SIGKILLed at the default 30s timeout --- and
-``SessionManager`` holds sessions in memory, so every connected player is
-force-logged-out. ``socketClient.js`` carries the full derivation.
+Wrong reason #3, retired 2026-09-19 --- "a parked upgrade is SIGKILLed". That
+reasoning ran: engineio parks the WSGI request thread for the life of the
+connection, the Procfile runs a single SYNC worker, so the arbiter kills it at
+the 30s default and every in-memory session dies. The premise was read off the
+Procfile and never verified. The real unit (mirrored at
+``deploy/heart-of-virtue.service``, read from the server) runs
+``--worker-class eventlet -w 1 --timeout 120``: requests are concurrent
+greenlets, a parked connection holds a greenlet rather than the worker, and on
+a non-sync worker ``--timeout`` is a liveness heartbeat, not a per-request
+deadline.
 
-What this file can and cannot check: ``gunicorn`` appears in no requirements
-file in this repo, and CLAUDE.md says production hosting is configured outside
-it, so the process model above is asserted from the Procfile rather than
-verified. These tests therefore assert only the two facts that do live in this
-repo --- no async worker is declared, and ``async_mode="threading"`` is still
-pinned --- and tie the client's transport pin to them.
+So the pin is no longer load-bearing for the reason it carried. It STAYS until
+issue #653 re-derives it on the real process model --- which is what these
+tests now hold it to. They also hold the repo to the unit: the worker class
+production runs must be a declared dependency, because it was installed on the
+server by hand and pinned nowhere for the whole life of this file.
 """
 
 import re
 from pathlib import Path
 
-import pytest
-
 _ROOT = Path(__file__).resolve().parents[1]
 _SOCKET_CLIENT = _ROOT / "frontend" / "src" / "api" / "socketClient.js"
 _APP = _ROOT / "src" / "api" / "app.py"
 _REQUIREMENTS = _ROOT / "requirements-api.txt"
+_UNIT = _ROOT / "deploy" / "heart-of-virtue.service"
 
-#: Server packages that would give Flask-SocketIO a real WebSocket transport.
+#: Server packages that give Flask-SocketIO a real WebSocket transport.
 _ASYNC_WORKERS = ("eventlet", "gevent")
+
+#: The issue that owns re-deriving the pin. Named in the client comment too, so
+#: a reader who finds the retired rationale has somewhere to go.
+_REVISIT_ISSUE = "#653"
+
+
+def _client_source():
+    return _SOCKET_CLIENT.read_text(encoding="utf-8")
 
 
 def _client_transports():
     """The transports array passed to ``io()``, in order."""
-    source = _SOCKET_CLIENT.read_text(encoding="utf-8")
-    # Comments in this file legitimately mention transports, so match the
-    # object property rather than any occurrence of the word.
-    match = re.search(r"^\s*transports:\s*\[([^\]]*)\]", source, re.MULTILINE)
+    match = re.search(r"^\s*transports:\s*\[([^\]]*)\]", _client_source(), re.MULTILINE)
     assert match, "no `transports:` option found in socketClient.js"
     return tuple(re.findall(r"'([^']+)'", match.group(1)))
 
@@ -76,37 +77,74 @@ def _declared_requirements():
     return names
 
 
-def test_the_deployment_carries_no_async_websocket_worker():
-    """The premise. If this ever changes, revisit the pin below."""
+def _unit_worker_class():
+    """The worker class the production unit runs, or ``sync`` if unflagged."""
+    unit = _UNIT.read_text(encoding="utf-8")
+    assert "gunicorn" in unit, f"{_UNIT.name} no longer runs gunicorn"
+    match = re.search(r"--worker-class[ =](\S+)", unit)
+    return match.group(1) if match else "sync"
+
+
+def test_the_worker_class_production_runs_is_a_declared_dependency():
+    """The premise these tests rest on, and the one that was never checked.
+
+    Production has run an eventlet worker all along while no requirements file
+    named it -- so the repo asserted a sync deployment, the client pinned a
+    transport for a sync deployment, and one venv rebuild would have stopped
+    gunicorn booting at all.
+    """
+    worker_class = _unit_worker_class()
     declared = _declared_requirements()
-    assert not [n for n in declared if n in _ASYNC_WORKERS], (
-        "requirements-api.txt now declares an async worker; Flask-SocketIO "
-        "could serve a real WebSocket and the transport pin in "
-        "socketClient.js needs revisiting"
+
+    assert worker_class, "read no worker class off the unit"
+    if worker_class in _ASYNC_WORKERS:
+        assert worker_class in declared, (
+            f"the production unit runs the {worker_class} worker, which "
+            "requirements-api.txt does not install"
+        )
+
+
+def test_the_client_does_not_claim_a_process_model_the_unit_contradicts():
+    """The retired rationale must not sit in the file as if it still held.
+
+    Two rationales before it were 'confidently wrong' in the same place, which
+    is why this is a guard rather than a comment asking nicely.
+    """
+    source = _client_source()
+    worker_class = _unit_worker_class()
+
+    assert "deploy/heart-of-virtue.service" in source, (
+        "socketClient.js no longer cites the unit its reasoning depends on"
+    )
+    assert _REVISIT_ISSUE in source, (
+        f"socketClient.js no longer points at {_REVISIT_ISSUE}, which owns "
+        "re-deriving the pin"
+    )
+    # The worker class is read off the unit, not written here: a comment
+    # rewritten back to the sync-worker story -- or left behind when the unit
+    # changes again -- stops naming what production runs, and fails.
+    assert worker_class in source, (
+        f"the production unit runs the {worker_class} worker, and "
+        "socketClient.js's rationale does not mention it. That rationale has "
+        "been confidently wrong three times; it names the process model it "
+        "depends on or it is wrong again."
+    )
+
+
+def test_the_transport_pin_stands_until_its_rationale_is_re_derived():
+    """Behaviour is unchanged on purpose: the reason died, not the decision.
+
+    Whether long-polling is right on the real deployment (proxy upgrade
+    headers, ``async_mode="threading"`` under an eventlet worker) is #653's
+    job. Until it lands, the client keeps polling and this says so.
+    """
+    assert _client_transports() == ("polling",), (
+        "socketClient.js changed transports while #653 is still open: the "
+        "sync-worker rationale is void, but nothing has re-derived what the "
+        "real deployment serves. Close #653 first, then change this test."
     )
     assert 'async_mode="threading"' in _APP.read_text(encoding="utf-8"), (
-        "src/api/app.py no longer pins async_mode=threading; the transport "
-        "pin's rationale in socketClient.js needs revisiting"
-    )
-
-
-def test_socket_client_pins_a_transport_the_deployment_can_serve():
-    declared = _declared_requirements()
-    if [n for n in declared if n in _ASYNC_WORKERS]:
-        # skip, not `return`: a bare return reports PASSED, so the day someone
-        # adds eventlet this contract would go quietly green while asserting
-        # nothing -- indistinguishable in CI from a contract still being
-        # enforced. A skip says out loud that the premise changed.
-        pytest.skip(
-            "an async worker is declared; the transport pin is no longer "
-            "load-bearing and its rationale needs re-deriving"
-        )
-    transports = _client_transports()
-    assert transports == ("polling",), (
-        "socketClient.js must pin transports: ['polling'] while the API runs "
-        f"async_mode=threading with no async worker (found {transports!r}). "
-        "The upgrade itself would succeed --- engineio advertises websocket "
-        "under the threading driver. The problem is that a completed upgrade "
-        "parks the WSGI request thread for the life of the connection, which "
-        "a single sync worker cannot survive. See socketClient.js."
+        "src/api/app.py no longer pins async_mode=threading; under an "
+        "eventlet worker that is exactly the question #653 asks, so re-derive "
+        "the pin rather than letting the two drift"
     )

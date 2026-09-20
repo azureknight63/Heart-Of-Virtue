@@ -247,6 +247,25 @@ export const accessibility = {
 }
 
 /**
+ * The open/shut arrows every fold toggle wears (issue #625).
+ *
+ * The glyph, not the colour, is what tells a sighted player whether a section
+ * is open -- "state is never colour-only" -- so it is a token rather than a
+ * literal retyped at each toggle, which is how the room description ended up
+ * on a rotating ▼ while the other two used this pair.
+ *
+ * Solid triangles (▾ ▸) rather than the outline pair (▿ ▹): the outlines all
+ * but vanish at the 9-11px these captions run at.
+ *
+ * Rendered inside `aria-hidden` spans -- aria-expanded is what assistive tech
+ * reads -- so they never need to be pronounceable.
+ */
+export const DISCLOSURE_GLYPHS = {
+    expanded: '▾',
+    collapsed: '▸',
+}
+
+/**
  * The custom property that owns the conversation stage portrait's width.
  *
  * The NAME lives here; the VALUE lives in styles/index.css, which is the only
@@ -323,6 +342,7 @@ export default {
     spacing,
     fonts,
     zIndex,
+    DISCLOSURE_GLYPHS,
     accessibility,
     commonStyles,
     STAGE_PORTRAIT_WIDTH_VAR
