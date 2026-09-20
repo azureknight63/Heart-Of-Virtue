@@ -733,12 +733,21 @@ _MIN_TRUNCATION_KEEP_RATIO = 0.5
 _CHAT_DEADLINE_SECONDS = 12.0
 
 # The most a turn's budget may be, however the per-call timeout is tuned.
-# Production is the Procfile: one sync gunicorn worker, 30s timeout, sessions
-# in memory -- a request that outlives it kills the worker and every player's
-# session with it (maintainer decision 2026-09-19: keep a turn under ~25s).
-# The ceiling plus one nominal call must stay inside the worker timeout, and
-# the client's NPC_CHAT_TIMEOUT_MS must outwait it; both are derived from this
-# by tests/test_npc_chat_turn_budget.py rather than restated.
+#
+# Why 21s is a PLAYER bound, not a survival one. This was first sized against
+# the Procfile -- one sync worker, 30s timeout, sessions in memory -- where a
+# request that outlived the timeout killed the worker and every player's
+# session with it. Production turned out to run something else entirely
+# (deploy/heart-of-virtue.service, read from the server 2026-09-19): an
+# eventlet worker, where requests are concurrent greenlets and --timeout 120
+# is a liveness heartbeat rather than a per-request deadline. So nothing kills
+# a long turn; the ceiling stays because a player should not watch a spinner
+# for half a minute (maintainer decision 2026-09-19: keep a turn under ~25s).
+# The ceiling plus one nominal call must still stay inside the worker timeout
+# -- a stalled worker IS killed, and a unit switched back to sync would make
+# the old hazard real again -- and the client's NPC_CHAT_TIMEOUT_MS must
+# outwait the turn; both are derived from this by
+# tests/test_npc_chat_turn_budget.py rather than restated.
 _TURN_CEILING_SECONDS = 21.0
 
 # Meta-speech markers ("[Option 2]", "As Jean, I...") that mean the model

@@ -92,14 +92,23 @@ _LOOT_PHASE_LOCK = threading.Lock()
 #: One NPC chat turn per player at a time (#618 scrub; maintainer decision
 #: 2026-09-19). A turn the client abandoned at its deadline keeps running and
 #: commits -- Jean's line, the loquacity drain, the reputation change -- so a
-#: Retry running BESIDE it would double-commit and spend the LLM quota twice.
-#: That only happens on a server that runs requests concurrently (the threaded
-#: dev/QA server). Production's single sync worker (the Procfile) never runs two
-#: at once, so there a Retry queues behind the abandoned turn and commits a
-#: second one AFTER it; this lock cannot see that, and the turn budget is what
-#: keeps it rare. Idempotent turns are the fix, filed as a follow-up
-#: (maintainer decision 2026-09-19). Weak-keyed on the player rather than
-#: stored on it: a lock does not pickle, and the player is saved.
+#: Retry running beside it double-commits and spends the LLM quota twice.
+#:
+#: This fires in production: the unit runs an eventlet worker
+#: (deploy/heart-of-virtue.service), so requests for one player are served
+#: concurrently as greenlets and the second turn meets a held lock. A round of
+#: review reasoned from the Procfile instead -- one sync worker, requests
+#: served one at a time -- and concluded the lock was inert here; the Procfile
+#: is not what production runs. What the lock still cannot catch is a Retry
+#: sent after the abandoned turn has finished committing; idempotent turns
+#: (#636) are the fix for that one.
+#:
+#: gunicorn's eventlet worker monkey-patches the stdlib, so this is a GREEN
+#: lock: a held one yields rather than blocking the process, and the
+#: non-blocking acquire below still answers False.
+#:
+#: Weak-keyed on the player rather than stored on it: a lock does not pickle,
+#: and the player is saved.
 _CHAT_TURN_LOCKS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 _CHAT_TURN_LOCKS_GUARD = threading.Lock()
 

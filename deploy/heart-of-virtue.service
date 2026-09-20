@@ -1,0 +1,50 @@
+# The production API's systemd unit, mirrored from the server
+# (/etc/systemd/system/heart-of-virtue.service on nexusfidei.dev, read
+# 2026-09-19). THIS is the process model production runs; the Procfile is a
+# convenience copy of the same command and tests/test_npc_chat_turn_budget.py
+# holds the two to each other.
+#
+# `deploy.ps1` does NOT install this file -- it restarts the unit that is
+# already there. Changing the flags below therefore means copying this file to
+# the server and running `systemctl daemon-reload && systemctl restart
+# heart-of-virtue`; otherwise the repo says one thing and the server does
+# another, which is exactly what this file exists to stop (the NPC chat turn
+# budget was sized against the Procfile's sync worker and 30s default, neither
+# of which production uses).
+#
+# Why the flags matter to application code:
+#   --worker-class eventlet   many requests are served CONCURRENTLY in one
+#                             process (greenlets, cooperative). Two requests
+#                             from one player can interleave, which is what
+#                             GameService's chat-turn and loot-phase locks are
+#                             for. gunicorn's eventlet worker monkey-patches
+#                             the stdlib, so those threading locks are green.
+#   -w 1                      one process, and sessions live in its memory.
+#                             Raising this breaks sessions until they move to
+#                             shared storage.
+#   --timeout 120             for a NON-sync worker this is a liveness
+#                             heartbeat, not a per-request deadline: a long
+#                             request does not kill the worker, but one that
+#                             blocks the event loop (unpatched C-level I/O)
+#                             does, at 120s.
+[Unit]
+Description=Heart of Virtue Flask API
+After=network.target docker.service
+
+[Service]
+User=alex
+WorkingDirectory=/home/alex/heart-of-virtue
+EnvironmentFile=/home/alex/heart-of-virtue/.env
+# Binds all interfaces, but ufw only admits port 5000 from the Docker network (nginx).
+ExecStart=/home/alex/heart-of-virtue/.venv/bin/gunicorn \
+    --worker-class eventlet -w 1 \
+    --bind 0.0.0.0:5000 \
+    --timeout 120 \
+    --access-logfile /var/log/heart-of-virtue/access.log \
+    --error-logfile /var/log/heart-of-virtue/error.log \
+    wsgi:app
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -117,9 +117,10 @@ def _ensure_background_services_started(app):
             # discovery/validation doesn't run on the first chat request and
             # add latency there. It runs on a daemon thread because the
             # constructor does real network discovery and model validation —
-            # seconds of blocking I/O — and gunicorn runs a single worker, so
-            # inline it would stall this response and every concurrent request
-            # behind it. It does not hold a lock for that duration: prewarm()
+            # seconds of blocking I/O — and gunicorn runs a single worker
+            # process (deploy/heart-of-virtue.service), so inline it would
+            # stall this response, and any of it that does not yield to the
+            # eventlet hub stalls every concurrent request too. It does not hold a lock for that duration: prewarm()
             # claims the attempt under _instances_lock and then builds outside
             # it, so concurrent get_instance()/is_prewarmed() callers are not
             # starved.

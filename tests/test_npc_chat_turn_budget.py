@@ -4,9 +4,15 @@ The turn deadline gated only whether a new provider STAGE may open; each stage
 then walked the whole provider chain (OpenRouter's rotation, then every other
 provider) with no clock at all, and generic NPCs generated their personality
 before the deadline was even set. A turn could run well past the 45s client
-deadline, and the Procfile's single sync gunicorn worker (30s timeout, sessions
-in memory) is killed by anything over 30s -- taking every player's session
-with it.
+deadline, with a player watching a spinner the whole time.
+
+The budget was first sized against the Procfile: one sync gunicorn worker,
+30s, sessions in memory, so an overrun killed the worker and every session.
+Production runs an eventlet worker with --timeout 120 instead
+(deploy/heart-of-virtue.service, read from the server 2026-09-19), where a
+long request holds a greenlet and the timeout bounds a STALLED worker. The
+numbers stayed -- a player should not wait half a minute for one reply -- and
+these tests now read the unit rather than the Procfile.
 
 Maintainer decisions (2026-09-19): bound the turn server-side, keep it under
 ~25s, and size the client deadline from the engine's budget. So:
@@ -167,21 +173,82 @@ def test_personality_generation_spends_the_same_budget(entry):
     assert adapter.budget is None, "the budget outlived the turn"
 
 
-def _procfile_worker_timeout():
-    """gunicorn's worker timeout as the Procfile runs it (default 30s)."""
-    procfile = (_ROOT / "Procfile").read_text(encoding="utf-8")
-    match = re.search(r"--timeout[ =](\d+)", procfile)
-    return int(match.group(1)) if match else 30
+#: The unit this repo mirrors from the server (read 2026-09-19). Production
+#: runs gunicorn from systemd, NOT the Procfile: an eventlet worker with
+#: --timeout 120, where the Procfile said sync and the 30s default. The budget
+#: was sized against the Procfile, and these tests were pinned to it -- a guard
+#: reading a file production ignores.
+_UNIT = _ROOT / "deploy" / "heart-of-virtue.service"
+
+
+def _gunicorn_flags(text, source):
+    """``{worker_class, workers, timeout}`` from a gunicorn command line.
+
+    Read rather than asserted, so one spelling of the process model serves
+    every test here. Absent flags fall back to gunicorn's own defaults.
+    """
+    joined = " ".join(text.replace("\\\n", " ").split())
+    match = re.search(r"gunicorn (.*?) ?wsgi:app", joined)
+    assert match, f"no gunicorn command found in {source}"
+    argv = match.group(1)
+    timeout = re.search(r"--timeout[ =](\d+)", argv)
+    worker_class = re.search(r"--worker-class[ =](\S+)", argv)
+    workers = re.search(r"(?:-w|--workers)[ =](\d+)", argv)
+    return {
+        "worker_class": worker_class.group(1) if worker_class else "sync",
+        "workers": int(workers.group(1)) if workers else 1,
+        "timeout": int(timeout.group(1)) if timeout else 30,
+    }
+
+
+def _production_gunicorn():
+    return _gunicorn_flags(_UNIT.read_text(encoding="utf-8"), _UNIT.name)
+
+
+def test_the_procfile_says_what_the_unit_says():
+    """Two files describing one process model is how the budget came to be
+    sized against a worker production does not run. The Procfile is kept as a
+    convenience copy of the unit's command, so it has to agree with it."""
+    unit = _production_gunicorn()
+    procfile = _gunicorn_flags((_ROOT / "Procfile").read_text(encoding="utf-8"), "Procfile")
+
+    assert unit["timeout"] > 0 and unit["worker_class"], "read nothing off the unit"
+    assert procfile == unit, (
+        "the Procfile and deploy/heart-of-virtue.service disagree about how "
+        f"production runs: {procfile} vs {unit}"
+    )
+
+
+def test_the_worker_class_production_runs_is_installed_by_requirements():
+    """``--worker-class eventlet`` needs eventlet in the venv, or gunicorn
+    refuses to boot. It was installed on the server by hand and pinned
+    nowhere, so a rebuilt venv would have taken the API down."""
+    worker_class = _production_gunicorn()["worker_class"]
+    requirements = (_ROOT / "requirements-api.txt").read_text(encoding="utf-8")
+
+    if worker_class in {"eventlet", "gevent"}:
+        assert re.search(rf"^{worker_class}\b", requirements, re.M), (
+            f"production runs the {worker_class} worker, which "
+            "requirements-api.txt does not install"
+        )
 
 
 def test_a_turn_fits_inside_the_production_worker_timeout():
-    """The Procfile's single sync worker is killed past its timeout, and with
-    it every in-memory session. Every call is clipped to the deadline, but
-    ``requests`` applies a timeout per phase (connect, then read), so one call
-    can still end past it by up to its own length: budget plus one nominal
-    call must stay inside."""
+    """A turn must not outlive the worker.
+
+    For the eventlet worker production runs, ``--timeout`` is a LIVENESS
+    heartbeat rather than a per-request deadline: a long request does not kill
+    the worker, but one that blocks the event loop does. For a sync worker it
+    is a hard per-request kill, and with sessions in memory that kill takes
+    every player's game with it. One bound covers both, so switching the unit
+    back to sync cannot quietly invalidate the budget.
+
+    Every call is clipped to the deadline, but ``requests`` applies a timeout
+    per phase (connect, then read), so one call can still end past it by up to
+    its own length: budget plus one nominal call must stay inside.
+    """
     worst = chat_llm._TURN_CEILING_SECONDS + chat_llm._DEFAULT_ROUND_TIMEOUT_SECONDS
-    assert worst < _procfile_worker_timeout()
+    assert worst < _production_gunicorn()["timeout"]
 
 
 def test_the_client_waits_at_least_as_long_as_a_turn_can_run():
@@ -194,9 +261,9 @@ def test_the_client_waits_at_least_as_long_as_a_turn_can_run():
     client_seconds = int(match.group(1).replace("_", "")) / 1000
     worst = chat_llm._TURN_CEILING_SECONDS + chat_llm._DEFAULT_ROUND_TIMEOUT_SECONDS
     assert client_seconds >= worst
-    assert client_seconds < _procfile_worker_timeout(), (
+    assert client_seconds < _production_gunicorn()["timeout"], (
         "past the worker timeout the client never gets to time out: the worker "
-        "is killed first"
+        "is gone first"
     )
 
 

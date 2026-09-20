@@ -7,8 +7,15 @@ earlier version of this header said; engineio does no such thing. The client
 pins polling instead (frontend/src/api/socketClient.js), because a *completed*
 upgrade parks the WSGI request thread for the life of the connection, which a
 `-w 1` sync worker cannot survive. That file carries the full derivation and
-its caveats — including that gunicorn is in no requirements file here, so the
-process model is asserted from the Procfile rather than verified.
+its caveats — which said gunicorn was in no requirements file and the process
+model was asserted from the Procfile rather than verified. Both were true when
+written and are not now: the server was read on 2026-09-19 and runs
+``gunicorn --worker-class eventlet -w 1 --timeout 120 wsgi:app`` from the
+systemd unit mirrored at ``deploy/heart-of-virtue.service``. That is a
+CONCURRENT worker, not the sync one the transport pin was argued from, and
+eventlet is now pinned in requirements-api.txt (production had it installed by
+hand and declared nowhere). Whether long-polling is still the right pin under
+that worker is issue #653; it stands until that lands.
 
 `simple-websocket` is therefore pinned in requirements-api.txt for a narrower
 reason than "the dev WebSocket half": with the client pinning polling in dev
@@ -19,8 +26,9 @@ from removing the transport silently.
 ``FLASK_ENV=production`` is required, not assumed: this module refuses to boot
 under any other value. See the two guards at the bottom of the file.
 
-Usage (gunicorn, threading mode):
-    FLASK_ENV=production gunicorn -w 1 --bind "0.0.0.0:${PORT:-5000}" wsgi:app
+Usage (as production runs it — see deploy/heart-of-virtue.service, which the
+Procfile mirrors):
+    FLASK_ENV=production gunicorn --worker-class eventlet -w 1         --bind "0.0.0.0:${PORT:-5000}" --timeout 120 wsgi:app
 
 Development and testing configs go through the dev entry point instead, which
 binds 127.0.0.1 by default:
