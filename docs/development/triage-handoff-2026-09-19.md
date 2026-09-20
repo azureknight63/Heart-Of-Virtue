@@ -8,12 +8,24 @@
 check. Follow-ups filed: #636–#644. PR #635 merged first; `a7f2e79a` merges master back in (one
 conflict, `src/npc/_shop.py`, #646's Relic comment — kept the module constants).
 
-**Open question for the maintainer — production topology.** Session 3's binding decision was "the
-Procfile is production", and `tests/test_npc_chat_turn_budget.py` pins the turn budget and the
-client deadline to the Procfile's worker timeout. #635's `docs/development/deployment.md` says the
-API runs gunicorn under a systemd unit (`heart-of-virtue`) that is not in this repo. If that unit's
-`--timeout`/`--workers`/`--threads` differ from the Procfile, the budget test is pinned to the wrong
-number, and the single-flight analysis (#636) changes with `--threads`.
+**Production topology — ANSWERED 2026-09-19 (`0019293a`).** Read off the server:
+`gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:5000 --timeout 120 wsgi:app`, now mirrored at
+`deploy/heart-of-virtue.service` (the Procfile mirrors its command; a test fails if they drift).
+Three things this changed:
+
+1. **The chat lock is NOT inert in production.** eventlet serves a player's requests concurrently,
+   so a Retry that overlaps a running turn does meet the lock and get its 409. Round 2's Major
+   finding reasoned from the Procfile. #636 is now only about a Retry sent *after* the abandoned
+   turn has committed.
+2. **The budget test was decorative** — it read a file production ignores. It reads the unit now,
+   and the 21s/28s numbers stay as player bounds rather than worker-survival ones.
+3. **eventlet was installed on the server by hand and declared nowhere**; a venv rebuild would have
+   stopped gunicorn booting. Pinned in `requirements-api.txt`.
+
+Filed while verifying: **#653** (the Socket.IO transport pin's sync-worker rationale is void —
+behaviour unchanged pending a re-derivation) and **#654** (rate limiting and login lockout key on
+the proxy's IP, `TRUSTED_PROXY_COUNT` unset, so one client throttles everyone — pre-existing,
+security).
 
 Local-only failures after the merge: `tests/test_deploy_script.py` (7) fails on a Windows checkout
 because `core.autocrlf` checks `deploy.ps1` out as CRLF; all 129 pass on LF. A `.gitattributes`
@@ -90,7 +102,7 @@ the loader must still apply).
 | #621 freeze window | **Refuse floor take/drop during combat, then freeze merges at victory as decided in §5.** (Take/drop were ungated in combat — `interact_with_target` refuses only Passageway, `drop_item` has no check — so a merge could destroy a recorded drop before victory, and later arrivals merge INTO a recorded drop.) |
 | Commits | **Commit per verified fix group**, local only; no push/PR until §12 is checked. |
 | #618 chat turn budget (session 3) | **Bound the turn server-side**: the turn deadline reaches `_call_llm` (stop walking the chain once spent, clip each call's timeout to what remains) and `_ensure_personality`. |
-| Prod topology (session 3) | **The Procfile is production** (`gunicorn -w 1`, sync, 30s timeout, in-memory sessions): keep a turn under **~25s total**; client deadline **~28s**, pinned by a relational test to the engine budget. |
+| Prod topology (session 3) | ~~The Procfile is production~~ — **WRONG, corrected 2026-09-19 by reading the server** (`0019293a`). Production is the systemd unit, mirrored at `deploy/heart-of-virtue.service`: `--worker-class eventlet -w 1 --timeout 120`. Requests are CONCURRENT greenlets, and on an async worker `--timeout` bounds a stalled worker, not a slow request. The budget numbers stand as **player** bounds (turn ≤ ~25s, client 28s); the relational test now reads the unit. |
 | Retry double-commit (session 3) | **Single-flight now**: a per-player chat-turn lock in `npc_chat_open`/`npc_chat_respond`; a second request while one is in flight gets **409** and the client shows a fixed "still composing" line. |
 | #615 (session 3) | **Leave open** — its own branch, suite run and review later. Do not claim it in this PR. |
 | Re-review depth (session 3) | **Targeted, 2 agents**: c1 Security over the #620 root fix, c4 Alignment/Correctness over the chat budget + single-flight. No adversary pass (findings verified inline). |
@@ -143,7 +155,7 @@ post-merge state check.
    derived guards each issue asked for. File the follow-ups below first so the PR body can link them.
 
 ### Follow-up issues to file (not this branch)
-- Idempotent NPC chat turns: the single-flight lock is inert under the Procfile's sync worker, so a Retry after a client timeout commits a second turn after the abandoned one. Client mints a `turn_id` per option click; Retry reuses it; the server replays the stored result.
+- Idempotent NPC chat turns (#636): the lock refuses an OVERLAPPING Retry (production is concurrent — eventlet), but a Retry sent after the abandoned turn commits still double-commits. Client mints a `turn_id` per option click; Retry reuses it; the server replays the stored result.
 - `SafeUnpickler.load_build` refuses BUILD onto classes/functions/modules but not onto a module-level *instance* of an engine class; refuse BUILD onto any resolved module global (security re-review residual, pre-existing).
 - `requests` applies a timeout per phase (connect, then read), so a clipped chat call can still end past the turn deadline by its own length; only dangerous with a raised `NPC_CHAT_LLM_TIMEOUT`. A wall-clock bound needs different machinery.
 - A cold `NpcChatLLMAdapter` is built on the request path (model discovery up to 20s + validation calls); the turn now counts that time, but construction itself can approach the worker timeout. Don't build on the request path while a prewarm is in flight.
