@@ -400,7 +400,16 @@ class TestUseItemRace:
 
     def test_two_concurrent_uses_of_a_single_count_item_do_not_both_apply(self, gs):
         player, _game_map = live_world()
-        player.hp = 50
+        # A small enough gap that ANY roll of Restorative's heal (power=60,
+        # random.uniform(0.8, 1.2) -> 48-72) always fully closes it -- so the
+        # winning call's heal reliably leaves the player at full health, and
+        # the losing call's own (correctly serialized, post-fix) check
+        # reliably takes the "already at full health" branch. Isolates the
+        # pure interleaving race from the separate "second call still
+        # legitimately needs it but the item's already spent" scenario,
+        # which TestUseItemRace.test_second_serialized_use_of_an_exhausted_item
+        # covers on its own.
+        player.hp = 90
         player.maxhp = 100
         restorative = Restorative(count=1)
         player.inventory = [restorative]
@@ -472,3 +481,38 @@ class TestUseItemRace:
         # Exactly one use should have actually consumed the item.
         assert restorative.count == 0
         assert _units(player.inventory, "Restorative") == 0
+
+    def test_second_serialized_use_of_an_exhausted_item_fails_cleanly(self, gs):
+        """A second bug the stress-testing above this test surfaced,
+        independent of interleaving: `_player_mutation_lock` serializes the
+        two calls correctly, but a single Restorative doesn't always close a
+        large HP gap in one use (power=60, roll range 48-72). A second call
+        that legitimately still finds the player short on HP -- because the
+        first call's heal wasn't enough, not because of any race -- reaches
+        `item.use()` on the SAME now-`count=0` object the first call already
+        emptied and removed, and crashes the same way: an uncaught
+        `ValueError` from `inventory.remove(self)` on an already-removed
+        item. This is not a concurrency bug -- it reproduces with the two
+        calls fully sequential, no threads at all -- so it needed its own
+        fix (a try/except around `item.use()` in `_use_item_locked`), not
+        just the lock.
+        """
+        player, _game_map = live_world()
+        # A gap no single Restorative roll (48-72) can ever close, so the
+        # second call deterministically still wants to heal.
+        player.hp = 1
+        player.maxhp = 1000
+        restorative = Restorative(count=1)
+        player.inventory = [restorative]
+
+        first = gs.use_item(player, restorative)
+        assert first.get("success") is True, first
+        assert restorative.count == 0
+        assert restorative not in player.inventory
+
+        # The second call reuses the SAME (already-exhausted) item
+        # reference, exactly as two requests that both resolved the item's
+        # wire handle before either reached use_item would.
+        second = gs.use_item(player, restorative)
+        assert second.get("success") is not True
+        assert "error" in second, second

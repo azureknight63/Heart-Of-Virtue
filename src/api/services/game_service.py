@@ -6357,8 +6357,27 @@ class GameService:
 
         # ``item.use`` emits through the narration sink; suppress any dramatic
         # ``time.sleep`` pauses so the request does not block on real time.
-        with capture_narration() as _msgs, patch("time.sleep", return_value=None):
-            item.use(target, user=user)
+        #
+        # The lock above closes the INTERLEAVING race (#641/#656), but not
+        # this one: two requests that each resolved the same not-yet-
+        # exhausted item (e.g. via the same wire handle) before either
+        # reached this method still serialize through it one after the
+        # other -- correctly -- and the second, now-legitimate call can
+        # still find a `count`-exhausted item, because a single Restorative
+        # (power=60, so as little as 48 HP at the low end of its roll) does
+        # not always fully close a 50 HP gap. Consumable `use()`
+        # implementations (Restorative among them, src/items.py) have no
+        # upfront "am I already spent" guard, so a second call raises
+        # `ValueError` out of `inventory.remove(self)` deep inside their own
+        # exhausted-removal branch. Catching it here -- rather than adding
+        # the guard to every Consumable subclass -- protects all of them
+        # uniformly; matches `drop_item`'s identical catch shape a few
+        # methods up.
+        try:
+            with capture_narration() as _msgs, patch("time.sleep", return_value=None):
+                item.use(target, user=user)
+        except ValueError:
+            return {"error": f"{getattr(item, 'name', 'Item')} is no longer available"}
 
         messages = self._narration_texts(_msgs)
         message = "\n".join(messages).strip() or f"{getattr(item, 'name', 'Item')} used"
