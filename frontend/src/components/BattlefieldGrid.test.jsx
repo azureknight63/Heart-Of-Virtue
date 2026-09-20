@@ -1205,6 +1205,33 @@ describe('BattlefieldGrid', () => {
         expect(jeanInPanel.length).toBeLessThanOrEqual(1);
     });
 
+    describe('entity level display (issue #617)', () => {
+        const combatWithLevel = {
+            ...mockCombat,
+            enemies: [{ ...mockCombat.enemies[0], level: 7 }],
+        };
+
+        it('shows the level in the hover tooltip', () => {
+            render(<BattlefieldGrid combat={combatWithLevel} tab="overview" zoom={1} />);
+
+            const enemyToken = screen.getByText('G');
+            const entityWrapper = enemyToken.closest('[style*="cursor"]');
+            fireEvent.mouseEnter(entityWrapper);
+
+            expect(screen.getByText('Lv 7', { exact: false })).toBeDefined();
+        });
+
+        it('shows the level in the selected entity panel', () => {
+            render(<BattlefieldGrid combat={combatWithLevel} tab="overview" zoom={1} />);
+
+            const enemyToken = screen.getByText('G');
+            const entityWrapper = enemyToken.closest('[style*="cursor"]');
+            fireEvent.click(entityWrapper);
+
+            expect(screen.getByText('Lv 7', { exact: false })).toBeDefined();
+        });
+    });
+
     describe('combat speed scaling (issue #460)', () => {
         beforeEach(() => {
             vi.useFakeTimers();
