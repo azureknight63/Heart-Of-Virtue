@@ -5649,6 +5649,19 @@ class GameService:
         Returns:
             Dict with success, shop_state, and sell_inventory.
         """
+        # Found in a /review pass on this branch: this method's "restock if
+        # empty" check (below) is a check-then-act TOCTOU -- two concurrent
+        # calls (two tabs, a client retry) can both see empty stock and both
+        # regenerate it -- and Merchant._collect_player_merchandise mutates
+        # player.inventory, the same list every other entry point in this
+        # file now serializes via _player_mutation_lock. This method was the
+        # one mutation path #641 missed. Split into `_get_shop_state_locked`
+        # so the lock wraps one call rather than reindenting the whole body.
+        with _player_mutation_lock(player):
+            return self._get_shop_state_locked(player, npc_id)
+
+    def _get_shop_state_locked(self, player: Any, npc_id: str) -> Dict[str, Any]:
+        """``get_shop_state``'s body, run under the caller's :func:`_player_mutation_lock`."""
         from src.api.serializers.shop_serializer import ShopSerializer
 
         merchant = self._find_merchant(player, npc_id)

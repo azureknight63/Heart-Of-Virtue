@@ -266,3 +266,113 @@ class TestTakeViaInteractVsCollect:
             f"exactly one of take/collect should have won the dagger — "
             f"take={take_result!r} collect={collect_result!r}"
         )
+
+
+class TestGetShopStateRestockRace:
+    """A genuine, still-open race found in a follow-up /review pass on this
+    same branch: ``get_shop_state`` (``GET /api/shop/state``, hit whenever a
+    client opens or polls a shop) is not covered by ``_player_mutation_lock``
+    at all -- unlike ``shop_buy``/``shop_sell``/``shop_buyback`` a few lines
+    above it in this same file, which this PR did lock.
+
+    Two symptoms share one cause (the whole method runs unlocked):
+
+    1. A check-then-act TOCTOU on `_reset_stock_state`/`update_goods`: "if
+       the shop's non-gold stock is empty, restock it" reads `merchant.
+       inventory`, then unconditionally regenerates it. Two concurrent shop
+       opens (two tabs, or a client retry racing the original request) can
+       both see empty stock and both restock -- `_reset_stock_state` clears
+       `merchant.inventory` a second time mid-generation, discarding the
+       first call's in-flight work and double-consuming the unique-item
+       registry.
+    2. `Merchant._collect_player_merchandise` (src/npc/_shop.py) mutates
+       `player.inventory` with no lock either -- the same list a concurrent
+       take/drop/equip/shop call is mutating under the lock this PR added.
+
+    This test demonstrates (1), the more universally reachable of the two
+    (no merchandise item needed -- just two overlapping shop-state reads on
+    a shop that hasn't been stocked yet).
+    """
+
+    def test_two_concurrent_shop_state_reads_do_not_both_restock(self, gs):
+        player, _game_map, merchant = live_shop(stock=None)
+        merchant_id = wire_handle(merchant)
+
+        entered = threading.Event()
+        release = threading.Event()
+        paused = {"done": False}
+        call_count = {"n": 0}
+
+        # Patch the whole restock op rather than driving the real
+        # always_stock/random-fill machinery (which needs a wired-up
+        # `current_room` this fixture doesn't set up): a marker item makes
+        # "did this run more than once" directly observable without needing
+        # real item spawning, and it still exercises the exact check-then-act
+        # shape under test -- `get_shop_state`'s own `non_gold` emptiness
+        # check, calling this real attribute, under real concurrency.
+        class _RestockMarker:
+            name = "RestockMarker"
+
+        def paused_update_goods(self):
+            call_count["n"] += 1
+            if not paused["done"]:
+                paused["done"] = True
+                entered.set()
+                # Paused BEFORE the marker lands, not after: the real race
+                # is in the `non_gold` check each caller makes for itself,
+                # which happens before update_goods runs at all -- pausing
+                # here (stock still empty) is what lets a second, unlocked
+                # caller's own check also see empty and also decide to
+                # restock, the same shape TestShopBuyRace uses for gold.
+                # Bounded: a lock bug should hang the *fix*, not the suite.
+                release.wait(timeout=5)
+            self.inventory.append(_RestockMarker())
+
+        original_update_goods = type(merchant).update_goods
+        type(merchant).update_goods = paused_update_goods
+        try:
+            results = {}
+            errors = []
+
+            def do_get_state(key):
+                try:
+                    results[key] = gs.get_shop_state(player, merchant_id)
+                except Exception as exc:  # pragma: no cover - failure path
+                    errors.append((key, exc))
+
+            first = threading.Thread(target=do_get_state, args=("first",))
+            first.start()
+            assert entered.wait(timeout=5), (
+                "the first get_shop_state call never reached the paused restock"
+            )
+
+            second = threading.Thread(target=do_get_state, args=("second",))
+            second.start()
+            # Bounded wait, not a sleep-and-hope: give an UNLOCKED second call
+            # (the pre-fix behaviour) generous room to run its own restock to
+            # completion while the first sits paused. A LOCKED second call
+            # (post-fix) just blocks harmlessly on the lock the first holds;
+            # this join returning with the thread still alive is the
+            # expected, correct outcome in that case.
+            second.join(timeout=0.5)
+
+            release.set()
+            first.join(timeout=5)
+            assert not first.is_alive(), "the first call thread never resumed"
+            second.join(timeout=5)
+            assert not second.is_alive(), "the second call thread never returned"
+        finally:
+            type(merchant).update_goods = original_update_goods
+
+        assert errors == [], f"a mutation raised under contention: {errors}"
+        assert results.get("first") is not None and results.get("second") is not None
+
+        # The empty-stock check should only ever trigger one real restock —
+        # a second concurrent read of an already-stocked shop must see that
+        # and skip its own, exactly like the check-then-act guard is meant
+        # to work when it isn't racing itself.
+        assert call_count["n"] == 1, (
+            f"update_goods ran {call_count['n']} times for one restock "
+            "decision — two concurrent shop-state reads both saw empty stock "
+            "and both regenerated it"
+        )
