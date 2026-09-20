@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import CombatMovePanel from './CombatMovePanel';
+import { GAME_PANEL_CLASS } from './GamePanel';
 import { useAudio } from '../context/AudioContext';
 import { spacing, accessibility } from '../styles/theme';
 import { stubWideTouchTablet } from '../test/pointerEnvironment';
@@ -575,6 +576,40 @@ describe('CombatMovePanel', () => {
       // No stage segments render for an all-zero move (no width to divide up).
       expect(instantBar.querySelector('[data-testid^="commitment-segment-"]')).toBeNull();
       expect(screen.getByText('0 beats')).toBeDefined();
+    });
+  });
+
+  describe('positioning relative to the hero panel (issue #666)', () => {
+    // LeftPanel centers HeroPanel's portrait in the same box (`<main>`) that
+    // this panel positions itself against, and raises it above
+    // CombatMovePanel's z-index on purpose (#575) so the hero's own nav
+    // buttons stay clickable/visible. Before this fix, CombatMovePanel ALSO
+    // centered dead-center of that box (top:50%/left:50%,
+    // translate(-50%,-50%)), so the two boxes occupied the same screen
+    // region and the raised hero portrait painted straight over the move
+    // list — a real usability problem, not just a z-index curiosity, since
+    // the portrait has no reason to win that fight visually.
+    it('anchors from the bottom of the content well instead of dead-center, so the hero portrait cannot paint over it', () => {
+      const { container } = render(
+        <CombatMovePanel
+          moves={mockMoves}
+          category="Offensive"
+          onMoveClick={mockOnMoveClick}
+          onClose={mockOnClose}
+        />
+      );
+
+      const panel = container.querySelector(`.${GAME_PANEL_CLASS}`);
+      expect(panel.style.position).toBe('absolute');
+      // Not vertically centered on <main> any more...
+      expect(panel.style.top).not.toBe('50%');
+      expect(panel.style.transform).not.toBe('translate(-50%, -50%)');
+      // ...instead anchored to the bottom of the content well, still
+      // horizontally centered, using an existing spacing token rather than a
+      // hand-picked pixel value.
+      expect(panel.style.bottom).toBe(spacing.lg);
+      expect(panel.style.left).toBe('50%');
+      expect(panel.style.transform).toBe('translateX(-50%)');
     });
   });
 
