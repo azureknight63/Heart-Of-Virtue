@@ -6313,6 +6313,27 @@ class GameService:
             Dictionary with ``success``/``message``/``messages``/``target_name``
             or ``error``.
         """
+        # Found by the /review skill's adversarial pass: the other 9 mutation
+        # entry points in this file take _player_mutation_lock, but this one
+        # didn't. Consumable ``use()`` implementations (e.g. Restorative,
+        # src/items.py) are a plain check-then-act -- read player.hp, apply
+        # the effect, THEN decrement count, THEN remove the exhausted item --
+        # with no lock of their own. Two concurrent uses of a single-count
+        # item can both pass the check before either decrements, and the
+        # second `inventory.remove(self)` on an already-removed item raises
+        # an uncaught ValueError. Split into `_use_item_locked` so the lock
+        # wraps one call rather than reindenting the whole body.
+        with _player_mutation_lock(player):
+            return self._use_item_locked(player, item, target=target, user=user)
+
+    def _use_item_locked(
+        self,
+        player: "player_module.Player",
+        item,
+        target=None,
+        user=None,
+    ) -> Dict[str, Any]:
+        """``use_item``'s body, run under the caller's :func:`_player_mutation_lock`."""
         if getattr(item, "merchandise", False):
             return {"error": f"You must purchase {item.name} before using it"}
         if not hasattr(item, "use"):

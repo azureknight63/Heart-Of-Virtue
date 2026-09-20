@@ -376,3 +376,99 @@ class TestGetShopStateRestockRace:
             "decision — two concurrent shop-state reads both saw empty stock "
             "and both regenerated it"
         )
+
+
+class TestUseItemRace:
+    """A genuine, still-open race found by the /review skill's adversarial
+    subagent pass on this same branch: ``use_item`` (``POST
+    /inventory/use``, also the in-combat item-use route per
+    ``.claude/rules/combat-engine.md``) delegates to ``item.use()`` with no
+    ``_player_mutation_lock`` at all -- unlike the 9 other mutation entry
+    points this PR locked.
+
+    ``Restorative.use`` (``src/items.py``) is a plain check-then-act: read
+    ``player.hp < player.maxhp``, apply the heal, THEN ``self.count -= 1``,
+    THEN ``_user.inventory.remove(self)`` if exhausted -- with no lock and
+    no upfront exhaustion guard. Two concurrent uses of a single-count
+    Restorative (a double-click, a client retry, a second tab) can both
+    pass the health check before either decrements, and when both reach the
+    exhausted branch the second ``inventory.remove(self)`` raises an
+    uncaught ``ValueError`` -- ``GameService.use_item`` catches nothing
+    around ``item.use()`` -- surfacing as an unhandled exception on a
+    double-submitted click rather than a clean, idempotent response.
+    """
+
+    def test_two_concurrent_uses_of_a_single_count_item_do_not_both_apply(self, gs):
+        player, _game_map = live_world()
+        player.hp = 50
+        player.maxhp = 100
+        restorative = Restorative(count=1)
+        player.inventory = [restorative]
+
+        entered = threading.Event()
+        release = threading.Event()
+        paused = {"done": False}
+
+        import src.items as items_module
+
+        original_narrate = items_module.narrate
+
+        def paused_narrate(*args, **kwargs):
+            # Fires right after the `player.hp < player.maxhp` check passes
+            # but BEFORE `player.hp += amount` -- the real defect's window.
+            # Filtered on message content so it doesn't pause on unrelated
+            # narrate calls (e.g. the "already at full health" branch a
+            # losing/retried call would hit post-fix).
+            text = " ".join(str(a) for a in args)
+            if not paused["done"] and "quaffs" in text.lower():
+                paused["done"] = True
+                entered.set()
+                # Bounded: a lock bug should hang the *fix*, not the suite.
+                release.wait(timeout=5)
+            return original_narrate(*args, **kwargs)
+
+        items_module.narrate = paused_narrate
+        try:
+            results = {}
+            errors = []
+
+            def do_use(key):
+                try:
+                    results[key] = gs.use_item(player, restorative)
+                except Exception as exc:  # pragma: no cover - failure path
+                    errors.append((key, exc))
+
+            first = threading.Thread(target=do_use, args=("first",))
+            first.start()
+            assert entered.wait(timeout=5), (
+                "the first use_item call never reached the paused heal message"
+            )
+
+            second = threading.Thread(target=do_use, args=("second",))
+            second.start()
+            # Bounded wait, not a sleep-and-hope: give an UNLOCKED second use
+            # (the pre-fix behaviour) generous room to run to completion
+            # while the first sits paused. A LOCKED second use (post-fix)
+            # just blocks harmlessly on the lock the first holds; this join
+            # returning with the thread still alive is the expected,
+            # correct outcome in that case.
+            second.join(timeout=0.5)
+
+            release.set()
+            first.join(timeout=5)
+            assert not first.is_alive(), "the first use thread never resumed"
+            second.join(timeout=5)
+            assert not second.is_alive(), "the second use thread never returned"
+        finally:
+            items_module.narrate = original_narrate
+
+        # The real defect: a concurrent second use hits an uncaught
+        # ValueError from `inventory.remove(self)` on an already-removed
+        # item, not a clean success/failure response.
+        assert errors == [], (
+            f"a concurrent use_item call raised instead of returning a clean "
+            f"result: {errors}"
+        )
+        # Exactly one use should have actually consumed the item.
+        assert restorative.count == 0
+        assert _units(player.inventory, "Restorative") == 0
