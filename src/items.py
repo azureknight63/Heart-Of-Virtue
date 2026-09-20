@@ -207,6 +207,19 @@ class Item:
     }
     MAP_AUTHORED_OVERRIDES = {"hidden", "hide_factor", "name", "description", "announce"}
 
+    #: Issue #632: False marks an item the random merchant-stock roller must
+    #: never select -- story items, quest keys, puzzle ingredients and lore
+    #: documents. Read by MerchantShopMixin._fill_remaining_stock. A per-class
+    #: flag instead of a family ban because the family tree does not separate
+    #: trade goods from story items: Commodity (Crystals, MineralPowder) is
+    #: Special, and JeanWeddingBand is Accessory. always_stock and
+    #: UniqueItemInjectionCondition are authored, so they ignore this.
+    #: Being a plain class attribute it is INHERITED, so it states "this class
+    #: and everything beneath it" -- set it on a base only when the whole
+    #: subtree is meant to be excluded (Book is; Commodity and ProtectiveGear
+    #: are not, and are excluded by identity in _shop.py's disallowed_classes).
+    stockable = True
+
     def __init__(
         self,
         name: str,
@@ -2376,6 +2389,10 @@ class GoldRing(Accessory):
 
 
 class JeanWeddingBand(Accessory):
+    # Issue #632: Jean's late wife's ring. A merchant selling one is a lore
+    # contradiction, and a second one existing at all undercuts the object.
+    # level 99 already keeps it out of loot_tables.Loot.random_equipment.
+    stockable = False
     level: int = 99
     add_faith: int = 1
     add_endurance: int = 1
@@ -3302,6 +3319,18 @@ class Book(Special):
     Optionally, an event may be tied to reading the book.
     """
 
+    # Issue #632: set on the base because the WHOLE subtree is excluded -- every
+    # Book subclass is a single authored testimony, placed to be found, and all
+    # are value 0 so they would sell for nothing anyway. The bare Book itself
+    # also instantiates to a literal placeholder named "Book".
+    #
+    # Subclasses do NOT restate it. Six of them did, in six byte-identical
+    # lines that changed no behaviour and invited the next author to cargo-cult
+    # a seventh. The guard in tests/test_shop_stock_excludes_story_items.py
+    # reads the EFFECTIVE flag rather than per-class declarations, so this one
+    # line covers every existing subclass and every future one.
+    stockable = False
+
     #: Room-based interactions dispatch through ``src.objects.resolve_interaction``,
     #: which reads this off the class MRO (see that function's docstring). Without
     #: it, a room-placed book's authored "read" keyword resolved straight to the
@@ -3525,6 +3554,8 @@ class Book(Special):
 class AzuriteGem(Special):
     """Puzzle ingredient #1. Found in the Sacred Atrium of the Grondelith Mineral Pools."""
 
+    stockable = False  # Issue #632: authored puzzle ingredient (value 0).
+
     def __init__(self) -> None:
         super().__init__(
             name="Azure Crystal",
@@ -3547,6 +3578,8 @@ class AzuriteGem(Special):
 class AmberStone(Special):
     """Puzzle ingredient #2. Found in the Sacred Atrium of the Grondelith Mineral Pools."""
 
+    stockable = False  # Issue #632: authored puzzle ingredient (value 0).
+
     def __init__(self) -> None:
         super().__init__(
             name="Amber Stone",
@@ -3567,6 +3600,8 @@ class AmberStone(Special):
 
 class PaleGreyFragment(Special):
     """Puzzle ingredient #3. Found deep in the Corrupted Channels."""
+
+    stockable = False  # Issue #632: authored puzzle ingredient (value 0).
 
     def __init__(self) -> None:
         super().__init__(
@@ -3592,6 +3627,13 @@ class MineralFragment(Special):
     in the AfterDefeatingKingSlime story event.
     """
 
+    # Issue #632: the worst offender to leave stockable. Granted directly by
+    # ch02.AfterDefeatingKingSlime, and Ch02KingSlimeMemoryFlash fires on mere
+    # POSSESSION -- so a shop copy plays the Ch02 memory flash out of order and
+    # pre-satisfies the Votha Krr hand-over that #378/#371 hardened against
+    # soft-lock.
+    stockable = False
+
     def __init__(self) -> None:
         super().__init__(
             name="Rare Mineral Fragment",
@@ -3616,6 +3658,13 @@ class EnchantedGolemitePauldron(Armor):
     Reward for solving the Luminous Grotto puzzle. Carved Golemite stone inlaid
     with luminous mineral veins. High protection; lighter than it looks.
     """
+
+    # Issue #632: puzzle reward, not merchandise. The one-use GeminateGeode
+    # object spawns it on success (src/objects.py:1609) and then removes
+    # itself, so buying one off a shelf defeats the Luminous Grotto puzzle
+    # outright. A leaf class -- nothing inherits from it, so flagging it costs
+    # no legitimate armour.
+    stockable = False
 
     def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
@@ -3653,6 +3702,12 @@ class GronditeMarkToken(Special):
     A flat stone disc incised with a clan sigil. No mechanical use; purely a
     flavour/collectible item found while exploring Grondia's districts.
     """
+
+    # Issue #632: found flavour, not trade goods. Authored into three maps
+    # (grondia, grondia-conclave-archive, grondia-vacated-dwelling) to be
+    # come across while exploring; a merchant stocking them turns a discovery
+    # into a purchase.
+    stockable = False
 
     def __init__(self) -> None:
         super().__init__(
@@ -3791,6 +3846,11 @@ class FabricariumRejectionShard(Special):
     A flawed piece of worked stone discarded by Fabricarium craftspeople.
     Flavour/collectible; can be EXAMINEd for lore text.
     """
+
+    # Issue #632: authored evidence object, not trade goods. Placed in
+    # grondia.json to be found and EXAMINEd for its lore text; a purchasable
+    # copy is evidence that was never discovered.
+    stockable = False
 
     def __init__(self) -> None:
         super().__init__(
@@ -4032,6 +4092,10 @@ class ConclaveSignalStone(Key):
     Unlocks the Stone Coffer in the Conclave Archive.
     """
 
+    # Issue #632: authored puzzle key (value 0). A purchasable duplicate
+    # trivialises the lock it exists to gate.
+    stockable = False
+
     def __init__(self) -> None:
         super().__init__(lock_nickname="archive coffer")
         self.name = "Conclave Signal Stone"
@@ -4058,6 +4122,10 @@ class FabricariumCompactSeal(Key):
     A flat iron disc stamped with three masters' marks — the physical seal of the
     Compact of Silence. Also fits the combination disc lock of the Iron Component Locker.
     """
+
+    # Issue #632: authored puzzle key (value 0). A purchasable duplicate
+    # trivialises the lock it exists to gate.
+    stockable = False
 
     def __init__(self) -> None:
         super().__init__(lock_nickname="component locker")

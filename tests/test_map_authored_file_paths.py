@@ -40,12 +40,12 @@ from tests._source_scan import JSON_KEY_SUFFIX, ROOT, walk_json_strings
 _EXTENSION_LENGTHS = range(2, 6)
 
 #: Authored book paths that have no file behind them yet -- a content gap, not
-#: a separator fault. The Tattered Journal in the Dark Grotto (tile (6, 3),
-#: "the merchant's final thoughts") authors a path whose text was never
-#: written, so it reads as blank exactly like the #611 book did. Writing it is
-#: narrative work, not a path fix (issue #631). Asserted by equality below, so
-#: the entry cannot outlive the gap.
-UNWRITTEN_BOOKS = frozenset({"src/resources/books/tattered-journal.txt"})
+#: a separator fault. Empty today, and asserted by equality below so an entry
+#: cannot outlive its gap: the Dark Grotto's Tattered Journal sat here until
+#: issue #631 wrote the text, and this guard is what reported that the entry
+#: had gone stale. A new dangling path fails until it is either written or
+#: named here with the reason.
+UNWRITTEN_BOOKS: frozenset[str] = frozenset()
 
 #: The path #611 fixed. The positive control names it rather than counting
 #: books, so it fails if the scan stops reaching the very placement it exists

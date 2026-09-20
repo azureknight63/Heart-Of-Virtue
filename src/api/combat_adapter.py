@@ -332,7 +332,10 @@ def _weapon_noun_phrase(subtype, with_article=True):
     noun = subtype.lower()
     if not with_article:
         return noun
-    return ("an " if noun[:1] in "aeiou" else "a ") + noun
+    # The engine owns the article rule (a bare vowel-letter test here got
+    # "an unicorn" wrong); the API layer calling into the engine is the
+    # allowed direction of that dependency.
+    return functions.indefinite_article(noun) + " " + noun
 
 
 def move_unavailability_reason(move, player, is_targeted):

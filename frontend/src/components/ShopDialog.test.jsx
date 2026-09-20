@@ -2,9 +2,11 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import ShopDialog from './ShopDialog'
+import { accessibility } from '../styles/theme'
+import { stubWideTouchTablet } from '../test/pointerEnvironment'
 import { useShop } from '../hooks/useShop'
 import {
   makePlayer,
@@ -906,5 +908,61 @@ describe('ShopDialog', () => {
       expect(mockToastWarning).not.toHaveBeenCalled()
       expect(onClose).toHaveBeenCalledTimes(1)
     })
+  })
+})
+
+describe('ShopDialog on a wide touch tablet (issue #639)', () => {
+  // The `isMobile` PROP is what LeftPanel threads down for layout, and it
+  // stays false here — a 1024px tablet is not a phone and its shop must not
+  // collapse into one column. Only the quantity buttons' 26px floor is wrong,
+  // and only because it read that same prop.
+  const onClose = vi.fn()
+  let env
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useShop.mockReturnValue(makeShopState({
+      shopState: {
+        stock: [{ id: 'stackable-1', name: 'Torch', price: 10, weight: 0.5, count: 5, is_stackable: true }],
+      },
+    }))
+    env = stubWideTouchTablet()
+  })
+
+  afterEach(() => {
+    env.restore()
+  })
+
+  const openTorch = () => {
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Torch'))
+  }
+
+  it('grows the quantity +/- buttons to 44px for a coarse pointer at desktop width', () => {
+    openTorch()
+    const minus = screen.getByText('−')
+    const plus = screen.getByText('+')
+    for (const button of [minus, plus]) {
+      expect(button.style.width).toBe(accessibility.touchTarget)
+      expect(button.style.height).toBe(accessibility.touchTarget)
+      expect(button.style.minWidth).toBe(accessibility.touchTarget)
+    }
+  })
+
+  it('leaves the desktop LAYOUT alone — the pointer says nothing about width', () => {
+    // The trap in this fix: widening the `isMobile` prop to mean "coarse" too
+    // would stack a 1024px shop into a single column and stretch its action
+    // buttons edge to edge. ActionButton's `width` is the cheapest witness.
+    openTorch()
+    expect(screen.getByText(/Buy · 10 💰/).style.width).toBe('auto')
+  })
+
+  it('keeps the item rows at the 44px floor whatever the pointer is', () => {
+    // ShopDialog:134 read `isMobile ? accessibility.touchTarget : '44px'` — a
+    // ternary whose branches were the same 44px, one of them hardcoded past
+    // the token. Unconditional and tokenized, it is right in both columns.
+    openTorch()
+    const row = screen.getByText('Torch').closest('[style*="grid"]')
+    expect(row.style.minHeight).toBe(accessibility.touchTarget)
   })
 })

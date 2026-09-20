@@ -153,6 +153,10 @@ export function useWorldInteract({
      */
     const takeOne = useCallback(async (itemId, itemName) => {
         setLoading(true)
+        // Clear on entry, as reset/takeAll/interact each already do (#616):
+        // this handler only ever *set* error, so a banner raised by an earlier
+        // failure stayed on screen over every later successful single take.
+        setError(null)
         try {
             const response = await apiEndpoints.world.interact(itemId, 'take')
             if (response.data.success) {

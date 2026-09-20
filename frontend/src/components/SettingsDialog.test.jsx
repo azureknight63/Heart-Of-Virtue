@@ -4,6 +4,7 @@ import SettingsDialog from './SettingsDialog';
 import { usePreferences } from '../context/PreferencesContext';
 import { FEATURE_FLAGS, getFlag, resetFlags } from '../utils/featureFlags';
 import { accessibility } from '../styles/theme';
+import { stubWideTouchTablet } from '../test/pointerEnvironment';
 
 vi.mock('../context/PreferencesContext', () => ({
   usePreferences: vi.fn()
@@ -246,7 +247,7 @@ describe('SettingsDialog', () => {
     // fixed, but the sliders themselves (247x16) and the three EXPERIMENTAL
     // flag toggles (38x28 / 38x28 / 31x28) were not — the flag rows render
     // through FeatureFlagRow -> ToggleRow, which never received the
-    // mobileTouchTarget style the "Auto-advance story" ToggleRow already gets.
+    // `touchTargetStyle` bag the "Auto-advance story" ToggleRow already gets.
     it('grows both volume sliders to the touch-target minimum height on mobile', () => {
       mobileMock.isMobile = true;
       render(<SettingsDialog onClose={mockOnClose} />);
@@ -426,6 +427,42 @@ describe('SettingsDialog', () => {
         unnamed.map((el) => `${el.tagName}${el.type ? `[type=${el.type}]` : ''}`),
         'these controls in SettingsDialog have an empty accessible name'
       ).toEqual([]);
+    });
+  });
+
+  // Every floor above was keyed on viewport width, so the whole dialog — five
+  // control types, none of them bigger than 56x32 — stayed mouse-sized on any
+  // touch device over 767px.
+  describe('touch targets on a wide touch tablet (issue #639)', () => {
+    let env;
+
+    beforeEach(() => {
+      mobileMock.isMobile = false;
+      env = stubWideTouchTablet();
+    });
+
+    afterEach(() => {
+      env.restore();
+    });
+
+    it('grows every control to the touch-target minimum for a coarse pointer at desktop width', () => {
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      // One assertion per CONSUMER of the two style bags — the volume slider
+      // (touchHeightStyle), the mute toggles (touchTargetStyle), and both
+      // segmented rows (touchHeightStyle). The bags are built from one
+      // `needsLargeTargets` now, so a per-site gate swap is no longer the
+      // failure mode; what this pins is that every consumer still RECEIVES a
+      // bag, so dropping the prop from one row cannot go unnoticed.
+      expect(screen.getByRole('slider', { name: 'Music volume' }).style.minHeight)
+        .toBe(accessibility.touchTarget);
+      screen.getAllByText('ON').slice(0, 2).forEach((toggle) => {
+        expect(toggle.style.minWidth).toBe(accessibility.touchTarget);
+        expect(toggle.style.minHeight).toBe(accessibility.touchTarget);
+      });
+      expect(screen.getByText('1x').style.minHeight).toBe(accessibility.touchTarget);
+      expect(screen.getByRole('button', { name: 'INSTANT' }).style.minHeight)
+        .toBe(accessibility.touchTarget);
     });
   });
 

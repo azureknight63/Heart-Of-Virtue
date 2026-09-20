@@ -973,6 +973,83 @@ def escape_ansi(line):
     return ANSI_ESCAPE_RE.sub("", line)
 
 
+# Words whose SPOKEN first sound disagrees with their written first letter,
+# which is the only thing "an before a vowel" actually depends on. Matching is
+# by prefix and the tuples are unordered -- ``str.startswith`` takes the whole
+# tuple and stops at any match -- so an entry must not be a prefix of a word
+# that takes the OTHER article. That constraint is why these are narrow stems
+# rather than the obvious short ones: a bare "uni" also captures "uninhabited"
+# and "uninscribed" (both "an"), and a bare "one" also captures "onerous".
+#
+# None of the 47 shipped Container placements needs an entry here today (the
+# only h-/u- nickname in the maps is "handcart", which the plain letter rule
+# already gets right). The tables are here because nicknames are authored in
+# map JSON by hand: the first "hourglass" or "unicorn skull" someone writes
+# should read correctly the day it is written, not after a bug report.
+_VOWEL_SOUND_CONSONANT_PREFIXES = (
+    "heir", "honest", "honor", "honour", "hour",
+)
+_CONSONANT_SOUND_VOWEL_PREFIXES = (
+    "eu", "ewe",
+    "ubiquit", "uku", "unani", "unicorn", "unicycle", "unif", "unio", "uniq",
+    "unit", "univ", "uranium", "urin", "usa", "use", "usu", "utens", "util",
+)
+#: Matched against the whole first word rather than as a prefix, because the
+#: useful entries here are all prefixes of words taking the other article
+#: ("onerous"). Hyphenation is handled by the caller, so "one-eyed" arrives
+#: here as "one".
+_CONSONANT_SOUND_VOWEL_WORDS = frozenset({"one", "once", "ones"})
+
+#: Every prefix table, paired with the article it forces. ``indefinite_article``
+#: walks THIS rather than the tables directly, so a fourth table is added in one
+#: place and is picked up by the lookup and by ``ARTICLE_EXCEPTION_STEMS``
+#: together. The two tables are disjoint in their first letter, so the order
+#: they are walked in cannot change an answer.
+_ARTICLE_PREFIX_TABLES = (
+    (_VOWEL_SOUND_CONSONANT_PREFIXES, "an"),
+    (_CONSONANT_SOUND_VOWEL_PREFIXES, "a"),
+)
+
+#: Every stem the exception tables can decide, as one aggregate, derived from
+#: the tables rather than re-listed. Callers that need to ask "is this word
+#: decided by an exception rather than by its first letter?" -- the map-derived
+#: guard in ``tests/test_indefinite_article.py`` is the one in the tree -- read
+#: this, so adding a table cannot leave such a check silently fail-open.
+#: Whole-word entries are included as prefixes, which is deliberately
+#: over-inclusive: a check built on this errs toward flagging a word ("onerous"
+#: behind "one") rather than toward missing one.
+ARTICLE_EXCEPTION_STEMS = tuple(sorted(
+    {stem for table, _article in _ARTICLE_PREFIX_TABLES for stem in table}
+    | set(_CONSONANT_SOUND_VOWEL_WORDS)
+))
+
+
+def indefinite_article(word):
+    """``"a"`` or ``"an"`` for ``word`` -- the article only, no space.
+
+    The default is the plain written rule (``"an"`` before a vowel letter),
+    with small tables above for the words whose spoken sound disagrees: "an
+    hour", "a unicorn", "a one-eyed skull". Only the first word is inspected,
+    because that is the one the article sits in front of -- "an iron lockbox"
+    is decided by "iron", not by "lockbox" -- and a hyphenated first word is
+    read down to its first element, so "hour-glass" and "one-eyed" are
+    decided by "hour" and "one".
+
+    Returns ``"a"`` for an empty or missing word rather than raising: every
+    caller is mid-sentence in a description, and a crash there takes the game
+    loop down over a grammar detail.
+    """
+    first = str(word or "").strip().lower().split(" ")[0]
+    if not first:
+        return "a"
+    if first.split("-")[0] in _CONSONANT_SOUND_VOWEL_WORDS:
+        return "a"
+    for prefixes, article in _ARTICLE_PREFIX_TABLES:
+        if first.startswith(prefixes):
+            return article
+    return "an" if first[0] in "aeiou" else "a"
+
+
 def clean_string(input_string):
     # Remove non-printable characters
     cleaned_string = re.sub(r"[\[\d]+m|[^\x20-\x7E]", "", input_string)

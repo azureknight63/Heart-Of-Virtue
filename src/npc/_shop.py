@@ -43,6 +43,8 @@ from src.items import (
     Weapon,
     Arrow,
     Relic,
+    Commodity,
+    ProtectiveGear,
 )
 from src.objects import Container  # type: ignore
 from src.narration import narrate
@@ -62,15 +64,22 @@ from src.shop_conditions import (  # type: ignore
 #: token, lore fragment, curio and book -- including a bare ``Book`` (name
 #: "Book", value 5, ``text_file_path=None``), which is what rolled into Jambo's
 #: tent as an item that could be neither bought nor read (issue #611). ``Key``
-#: is itself a ``Special`` and is named anyway so the intent survives any
-#: reparenting. ``Commodity`` (``Crystals``, ``MineralPowder``) is a ``Special``
-#: too and is excluded deliberately: creature loot meant to be sold TO a
-#: merchant; one that should carry it names it in ``always_stock``, which
-#: bypasses this filter. ``Relic`` has no subclasses today and is listed by intent: it is
-#: a single-use personal memento awaiting a redesign (issue #646), and its
+#: is itself a ``Special`` and is named here so the intent survives any
+#: reparenting. ``Relic`` has no subclasses today and is listed by intent: it
+#: is a single-use personal memento awaiting a redesign (issue #646), and its
 #: ``value=0`` would make it sell for free, so a future subclass must not
 #: quietly reopen the hole.
-_NEVER_STOCK_FAMILIES: tuple[type[Item], ...] = (Special, Key, Relic)
+#:
+#: ``Special`` ITSELF was here until issue #632 landed the inherited
+#: ``stockable`` flag (``src/items.py``). The family test excluded every
+#: concrete ``Special`` -- which took ``Commodity``'s ``Crystals`` and
+#: ``MineralPowder`` with it, and those exist to be traded;
+#: ``tests/test_shop_stock_excludes_story_items.py`` requires them in the
+#: pool. Story tokens, lore documents and quest keys are now excluded by the
+#: flag, per class and per subtree (``Book.stockable = False`` covers the bare
+#: ``Book`` that issue #611 found in Jambo's tent), which is the finer
+#: instrument. Do not restore ``Special`` here without moving that test.
+_NEVER_STOCK_FAMILIES: tuple[type[Item], ...] = (Key, Relic)
 
 #: Classes excluded by exact membership only, because the shop stocks *through*
 #: them: these are the abstract bases whose concrete subclasses are the
@@ -78,6 +87,11 @@ _NEVER_STOCK_FAMILIES: tuple[type[Item], ...] = (Special, Key, Relic)
 #: ``Consumable``'s are Jambo's), plus concrete singletons with no meaningful
 #: subclass tree. Applying a subclass test here would empty the candidate pool
 #: of everything sellable.
+#:
+#: ``Commodity`` and ``ProtectiveGear`` are here for a second reason (issue
+#: #632): they, and ``Special``, raise ``TypeError`` on the bare ``cls()``
+#: that ``spawn_item`` does, so a roll that picked one silently burned a fill
+#: iteration.
 _NEVER_STOCK_EXACT_CLASSES: frozenset[type[Item]] = frozenset({
     Gold,
     Rock,
@@ -90,6 +104,11 @@ _NEVER_STOCK_EXACT_CLASSES: frozenset[type[Item]] = frozenset({
     Armor,
     Weapon,
     Arrow,
+    Commodity,
+    ProtectiveGear,
+    # EXACT, never as a family: its concrete subclasses are excluded by the
+    # `stockable` flag now, but `Special()` itself still raises TypeError.
+    Special,
 })
 
 
@@ -450,6 +469,9 @@ class MerchantShopMixin:
         - RestockWeightBoostConditions further scale weights.
         - Unique-factory classes are excluded; so is ``_NEVER_STOCK_EXACT_CLASSES``
           by exact membership and ``_NEVER_STOCK_FAMILIES`` by subclass (#611).
+        - Classes carrying ``stockable = False`` are excluded (issue #632):
+          story items, quest keys, puzzle ingredients and lore documents. The
+          flag is inherited, so it excludes whole subtrees (e.g. Book).
         - Once the merchant's own shelves are full, only classes an open
           container accepts are rolled; an empty pool ends the pass.
         - Each spawn leaves the room at once, placed or not (#611).
@@ -489,6 +511,15 @@ class MerchantShopMixin:
                 # Family exclusion, not membership: the subclasses are the
                 # whole reason these are listed (issue #611).
                 if issubclass(obj, _NEVER_STOCK_FAMILIES):
+                    continue
+                # Issue #632: per-class opt-out for story items, quest keys,
+                # puzzle ingredients and lore documents. Unlike the identity
+                # test above it is inherited, so it covers whole subtrees such
+                # as Book. getattr's default is pure belt-and-braces: every
+                # class reaching this line is an Item subclass (the issubclass
+                # check above), so it inherits Item.stockable = True and the
+                # default can never actually be taken.
+                if not getattr(obj, "stockable", True):
                     continue
                 candidates.append(obj)
             except Exception:

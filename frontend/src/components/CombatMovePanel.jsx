@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useId } from 'react';
 import { useAudio } from '../context/AudioContext';
 import { colors, spacing, shadows, fonts, zIndex, accessibility } from '../styles/theme';
-import { useMobile } from '../hooks/useMobile';
+import { useLargeTouchTargets } from '../hooks/useLargeTouchTargets';
 import GamePanel from './GamePanel';
 import GameText from './GameText';
 import GlossaryHelpButton from './GlossaryHelpButton';
@@ -318,7 +318,7 @@ function MoveCard({
 // LeftPanel's button gating reads too, so the two can never drift apart.
 const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover, isProcessing = false }) => {
     const [hoveredMoveName, setHoveredMoveName] = useState(null);
-    const isMobile = useMobile();
+    const needsLargeTargets = useLargeTouchTargets();
     // Base for the per-card reason ids that aria-describedby points at. useId
     // keeps them unique across concurrent panels and stable across re-renders.
     const reasonIdBase = useId();
@@ -378,7 +378,14 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                             // viewport — a different control from BaseDialog's
                             // close button (#542), since this panel renders
                             // its own inline "✕" rather than using BaseDialog.
-                            ...(isMobile ? {
+                            // Gated on the pointer, not the width (issue #639).
+                            // This spread is byte-identical to BaseDialog's and
+                            // is NOT extracted on purpose: findWidthGatedTouchTargets
+                            // keys on a literal `accessibility.touchTarget` read,
+                            // so folding the six copies into one helper would
+                            // delete the reads it inspects from every call site
+                            // and disarm the audit without failing anything.
+                            ...(needsLargeTargets ? {
                                 minWidth: accessibility.touchTarget,
                                 minHeight: accessibility.touchTarget,
                                 display: 'flex',

@@ -8,8 +8,7 @@ import GlossaryHelpButton from './GlossaryHelpButton'
 import { accessibility, colors, spacing } from '../styles/theme'
 import { isLiving, anyEnemyOutsideView, openingState } from '../utils/combatEntities'
 import { useFeatureFlag } from '../utils/featureFlags'
-import { useMobile } from '../hooks/useMobile'
-import { useCoarsePointer } from '../hooks/useCoarsePointer'
+import { useLargeTouchTargets } from '../hooks/useLargeTouchTargets'
 
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 
@@ -48,11 +47,9 @@ const anyEnemyOffScreen = (state) => anyEnemyOutsideView(state, HALF_VIEW);
 export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId, onAnimatingChange, streaming = false, streamedAnimations = [], combatSpeed = 1, isReloadRecovery = false }) {
   const beatTimelineEnabled = useFeatureFlag('beatTimeline')
   const [selectedTab, setSelectedTab] = useState('overview')
-  // Both hooks unconditionally — `||` would short-circuit the second and
-  // break hook order the first time the viewport is narrow.
-  const isMobile = useMobile()
-  const isCoarsePointer = useCoarsePointer()
-  const needsLargeTargets = isMobile || isCoarsePointer
+  // This panel was the first place to ask both questions (#564); the pair is
+  // now one hook, which is what the other five floors were missing (#639).
+  const needsLargeTargets = useLargeTouchTargets()
 
   // Display state - synchronized with combat log progress.
   // Initialise directly to the first beat state (same shape BattlefieldGrid expects)

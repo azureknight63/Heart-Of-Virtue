@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useState } from 'react'
 import { colors, fonts } from '../styles/theme'
-import { useMobile } from '../hooks/useMobile'
+import { useLargeTouchTargets } from '../hooks/useLargeTouchTargets'
 import CollapsibleSectionHeader from './CollapsibleSectionHeader'
 import {
   HEAT_DRIFT_NOTE,
@@ -214,7 +214,7 @@ function HeatMeter({ heat, beat, combatId }) {
  */
 function HeatRules({ band }) {
   const [expanded, setExpanded] = useState(false)
-  const isMobile = useMobile()
+  const needsLargeTargets = useLargeTouchTargets()
   const rulesId = useId()
 
   return (
@@ -225,14 +225,15 @@ function HeatRules({ band }) {
         controlsId={rulesId}
         // issue #580: measured 89x13px on a 375px viewport, well under the
         // 44px minimum. The shared header's height floor grows the tappable
-        // box on phone-width viewports (useMobile, max-width 767px -- width,
-        // not pointer type); wider, the helper stays at its native size so it
-        // does not reflow the meter above it in a panel with no spare height.
-        compact={!isMobile}
+        // box wherever a thumb is doing the pointing -- coarse pointer OR
+        // narrow viewport (#639, useLargeTouchTargets); with a mouse at
+        // desktop width the helper stays at its native size so it does not
+        // reflow the meter above it in a panel with no spare height.
+        compact={!needsLargeTargets}
         style={{
           marginTop: '5px',
           width: 'auto',
-          padding: isMobile ? '0 4px' : 0,
+          padding: needsLargeTargets ? '0 4px' : 0,
           color: colors.text.dim,
           fontSize: '0.55rem',
           letterSpacing: '0.08em',
