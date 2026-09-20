@@ -1815,7 +1815,9 @@
             0,
             2
           ],
-          "persist": true
+          "persist": true,
+          "locked_until_flag": "votha_krr_response_given",
+          "locked_message": "Jean runs a hand along the seam in the stone, but the gate gives no purchase — whatever seals it hasn't yielded yet."
         }
       }
     ]

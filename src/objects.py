@@ -57,20 +57,41 @@ def _class_declared_handler(target, name):
     return _NOT_DECLARED
 
 
+def _as_keyword_set(value):
+    """Coerce a map-authored/save-restored verb list to a frozenset of strings.
+
+    Shared by the ``.keywords`` and ``.interactions`` readers below: neither
+    field is trusted to actually be a list -- ``None`` advertises nothing, a
+    bare string is one keyword (never a haystack ``in`` would
+    substring-match), and non-string entries are ignored.
+    """
+    if isinstance(value, str):
+        return frozenset({value})
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        return frozenset()
+    return frozenset(v for v in value if isinstance(v, str))
+
+
 def advertised_keywords(target):
     """The verbs ``target`` advertises, as a frozenset of strings.
 
-    ``keywords`` is map-authored and restored from saves, so it is not trusted
-    to be a list: ``None`` advertises nothing, a bare string is one keyword
-    (never a haystack ``in`` would substring-match), and non-string entries
-    are ignored.
+    Reads ``target.keywords`` (map-authored on ``Object``s such as
+    ``Passageway``/``Container``). For an ``Item`` (e.g. a floor ``Book``),
+    also merges in ``target.interactions`` -- items never carry a
+    ``.keywords`` attribute at all (``Item.__init__`` only ever sets
+    ``.interactions``), so ``ItemSerializer.serialize`` computes the wire
+    ``keywords`` field FROM ``.interactions`` when ``.keywords`` is absent.
+    Without this, any authored interaction verb beyond
+    ``_ALLOWED_INTERACTION_VERBS`` (e.g. "read" on a book, "drink" on a
+    potion) was advertised to the client but always refused server-side
+    (#665). Additive only: a non-``Item`` target's authorization is
+    unchanged, and an ``Item`` that does happen to carry ``.keywords`` keeps
+    advertising both.
     """
-    keywords = getattr(target, "keywords", None)
-    if isinstance(keywords, str):
-        return frozenset({keywords})
-    if not isinstance(keywords, (list, tuple, set, frozenset)):
-        return frozenset()
-    return frozenset(k for k in keywords if isinstance(k, str))
+    advertised = _as_keyword_set(getattr(target, "keywords", None))
+    if isinstance(target, Item):
+        advertised |= _as_keyword_set(getattr(target, "interactions", None))
+    return advertised
 
 
 def resolve_interaction(target, action):
@@ -1078,7 +1099,7 @@ class Passageway(Object):
         "events_before", "events_after", "teleport_map", "teleport_tile",
         "persist", "hidden", "hide_factor", "passthrough", "name",
         "description", "idle_message", "discovery_message", "demo_end",
-        "demo_end_ready_flag",
+        "demo_end_ready_flag", "locked_until_flag", "locked_message",
     }
     #: The export reads the gate key as authored, not through the property's
     #: validated fallback, so a passageway with no key of its own round-trips
@@ -1088,6 +1109,15 @@ class Passageway(Object):
     #: Class-level default so a passageway restored from an older save still
     #: resolves the attribute (and crosses normally).
     demo_end = False
+
+    #: Class-level defaults so a passageway restored from an older save --
+    #: pickled before this field existed, or map JSON that never authors it
+    #: -- still resolves the attribute and crosses normally. ``None`` reads
+    #: as "never gated": unlike ``demo_end_ready_flag`` above, there is no
+    #: shipped fallback key to fall back TO here, only the choice of whether
+    #: this placement is locked at all (#669).
+    locked_until_flag = None
+    locked_message = None
 
     #: The story key the shipped demo edge (the nomad-camp Ferry Landing) is
     #: gated on, written by chapter 3's ``MaraObservationEvent`` once Mara's
@@ -1141,6 +1171,8 @@ class Passageway(Object):
         discovery_message: str = " a passageway!",
         demo_end: bool = False,
         demo_end_ready_flag: str = None,
+        locked_until_flag: str = None,
+        locked_message: str = None,
     ):
         aliases = [name.lower(), "passage"]
         super().__init__(
@@ -1180,6 +1212,13 @@ class Passageway(Object):
         self.demo_end = demo_end
         # Stored as authored; the property validates it where it is read.
         self.demo_end_ready_flag = demo_end_ready_flag
+        # Independent of the demo-edge mechanism above: this gates an
+        # ORDINARY crossing on a story flag rather than closing the demo
+        # build. Unset (the default) means never gated -- the behaviour
+        # every Passageway had before #669, and the one every placement
+        # that doesn't author this keeps. See ``crossing_locked()``.
+        self.locked_until_flag = locked_until_flag
+        self.locked_message = locked_message
 
     @property
     def demo_end_ready_flag(self):
@@ -1318,19 +1357,54 @@ class Passageway(Object):
         )
         return True
 
+    def crossing_locked(self, player):
+        """True, after narrating a decline, when a story gate blocks crossing.
+
+        Independent of the demo-edge mechanism above (``is_demo_edge``/
+        ``end_demo``): that closes the demo BUILD at its edge, gated on a
+        readiness flag with a shipped fallback key. This blocks an ORDINARY
+        passageway until ``locked_until_flag`` is set on the player's story --
+        e.g. Grondia's Eastern Gate, which waits on Votha Krr's second
+        conversation (issue #669). ``locked_until_flag`` unset (the default)
+        is read as "never gated" rather than compared against an
+        always-missing key, so every Passageway that authors neither field
+        keeps today's unconditional crossing.
+
+        Guarded to a non-empty string: the flag is map/save-authored and
+        becomes a dict key in ``gate_is_set``, so a corrupt or pre-#669
+        value (``None``, a list, ...) must read as "not locked" rather than
+        raise.
+        """
+        flag = self.locked_until_flag
+        if not (isinstance(flag, str) and flag):
+            return False
+        if gate_is_set(player, flag):
+            return False
+        stops_at = f"Jean stops at {self.build_article_phrase(self.name)}"
+        narrate(
+            self.locked_message
+            or f"{stops_at}, but whatever holds it shut hasn't given way yet."
+        )
+        return True
+
     def enter(self, player):
         """Cross this passageway -- or, on the demo's edge, end the demo here.
 
         Returns ``end_demo``'s verdict on a demo-end passageway (True when
-        this call closed the demo, False when it declined) and None otherwise
-        -- a crossing, or a passageway with nowhere configured to go -- so a
-        caller dispatching the resolved handler can tell a demo end from a
-        decline. The API's ``beta_end`` is that verdict.
+        this call closed the demo, False when it declined), False when a
+        story gate declined an ordinary crossing (``crossing_locked``), and
+        None otherwise -- a crossing, or a passageway with nowhere configured
+        to go -- so a caller dispatching the resolved handler can tell a
+        demo end from a decline. The API's ``beta_end`` is that verdict.
         """
         if self.is_demo_edge():
             # Before the merchandise drop and events_before: neither belongs to
             # a crossing that does not happen.
             return self.end_demo(player)
+        if self.crossing_locked(player):
+            # Same reasoning as the demo-edge branch above: nothing that
+            # belongs to a crossing may run for one that doesn't happen.
+            return False
         # Drop any merchandise items immediately upon attempting to enter/teleport
         if hasattr(player, "drop_merchandise_items"):
             player.drop_merchandise_items()
@@ -1359,9 +1433,17 @@ class Passageway(Object):
         whichever route skipped it (#552). Returns ``end_demo``'s verdict
         there, as ``enter`` does; ``PassagewayTransitionEvent.process``
         discards it because the API never arms that event for a demo edge.
+
+        The story-gate lock (``crossing_locked``, #669) is repeated here for
+        the identical reason: the API queues a "Step through?" confirmation
+        for any ordinary (non-demo-edge) Passageway without asking whether it
+        is locked, so this primitive is the only place a locked crossing
+        confirmed through that flow is still refused.
         """
         if self.is_demo_edge():
             return self.end_demo(player)
+        if self.crossing_locked(player):
+            return False
         player.teleport(self.teleport_map, self.teleport_tile)
         if self.events_after:
             for event in self.events_after:

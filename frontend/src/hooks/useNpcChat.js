@@ -342,6 +342,21 @@ export function useNpcChat(npcId, npcName, onClose) {
   // read it — the unmount cleanup, and an `/open` that resolves after the
   // panel is already gone — both run outside render, where state is stale.
   const openNpcKeyRef = useRef(null)
+  // The still-in-flight `POST /npc/chat/open` request, if any: `{ npcId, promise }`.
+  //
+  // React 18 StrictMode double-invokes a mount effect in dev (mount -> cleanup
+  // -> mount, synchronously, before either promise settles), and the open
+  // effect below had nothing stopping its second invocation from firing a
+  // SECOND real request for the same npcId. The `cancelled` closure variable
+  // only gates which invocation APPLIES the response; it never stopped the
+  // network call itself. Two real requests for one player race the server's
+  // per-player `_chat_turn_lock` (game_service.py) -- itself correct and not
+  // to be touched -- and the loser comes back 409, which the non-cancelled
+  // invocation then rendered as STILL_TALKING_MESSAGE even though Jean never
+  // actually had a prior conversation open (issue #661). A second call for the
+  // SAME npcId while one is already in flight now reuses that promise instead
+  // of issuing its own.
+  const openRequestRef = useRef(null)
   // Bumped every time the hook is pointed at a different NPC. `isMountedRef`
   // only covers unmount, and the `cancelled` flag below is scoped to one run of
   // the open effect — neither can stop an in-flight `/respond` for NPC A from
@@ -497,16 +512,39 @@ export function useNpcChat(npcId, npcName, onClose) {
     endingRef.current = false
 
     // Supersession guard. `isMountedRef` only covers unmount, so on an
-    // A -> B -> A switch a late response could overwrite a newer one; it also
-    // let React 18 StrictMode's double-invoke fire two `POST /npc/chat/open`
-    // calls, each a paid LLM turn plus a persistence write.
+    // A -> B -> A switch a late response could overwrite a newer one. It does
+    // NOT stop a second invocation of THIS SAME effect run (StrictMode's
+    // double-invoke) from firing a second real request — `openRequestRef`
+    // above is what does that.
     let cancelled = false
 
     const openConversation = async () => {
       try {
         setError(null)
         setPhase(CHAT_PHASES.OPENING)
-        const response = await npcChat.open(npcId)
+
+        // Reuse a still-in-flight request for the same npcId instead of
+        // issuing a second one (issue #661 — see `openRequestRef`).
+        const inFlight = openRequestRef.current
+        let promise
+        if (inFlight && inFlight.npcId === npcId) {
+          promise = inFlight.promise
+        } else {
+          promise = npcChat.open(npcId)
+          openRequestRef.current = { npcId, promise }
+        }
+
+        let response
+        try {
+          response = await promise
+        } finally {
+          // Only the entry's own owner clears it, so a newer request (a
+          // fresh npcId, or a Retry that started after this one settled) is
+          // never clobbered by a late finally from this one.
+          if (openRequestRef.current?.promise === promise) {
+            openRequestRef.current = null
+          }
+        }
         const data = response.data
 
         // Unmount is checked FIRST, and separately from `cancelled`, because

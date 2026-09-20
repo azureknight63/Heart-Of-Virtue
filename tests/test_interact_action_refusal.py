@@ -30,6 +30,7 @@ if str(_ROOT) not in sys.path:
 
 from src.api.services.game_service import GameService  # noqa: E402
 from src.combatant import wire_handle  # noqa: E402
+from src.items import Book  # noqa: E402
 from src.objects import Container, WallInscription  # noqa: E402
 from tests._gs_fixtures import live_world  # noqa: E402
 
@@ -174,6 +175,78 @@ def test_the_refusal_does_not_reflect_an_unbounded_verb(game_service, world):
 
     assert result["success"] is False
     assert len(result["message"]) < 200, len(result["message"])
+
+
+def _place_floor_item(world, item):
+    """Put ``item`` on the starting tile's floor (``items_here``), authored-style.
+
+    Mirrors what the map loader does for a placement's ``props``: construct
+    the object, then ``setattr`` the authored fields straight onto the
+    instance -- so an authored ``interactions`` list can differ from whatever
+    ``__init__`` produced, exactly as a map JSON's ``props.interactions``
+    does.
+    """
+    player, game_map = world
+    tile = game_map[(0, 0)]
+    tile.items_here = [item]
+    return player, tile, wire_handle(item)
+
+
+def test_issue_665_floor_book_read_is_honored_not_refused(game_service, world):
+    """Issue #665: the interaction panel offers READ on a floor book, but the
+    server refuses it in fiction anyway.
+
+    ``src/resources/maps/eastern-descent-jambos-tent.json`` authors Jambo's
+    book with ``"interactions": ["drop", "read"]`` and no ``keywords`` --
+    ``Item``/``Book`` (``src/items.py``) never set a ``.keywords`` attribute
+    at all. ``ItemSerializer.serialize`` computes the wire ``keywords`` field
+    FROM ``.interactions`` when ``.keywords`` is absent, which is why the
+    frontend panel renders a READ button in the first place. But the
+    server-side authorization gate, ``GameService._verb_refusal`` ->
+    ``src.objects.advertised_keywords``, reads ONLY ``.keywords`` and falls
+    back to a small allow-list that does not include "read" -- so the
+    advertised verb was always rejected with the generic
+    "There's no way for Jean to read the ..." fallback
+    (``_unsupported_action_message``), instead of delivering the book's text
+    via ``Book.KEYWORD_METHOD_ALIASES = {"read": "use"}``.
+
+    Pre-fix, this fails with that fallback message. Post-fix, the gate must
+    also honor an authored ``.interactions`` verb, and the read must succeed.
+    """
+    book = Book(name="Jambo's Little Book of Big Deals", text="Buy low. Sell high.")
+    # What the map JSON actually authors on this placement (props are set
+    # directly on the instance by the map loader, replacing whatever
+    # Book.__init__ produced).
+    book.interactions = ["drop", "read"]
+    assert not hasattr(book, "keywords"), (
+        "Item/Book must not carry a .keywords attribute for this repro to "
+        "exercise the real drift between the serializer and the gate"
+    )
+    player, _tile, handle = _place_floor_item(world, book)
+
+    result = game_service.interact_with_target(player, handle, "read")
+
+    assert result["success"] is True, result
+    assert "Buy low. Sell high." in result["message"], result
+
+
+def test_advertised_keywords_ignores_interactions_on_a_non_item_target():
+    """The #665 ``.interactions`` merge in ``advertised_keywords`` is Item-only.
+
+    No ``Object`` subclass (``Container``, ``Passageway``, ``WallInscription``,
+    ...) ever sets ``.interactions`` in practice, so nothing today exercises
+    the boundary -- a later refactor that loosened the guard from
+    ``isinstance(target, Item)`` to ``hasattr(target, "interactions")`` would
+    pass every other test in this suite while quietly authorizing verbs an
+    Object's own ``.keywords`` deliberately left off (e.g. a crafted save, or
+    a future authored field collision). This pins the boundary directly.
+    """
+    from src.objects import Container, advertised_keywords
+
+    container = Container(name="Cold Hearth", nickname="cold hearth")
+    container.interactions = ["hack"]  # never a real Container attribute
+
+    assert "hack" not in advertised_keywords(container)
 
 
 def test_an_internal_failure_is_not_reported_as_its_exception_text(
