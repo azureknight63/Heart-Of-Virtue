@@ -1,10 +1,11 @@
 import React from 'react'
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
 import HeatMeter, { DELTA_HOLD_MS } from './HeatMeter'
 import { HEAT_BANDS, heatBand, heatFillRatio, NEUTRAL_MARK_RATIO } from '../utils/heat'
 import { GLOSSARY_ENTRIES } from '../data/combatGlossary'
 import { accessibility } from '../styles/theme'
+import { stubWideTouchTablet } from '../test/pointerEnvironment'
 
 const mobileMock = vi.hoisted(() => ({ isMobile: false }))
 vi.mock('../hooks/useMobile', () => ({ useMobile: () => mobileMock.isMobile }))
@@ -300,5 +301,27 @@ describe('HeatMeter — "What moves it" touch target (issue #580)', () => {
     expect(screen.getByTestId('heat-rules')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /hide/i }))
     expect(screen.queryByTestId('heat-rules')).toBeNull()
+  })
+})
+
+describe('HeatMeter — "What moves it" on a wide touch tablet (issue #639)', () => {
+  // The ~13px helper is the worst of the width-gated floors: on a tablet over
+  // 767px the #580 fix simply did not apply, and a thumb was asked to hit a
+  // 13px-tall line of 8.8px type.
+  const helper = () => screen.getByRole('button', { name: /what moves it/i })
+  let env
+
+  beforeEach(() => {
+    mobileMock.isMobile = false
+    env = stubWideTouchTablet()
+  })
+
+  afterEach(() => {
+    env.restore()
+  })
+
+  it('grows the helper to the touch-target minimum for a coarse pointer at desktop width', () => {
+    renderMeter({ heat: 1.62 })
+    expect(helper().style.minHeight).toBe(accessibility.touchTarget)
   })
 })

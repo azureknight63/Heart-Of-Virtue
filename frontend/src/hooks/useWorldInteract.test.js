@@ -292,6 +292,41 @@ describe('useWorldInteract', () => {
 
       expect(result.current.error).toBe('Network error')
     })
+
+    // #616. The issue framed this as "once TAKE ALL fails the banner stays
+    // through later successful takes", which points at the wrong handler:
+    // takeAll clears the error on entry and so do reset and interact. takeOne
+    // was the only one of the four that never did, so the stale banner sat
+    // over a take that had just succeeded. The failing call below is only a
+    // way to get an error on screen -- the assertion is about takeOne.
+    it('clears a previously set error on a successful take', async () => {
+      // No console.error spy: takeAll only logs on its `catch` branch, and a
+      // `success: false` response never reaches it. Stubbing it here would be
+      // a mock of a call this path does not make.
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: false, error: 'Your pack is full.' },
+      })
+      const { result } = renderHook(() => useWorldInteract())
+
+      await act(async () => {
+        await result.current.takeAll([{ id: 'item1', name: 'Gold Coin', count: 1 }])
+      })
+      expect(result.current.error).toBe('Your pack is full.')
+
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: true, message: 'Took Gold.' },
+      })
+      await act(async () => {
+        await result.current.takeOne('gold1', 'Gold')
+      })
+
+      // interactionOutput proves the take actually SUCCEEDED rather than the
+      // banner clearing over a no-op: takeAll nulls interactionOutput on
+      // entry and pushes no summary when nothing was taken, so 'Took Gold.'
+      // can only have come from takeOne.
+      expect(result.current.interactionOutput).toBe('Took Gold.')
+      expect(result.current.error).toBeNull()
+    })
   })
 
   describe('interact', () => {

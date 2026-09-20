@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useId, useRef, useState } from 'react'
 import { colors, spacing, accessibility, zIndex as themeZIndex } from '../styles/theme'
-import { useMobile } from '../hooks/useMobile'
+import { useLargeTouchTargets } from '../hooks/useLargeTouchTargets'
 import logger from '../utils/logger'
 
 // A dialog's nearest enclosing BaseDialog (if any) is reached through this
@@ -420,7 +420,7 @@ export default function BaseDialog({
     const dialogId = useId()
     const titleId = `${dialogId}-title`
     const containerRef = useRef(null)
-    const isMobile = useMobile()
+    const needsLargeTargets = useLargeTouchTargets()
     const onCloseRef = useRef(onClose)
     useEffect(() => {
         onCloseRef.current = onClose
@@ -557,9 +557,11 @@ export default function BaseDialog({
                                     // viewport — every dialog in the app shares
                                     // this button, so it's the highest-leverage
                                     // touch-target fix in the codebase. Scoped to
-                                    // mobile since the desktop glyph-plus-padding
-                                    // size isn't reported as broken.
-                                    ...(isMobile ? {
+                                    // touch since the desktop glyph-plus-padding
+                                    // size isn't reported as broken — but scoped
+                                    // by POINTER, not by width (issue #639): a
+                                    // tablet over 767px is still a thumb.
+                                    ...(needsLargeTargets ? {
                                         minWidth: accessibility.touchTarget,
                                         minHeight: accessibility.touchTarget,
                                         display: 'flex',

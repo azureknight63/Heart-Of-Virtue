@@ -1,8 +1,9 @@
 import React from 'react'
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import BaseDialog, { resolveDialogWidth, SKIP_INITIAL_FOCUS_PROPS } from './BaseDialog'
 import { colors, accessibility } from '../styles/theme'
+import { stubWideTouchTablet } from '../test/pointerEnvironment'
 
 /** jsdom normalises inline colours to rgb(); theme.js mixes hex and rgba(). */
 const cssColor = (value) => {
@@ -814,5 +815,33 @@ describe('BaseDialog', () => {
       fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
       expect(document.activeElement).toBe(lastButton)
     })
+  })
+})
+
+describe('BaseDialog — close button on a wide touch tablet (issue #639)', () => {
+  // The #542 floor above was keyed on viewport WIDTH, so a 1024px tablet — a
+  // touch device by every measure a thumb cares about — kept the ~26x41px
+  // desktop glyph. `mobileMock.isMobile` stays false throughout this block:
+  // that disagreement between width and pointer is the whole defect.
+  let env
+
+  beforeEach(() => {
+    mobileMock.isMobile = false
+    env = stubWideTouchTablet()
+  })
+
+  afterEach(() => {
+    env.restore()
+  })
+
+  it('grows the close button to the 44px minimum for a coarse pointer at desktop width', () => {
+    render(
+      <BaseDialog onClose={vi.fn()}>
+        <p>Content</p>
+      </BaseDialog>
+    )
+    const closeButton = screen.getByRole('button')
+    expect(closeButton.style.minWidth).toBe(accessibility.touchTarget)
+    expect(closeButton.style.minHeight).toBe(accessibility.touchTarget)
   })
 })

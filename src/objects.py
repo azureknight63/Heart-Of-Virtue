@@ -423,10 +423,16 @@ class Container(Object):
                 # ignore attribute issues during early init
                 pass
 
+    #: The description a Container carries when its map placement authors
+    #: none. ``refresh_description`` treats it as free to overwrite, so the
+    #: constructor default below must stay the same string — hence the
+    #: reference rather than a second literal.
+    _DEFAULT_DESCRIPTION = "A container. There may be something inside."
+
     def __init__(
         self,
         name: str = "Container",
-        description: str = "A container. There may be something inside.",
+        description: str = _DEFAULT_DESCRIPTION,
         hidden: bool = False,
         hide_factor: int = 0,
         start_open: bool = False,
@@ -511,10 +517,74 @@ class Container(Object):
         self.process_events()  # process initial events (triggers labeled "auto")
         self.stack_items()
 
+    #: The fixed phrase in each of the three templates ``refresh_description``
+    #: produces. The templates below are built from these rather than spelling
+    #: them a second time, because they are also what ``_description_is_generic``
+    #: matches on: two copies of a sentinel is the drift this codebase keeps
+    #: paying for. Nothing in ``src/resources/maps/*.json`` contains any of
+    #: them — pinned by ``test_no_authored_map_prose_looks_generated``.
+    _CLOSED_MARKER = "which may or may not have things inside."
+    _CONTENTS_MARKER = "Inside are the following things:"
+    _EMPTY_MARKER = "It's empty. Very sorry."
+    _GENERATED_MARKERS = (_CLOSED_MARKER, _CONTENTS_MARKER, _EMPTY_MARKER)
+
+    def _description_is_generic(self):
+        """Whether this container's description is safe to overwrite.
+
+        Three states count as generic: nothing at all, the constructor default,
+        and anything carrying one of ``_GENERATED_MARKERS`` — the fixed phrases
+        only this method's templates produce. Everything else is map-authored
+        prose (issue #629) and belongs to the tile.
+
+        The third case is a test of SHAPE, not of identity, and both halves of
+        that matter:
+
+        * It keeps INCREMENTAL regeneration working. After a single item is
+          taken the current description is the listing generated before the
+          take — not the constructor default — and it still has to be rebuilt.
+        * It heals saves written before this guard existed. Those hold
+          containers whose description is already a generated listing, with no
+          record anywhere that it was generated. An identity test ("is this the
+          string I last produced?") answers no for them forever, freezing a
+          listing that names items the player has already taken — strictly
+          worse than the bug this guard was added to fix.
+
+        ``description`` is deliberately NOT a property with a ``_description``
+        backing attribute, which is the obvious simplification here: the legacy
+        map dump serialises ``vars(instance)`` (``src/map_placeholders.py``) and
+        saves pickle the instance dict, so renaming the attribute renames it in
+        every shipped map payload and every existing save.
+        """
+        cls = type(self)
+        current = getattr(self, "description", None)
+        if not current or current == cls._DEFAULT_DESCRIPTION:
+            return True
+        return any(marker in current for marker in cls._GENERATED_MARKERS)
+
     def refresh_description(self):
-        """Optimized description refresh using f-strings and join for better performance"""
+        """Rebuild the generated contents listing, unless the prose is authored.
+
+        A no-op for a container whose description was written by hand in the
+        map JSON. Every shipped ``Container``-family placement authors one
+        (the count is pinned by the derivation guard in
+        ``tests/test_container_authored_description.py``, not stated here where
+        it would go stale), and every one of them used to be destroyed the
+        first time a player opened the container — permanently, since
+        ``Player.universe`` is pickled into the save (issue #629).
+
+        The guard lives here rather than at the call sites because every caller
+        legitimately wants regeneration; only the container knows whether there
+        is anything worth protecting.
+        """
+        if not self._description_is_generic():
+            return
+        cls = type(self)
+        # One spelling of the opening phrase for all three templates: the
+        # article is the part that was wrong ("A iron lockbox", #629/#616) and
+        # three copies of the rule is three places for it to go wrong again.
+        lead = f"{functions.indefinite_article(self.nickname).capitalize()} {self.nickname}"
         if self.state == "closed":
-            self.description = f"A {self.nickname} which may or may not have things inside. You can try to UNLOCK (if locked), OPEN, or LOOT it."
+            self.description = f"{lead} {cls._CLOSED_MARKER} You can try to UNLOCK (if locked), OPEN, or LOOT it."
         elif self.inventory:
             item_descriptions = []
             for item in self.inventory:
@@ -525,11 +595,11 @@ class Container(Object):
                     desc = getattr(item, "description", str(item))
                 item_descriptions.append(desc)
             self.description = (
-                f"A {self.nickname}. Inside are the following things: \n\n"
+                f"{lead}. {cls._CONTENTS_MARKER} \n\n"
                 + "\n".join(item_descriptions)
             )
         else:
-            self.description = f"A {self.nickname}. It's empty. Very sorry."
+            self.description = f"{lead}. {cls._EMPTY_MARKER}"
 
     def unlock(self):
         """Optimized unlock method with early return and f-string formatting. Supports both direct object reference and nickname-based key matching."""
@@ -704,6 +774,12 @@ class Crate(Container):
         allowed_subtypes: list[type[Item]] = None,
         stock_count: int = 20,
     ):
+        # Opted out of the generated contents listing on purpose: this line is
+        # neither the class default nor one of ``Container._GENERATED_MARKERS``,
+        # so ``_description_is_generic`` is always False here and
+        # ``refresh_description`` is a permanent no-op (#629). The contents
+        # still reach the client structurally, through the object serializer's
+        # ``contents``/``item_count``.
         description = "A large wooden crate containing merchandise."
         super().__init__(
             name="Crate",
@@ -741,6 +817,12 @@ class Shelf(Container):
         allowed_subtypes: list[type[Item]] = None,
         stock_count: int = 10,
     ):
+        # Opted out of the generated contents listing on purpose: this line is
+        # neither the class default nor one of ``Container._GENERATED_MARKERS``,
+        # so ``_description_is_generic`` is always False here and
+        # ``refresh_description`` is a permanent no-op (#629). The contents
+        # still reach the client structurally, through the object serializer's
+        # ``contents``/``item_count``.
         description = "A practical wooden shelf displaying merchandise."
         super().__init__(
             name="Shelf",
@@ -1847,6 +1929,12 @@ class SupplyTent(Container):
     """
 
     def __init__(self, player=None, tile=None):
+        # Opted out of the generated contents listing on purpose: this line is
+        # neither the class default nor one of ``Container._GENERATED_MARKERS``,
+        # so ``_description_is_generic`` is always False here and
+        # ``refresh_description`` is a permanent no-op (#629). The contents
+        # still reach the client structurally, through the object serializer's
+        # ``contents``/``item_count``.
         description = (
             "A low canvas tent staked at the camp's edge, its flap tied shut with "
             "a length of hemp cord. A faded mark on the canvas suggests it holds "

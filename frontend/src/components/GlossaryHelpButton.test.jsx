@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 
 import GlossaryHelpButton from './GlossaryHelpButton'
 import { accessibility, colors } from '../styles/theme'
 import { hexToRgb } from '../test/hexToRgb'
+import { stubWideTouchTablet } from '../test/pointerEnvironment'
 
 const mocks = vi.hoisted(() => ({ isMobile: false, openGlossary: vi.fn() }))
 
@@ -95,5 +96,32 @@ describe('GlossaryHelpButton', () => {
     expect(button.style.marginLeft).toBe('auto')
     expect(button.style.width).toBe(accessibility.touchTarget)
     expect(button.style.height).toBe(accessibility.touchTarget)
+  })
+})
+
+describe('GlossaryHelpButton on a wide touch tablet (issue #639)', () => {
+  // 18px is a mouse-sized hit box. The width gate handed it to any touch
+  // device over 767px, which is most tablets in landscape.
+  let env
+
+  beforeEach(() => {
+    mocks.isMobile = false
+    env = stubWideTouchTablet()
+  })
+
+  afterEach(() => {
+    env.restore()
+  })
+
+  it('grows for a coarse pointer at desktop width, glyph and corners with it', () => {
+    render(<GlossaryHelpButton />)
+    const button = screen.getByRole('button')
+    expect(button.style.width).toBe(accessibility.touchTarget)
+    expect(button.style.height).toBe(accessibility.touchTarget)
+    // Size, radius and type are one decision: a 44px box still wearing the
+    // 50% radius and 11px glyph is a circle with a hole in the middle of the
+    // strip, not a bigger button.
+    expect(button.style.borderRadius).toBe('6px')
+    expect(button.style.fontSize).toBe('16px')
   })
 })
