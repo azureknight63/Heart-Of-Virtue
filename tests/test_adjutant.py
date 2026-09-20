@@ -8,7 +8,8 @@ directly.
 from unittest.mock import MagicMock, patch
 
 from src.npc._adjutant import TheAdjutant
-from src.npc._enemies import Slime
+from src.npc._enemies import CaveBat, Slime
+from src.npc_level_tables import ENEMY_GROWTH_PROFILES
 
 
 class MockPlayer:
@@ -292,3 +293,42 @@ def test_set_combatant_stats_tile_not_loaded():
     result = adj.set_combatant_stats(player, "Fodder Pit", 0, {"hp": 10})
     assert result["success"] is False
     assert "not loaded" in result["error"]
+
+
+# --- set_combatant_stats: "level" edits rescale via sync_level (#617 P3) ----
+
+def test_set_combatant_stats_level_rescales_via_sync_level():
+    """A "level" edit isn't a raw setattr -- it must go through sync_level
+    so growth_profile deltas actually rescale HP/damage, matching a real
+    spawn-time level assignment (src/npc_level_tables.py)."""
+    npc = Slime()
+    npc.growth_profile = ENEMY_GROWTH_PROFILES["Slime"]  # {"maxhp": 6, "damage": 2}
+    assert npc.level == 1 and npc.maxhp == 20 and npc.damage == 26
+
+    player, _ = _arena_player(npcs=[npc])
+    adj = TheAdjutant()
+    result = adj.set_combatant_stats(player, "Fodder Pit", 0, {"level": 3})
+
+    assert result["success"] is True
+    assert npc.level == 3
+    # Not just the level number -- the growth_profile deltas actually applied.
+    assert npc.maxhp == 20 + 6 * 2  # 32
+    assert npc.damage == 26 + 2 * 2  # 30
+    assert npc.hp == npc.maxhp  # pool grew, current hp kept full
+    assert result["updated"]["level"] == 3
+
+
+def test_set_combatant_stats_level_noop_without_growth_profile():
+    """CaveBat has no ENEMY_GROWTH_PROFILES entry yet (Phase 1 placeholder
+    scope) -- a level edit is an intentional no-op, exactly like sync_level
+    already behaves elsewhere (set_ally_progression, apply_enemy_level)."""
+    npc = CaveBat()
+    assert npc.growth_profile is None
+
+    player, _ = _arena_player(npcs=[npc])
+    adj = TheAdjutant()
+    result = adj.set_combatant_stats(player, "Fodder Pit", 0, {"level": 5})
+
+    assert result["success"] is True
+    assert npc.level == 1  # unchanged -- sync_level no-ops with no profile
+    assert result["updated"]["level"] == 1
