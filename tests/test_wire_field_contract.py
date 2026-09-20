@@ -807,6 +807,9 @@ COMBATANT_CONTRACT = {
     # there too (token tooltip, selected-combatant panel, enemies list and the
     # off-screen edge markers), which is what the positional layer is *for*.
     "name": Read("BattlefieldGrid.jsx", "entity.name"),
+    # Issue #617 phase 2: spawn-time NPC level, rendered via LevelChip next to
+    # the name in the hover tooltip and the SelectedEntityPanel detail card.
+    "level": Read("BattlefieldGrid.jsx", "entity.level"),
     # The displaySymbol fallback chain in entitiesToRender.
     "battle_symbol": Read("BattlefieldGrid.jsx", "entity.battle_symbol"),
     # getPos(entity) -> getEntityStyle / fitBox framing.
