@@ -57,20 +57,41 @@ def _class_declared_handler(target, name):
     return _NOT_DECLARED
 
 
+def _as_keyword_set(value):
+    """Coerce a map-authored/save-restored verb list to a frozenset of strings.
+
+    Shared by the ``.keywords`` and ``.interactions`` readers below: neither
+    field is trusted to actually be a list -- ``None`` advertises nothing, a
+    bare string is one keyword (never a haystack ``in`` would
+    substring-match), and non-string entries are ignored.
+    """
+    if isinstance(value, str):
+        return frozenset({value})
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        return frozenset()
+    return frozenset(v for v in value if isinstance(v, str))
+
+
 def advertised_keywords(target):
     """The verbs ``target`` advertises, as a frozenset of strings.
 
-    ``keywords`` is map-authored and restored from saves, so it is not trusted
-    to be a list: ``None`` advertises nothing, a bare string is one keyword
-    (never a haystack ``in`` would substring-match), and non-string entries
-    are ignored.
+    Reads ``target.keywords`` (map-authored on ``Object``s such as
+    ``Passageway``/``Container``). For an ``Item`` (e.g. a floor ``Book``),
+    also merges in ``target.interactions`` -- items never carry a
+    ``.keywords`` attribute at all (``Item.__init__`` only ever sets
+    ``.interactions``), so ``ItemSerializer.serialize`` computes the wire
+    ``keywords`` field FROM ``.interactions`` when ``.keywords`` is absent.
+    Without this, any authored interaction verb beyond
+    ``_ALLOWED_INTERACTION_VERBS`` (e.g. "read" on a book, "drink" on a
+    potion) was advertised to the client but always refused server-side
+    (#665). Additive only: a non-``Item`` target's authorization is
+    unchanged, and an ``Item`` that does happen to carry ``.keywords`` keeps
+    advertising both.
     """
-    keywords = getattr(target, "keywords", None)
-    if isinstance(keywords, str):
-        return frozenset({keywords})
-    if not isinstance(keywords, (list, tuple, set, frozenset)):
-        return frozenset()
-    return frozenset(k for k in keywords if isinstance(k, str))
+    advertised = _as_keyword_set(getattr(target, "keywords", None))
+    if isinstance(target, Item):
+        advertised |= _as_keyword_set(getattr(target, "interactions", None))
+    return advertised
 
 
 def resolve_interaction(target, action):
