@@ -5,10 +5,12 @@ __author__ = "Alex Egbert"
 import importlib
 import random
 
+from src.events import map_name_for_tile
 from src.narration import colored, narrate
 
 import src.actions as actions  # type: ignore
 import src.functions as functions  # type: ignore
+import src.npc_level_tables as npc_level_tables  # type: ignore
 
 
 class MapTile:
@@ -140,6 +142,19 @@ class MapTile:
             npc = _StubNPC(f"{npc_type} (stub)")
         else:
             npc = npc_cls()
+            # Spawn-time level scaling (issue #617) -- for every dynamic
+            # spawn (story events, NPCSpawnerEvent, combat events, ally
+            # spawns) that goes through this method rather than the
+            # boot-time map-JSON placement path
+            # (map_placeholders.instantiate_placeholder, which resolves its
+            # own region and applies this same table separately -- the two
+            # are genuinely different construction paths that never call
+            # each other). apply_enemy_level itself no-ops for allies and
+            # anything without sync_level, so this is called unconditionally.
+            try:
+                npc_level_tables.apply_enemy_level(npc, map_name_for_tile(self))
+            except Exception:
+                pass
         if hidden:
             npc.hidden = True
             npc.hide_factor = hfactor

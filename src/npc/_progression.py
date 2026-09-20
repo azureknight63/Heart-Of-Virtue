@@ -1,11 +1,25 @@
 """
-AllyProgressionMixin — static, player-uncontrolled leveling for ally NPCs.
+LevelSyncMixin / AllyProgressionMixin — static, player-uncontrolled leveling
+for NPCs.
 
-Mixed into Friend (_base.py).  Companion classes opt in by declaring a
-``growth_profile`` (per-level stat increments) and, optionally, a
-``skill_schedule`` (level → move grants).  A Friend subclass without a
-growth_profile never levels, which keeps flavor NPCs (merchants, citizens,
-TheAdjutant) inert with no extra flags.
+``LevelSyncMixin`` is the generic half: given a ``growth_profile`` (per-level
+stat increments) and a target level, it deterministically applies per-level
+stat deltas and does one stat refresh. It has no notion of combat exp or a
+player-level cap, so any ``Combatant``-derived class can mix it in — hostile
+NPCs use it for spawn-time region/level-table scaling (issue #617,
+``src/npc_level_tables.py``), the same mechanism allies already used.
+
+``AllyProgressionMixin(LevelSyncMixin)`` adds the ally-only pieces on top:
+banking combat exp (``gain_exp``) and capping an ally's level at Jean's own
+(``LEVEL_CAP``, ``CATCH_UP_MULTIPLIER``). It is mixed into ``Friend``
+(_base.py); hostile ``NPC`` instances mix in ``LevelSyncMixin`` directly and
+never see ``gain_exp`` at all.
+
+Companion classes opt in by declaring a ``growth_profile`` (per-level stat
+increments) and, optionally, a ``skill_schedule`` (level → move grants). A
+class without a growth_profile never levels, which keeps flavor NPCs
+(merchants, citizens, TheAdjutant) and untabled hostile classes inert with no
+extra flags.
 
 Design notes (docs/development/ally-progression-design.md):
   - Allies receive the same total exp Jean banks to his level track per
@@ -19,7 +33,8 @@ Design notes (docs/development/ally-progression-design.md):
     computed against the cumulative curve so fractional rates never drift.
   - This mixin emits no narration; the combat adapter logs level-ups and
     skill learns from the event dicts returned here (mirrors the player's
-    _level_up_api contract).
+    _level_up_api contract). Hostile NPCs going through LevelSyncMixin.
+    sync_level directly never see this event dict at all.
 
 Attributes expected on the host class (provided by NPC/Friend.__init__):
     self.name, self.intelligence, stat attributes with ``_base`` twins,
@@ -75,8 +90,14 @@ def join_party(player, ally, *, temporary=False):
     return ally
 
 
-class AllyProgressionMixin:
-    """Deterministic exp/level growth for ally NPCs."""
+class LevelSyncMixin:
+    """Deterministic per-level stat growth, with no exp/cap machinery.
+
+    Any ``Combatant``-derived class can mix this in to gain ``sync_level`` --
+    a silent, one-shot climb to a target level. It never grants exp and never
+    caps against another combatant's level; callers that need that (allies
+    joining the party) want ``AllyProgressionMixin`` instead.
+    """
 
     # Per-level stat increments, e.g. {"maxhp": 14, "damage": 3, "protection": 0.5}.
     # Fractional rates grant a point every 1/rate levels via the int() floor.
@@ -90,36 +111,13 @@ class AllyProgressionMixin:
     #     for moves that share display names, e.g. GorranClub is "NPC_Attack")
     skill_schedule = None
 
-    @property
-    def exp_to_level(self):
-        """Exp needed for the next level — the shared curve with this ally's intelligence."""
-        return exp_needed_for_level(
-            getattr(self, "level", 1) or 1, getattr(self, "intelligence", 10) or 10
-        )
-
-    def gain_exp(self, amt, player_level):
-        """Bank combat exp and resolve any level-ups, capped at the player's level.
-
-        Returns a list of level-up event dicts for the combat adapter to log
-        and surface (empty for non-progressing allies).
-        """
-        if not self.growth_profile:
-            return []
-        self._ensure_progression_attrs()
-        cap = min(int(player_level), LEVEL_CAP)
-        if self.level < cap - 1:
-            amt = int(amt * CATCH_UP_MULTIPLIER)
-        self.exp += int(amt)
-        events = []
-        while self.level < cap and self.exp >= self.exp_to_level:
-            events.append(self._level_up())
-        return events
-
     def sync_level(self, target_level):
-        """Silently bring a joining ally up to target_level (skills included).
+        """Silently bring an NPC up to target_level (skills included).
 
         Story join-points call this so late companions arrive battle-ready
         and returning companions spawned as fresh instances don't reset.
+        Hostile NPCs call this at spawn time (src/npc_level_tables.py) with
+        a level rolled from their region's table -- no exp, no narration.
         """
         if not self.growth_profile:
             return
@@ -145,6 +143,8 @@ class AllyProgressionMixin:
         """Advance one level: deterministic stat growth + scheduled skills.
 
         Returns an event dict shaped like the player's _level_up_api result.
+        Callers that don't narrate level-ups (sync_level, hostile spawns)
+        simply discard the return value.
         """
         old_level = self.level
         self.exp -= self.exp_to_level
@@ -160,6 +160,18 @@ class AllyProgressionMixin:
             "new_level": int(self.level),
             "skills_learned": learned,
         }
+
+    @property
+    def exp_to_level(self):
+        """Exp needed for the next level — the shared curve with this NPC's intelligence.
+
+        Hostile spawns never bank exp (sync_level always drives exp back to
+        0), but ``_level_up`` reads this unconditionally on its way there, so
+        it lives on the base mixin rather than only on the ally subclass.
+        """
+        return exp_needed_for_level(
+            getattr(self, "level", 1) or 1, getattr(self, "intelligence", 10) or 10
+        )
 
     def _apply_growth(self, refresh_stats=True):
         """Apply this level's deterministic stat deltas.
@@ -200,7 +212,7 @@ class AllyProgressionMixin:
             # Never crash a level-up mid-combat over a stat refresh; log so
             # a systematic failure leaves a diagnostic trail.
             logger.warning(
-                "Ally stat refresh failed for %s: %s", getattr(self, "name", "?"), exc
+                "Stat refresh failed for %s: %s", getattr(self, "name", "?"), exc
             )
 
     def _apply_skill_schedule(self):
@@ -233,3 +245,25 @@ class AllyProgressionMixin:
                         selector,
                     )
         return learned
+
+
+class AllyProgressionMixin(LevelSyncMixin):
+    """Deterministic exp/level growth for ally NPCs, on top of LevelSyncMixin."""
+
+    def gain_exp(self, amt, player_level):
+        """Bank combat exp and resolve any level-ups, capped at the player's level.
+
+        Returns a list of level-up event dicts for the combat adapter to log
+        and surface (empty for non-progressing allies).
+        """
+        if not self.growth_profile:
+            return []
+        self._ensure_progression_attrs()
+        cap = min(int(player_level), LEVEL_CAP)
+        if self.level < cap - 1:
+            amt = int(amt * CATCH_UP_MULTIPLIER)
+        self.exp += int(amt)
+        events = []
+        while self.level < cap and self.exp >= self.exp_to_level:
+            events.append(self._level_up())
+        return events

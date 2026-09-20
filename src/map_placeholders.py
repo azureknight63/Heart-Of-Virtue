@@ -44,7 +44,9 @@ import logging
 from typing import Final
 
 import src.functions as functions
+import src.npc_level_tables as npc_level_tables
 import src.secure_pickle as secure_pickle
+from src.events import map_name_for_tile
 
 # Mirrors secure_pickle.py's own logger: this module is shared between the
 # Flask game engine (via Universe) and the standalone Map Editor tool, and
@@ -61,6 +63,39 @@ SCHEMA_VERSION: Final = 2
 MAX_DEPTH: Final = 100
 
 _OVERRIDES_KEY = "overrides"
+
+# "level" (issue #617) is declared in NPC.MAP_AUTHORED_OVERRIDES so it's part
+# of the authored surface, but it is deliberately routed through
+# _validated_level_override + npc_level_tables.apply_enemy_level below
+# instead of the generic setattr loop every other override goes through:
+# a raw setattr would hand sync_level's `self.level < target` comparison an
+# attacker-controlled value straight from map JSON (a non-int raises
+# TypeError mid-comparison; an unbounded int is a stat-scaling bomb).
+_LEVEL_OVERRIDE_KEY = "level"
+# Mirrors AllyProgressionMixin.LEVEL_CAP (src/npc/_progression.py) -- kept as
+# a local literal rather than an import so this module (shared with the
+# standalone Map Editor tool) doesn't take on a fresh top-level dependency
+# for one bound check; a drift here is caught by test coverage, not runtime.
+_MAX_AUTHORED_LEVEL = 100
+
+
+def _validated_level_override(value):
+    """Reject a non-numeric or absurd map-authored ``level`` override.
+
+    Map JSON is attacker-influenceable (module docstring above). ``bool`` is
+    rejected explicitly -- ``True``/``False`` are ``int`` subclasses in
+    Python and would otherwise silently resolve to 1/0 instead of failing
+    loudly. Returns ``None`` (meaning "no override, fall back to the region
+    table") for anything invalid rather than raising, matching the existing
+    allow-list pattern of dropping bad input instead of aborting the load.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if not (1 <= value <= _MAX_AUTHORED_LEVEL):
+        return None
+    return value
 
 
 class PlaceholderError(Exception):
@@ -433,12 +468,40 @@ def instantiate_placeholder(payload, *, player=None, tile=None, _depth=0):
                 "instance left partially constructed", cls.__name__, e2,
             )
 
+    # Spawn-time level scaling (issue #617) -- hostile NPCs only, and applied
+    # BEFORE the other overrides below. A level-up's stat refresh
+    # (functions.reset_stats, via LevelSyncMixin._refresh_stats) re-derives
+    # live stats from each `*_base` attribute -- if a map author's explicit
+    # `maxhp`/`damage`/etc. override were applied first, a level-up here
+    # would silently clobber it back to the scaled baseline, since the
+    # override only ever touches the live stat, never its `_base` twin.
+    # Running leveling first means the author's overrides, applied after,
+    # are always the final word -- consistent with the rest of this format.
+    # apply_enemy_level itself no-ops for allies (friend=True keeps its own
+    # join-point progression) and anything without sync_level, so this is
+    # called unconditionally rather than duplicating that guard here.
+    try:
+        level_override = _validated_level_override(overrides.get(_LEVEL_OVERRIDE_KEY))
+        region = map_name_for_tile(tile)
+        npc_level_tables.apply_enemy_level(inst, region, level_override=level_override)
+    except Exception as e:
+        logger.debug(
+            "instantiate_placeholder: %s spawn-level resolution failed (%s)",
+            cls.__name__, e,
+        )
+
     allowed_overrides = authored_override_names(cls)
     for key, value in overrides.items():
         # Declared overrides are data by intent; the shadowing check keeps a
         # mis-declared one from replacing behaviour, as the legacy loader and
-        # the save loader both refuse (#620).
-        if key not in allowed_overrides or secure_pickle.shadows_class_behaviour(cls, key):
+        # the save loader both refuse (#620). "level" is excluded here since
+        # it was already applied above via the validated spawn-level path,
+        # not the generic setattr loop.
+        if (
+            key not in allowed_overrides
+            or key == _LEVEL_OVERRIDE_KEY
+            or secure_pickle.shadows_class_behaviour(cls, key)
+        ):
             continue
         try:
             setattr(inst, key, resolve_nested(value))
