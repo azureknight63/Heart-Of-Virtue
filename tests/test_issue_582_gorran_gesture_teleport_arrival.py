@@ -37,6 +37,7 @@ drops the destination-events loop), this is the test that will fail.
 
 from pathlib import Path
 
+from src.events import set_story_gate
 from src.player._movement import PlayerMovementMixin
 from src.narration import capture_narration
 from src.universe import Universe
@@ -110,6 +111,13 @@ class TestGorranFarewellFiresOnRealEasternGateTeleportArrival:
         found = _find_passage(grondia, "Eastern Gate")
         assert found, "Eastern Gate passage not found on Grondia (15, 5)"
         _, _, passage = found
+
+        # Issue #669: the Eastern Gate now declines until Votha Krr's second
+        # conversation has happened (``locked_until_flag`` on the shipped
+        # placement). Satisfying that gate is orthogonal to what this test
+        # covers -- whether Gorran's farewell fires on arrival -- so it is
+        # set directly rather than replayed through ch02's story events.
+        set_story_gate(player, passage.locked_until_flag)
 
         with capture_narration() as messages:
             passage.enter(player)
