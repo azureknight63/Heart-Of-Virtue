@@ -302,7 +302,7 @@ def test_set_combatant_stats_level_rescales_via_sync_level():
     so growth_profile deltas actually rescale HP/damage, matching a real
     spawn-time level assignment (src/npc_level_tables.py)."""
     npc = Slime()
-    npc.growth_profile = ENEMY_GROWTH_PROFILES["Slime"]  # {"maxhp": 6, "damage": 2}
+    npc.growth_profile = ENEMY_GROWTH_PROFILES["Slime"]  # {"maxhp": 6, "damage": 3}
     assert npc.level == 1 and npc.maxhp == 20 and npc.damage == 26
 
     player, _ = _arena_player(npcs=[npc])
@@ -313,7 +313,7 @@ def test_set_combatant_stats_level_rescales_via_sync_level():
     assert npc.level == 3
     # Not just the level number -- the growth_profile deltas actually applied.
     assert npc.maxhp == 20 + 6 * 2  # 32
-    assert npc.damage == 26 + 2 * 2  # 30
+    assert npc.damage == 26 + 3 * 2  # 32
     assert npc.hp == npc.maxhp  # pool grew, current hp kept full
     assert result["updated"]["level"] == 3
 
