@@ -98,6 +98,45 @@ def _validated_level_override(value):
     return value
 
 
+def _apply_spawn_time_level(inst, tile, raw_level_value):
+    """Resolve, roll, and apply issue #617 spawn-time NPC leveling.
+
+    Shared by ``instantiate_placeholder`` (``raw_level_value`` comes from its
+    ``overrides`` dict) and ``Universe._deserialize_saved_instance``'s legacy
+    full-dump branch (``raw_level_value`` comes from its flat ``props``
+    dict) -- both are genuinely separate map-JSON construction paths (see
+    the module docstring above), so this is the one place their leveling
+    behaviour is decided, matching how they already share the class-
+    resolution/security-gate logic rather than reimplementing it twice.
+
+    Returns True whenever ``inst`` is NPC-leveling-eligible at all (has
+    ``sync_level``) -- hostile *or* ally alike -- regardless of whether
+    ``apply_enemy_level`` actually changed anything. That matters for allies:
+    ``apply_enemy_level`` deliberately no-ops for ``friend=True`` (allies
+    keep their own join-point ``AllyProgressionMixin`` progression), but an
+    authored ``"level"`` key on an ally placement still must not fall
+    through to a caller's generic setattr loop -- that would move the
+    number without rescaling stats via ``sync_level``, the exact
+    displayed-level/actual-stats desync ``TheAdjutant.set_combatant_stats``
+    avoids for the same reason (``src/npc/_adjutant.py``). So the return
+    value answers "does the leveling system own this key for this
+    instance", not "did leveling change something" -- a non-NPC placeholder
+    (item, object, event) is the only case that should keep ordinary
+    setattr semantics for "level".
+    """
+    if not hasattr(inst, "sync_level"):
+        return False
+    level_override = _validated_level_override(raw_level_value)
+    try:
+        region = map_name_for_tile(tile)
+        npc_level_tables.apply_enemy_level(inst, region, level_override=level_override)
+    except Exception as e:
+        logger.debug(
+            "spawn-level resolution failed for %s (%s)", type(inst).__name__, e,
+        )
+    return True
+
+
 class PlaceholderError(Exception):
     """Raised for a malformed placeholder payload (bad shape, missing class)."""
 
@@ -477,29 +516,20 @@ def instantiate_placeholder(payload, *, player=None, tile=None, _depth=0):
     # override only ever touches the live stat, never its `_base` twin.
     # Running leveling first means the author's overrides, applied after,
     # are always the final word -- consistent with the rest of this format.
-    # apply_enemy_level itself no-ops for allies (friend=True keeps its own
-    # join-point progression) and anything without sync_level, so this is
-    # called unconditionally rather than duplicating that guard here.
-    try:
-        level_override = _validated_level_override(overrides.get(_LEVEL_OVERRIDE_KEY))
-        region = map_name_for_tile(tile)
-        npc_level_tables.apply_enemy_level(inst, region, level_override=level_override)
-    except Exception as e:
-        logger.debug(
-            "instantiate_placeholder: %s spawn-level resolution failed (%s)",
-            cls.__name__, e,
-        )
+    spawn_level_applied = _apply_spawn_time_level(inst, tile, overrides.get(_LEVEL_OVERRIDE_KEY))
 
     allowed_overrides = authored_override_names(cls)
     for key, value in overrides.items():
         # Declared overrides are data by intent; the shadowing check keeps a
         # mis-declared one from replacing behaviour, as the legacy loader and
-        # the save loader both refuse (#620). "level" is excluded here since
-        # it was already applied above via the validated spawn-level path,
-        # not the generic setattr loop.
+        # the save loader both refuse (#620). "level" is excluded here
+        # whenever _apply_spawn_time_level returns True -- any NPC-leveling-
+        # eligible class (hostile or ally alike; see its docstring for why
+        # allies matter here too) -- so it can never reach a raw setattr
+        # that would desync the displayed level from its actual stats.
         if (
             key not in allowed_overrides
-            or key == _LEVEL_OVERRIDE_KEY
+            or (key == _LEVEL_OVERRIDE_KEY and spawn_level_applied)
             or secure_pickle.shadows_class_behaviour(cls, key)
         ):
             continue
