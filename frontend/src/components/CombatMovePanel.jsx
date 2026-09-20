@@ -335,9 +335,25 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
             borderVariant="bright"
             style={{
                 position: 'absolute',
-                top: '50%',
+                // Issue #666: this used to center dead-center of <main>
+                // (top:50%/left:50%, translate(-50%,-50%)) — the same box
+                // LeftPanel's hero stacking layer (#575) centers HeroPanel's
+                // portrait in, and that layer is deliberately ranked ABOVE
+                // this panel so the hero's own nav buttons stay clickable.
+                // With both boxes centered on the same point, the raised
+                // (but visually inert) portrait painted straight over the
+                // move list. Splitting the hero layer so only its buttons
+                // carry the elevated rank would need HeroPanel's nav and
+                // portrait to stop sharing one stacking context (see the
+                // comment on LeftPanel's hero stacking layer) — a much
+                // larger change than anchoring this panel somewhere the
+                // hero doesn't reach. Bottom-anchoring keeps it horizontally
+                // centered while moving it out of the hero's vertical
+                // footprint; the #575 z-index ordering stays as-is for any
+                // residual overlap.
+                bottom: spacing.lg,
                 left: '50%',
-                transform: 'translate(-50%, -50%)',
+                transform: 'translateX(-50%)',
                 // Below LeftPanel's hero stacking layer (#575); see zIndex in styles/theme.js.
                 zIndex: zIndex.combatMovePanel,
                 minWidth: '320px',
