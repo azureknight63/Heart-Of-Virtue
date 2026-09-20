@@ -5,8 +5,25 @@
 **Merge base:** `c8f5f17b` (== `origin/master` at pass start)
 **PR #645 is open** (pushed at `c363213d`). `closingIssuesReferences` verified: 611 612 614 618 620 621
 624 625 633 634 — not 613 (already closed), not 615. After merging, re-run §12's per-issue state
-check. Follow-ups filed: #636–#644. PR #635 merged first; `a7f2e79a` merges master back in (one
-conflict, `src/npc/_shop.py`, #646's Relic comment — kept the module constants).
+check. Follow-ups filed: #636–#644, #653, #654. Master moved twice and was merged back in twice:
+`a7f2e79a` (#635; one conflict, #646's Relic comment) and `460b407e` (#652, a CONCURRENT triage
+pass; four conflicts). #652 resolutions worth knowing:
+
+* `src/npc/_shop.py` — #632's inherited `stockable` flag and this branch's derived constants both
+  kept. `Special` DROPPED from `_NEVER_STOCK_FAMILIES`: the family test also excluded `Crystals`
+  and `MineralPowder`, which #632's test requires in the stock pool. `Special`, `Commodity` and
+  `ProtectiveGear` are exact-membership exclusions instead (each raises `TypeError` on a bare
+  `cls()`). Don't restore `Special` to the families tuple without moving that test.
+* `HeatMeter` — #652 implemented #639 (touch floor by POINTER, `useLargeTouchTargets`) on the raw
+  button this branch had moved onto `CollapsibleSectionHeader`. Kept the component, fed it the
+  hook. #639 is closed by #652; **#640 (remaining fold toggles) still stands** — master has no
+  `CollapsibleSectionHeader`.
+* `tests/test_map_authored_file_paths.py` — #631 wrote `tattered-journal.txt`, so `UNWRITTEN_BOOKS`
+  was stale and the guard said so by equality. Now empty.
+
+The PR also closes **#650** (restock littering: both spawn paths take the item out of the room at
+spawn here). **#648 is NOT closed** — `Book.text` resolves repo-relative and logs now, but the
+separator normalization it asks for is absent; commented on the issue instead.
 
 **Production topology — ANSWERED 2026-09-19 (`0019293a`).** Read off the server:
 `gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:5000 --timeout 120 wsgi:app`, now mirrored at
@@ -150,7 +167,7 @@ post-merge state check.
 2. (done) `/code-review` over the architecture-touching subset (`src/api/`, `GameService`, serializers,
    `combat_adapter`, `ai/llm_client.py`) — the scrubber has no Architecture dimension.
 3. (done) Full suites + `bug_hunt` (full, default config) + `--scenario victory_loot` under its config.
-4. PR per §12. Closes: #611 #612 #614 #618 #620 #621 #624 #625 #633 #634. NOT #613, NOT #615
+4. PR per §12. Closes: #611 #612 #614 #618 #620 #621 #624 #625 #633 #634 #650. NOT #613, NOT #615
    (decided: leave open). #633/#634 were filed mid-pass and fixed by A7/A6; round 2 added the
    derived guards each issue asked for. File the follow-ups below first so the PR body can link them.
 
@@ -553,7 +570,7 @@ Verify **before** merging, and again after:
 
 ```bash
 gh pr view <N> --json closingIssuesReferences -q '.closingIssuesReferences[].number'
-for n in 611 612 614 615 618 620 621 624 625 633 634; do
+for n in 611 612 614 615 618 620 621 624 625 633 634 650; do
   gh issue view $n --json number,state,stateReason -q '"#\(.number)\t\(.state)\t\(.stateReason // "-")"'
 done
 ```
