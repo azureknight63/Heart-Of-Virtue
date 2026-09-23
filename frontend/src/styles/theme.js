@@ -12,6 +12,10 @@ export const colors = {
     secondaryHover: '#ffbb00', // Lighter orange for hover effects
     accent: '#00ccff',        // Cyan
     gold: '#ffcc00',          // Gold
+    // Teal: a blow turned aside (parry/block/deflect/absorb) in the floating
+    // combat text (#667). Deliberately greener than `accent` so "Parried!"
+    // does not read as the cyan of an ally or the info tone.
+    teal: '#33e0c0',
 
     // Semantic Colors
     success: '#00ff88',

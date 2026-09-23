@@ -49,6 +49,24 @@ def _beat_animations(log_entries):
     ]
 
 
+def _beat_results(log_entries):
+    """The floating-text results the adapter attached to this beat's log (#667).
+
+    ``ApiCombatAdapter`` measures them around each beat and hangs them on the
+    beat's last log entry; the stream forwards exactly those rather than
+    re-deriving them from the snapshot diff, which cannot see a combatant the
+    beat removed (a killing blow) and so would lose the number that matters
+    most. A malformed ``results`` value -- the log rides in the pickled save --
+    contributes nothing rather than breaking the stream.
+    """
+    results = []
+    for entry in log_entries or []:
+        found = entry.get("results")
+        if isinstance(found, list):
+            results.extend(r for r in found if isinstance(r, dict))
+    return results
+
+
 def _last_message(log_entries):
     """Return the most recent non-empty log message, or an empty string."""
     for entry in reversed(log_entries or []):
@@ -128,8 +146,15 @@ class CombatBeatStreamer:
             hp_changes, killed, status_changes = diff_combatants(self._last, curr)
             animations = _beat_animations(snapshot.get("log"))
             anim = animations[0] if animations else None
+            results = _beat_results(snapshot.get("log"))
 
-            if anim is None and not hp_changes and not killed and not status_changes:
+            if (
+                anim is None
+                and not hp_changes
+                and not killed
+                and not status_changes
+                and not results
+            ):
                 self._last = curr
                 continue
 
@@ -185,6 +210,7 @@ class CombatBeatStreamer:
                 log_line=_last_message(snapshot.get("log")),
                 has_swing=has_swing,
                 outcomes=resolutions,
+                results=results,
             )
             self._emit(BEAT_EVENT, beat)
             self._last = curr

@@ -822,6 +822,37 @@ body.damage-flash-active::before {
   animation-fill-mode: both;
 }
 
+/* Battlefield — floating combat text (#667): "-33 HP" / "Miss!" rising
+   steadily off the target and fading to transparent. Duration comes from the
+   element (FLOAT_TEXT_MS scaled by combat speed); the element is removed when
+   it ends. */
+@keyframes battlefield-float-text {
+  0%   { transform: translateY(0); opacity: 1; }
+  60%  { opacity: 0.85; }
+  100% { transform: translateY(-120%); opacity: 0; }
+}
+
+.battlefield-float-text {
+  animation-name: battlefield-float-text;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+/* Reduced motion: the global rule below would collapse this animation to its
+   end frame — opacity 0 — hiding the text entirely. The words ARE the
+   information, so under reduced motion they hold still, fully visible, for
+   their lifetime and are then removed. No !important needed: the global rule
+   forces durations, not the name, and this selector outranks the bare class. */
+.reduced-motion .battlefield-float-text {
+  animation-name: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battlefield-float-text {
+    animation-name: none;
+  }
+}
+
 /* Battlefield — spotlight ring around Jean in full-map mode so players can
    always locate her at a glance. */
 @keyframes battlefield-jean-spotlight {

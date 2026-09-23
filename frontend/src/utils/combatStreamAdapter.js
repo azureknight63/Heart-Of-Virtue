@@ -17,8 +17,10 @@
  *   `swing_key` matches.
  * - Only the FIRST fanned animation carries the source `beat`, so the beat's
  *   75% SFX chain fires exactly once; the other layers are `suppressSfx`.
+ *   The beat's `results` (floating combat text, #667) ride that same first
+ *   layer, for the same reason.
  */
-import { MAX_BEAT_RESOLUTIONS } from './combatBeatSchema';
+import { MAX_BEAT_RESOLUTIONS, MAX_BEAT_RESULTS } from './combatBeatSchema';
 
 /**
  * Locate a combatant by wire id and report which side it fights on.
@@ -56,6 +58,12 @@ export function beatToAnimations(beat, combat) {
     .filter((emission) => emission && emission.kind === 'impact')
     .slice(0, MAX_BEAT_RESOLUTIONS);
   const resolutions = impacts.length > 0 ? impacts : [null];
+  // The beat's floating-text results (#667) are the beat's, not any one
+  // landing's, so like the SFX chain they ride on the lead layer alone and
+  // float once, when it lands.
+  const results = Array.isArray(beat.results) && beat.results.length > 0
+    ? beat.results.slice(0, MAX_BEAT_RESULTS)
+    : undefined;
 
   const animations = resolutions.map((impact, i) => ({
     type: beat.web_animation,
@@ -65,7 +73,7 @@ export function beatToAnimations(beat, combat) {
     swing_key: swingKey,
     // The beat rides on the first layer only: it is what fires the SFX chain,
     // and the chain already contains every landing's cue.
-    ...(i === 0 ? { beat } : { suppressSfx: true }),
+    ...(i === 0 ? { beat, ...(results ? { results } : {}) } : { suppressSfx: true }),
   }));
 
   // Same cap as the impact fan-out: a degenerate/adversarial killed list must
