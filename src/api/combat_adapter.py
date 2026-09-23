@@ -48,6 +48,9 @@ from src.moves._base import (
     select_weighted_target,
     display_name_of,
     TELEGRAPH_SEVERITY_NORMAL,
+    UNAVAILABILITY_TEXT,
+    UnavailableReason,
+    weapon_requirement_code,
 )
 from src.events import purge_orphaned_combat_events
 from src.story import gorran_flavor
@@ -255,39 +258,46 @@ MAX_INSTANT_STAGES = 20
 #: `test_combat_adapter_gaps2`/`gaps3`, `tests/api/test_combat_refusal_api`),
 #: so a reworded literal leaves those assertions pinning a sentence the code no
 #: longer produces -- green, and testing nothing. Importing the constant moves
-#: the assertion with the wording. `NO_WEAPON_REASON` was named first for
-#: exactly that reason and its siblings were left as literals, which made the
-#: module's test-facing surface half-named for no stated reason.
+#: the assertion with the wording.
 #:
-#: Public (no leading underscore) because they ARE the module's test-facing
-#: surface, like `move_unavailability_reason` and `combat_alert_line` beside
-#: them -- the private spelling had two test importers, both updated with the
-#: rename rather than left on an alias.
-NO_WEAPON_REASON = "No weapon equipped"
+#: Since #627 the sentences themselves live in the engine, one per code of the
+#: closed `UnavailableReason` vocabulary (`UNAVAILABILITY_TEXT`,
+#: src/moves/_base.py): player-facing prose sits with the rest of the engine's
+#: copy, not in the bridge. These names stay as this module's test-facing
+#: surface and are read from that one mapping, never retyped.
+NO_WEAPON_REASON = UNAVAILABILITY_TEXT[UnavailableReason.NO_WEAPON]
 
-#: The genuine catch-all: `viable()` returned a bare bool and nothing about
-#: range, weapon or fatigue explains it. Kept deliberately vague -- guessing
-#: here is what shipped issue #565.
-CANNOT_USE_REASON = "Cannot use this move"
+#: The genuine catch-all: `viable()` refused and the move's own diagnosis
+#: (`Move.unavailability_reason`) could not name why. Kept deliberately vague
+#: -- guessing here is what shipped issue #565.
+CANNOT_USE_REASON = UNAVAILABILITY_TEXT[UnavailableReason.UNAVAILABLE]
 
 #: A targeted move with no `mvrange` at all, so there is no band to compare.
-NO_TARGET_REASON = "No valid target"
+NO_TARGET_REASON = UNAVAILABILITY_TEXT[UnavailableReason.NO_TARGET]
 
 #: Out of range, for a move that DOES outreach a sword: the miss is as likely
 #: to be a target it may not legally hit as one that is merely distant. The
 #: client has its own twin of this sentence in
 #: `frontend/src/utils/combatMoveStatus.js` (`NO_REACHABLE_TARGET_REASON`),
 #: pinned across the boundary by `test_combat_glossary_contract`.
-NO_TARGET_IN_RANGE_REASON = "No valid target in range"
+NO_TARGET_IN_RANGE_REASON = UNAVAILABILITY_TEXT[UnavailableReason.NO_TARGET_IN_RANGE]
 
 #: Out of range for a move that cannot outreach a sword -- see
 #: `_outreaches_melee` for which of the two sentences a band earns.
-TOO_FAR_REASON = "Enemy out of range (too far)"
+TOO_FAR_REASON = UNAVAILABILITY_TEXT[UnavailableReason.TARGET_TOO_FAR]
 
 #: Not enough fatigue to pay for the move. Emitted from two places (the move
 #: route's `{"error": ...}` and the availability list's `reason`), which is why
 #: it is named: the two had to agree and nothing said so.
-NOT_ENOUGH_FATIGUE_REASON = "Not enough fatigue"
+NOT_ENOUGH_FATIGUE_REASON = UNAVAILABILITY_TEXT[UnavailableReason.INSUFFICIENT_FATIGUE]
+
+#: Engine verdicts a TARGETED move's range ladder may sharpen. Both mean "no
+#: objection beyond reach": the ladder knows the move's band and which of the
+#: two range sentences it earns. Any other code (no parry up, a mastery's
+#: attribute) is the real blocker and is reported as the engine gave it.
+_RANGE_LADDER_CODES = frozenset(
+    {UnavailableReason.UNAVAILABLE, UnavailableReason.NO_ENEMY_IN_REACH}
+)
 
 #: The compass the Turn move offers, and the facing each answer resolves to.
 #: ONE table, offered from and accepted against the same place: a direction
@@ -338,47 +348,53 @@ def _weapon_noun_phrase(subtype, with_article=True):
     return functions.indefinite_article(noun) + " " + noun
 
 
-def move_unavailability_reason(move, player, is_targeted):
-    """Why a non-viable move cannot be cast, as one player-facing sentence.
+def move_unavailability(move, player, is_targeted):
+    """Why a non-viable move cannot be cast: ``(code, sentence)`` (#627).
 
-    ``viable()`` hands back a bare bool, so this reconstructs the objection.
-    Extracted from ``_get_available_moves``' reason ladder, which ran to six
-    indentation levels inside a 147-line method while every terminal branch
-    was a single string: as a function it is early returns, and
-    ``tests/test_disabled_move_reasons.py`` can call it directly instead of
-    standing up an adapter, a RockRumbler and a seeded RNG to reach one arm.
+    ``code`` is an ``UnavailableReason`` from the engine's closed vocabulary
+    and ``sentence`` the line the locked card shows. The engine answers *why*
+    through ``Move.unavailability_reason()``; this layer only sharpens the
+    few answers it holds more detail for, and every sentence it ships comes
+    out of the engine's ``UNAVAILABILITY_TEXT`` or names the weapon.
 
     What is in Jean's hand is asked FIRST, before the targeted/untargeted
     split: a weapon requirement holds regardless of range or target, it is
     the objection the player cannot fix by walking, and the range guess below
     happily passes while the real blocker is the sword he is holding
     (issue #565). ``weapon_requirement_reason`` returns None when the
-    requirement is satisfied, so a correctly-armed move falls through to the
-    range reasons.
+    requirement is satisfied, so a correctly-armed move falls through.
 
-    There is deliberately no "No weapon equipped" arm for an UNTARGETED move.
-    One existed, gated on ``move.name == "Attack" and not eq_weapon``, and it
-    was unreachable twice over: the engine's ``Attack`` is ``targeted=True``
-    (src/moves/_utility.py), so the targeted arm always claims it, and a
-    Player always has an ``eq_weapon`` anyway -- ``Player.__init__`` equips
-    ``items.Fists()``, which is truthy. Only doubles with ``targeted=False``
-    ever ran it. Routing that sentence to a bare-handed Jean means giving
-    ``Attack`` a ``weapon_requirement``, this project's declared mechanism
-    (asked before the split, AST-checked by that same test file) -- a
-    move-availability change, so it is left to its own issue.
+    Then the engine's own verdict. An untargeted move reports it as-is --
+    before #627 every one of them fell through to "Cannot use this move",
+    whatever the cause. A targeted move does too unless the verdict is only
+    "unavailable" or "no enemy within reach": then the range ladder below,
+    which knows the move's band, picks the sharper of the two range sentences.
+
+    There is deliberately no "No weapon equipped" arm for an UNTARGETED
+    ``Attack``. One existed, gated on ``move.name == "Attack" and not
+    eq_weapon``, and it was unreachable twice over: the engine's ``Attack`` is
+    ``targeted=True`` (src/moves/_utility.py), and a Player always has an
+    ``eq_weapon`` anyway -- ``Player.__init__`` equips ``items.Fists()``,
+    which is truthy. Routing that sentence to a bare-handed Jean means giving
+    ``Attack`` a ``weapon_requirement`` -- a move-availability change, so it
+    is left to its own issue.
     """
     weapon_reason = weapon_requirement_reason(
         move, getattr(player, "eq_weapon", None)
     )
     if weapon_reason is not None:
-        return weapon_reason
+        code = weapon_requirement_code(
+            player, getattr(move, "weapon_requirement", ())
+        )
+        return code or UnavailableReason.WRONG_WEAPON, weapon_reason
 
-    if not is_targeted:
-        return CANNOT_USE_REASON
+    code = _engine_unavailability_code(move)
+    if not is_targeted or code not in _RANGE_LADDER_CODES:
+        return code, UNAVAILABILITY_TEXT[code]
 
     mvrange = getattr(move, "mvrange", None)
     if not mvrange:
-        return NO_TARGET_REASON
+        return UnavailableReason.NO_TARGET, NO_TARGET_REASON
 
     range_min, range_max = mvrange
     enemies_in_range = any(
@@ -386,7 +402,7 @@ def move_unavailability_reason(move, player, is_targeted):
         for dist in player.combat_proximity.values()
     )
     if enemies_in_range:
-        return CANNOT_USE_REASON
+        return code, UNAVAILABILITY_TEXT[code]
     # The melee/reach split: only a move that cannot outreach a sword gets the
     # "too far" wording, because for a longer-ranged move the miss is as
     # likely to be a target it may not legally hit.
@@ -394,11 +410,31 @@ def move_unavailability_reason(move, player, is_targeted):
     # `_range_ring` are the two readers of MELEE_REACH_FT, and they had drifted
     # to opposite inclusivity at the boundary -- see that predicate's docstring
     # and tests/test_disabled_move_reasons.py's boundary class.
-    return (
-        NO_TARGET_IN_RANGE_REASON
-        if _outreaches_melee(range_max)
-        else TOO_FAR_REASON
-    )
+    if _outreaches_melee(range_max):
+        return UnavailableReason.NO_TARGET_IN_RANGE, NO_TARGET_IN_RANGE_REASON
+    return UnavailableReason.TARGET_TOO_FAR, TOO_FAR_REASON
+
+
+def move_unavailability_reason(move, player, is_targeted):
+    """The sentence half of :func:`move_unavailability`."""
+    return move_unavailability(move, player, is_targeted)[1]
+
+
+def _engine_unavailability_code(move):
+    """``move.unavailability_reason()``, folded into the closed vocabulary.
+
+    Anything the vocabulary does not name -- a double with no hook, a hook
+    that raises, None from a move the adapter already judged unviable, an
+    out-of-vocabulary value -- becomes ``UNAVAILABLE``, so only a known code
+    (and therefore a known sentence) ever reaches the wire.
+    """
+    hook = getattr(move, "unavailability_reason", None)
+    if not callable(hook):
+        return UnavailableReason.UNAVAILABLE
+    try:
+        return UnavailableReason(hook())
+    except Exception:
+        return UnavailableReason.UNAVAILABLE
 
 
 def weapon_requirement_reason(move, weapon):
@@ -4079,6 +4115,10 @@ class ApiCombatAdapter:
                 "fatigue_cost": move.fatigue_cost,
                 "available": True,
                 "reason": None,
+                # The closed-vocabulary code behind `reason` (UnavailableReason,
+                # src/moves/_base.py), None while available. `reason` is the
+                # sentence the card shows; the code is what a client groups on.
+                "reason_code": None,
                 "targeted": is_targeted,
                 "viable_targets": viable_targets,
                 "requires_target_selection": is_targeted and len(viable_targets) > 1,
@@ -4112,20 +4152,23 @@ class ApiCombatAdapter:
                 )
                 move_data["cooldown_remaining"] = cd_remaining
                 move_data["cooldown_max"] = max(cd_max, cd_remaining)
+                move_data["available"] = False
+                move_data["reason_code"] = UnavailableReason.ON_COOLDOWN.value
+                # The beat count sharpens ON_COOLDOWN's default sentence; the
+                # glossary's "beat" explainer attaches to exactly this wording.
                 if move.beats_left > 0:
-                    move_data["available"] = False
                     move_data["reason"] = f"Available in {move.beats_left + 1} beats"
                 else:
-                    move_data["available"] = False
                     move_data["reason"] = "Available next beat"
             elif move.fatigue_cost > 0 and self.player.fatigue < move.fatigue_cost:
                 move_data["available"] = False
+                move_data["reason_code"] = UnavailableReason.INSUFFICIENT_FATIGUE.value
                 move_data["reason"] = NOT_ENOUGH_FATIGUE_REASON
             elif not is_viable:
+                code, sentence = move_unavailability(move, self.player, is_targeted)
                 move_data["available"] = False
-                move_data["reason"] = move_unavailability_reason(
-                    move, self.player, is_targeted
-                )
+                move_data["reason_code"] = code.value
+                move_data["reason"] = sentence
 
             moves.append(move_data)
 

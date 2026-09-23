@@ -190,6 +190,21 @@ export function hostileTelegraphWarning(move, isHostile) {
  */
 export const NO_REACHABLE_TARGET_REASON = 'No valid target in range';
 
+/**
+ * What a locked card says when the payload carries no sentence (#627).
+ *
+ * The engine words every lock itself: the adapter ships a closed-vocabulary
+ * `reason_code` (`UnavailableReason`, src/moves/_base.py) together with that
+ * code's sentence from the engine's one mapping (`UNAVAILABILITY_TEXT`), and
+ * the card shows the sentence verbatim. The client keeps no copy of that
+ * mapping -- a second copy is exactly how wording drifts. This is the one
+ * exception: the engine's own catch-all (`UnavailableReason.UNAVAILABLE`),
+ * for a lock that arrives with no sentence at all -- a degraded payload, or
+ * a code newer than this client. Pinned to the engine by
+ * tests/test_wire_field_contract.py.
+ */
+export const UNAVAILABLE_FALLBACK_REASON = 'Cannot use this move';
+
 /** The adapter's own "too far" refusal (`TOO_FAR_REASON`, src/api/combat_adapter.py). */
 export const TOO_FAR_REASON = 'Enemy out of range (too far)';
 
@@ -267,7 +282,9 @@ export const FLEE_BREAK_AWAY_DISTANCE_FT = 20;
  */
 export function moveAvailability(move) {
   if (!move) return { available: false, reason: '' };
-  if (move.available === false) return { available: false, reason: move.reason || '' };
+  if (move.available === false) {
+    return { available: false, reason: move.reason || UNAVAILABLE_FALLBACK_REASON };
+  }
   if (move.targeted === true && !(move.viable_targets?.length > 0)) {
     // A server reason on an otherwise-available move is still the better
     // sentence — it knows which half of the range split applies.

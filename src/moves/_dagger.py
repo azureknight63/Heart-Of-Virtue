@@ -9,6 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    UnavailableReason,
     apply_glancing_blow,
     resolve_pipeline_strike,
     weapon_scaled_power,
@@ -262,6 +263,11 @@ class FeintAndPivot(Move):
             return 1 <= dist <= self.mvrange[1]
 
         return False
+
+    def _unavailability_code(self):
+        if getattr(self.user, "combat_position", None) is None:
+            return UnavailableReason.NOT_POSITIONED
+        return None
 
     #: Fraction of a full weapon swing the feint itself deals. The lowest
     #: single-target factor in the roster — the repositioning is the payload.

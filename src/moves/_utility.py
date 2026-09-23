@@ -11,6 +11,7 @@ import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from src.combatant import MOVE_STAGE_PREP, move_in_progress
 from ._base import (
+    UnavailableReason,
     apply_glancing_blow,
     resolve_pipeline_strike,
     Move,
@@ -875,6 +876,11 @@ class Rest(Move):  # standard rest to restore fatigue.
             viability = False
         return viability
 
+    def _unavailability_code(self):
+        if self.user.fatigue >= self.user.maxfatigue:
+            return UnavailableReason.FULLY_RESTED
+        return None
+
     def execute(self, player):
         narrate(self.stage_announce[1])
         recovery_amt = int(
@@ -924,6 +930,14 @@ class UseItem(Move):
             if item.type in ("Consumable", "Special"):
                 return True
         return False
+
+    def _unavailability_code(self):
+        if any(
+            item.type in ("Consumable", "Special")
+            for item in (self.user.inventory or ())
+        ):
+            return None
+        return UnavailableReason.NO_USABLE_ITEMS
 
     def execute(self, player):
         # In the web client, using an item in combat is driven by the
@@ -990,6 +1004,18 @@ class CrusaderOath(Move):
         if p.faith < min(p.strength, p.finesse, p.speed, p.endurance, p.charisma):
             return False
         return True
+
+    def _unavailability_code(self):
+        if not getattr(self.user, "in_combat", False):
+            return UnavailableReason.NOT_IN_COMBAT
+        if any(getattr(s, "statustype", "") == "apathy" for s in self.user.states):
+            return UnavailableReason.APATHY
+        if any(isinstance(s, states.Fervent) for s in self.user.states):
+            return UnavailableReason.ALREADY_ACTIVE
+        p = self.user
+        if p.faith < min(p.strength, p.finesse, p.speed, p.endurance, p.charisma):
+            return UnavailableReason.FAITH_TOO_LOW
+        return None
 
     def execute(self, player):
         narrate(self.stage_announce[1])

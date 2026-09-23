@@ -36,6 +36,8 @@ from ._base import (
     damage_bounds,
     TELEGRAPH_SEVERITIES,
     TELEGRAPH_SEVERITY_NORMAL,
+    UnavailableReason,
+    UNAVAILABILITY_TEXT,
 )
 from ._utility import (
     StrategicInsight,
@@ -137,6 +139,9 @@ __all__ = [
     # The telegraph vocabulary (issue #586) the serializer and tests read
     "TELEGRAPH_SEVERITIES",
     "TELEGRAPH_SEVERITY_NORMAL",
+    # Why a move is locked (issue #627): the code vocabulary and its copy
+    "UnavailableReason",
+    "UNAVAILABILITY_TEXT",
     # Utility
     "StrategicInsight",
     "MasterTactician",
