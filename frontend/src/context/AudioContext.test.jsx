@@ -1,10 +1,10 @@
 import { render, screen, fireEvent, act, renderHook } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.unmock('./AudioContext');
 vi.unmock('./PreferencesContext');
 import { AudioProvider, useAudio } from './AudioContext';
-import { PreferencesProvider } from './PreferencesContext';
+import { PreferencesProvider, usePreferences } from './PreferencesContext';
 import React from 'react';
 
 // Mock Audio constructor
@@ -170,24 +170,26 @@ describe('AudioContext', () => {
         expect(result.current.currentBGM).toBe('battle');
     });
 
-    it('fades out the current track before switching, then fades in the new one', () => {
+    it('switches tracks by crossfading, not by fading out first (#662)', () => {
+        // This used to pin the sequential fade-out -> swap -> fade-in, i.e.
+        // the silence gap #662 removed. The new track now takes over at once
+        // on the second pool element while the old one fades beneath it; the
+        // overlap itself is pinned in the crossfade suite below.
         vi.useFakeTimers();
         const wrapper = ({ children }) => <Providers>{children}</Providers>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playBGM('battle'); });
-        expect(result.current.currentBGM).toBe('battle');
-
-        // Let the fade-in complete so bgmRef.current.volume > 0, which is the
-        // precondition for the fade-OUT branch to trigger on the next switch.
         act(() => { vi.advanceTimersByTime(1000); });
 
         act(() => { result.current.playBGM('dungeon'); });
-        // Still fading out the old track — switch hasn't happened yet.
-        expect(result.current.currentBGM).toBe('battle');
+        expect(result.current.currentBGM).toBe('dungeon');
+        const [first, second] = global.__audioInstances;
+        expect(second.src).toContain('bgm_dungeon.mp3');
+        expect(first.src).toContain('Crossing Blades.mp3');
 
         act(() => { vi.advanceTimersByTime(2000); });
-        expect(result.current.currentBGM).toBe('dungeon');
+        expect(first.src).toBe('');
 
         vi.useRealTimers();
     });
@@ -202,9 +204,8 @@ describe('AudioContext', () => {
         act(() => { result.current.playSting('fanfare'); });
         expect(result.current.currentBGM).toBe('fanfare');
 
-        // bgmRef.current is created once via useRef(new Audio()) on first render
-        // and never replaced, so it's always the first instance constructed —
-        // later re-renders also evaluate `new Audio()` but React discards them.
+        // The BGM pool is created lazily, once, on first render, so its active
+        // slot (where the first track and this sting land) is instance 0.
         const bgmEl = global.__audioInstances[0];
 
         // Simulate the underlying <audio> element firing its native 'ended' event.
@@ -426,8 +427,8 @@ describe('AudioContext', () => {
             for (let i = 0; i < 20; i++) result.current.playSFX('attack_hit');
         });
 
-        // Instance 0 is the provider's shared BGM element; SFX start at 1.
-        const sfx = global.__audioInstances.slice(1);
+        // Instances 0 and 1 are the provider's BGM crossfade pool; SFX start at 2.
+        const sfx = global.__audioInstances.slice(2);
         expect(sfx).toHaveLength(20);
         const paused = sfx.filter((a) => a.pause.mock.calls.length > 0);
         expect(paused).toHaveLength(4); // 20 played, cap 16 → 4 oldest evicted
@@ -446,7 +447,7 @@ describe('AudioContext', () => {
             for (let i = 0; i < 17; i++) result.current.playSFX('attack_hit');
         });
 
-        const sfx = global.__audioInstances.slice(1); // instance 0 is BGM
+        const sfx = global.__audioInstances.slice(2); // instances 0-1 are the BGM pool
         const evicted = sfx[0];
         expect(evicted.pause).toHaveBeenCalled();
         expect(evicted.onended).toBeNull();
@@ -509,6 +510,245 @@ describe('AudioContext', () => {
         });
 
         expect(global.__audioInstances).toHaveLength(0);
+        expect(result.current.currentBGM).toBeNull();
+    });
+});
+
+/**
+ * Issue #662: BGM changes on room change / teleport are a true crossfade.
+ *
+ * The provider keeps a two-element pool. The outgoing track fades out on one
+ * element WHILE the incoming track fades in on the other, so there is never a
+ * silent gap; the outgoing element is paused and its src released once it
+ * reaches zero. Pool instances are the first two constructed Audio objects.
+ */
+describe('AudioContext BGM crossfade (#662)', () => {
+    const wrapper = ({ children }) => <Providers>{children}</Providers>;
+    const useBoth = () => ({ audio: useAudio(), prefs: usePreferences() });
+    const pool = () => global.__audioInstances.slice(0, 2);
+    const playing = () => pool().filter(a => a.src !== '' && a.__playing);
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        localStorage.clear();
+        global.__audioInstances = [];
+        vi.useFakeTimers();
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    // Track pause/play so "is this element audible" is observable.
+    const instrument = () => {
+        pool().forEach(a => {
+            a.__playing = false;
+            a.play.mockImplementation(() => { a.__playing = true; return Promise.resolve(); });
+            a.pause.mockImplementation(() => { a.__playing = false; });
+        });
+    };
+
+    it('overlaps the outgoing fade-out with the incoming fade-in on the other element', () => {
+        withPreferences({ musicVolume: 0.8 });
+        const { result } = renderHook(() => useAudio(), { wrapper });
+        instrument();
+        const [first, second] = pool();
+
+        act(() => { result.current.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(2000); });
+        expect(first.volume).toBeCloseTo(0.8, 5);
+
+        act(() => { result.current.playBGM('dungeon'); });
+        // The incoming track starts on the OTHER element immediately.
+        expect(second.src).toContain('bgm_dungeon.mp3');
+        expect(second.play).toHaveBeenCalledTimes(1);
+        expect(result.current.currentBGM).toBe('dungeon');
+
+        // A few ticks in, both are audible at once: no silence gap.
+        act(() => { vi.advanceTimersByTime(200); });
+        expect(first.volume).toBeGreaterThan(0);
+        expect(first.volume).toBeLessThan(0.8);
+        expect(second.volume).toBeGreaterThan(0);
+        expect(first.pause).not.toHaveBeenCalled();
+        expect(playing()).toHaveLength(2);
+
+        // After the fade: outgoing paused and released, incoming at full target.
+        act(() => { vi.advanceTimersByTime(2000); });
+        expect(first.pause).toHaveBeenCalled();
+        expect(first.src).toBe('');
+        expect(second.volume).toBeCloseTo(0.8, 5);
+        expect(playing()).toEqual([second]);
+    });
+
+    it('treats a re-request of the incoming track mid-crossfade as a no-op', () => {
+        const { result } = renderHook(() => useAudio(), { wrapper });
+        instrument();
+        const [, second] = pool();
+
+        act(() => { result.current.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(2000); });
+        act(() => { result.current.playBGM('dungeon'); });
+        act(() => { vi.advanceTimersByTime(300); });
+        const midVolume = second.volume;
+
+        act(() => { result.current.playBGM('dungeon'); });
+        expect(second.play).toHaveBeenCalledTimes(1);
+        expect(second.volume).toBe(midVolume);
+    });
+
+    it('never leaves two tracks playing or a stuck partial volume after rapid changes', () => {
+        withPreferences({ musicVolume: 0.6 });
+        const { result } = renderHook(() => useAudio(), { wrapper });
+        instrument();
+
+        act(() => { result.current.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(2000); });
+        for (const track of ['dungeon', 'grondia', 'nomad_camp', 'dungeon']) {
+            act(() => { result.current.playBGM(track); });
+            act(() => { vi.advanceTimersByTime(150); });
+            // Never more than the two pool elements audible mid-flight.
+            expect(playing().length).toBeLessThanOrEqual(2);
+        }
+        act(() => { vi.advanceTimersByTime(3000); });
+
+        const live = playing();
+        expect(live).toHaveLength(1);
+        expect(live[0].src).toContain('bgm_dungeon.mp3');
+        expect(live[0].volume).toBeCloseTo(0.6, 5);
+        const other = pool().find(a => a !== live[0]);
+        expect(other.src).toBe('');
+        expect(result.current.currentBGM).toBe('dungeon');
+    });
+
+    it('fades the outgoing track back in when it is re-requested mid-crossfade', () => {
+        withPreferences({ musicVolume: 1 });
+        const { result } = renderHook(() => useAudio(), { wrapper });
+        instrument();
+        const [first, second] = pool();
+
+        act(() => { result.current.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(2000); });
+        act(() => { result.current.playBGM('dungeon'); });
+        act(() => { vi.advanceTimersByTime(200); });
+        act(() => { result.current.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(3000); });
+
+        expect(first.src).toContain('Crossing Blades.mp3');
+        expect(first.volume).toBeCloseTo(1, 5);
+        expect(second.src).toBe('');
+        expect(playing()).toEqual([first]);
+    });
+
+    it('fades the incoming track to a volume changed mid-crossfade', () => {
+        withPreferences({ musicVolume: 1 });
+        const { result } = renderHook(() => useBoth(), { wrapper });
+        instrument();
+        const [, second] = pool();
+
+        act(() => { result.current.audio.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(2000); });
+        act(() => { result.current.audio.playBGM('dungeon'); });
+        // Incoming is already above the new target: it must settle DOWN to it.
+        act(() => { vi.advanceTimersByTime(500); });
+        expect(second.volume).toBeGreaterThan(0.3);
+        act(() => { result.current.prefs.setMusicVolume(0.3); });
+        act(() => { vi.advanceTimersByTime(3000); });
+
+        expect(second.volume).toBeCloseTo(0.3, 5);
+    });
+
+    it('applies a volume change directly once no fade is running', () => {
+        const { result } = renderHook(() => useBoth(), { wrapper });
+        const [first] = pool();
+
+        act(() => { result.current.audio.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(2000); });
+        act(() => { result.current.prefs.setMusicVolume(0.2); });
+
+        expect(first.volume).toBe(0.2);
+    });
+
+    it('stops the fade ticker when the provider unmounts', () => {
+        const { result, unmount } = renderHook(() => useAudio(), { wrapper });
+
+        const [first] = pool();
+
+        act(() => { result.current.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(100); });
+        const volumeAtUnmount = first.volume;
+        expect(volumeAtUnmount).toBeGreaterThan(0);
+        unmount();
+        vi.advanceTimersByTime(1000);
+        expect(first.volume).toBe(volumeAtUnmount);
+    });
+
+    it('crossfades out of a sting when a new track takes over mid-sting', () => {
+        const { result } = renderHook(() => useAudio(), { wrapper });
+        instrument();
+        const [first, second] = pool();
+
+        act(() => { result.current.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(2000); });
+        act(() => { result.current.playSting('fanfare'); });
+        act(() => { result.current.playBGM('dungeon'); });
+
+        // The fading sting can no longer fire its restore-previous handler.
+        expect(first.onended).toBeNull();
+        expect(first.loop).toBe(true);
+        act(() => { vi.advanceTimersByTime(2000); });
+        expect(playing()).toEqual([second]);
+        expect(result.current.currentBGM).toBe('dungeon');
+    });
+
+    it('silences both elements when muted mid-crossfade', () => {
+        const { result } = renderHook(() => useBoth(), { wrapper });
+        instrument();
+        const [first, second] = pool();
+
+        act(() => { result.current.audio.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(2000); });
+        act(() => { result.current.audio.playBGM('dungeon'); });
+        act(() => { vi.advanceTimersByTime(200); });
+        act(() => { result.current.prefs.setIsMusicMuted(true); });
+
+        expect(first.volume).toBe(0);
+        expect(second.volume).toBe(0);
+        act(() => { vi.advanceTimersByTime(3000); });
+        expect(second.volume).toBe(0);
+        expect(first.src).toBe('');
+    });
+
+    it('warns rather than throws when the incoming track is autoplay-blocked', async () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const { result } = renderHook(() => useAudio(), { wrapper });
+        const [, second] = pool();
+
+        act(() => { result.current.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(2000); });
+        second.play.mockRejectedValueOnce(new Error('NotAllowedError'));
+        await act(async () => {
+            result.current.playBGM('dungeon');
+            await Promise.resolve();
+        });
+
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Audio play failed'), expect.any(Error));
+        expect(result.current.currentBGM).toBe('dungeon');
+        warnSpy.mockRestore();
+    });
+
+    it('stopBGM mid-crossfade pauses and releases the outgoing element too', () => {
+        const { result } = renderHook(() => useAudio(), { wrapper });
+        instrument();
+        const [first, second] = pool();
+
+        act(() => { result.current.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(2000); });
+        act(() => { result.current.playBGM('dungeon'); });
+        act(() => { vi.advanceTimersByTime(200); });
+        act(() => { result.current.stopBGM(); });
+
+        expect(playing()).toHaveLength(0);
+        expect(first.src).toBe('');
+        expect(second.pause).toHaveBeenCalled();
         expect(result.current.currentBGM).toBeNull();
     });
 });
