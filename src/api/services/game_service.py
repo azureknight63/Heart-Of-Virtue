@@ -3160,13 +3160,29 @@ class GameService:
             "combat_started": combat_started,
             "combat_state": combat_state,
             "object_state": {
-                "keywords": getattr(target, "keywords", []),
+                "keywords": self._object_state_keywords(target),
                 "locked": getattr(target, "locked", False),
                 "state": getattr(target, "state", ""),
             },
             "teleported": teleported,
             "beta_end": beta_end,
         }
+
+    @staticmethod
+    def _object_state_keywords(target):
+        """The keyword row ``object_state`` patches onto the client's target.
+
+        A world object's row is collapsed the way ``ObjectSerializer`` ships
+        it (#615); otherwise the first interaction re-expanded it -- pressing
+        ENTER on the Ferry Landing brought back FERRY and LANDING. Other
+        targets keep their raw ``keywords``, as before.
+        """
+        from src.objects import Object
+
+        keywords = getattr(target, "keywords", [])
+        if isinstance(target, Object) and isinstance(keywords, list):
+            return ObjectSerializer.collapse_synonyms(target, keywords)
+        return keywords
 
     # ========================
     # Inventory Methods
