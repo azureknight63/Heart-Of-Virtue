@@ -43,7 +43,9 @@ from src.combatant import (
     REPORTED_BEAT_KEY,
     combatant_handle,
     find_by_handle,
+    wire_handle,
 )
+from src.moves import SwapWeapon
 from src.moves._base import (
     select_weighted_target,
     display_name_of,
@@ -1913,6 +1915,8 @@ class ApiCombatAdapter:
             return self._handle_combined_selection(
                 command.get("move_name"), command.get("target_id")
             )
+        elif command_type == "select_weapon":
+            return self._handle_weapon_selection(command.get("item_id"))
         elif command_type == "cancel_selection":
             return self._handle_cancel_selection()
         else:
@@ -2158,15 +2162,57 @@ class ApiCombatAdapter:
         else:
             selected_move.target = self.player
 
-        self.player.current_move = selected_move
-        self.player.current_move.user = self.player
+        return self._commit_and_execute(selected_move)
+
+    def _commit_and_execute(self, move) -> Dict[str, Any]:
+        """Make ``move`` the player's current move, log it, and run it.
+
+        The tail every one-shot selection shares once its target (or other
+        selection) is on the move: ``select_move_and_target`` and
+        ``select_weapon``. Preconditions must already have passed.
+        """
+        self.player.current_move = move
+        move.user = self.player
         self._add_log_entry(
             self.output_capture.current_round,
-            f"{self.player.name} uses {display_name_of(selected_move)}!",
+            f"{self.player.name} uses {display_name_of(move)}!",
             "player_action",
         )
+        return self._execute_move(move)
 
-        return self._execute_move(selected_move)
+    def _handle_weapon_selection(self, item_id) -> Dict[str, Any]:
+        """Cast Swap Weapon at the inventory weapon ``item_id`` names (#671).
+
+        The weapon is a selection like a target: it is resolved against the
+        move's own offer (``SwapWeapon.swappable_weapons``, the list
+        ``_get_available_moves`` publishes as ``weapon_options``) and set on
+        the move as ``move.weapon`` before it is cast, so a crafted id can
+        name neither the weapon already in hand nor anything outside the
+        pack. Every refusal happens before any combat state is touched.
+        """
+        if self.input_type != "move_selection":
+            return {"error": "Not expecting move selection"}
+        if not isinstance(item_id, str) or not item_id:
+            return {"error": "Invalid weapon"}
+
+        move = next(
+            (m for m in self.player.known_moves if isinstance(m, SwapWeapon)),
+            None,
+        )
+        if move is None:
+            return {"error": "Swap Weapon is not a move you know"}
+
+        precondition_error = self._check_move_preconditions(move)
+        if precondition_error is not None:
+            return precondition_error
+
+        weapon = find_by_handle(move.swappable_weapons(), item_id)
+        if weapon is None:
+            return {"error": "That weapon is not in your pack to draw"}
+
+        move.weapon = weapon
+        move.target = self.player
+        return self._commit_and_execute(move)
 
     def _handle_move_selection(self, move_index: int) -> Dict[str, Any]:
         """Handle player selecting a move."""
@@ -4126,6 +4172,15 @@ class ApiCombatAdapter:
                 move_data["reason"] = move_unavailability_reason(
                     move, self.player, is_targeted
                 )
+
+            if isinstance(move, SwapWeapon):
+                # The weapons `select_weapon` will accept, as the inventory's
+                # own row ids -- the client lists these, it does not
+                # re-derive which weapons count (#671).
+                move_data["weapon_options"] = [
+                    {"id": wire_handle(weapon), "name": weapon.name}
+                    for weapon in move.swappable_weapons()
+                ]
 
             moves.append(move_data)
 

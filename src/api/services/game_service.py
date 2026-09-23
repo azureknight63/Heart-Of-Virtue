@@ -28,7 +28,7 @@ from src.functions import (
 )
 from src.player._leveling import LEVEL_UP_ATTRIBUTE_NAMES
 from src.inventory_utils import get_gold
-from src.moves import attacker_accuracy
+from src.moves import SwapWeapon, attacker_accuracy
 from src.narration import ANSI_ESCAPE_RE, capture_narration, narrate
 from src.story import gorran_flavor
 
@@ -203,6 +203,25 @@ _PASSAGEWAY_IN_COMBAT_MESSAGE = "Cannot use a passageway while in combat."
 _FLOOR_ITEMS_IN_COMBAT_MESSAGE = (
     "There is no time for that in the middle of a fight."
 )
+
+#: Why the free equip/unequip routes refuse a weapon mid-fight (#671). A
+#: weapon change in combat is the ``SwapWeapon`` move, which costs beats; left
+#: open, these routes would make that cost optional. Names the move so the
+#: player learns where the action went.
+_WEAPON_SWAP_IN_COMBAT_MESSAGE = (
+    f"Changing weapons mid-fight takes time. Use {SwapWeapon.display_name} "
+    "from your pack instead."
+)
+
+
+def _is_weapon_change_in_combat(player, item):
+    """True when equipping/unequipping ``item`` would change Jean's weapon
+    in the middle of a fight -- the one change ``SwapWeapon`` must price."""
+    return (
+        getattr(player, "in_combat", False)
+        and getattr(item, "maintype", None) == "Weapon"
+    )
+
 
 #: The item verbs that move a pile onto or off the floor -- and so restack
 #: it (``Item.take``, ``Item.drop``). Matched on the RESOLVED handler's
@@ -3528,8 +3547,13 @@ class GameService:
         direction: str = None,
         session_id: str = None,
         session_data: Dict = None,
+        item_id: str = None,
     ) -> Dict[str, Any]:
-        """Execute a combat move."""
+        """Execute a combat move.
+
+        ``item_id`` is read only by ``move_type="swap_weapon"``: the inventory
+        handle of the weapon to draw (#671).
+        """
 
         # Check if player is in combat
         if not player.in_combat:
@@ -3711,6 +3735,11 @@ class GameService:
 
         elif move_type == "flee":
             return self.flee_combat(player)
+
+        elif move_type == "swap_weapon":
+            return adapter.process_command(
+                {"type": "select_weapon", "item_id": item_id}
+            )
 
         elif move_type == "select_move_and_target":
             if not isinstance(move_id, str) or not move_id:
@@ -6201,6 +6230,9 @@ class GameService:
             if not hasattr(item, "isequipped"):
                 return {"error": f"{getattr(item, 'name', 'Item')} cannot be equipped"}
 
+            if _is_weapon_change_in_combat(player, item):
+                return {"error": _WEAPON_SWAP_IN_COMBAT_MESSAGE}
+
             if item.isequipped:
                 return self.unequip_item(player, item)
 
@@ -6230,6 +6262,8 @@ class GameService:
         with _player_mutation_lock(player):
             if not hasattr(item, "isequipped"):
                 return {"error": f"{getattr(item, 'name', 'Item')} cannot be unequipped"}
+            if _is_weapon_change_in_combat(player, item):
+                return {"error": _WEAPON_SWAP_IN_COMBAT_MESSAGE}
             if not item.isequipped:
                 return {"error": f"{item.name} is not equipped"}
 

@@ -159,6 +159,7 @@ class Player(
             moves.Rest(self),
             moves.Turn(self),
             moves.UseItem(self),
+            moves.SwapWeapon(self),
             moves.Advance(self),
             moves.Withdraw(self),
             moves.Attack(self),
