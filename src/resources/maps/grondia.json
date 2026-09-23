@@ -2,7 +2,7 @@
   "(1, 2)": {
     "id": "tile_1_2",
     "title": "Passage",
-    "description": "A low, well-worn passage carved through damp stone. Scuffed flagstones and muddy ruts mark long use,\n        and a steady drip rings faintly in the cool air. Pale mineral veins lace the walls where water once lingered,\n        and faint, distant light filters in from farther chambers, throwing long, soft shadows that shift with any movement.\n        The scent is mineral and cold; the corridor feels older than the city above it, patient and quietly kept.",
+    "description": "A low, well-worn passage carved through damp stone. Scuffed flagstones and muddy ruts mark long use, and a steady drip rings faintly in the cool air. Pale mineral veins lace the walls where water once lingered, and faint, distant light filters in from farther chambers, throwing long, soft shadows that shift with any movement. The scent is mineral and cold; the corridor feels older than the city above it, patient and quietly kept.",
     "exits": [
       "south"
     ],
@@ -43,7 +43,7 @@
   "(10, 2)": {
     "id": "tile_10_2",
     "title": "Conclave",
-    "description": "The Conclave's chamber opens beneath a high, vaulted ceiling carved with concentric sigils.\n        Smooth stone benches ring a low central dais, and deep grooves in the floor suggest ritual processions.\n        Faded murals and bas-relief panels decorate the walls, their pigments muted by time. The air holds a\n        persistent, dry scent of resin and stone dust, and shafts of reflected light pick out the worn edges of the carvings.",
+    "description": "The Conclave's chamber opens beneath a high, vaulted ceiling carved with concentric sigils. Smooth stone benches ring a low central dais, and deep grooves in the floor suggest ritual processions. Faded murals and bas-relief panels decorate the walls, their pigments muted by time. The air holds a persistent, dry scent of resin and stone dust, and shafts of reflected light pick out the worn edges of the carvings.",
     "exits": [
       "south",
       "southeast",
@@ -102,7 +102,7 @@
   "(1, 3)": {
     "id": "tile_1_3",
     "title": "Passage",
-    "description": "This narrow tunnel narrows further on the far side, its ceiling rubbed smooth where travelers brushed past.\n        Thin, trailing roots from above thread down and cling to damp seams in the stone. The floor is mixed slate and\n        packed earth, and a faint cool draft speaks of a larger void ahead. Light here is patchy; the hush of the\n        corridor makes even the smallest sound feel significant.",
+    "description": "This narrow tunnel narrows further on the far side, its ceiling rubbed smooth where travelers brushed past. Thin, trailing roots from above thread down and cling to damp seams in the stone. The floor is mixed slate and packed earth, and a faint cool draft speaks of a larger void ahead. Light here is patchy; the hush of the corridor makes even the smallest sound feel significant.",
     "exits": [
       "north",
       "southeast"
@@ -168,7 +168,7 @@
   "(9, 3)": {
     "id": "tile_9_3",
     "title": "Conclave",
-    "description": "A side chamber opening from the main Conclave, this space holds shallow niches and a low stone plinth.\n        Intricate floor sigils converge here, their edges worn smooth by feet and time. Frescoes reach up toward\n        a darkened cornice where small, weathered reliefs sit in shadow. The stone smells faintly of oil and dust,\n        and the chamber carries a reverent quiet that suggets careful upkeep.",
+    "description": "A side chamber opening from the main Conclave, this space holds shallow niches and a low stone plinth. Intricate floor sigils converge here, their edges worn smooth by feet and time. Frescoes reach up toward a darkened cornice where small, weathered reliefs sit in shadow. The stone smells faintly of oil and dust, and the chamber carries a reverent quiet that suggets careful upkeep.",
     "exits": [
       "northeast",
       "south",
@@ -271,7 +271,7 @@
   "(10, 3)": {
     "id": "tile_10_3",
     "title": "Conclave",
-    "description": "This inner hall of the Conclave is dominated by a broad mosaic set into the floor, its tesserae\n        depicting concentric maps and abstract constellations meaningful to the Grondites. Pillared arches rise\n        around the room and carry dim reflected light from openings above. The air is hushed and cool, and the\n        polished stone of the walls picks out every footfall with a soft clarity.",
+    "description": "This inner hall of the Conclave is dominated by a broad mosaic set into the floor, its tesserae depicting concentric maps and abstract constellations meaningful to the Grondites. Pillared arches rise around the room and carry dim reflected light from openings above. The air is hushed and cool, and the polished stone of the walls picks out every footfall with a soft clarity.",
     "exits": [
       "north",
       "west",
@@ -333,7 +333,7 @@
   "(11, 3)": {
     "id": "tile_11_3",
     "title": "Conclave",
-    "description": "An annex to the Conclave lined with narrow alcoves and hanging tapestries of woven stone-fiber.\n        The tapestries soften echoes and carry patterns woven from mythic scenes; their colors have dulled with\n        age but the weave remains tight. Low, inset shelves are carved into the walls and the entire space feels\n        like a quiet antechamber for contemplation and slow footsteps.",
+    "description": "An annex to the Conclave lined with narrow alcoves and hanging tapestries of woven stone-fiber. The tapestries soften echoes and carry patterns woven from mythic scenes; their colors have dulled with age but the weave remains tight. Low, inset shelves are carved into the walls and the entire space feels like a quiet antechamber for contemplation and slow footsteps.",
     "exits": [
       "northwest",
       "west",
@@ -856,7 +856,7 @@
   "(12, 4)": {
     "id": "tile_12_4",
     "title": "Ecumerium",
-    "description": "Beneath a high, vaulted ceiling the Ecumerium unfolds as a spacious arcade of stalls and low booths.\n        Hanging banners and carved signboards swing from iron hooks, and rows of stone counters receive passing\n        trade beneath skylights that catch stray light from upper chambers. The floor bears worn channels\n        cut to manage runoff; the space smells faintly of spice resin and polished stone.",
+    "description": "Beneath a high, vaulted ceiling the Ecumerium unfolds as a spacious arcade of stalls and low booths. Hanging banners and carved signboards swing from iron hooks, and rows of stone counters receive passing trade beneath skylights that catch stray light from upper chambers. The floor bears worn channels cut to manage runoff; the space smells faintly of spice resin and polished stone.",
     "exits": [
       "south",
       "west",
@@ -945,7 +945,7 @@
           "idle_message": "There is a tent entrance here with a sign reading \"Jambo Heals U.\"",
           "hidden": false,
           "hide_factor": 0,
-          "discovery_message": " a tent!",
+          "discovery_message": "a tent!",
           "announce": "There is a tent entrance here with a sign reading \"Jambo Heals U.\"",
           "keywords": [
             "enter",
@@ -1038,7 +1038,7 @@
   "(4, 5)": {
     "id": "tile_4_5",
     "title": "Passage",
-    "description": "This stretch of passage narrows where the rock bulges, forcing travelers into single file beneath\n        a low, scalloped ceiling. The stone here is darker and holds a faint salt bloom, and thin roots hang\n        in strands from small fissures. Patches of compacted earth suggest where travelers have paused; the\n        hush of the tunnel feels like a held breath before the next opening.",
+    "description": "This stretch of passage narrows where the rock bulges, forcing travelers into single file beneath a low, scalloped ceiling. The stone here is darker and holds a faint salt bloom, and thin roots hang in strands from small fissures. Patches of compacted earth suggest where travelers have paused; the hush of the tunnel feels like a held breath before the next opening.",
     "exits": [
       "west",
       "east"
@@ -1088,7 +1088,7 @@
   "(6, 5)": {
     "id": "tile_6_5",
     "title": "Antechamber",
-    "description": "Angular planes of polished stone give this antechamber an unnatural, crafted order. Pink crystalline\n        clusters hang like chandeliers and wash the room in a slow, pulsing light that throws long, soft shadows.\n        Low benches and carved niches suggest a place of waiting or preparation; the air hums faintly with the\n        crystals' resonance and the pattern of light seems to coax a steady, thoughtful pace from those who enter.",
+    "description": "Angular planes of polished stone give this antechamber an unnatural, crafted order. Pink crystalline clusters hang like chandeliers and wash the room in a slow, pulsing light that throws long, soft shadows. Low benches and carved niches suggest a place of waiting or preparation; the air hums faintly with the crystals' resonance and the pattern of light seems to coax a steady, thoughtful pace from those who enter.",
     "exits": [
       "west",
       "east"
@@ -1502,7 +1502,7 @@
   "(12, 5)": {
     "id": "tile_12_5",
     "title": "Ecumerium",
-    "description": "This stretch of the Ecumerium widens into a market courtyard beneath a vaulted ceiling carved\n        with clan emblems. Low booths and counters are arranged around a central drainage channel, and\n        tapestries fastened to iron rings damp the echoes. Lantern racks hang from stout posts, their\n        brackets blackened by long use. The floor is swept but stained where water and trade have left\n        their marks; the arcade feels like a deliberate meeting place for merchants and visitors alike.",
+    "description": "This stretch of the Ecumerium widens into a market courtyard beneath a vaulted ceiling carved with clan emblems. Low booths and counters are arranged around a central drainage channel, and tapestries fastened to iron rings damp the echoes. Lantern racks hang from stout posts, their brackets blackened by long use. The floor is swept but stained where water and trade have left their marks; the arcade feels like a deliberate meeting place for merchants and visitors alike.",
     "exits": [
       "north",
       "south",
@@ -1680,7 +1680,7 @@
   "(14, 5)": {
     "id": "tile_14_5",
     "title": "Antechamber",
-    "description": "A compact antechamber with sharply faceted walls, more angular than the rough caverns nearby.\n        Pink crystalline clusters hang from the ceiling like sculpted lamps, their slow pulses bathing the\n        room in a soft, cyclical glow. Carved benches line the walls and a low stone table sits in the center,\n        its surface smoothed by hands and time. The space feels deliberate and domestic, an interior pause\n        between the city and the private quarters that open from it.",
+    "description": "A compact antechamber with sharply faceted walls, more angular than the rough caverns nearby. Pink crystalline clusters hang from the ceiling like sculpted lamps, their slow pulses bathing the room in a soft, cyclical glow. Carved benches line the walls and a low stone table sits in the center, its surface smoothed by hands and time. The space feels deliberate and domestic, an interior pause between the city and the private quarters that open from it.",
     "exits": [
       "west",
       "east"
@@ -1825,7 +1825,7 @@
   "(8, 6)": {
     "id": "tile_8_6",
     "title": "Arcology",
-    "description": "The arcology here widens into a bustling spine where terraces step up in tight tiers. Narrow\n        bridges of carved stone connect opposite ledges; iron rings and ropes secure small awnings above\n        doorways. The concourse narrows and widens rhythmically, creating pockets of shadow and light where\n        residents might pause. Embedded crystals inset in the walls cast a steady, warm radiance that softens\n        the roughness of the carved stonework.",
+    "description": "The arcology here widens into a bustling spine where terraces step up in tight tiers. Narrow bridges of carved stone connect opposite ledges; iron rings and ropes secure small awnings above doorways. The concourse narrows and widens rhythmically, creating pockets of shadow and light where residents might pause. Embedded crystals inset in the walls cast a steady, warm radiance that softens the roughness of the carved stonework.",
     "exits": [
       "northwest",
       "north",
@@ -2609,7 +2609,7 @@
   "(7, 9)": {
     "id": "tile_7_9",
     "title": "GrondelithEntrance",
-    "description": "The chamber opens into a wide basin of mineral pools ringed by towering crystalline spires.\n        Pools of clear, mineral-rich water sit in carved basins, reflecting fractured light across the walls.\n        Fine, glittering detritus collects on shallow ledges and the air tastes faintly metallic, sharp and\n        mineral. The constant, gentle tinkle of water and the resonant ring of shifting crystals fills the space\n        with a slow, crystalline music.",
+    "description": "The chamber opens into a wide basin of mineral pools ringed by towering crystalline spires. Pools of clear, mineral-rich water sit in carved basins, reflecting fractured light across the walls. Fine, glittering detritus collects on shallow ledges and the air tastes faintly metallic, sharp and mineral. The constant, gentle tinkle of water and the resonant ring of shifting crystals fills the space with a slow, crystalline music.",
     "exits": [
       "northeast",
       "southwest"
@@ -2652,7 +2652,7 @@
   "(10, 9)": {
     "id": "tile_10_9",
     "title": "Antechamber",
-    "description": "An intimate antechamber carved with neat, geometric niches and a low, central table of smoothed\n        stone. Pale crystals embedded in the ceiling throw a diffuse light; the walls are incised with simple\n        runes and maintenance marks rather than ornate imagery. A narrow shelf holds folded cloth and utility\n        implements; the room feels like a quiet preparatory space between workings and private rooms beyond.",
+    "description": "An intimate antechamber carved with neat, geometric niches and a low, central table of smoothed stone. Pale crystals embedded in the ceiling throw a diffuse light; the walls are incised with simple runes and maintenance marks rather than ornate imagery. A narrow shelf holds folded cloth and utility implements; the room feels like a quiet preparatory space between workings and private rooms beyond.",
     "exits": [
       "north",
       "south"

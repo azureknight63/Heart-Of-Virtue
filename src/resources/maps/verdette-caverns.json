@@ -645,7 +645,7 @@
                     "idle_message": "There are some remains here, lying pitifully against the cavern wall.",
                     "hidden": false,
                     "hide_factor": 0,
-                    "discovery_message": " some remains!",
+                    "discovery_message": "some remains!",
                     "announce": "There are some remains here, lying pitifully against the cavern wall.",
                     "keywords": [
                         "open",
@@ -1468,7 +1468,7 @@
                     "idle_message": "There is a small spring bubbling here.",
                     "hidden": false,
                     "hide_factor": 0,
-                    "discovery_message": " a healing spring!",
+                    "discovery_message": "a healing spring!",
                     "announce": "There is a small spring bubbling here.",
                     "keywords": [
                         "drink",

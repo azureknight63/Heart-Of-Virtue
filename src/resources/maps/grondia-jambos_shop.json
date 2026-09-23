@@ -2,7 +2,7 @@
     "(2, 2)": {
         "id": "tile_2_2",
         "title": "Jambo's Tent Entrance",
-        "description": "A low canvas doorway opens onto a compact, \nwell-worn vestibule strewn with small rugs and crates; \na battered counter and a lantern mark where Jambo \ngreets customers. The air carries a warm mix of spices \nand dried herbs and the first shelves show a rotating \ndisplay of curios and everyday potions.",
+        "description": "A low canvas doorway opens onto a compact, well-worn vestibule strewn with small rugs and crates; a battered counter and a lantern mark where Jambo greets customers. The air carries a warm mix of spices and dried herbs and the first shelves show a rotating display of curios and everyday potions.",
         "exits": [
             "east"
         ],
@@ -397,7 +397,7 @@
                     "idle_message": "There's a tent flap here.",
                     "hidden": false,
                     "hide_factor": 0,
-                    "discovery_message": " a tent flap!",
+                    "discovery_message": "a tent flap!",
                     "announce": "There's a tent flap here.",
                     "keywords": [
                         "enter",
@@ -427,7 +427,7 @@
     "(3, 2)": {
         "id": "tile_3_2",
         "title": "Jambo's Tent Storage",
-        "description": "A narrow back chamber lined with shelves and \nstacked wooden crates, jars, and labeled sacks; \nevery surface is claimed by spare stock, overflows \nof common potions, and oddities waiting to be \nrotated into the shop. A small locked chest and \na ledger sit on a workbench; the space smells faintly \nof alcohol, ink, and packing straw.",
+        "description": "A narrow back chamber lined with shelves and stacked wooden crates, jars, and labeled sacks; every surface is claimed by spare stock, overflows of common potions, and oddities waiting to be rotated into the shop. A small locked chest and a ledger sit on a workbench; the space smells faintly of alcohol, ink, and packing straw.",
         "exits": [
             "north",
             "west"
@@ -461,7 +461,7 @@
                     "idle_message": "A large wooden crate is here.",
                     "hidden": false,
                     "hide_factor": 0,
-                    "discovery_message": " a large wooden crate!",
+                    "discovery_message": "a large wooden crate!",
                     "announce": "A large wooden crate is here.",
                     "keywords": [
                         "loot",
@@ -483,7 +483,7 @@
     "(3, 1)": {
         "id": "tile_3_1",
         "title": "Jambo's Tent - Lounge",
-        "description": "A cozy nook behind a hanging cloth, containing a simple cot, \na low cooking pot over a brazier, and a patchwork curtain \nused as a privacy screen. \nPersonal touches\u2014dried herbs, a tiny shrine, \ncolorful scarves and a worn rug\u2014make it tidy and lived-in, \nhinting at Jambo\u2019s practical, cheerful temperament.",
+        "description": "A cozy nook behind a hanging cloth, containing a simple cot, a low cooking pot over a brazier, and a patchwork curtain used as a privacy screen. Personal touches\u2014dried herbs, a tiny shrine, colorful scarves and a worn rug\u2014make it tidy and lived-in, hinting at Jambo\u2019s practical, cheerful temperament.",
         "exits": [
             "south"
         ],
