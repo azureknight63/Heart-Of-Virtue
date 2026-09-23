@@ -289,7 +289,6 @@ class MerchantShopMixin:
                 # fill pass below (_fill_remaining_stock); only the guaranteed
                 # always_stock items skip them.
                 self.inventory.append(item)
-                self._remove_placed_item_from_room(item)
         self._update_shop_conditions()
         self._fill_remaining_stock(containers)
         # Items are appended straight into live container inventories during
@@ -367,15 +366,41 @@ class MerchantShopMixin:
                 desired_count = getattr(item_spec, "count", 0)
         if not self.current_room:
             return None
-        spawned = self.current_room.spawn_item(item_class_name, merchandise=True)
+        spawned = self._spawn_merchandise(item_class_name)
         if spawned and desired_count > 0 and hasattr(spawned, "count"):
             spawned.count = desired_count
-        if spawned and not hasattr(spawned, "base_value"):
+        if spawned:
+            self._backfill_base_value(spawned)
+        return spawned
+
+    def _spawn_merchandise(self, class_name: str) -> Item | None:
+        """Spawn one merchandise-flagged ``class_name`` and take it straight
+        back off the floor.
+
+        ``Tile.spawn_item`` has no construction path that skips the room, so
+        the room is only a staging detail of spawning -- never a place stock is
+        allowed to come to rest. Removing it here, before the caller decides
+        where it goes, is the issue #611 fix: a removal that ran only after a
+        successful placement abandoned every unplaced spawn (merchandise-
+        flagged, takeable, absent from the Buy panel) on the merchant's floor.
+        """
+        spawned = self.current_room.spawn_item(class_name, merchandise=True)
+        if spawned:
+            self._remove_placed_item_from_room(spawned)
+        return spawned
+
+    @staticmethod
+    def _backfill_base_value(item: Item):
+        """Record ``item.value`` as its ``base_value`` if it has none yet.
+
+        ``_apply_value_conditions`` prices from ``base_value``, so stock
+        without one would never take a shop condition.
+        """
+        if not hasattr(item, "base_value"):
             try:
-                spawned.base_value = spawned.value
+                item.base_value = item.value
             except Exception:
                 pass
-        return spawned
 
     def _maybe_enchant(self, item: Item):
         """Apply random enchantments to equippable items based on enchantment_rate.
@@ -437,9 +462,9 @@ class MerchantShopMixin:
     ) -> list[Container]:
         """Return the subset of ``containers`` whose ``allowed_item_types`` matches ``item``.
 
-        Shared by ``_place_item`` and ``_fill_remaining_stock``'s
-        ``eligible_containers_for`` so the two don't drift into two
-        independent implementations of the same type-matching rule.
+        Shared by ``_place_item`` and ``_spawn_random_stock`` so the two don't
+        drift into two independent implementations of the same type-matching
+        rule.
 
         ``item.__class__``, never ``type(item)``: this call used to be a plain
         ``isinstance``, and ``isinstance`` consults ``__class__`` while
@@ -464,14 +489,12 @@ class MerchantShopMixin:
         """Populate merchant + containers up to their individual stock caps.
 
         Selection rules:
-        - Base weight 1 per candidate class.
-        - Specialty subclasses receive 3× weight.
-        - RestockWeightBoostConditions further scale weights.
-        - Unique-factory classes are excluded; so is ``_NEVER_STOCK_EXACT_CLASSES``
-          by exact membership and ``_NEVER_STOCK_FAMILIES`` by subclass (#611).
-        - Classes carrying ``stockable = False`` are excluded (issue #632):
-          story items, quest keys, puzzle ingredients and lore documents. The
-          flag is inherited, so it excludes whole subtrees (e.g. Book).
+        - Candidates are ``_stockable_candidate_classes()``: unique-factory
+          classes are excluded; so is ``_NEVER_STOCK_EXACT_CLASSES`` by exact
+          membership and ``_NEVER_STOCK_FAMILIES`` by subclass (#611), and so
+          are classes carrying ``stockable = False`` (issue #632).
+        - Weights are ``_random_stock_weights()``: base 1 per candidate,
+          specialty subclasses 3x, then RestockWeightBoostConditions.
         - Once the merchant's own shelves are full, only classes an open
           container accepts are rolled; an empty pool ends the pass.
         - Each spawn leaves the room at once, placed or not (#611).
@@ -479,24 +502,46 @@ class MerchantShopMixin:
         """
         if not self.current_room:
             return
-
-        def merchant_slots_remaining() -> int:
-            return max(0, self.stock_count - len(self.inventory))
-
-        def container_slots_remaining(ct: Container) -> int:
-            cap = getattr(ct, "stock_count", 0)
-            if cap <= 0:
-                return 0
-            return max(0, cap - len(getattr(ct, "inventory", [])))
-
-        def all_full() -> bool:
-            if merchant_slots_remaining() > 0:
-                return False
-            return all(container_slots_remaining(ct) <= 0 for ct in containers)
-
-        if all_full():
+        if self._stock_all_full(containers):
+            return
+        candidates = self._stockable_candidate_classes()
+        if not candidates:
+            return
+        weight_map = self._random_stock_weights(candidates)
+        if not weight_map:
             return
 
+        rolls = 0
+        while not self._stock_all_full(containers) and rolls < self._MAX_RESTOCK_ROLLS:
+            rolls += 1
+            if self._merchant_slots_remaining() > 0:
+                pool = weight_map
+            else:
+                # The merchant's own shelves are full, so the only homes left
+                # are the type-restricted containers. Rolling a class none of
+                # them accepts can only be thrown away, so drop those classes
+                # from the roll rather than manufacturing an item with nowhere
+                # to go. Rejection-sampling the full pool (what this used to
+                # do) and sampling this restricted pool put the same
+                # distribution on what actually lands -- the difference is
+                # only the discards, which is what issue #611 was made of.
+                pool = self._housable_classes(weight_map, containers)
+                if not pool:
+                    break
+            cls = self._weighted_choice(pool)
+            if cls is None:
+                break
+            self._spawn_random_stock(cls, containers)
+
+    # ── Random-fill helpers ────────────────────────────────────────────────────
+
+    @staticmethod
+    def _stockable_candidate_classes() -> list[type[Item]]:
+        """Every ``src.items`` class the random fill is allowed to roll.
+
+        The one place the random fill decides what may be stocked at all;
+        weighting and placement never widen it.
+        """
         try:
             unique_factories = set(items_module.unique_item_factories)  # type: ignore[attr-defined]
         except Exception:
@@ -518,9 +563,14 @@ class MerchantShopMixin:
                 candidates.append(obj)
             except Exception:
                 continue
-        if not candidates:
-            return
+        return candidates
 
+    def _random_stock_weights(
+        self, candidates: list[type[Item]]
+    ) -> dict[type[Item], float]:
+        """Roll weights for ``candidates``: 1 each, 3 for a specialty
+        subclass, then scaled by the availability conditions. Classes whose
+        weight ends at or below zero are dropped."""
         specialty_classes: list[type[Item]] = []
         for spec in self.specialties or []:
             try:
@@ -540,85 +590,71 @@ class MerchantShopMixin:
                 cond.adjust_restock_weights(weight_map)
             except Exception:
                 continue
-        weight_map = {cls: w for cls, w in weight_map.items() if w > 0}
-        if not weight_map:
-            return
+        return {cls: w for cls, w in weight_map.items() if w > 0}
 
-        def weighted_choice(pool: dict[type[Item], float]) -> type[Item] | None:
-            total = sum(pool.values())
-            if total <= 0:
-                return None
-            r = random.uniform(0, total)
-            acc = 0.0
-            for cls, w in pool.items():
-                acc += w
-                if r <= acc:
-                    return cls
+    @staticmethod
+    def _weighted_choice(pool: dict[type[Item], float]) -> type[Item] | None:
+        """One class from ``pool``, chosen with probability proportional to its weight."""
+        total = sum(pool.values())
+        if total <= 0:
             return None
+        r = random.uniform(0, total)
+        acc = 0.0
+        for cls, w in pool.items():
+            acc += w
+            if r <= acc:
+                return cls
+        return None
 
-        def open_containers() -> list[Container]:
-            return [ct for ct in containers if container_slots_remaining(ct) > 0]
+    def _merchant_slots_remaining(self) -> int:
+        return max(0, self.stock_count - len(self.inventory))
 
-        def eligible_containers_for(item: Item) -> list[Container]:
-            return self._containers_accepting_type(open_containers(), item)
+    @staticmethod
+    def _container_slots_remaining(ct: Container) -> int:
+        cap = getattr(ct, "stock_count", 0)
+        if cap <= 0:
+            return 0
+        return max(0, cap - len(getattr(ct, "inventory", [])))
 
-        def housable_classes() -> dict[type[Item], float]:
-            """``weight_map`` restricted to classes some open container accepts."""
-            houses = open_containers()
-            return {
-                cls: w
-                for cls, w in weight_map.items()
-                if self._containers_accepting_class(houses, cls)
-            }
+    def _stock_all_full(self, containers: list[Container]) -> bool:
+        """True once the merchant and every container are at their caps."""
+        if self._merchant_slots_remaining() > 0:
+            return False
+        return all(self._container_slots_remaining(ct) <= 0 for ct in containers)
 
-        rolls = 0
-        while not all_full() and rolls < self._MAX_RESTOCK_ROLLS:
-            rolls += 1
-            if merchant_slots_remaining() > 0:
-                pool = weight_map
-            else:
-                # The merchant's own shelves are full, so the only homes left
-                # are the type-restricted containers. Rolling a class none of
-                # them accepts can only be thrown away, so drop those classes
-                # from the roll rather than manufacturing an item with nowhere
-                # to go. Rejection-sampling the full pool (what this used to
-                # do) and sampling this restricted pool put the same
-                # distribution on what actually lands -- the difference is
-                # only the discards, which is what issue #611 was made of.
-                pool = housable_classes()
-                if not pool:
-                    break
-            cls = weighted_choice(pool)
-            if cls is None:
-                break
-            try:
-                spawned = self.current_room.spawn_item(cls.__name__, merchandise=True)
-            except Exception:
-                spawned = None
-            if not spawned:
-                continue
-            # Tile.spawn_item has no construction path that skips the room, so
-            # take the item straight back out: the room is a staging detail of
-            # spawning, never a place stock is allowed to come to rest. Doing
-            # it here rather than after a successful placement is the issue
-            # #611 fix -- the old trailing call was skipped whenever nothing
-            # accepted the item, abandoning it (merchandise-flagged, takeable,
-            # absent from the Buy panel) on the merchant's floor.
-            self._remove_placed_item_from_room(spawned)
-            self._maybe_enchant(spawned)
-            if not hasattr(spawned, "base_value"):
-                try:
-                    setattr(spawned, "base_value", spawned.value)
-                except Exception:
-                    pass
-            elig = eligible_containers_for(spawned)
-            if elig:
-                random.choice(elig).inventory.append(spawned)
-            elif merchant_slots_remaining() > 0:
-                self.inventory.append(spawned)
-            # Otherwise nothing accepted it and the spawn is dropped -- reachable
-            # only when ``spawn_item`` (which resolves by ``cls.__name__``)
-            # returns an instance of a different class than the one rolled.
+    def _open_containers(self, containers: list[Container]) -> list[Container]:
+        return [ct for ct in containers if self._container_slots_remaining(ct) > 0]
+
+    def _housable_classes(
+        self, weight_map: dict[type[Item], float], containers: list[Container]
+    ) -> dict[type[Item], float]:
+        """``weight_map`` restricted to classes some open container accepts."""
+        houses = self._open_containers(containers)
+        return {
+            cls: w
+            for cls, w in weight_map.items()
+            if self._containers_accepting_class(houses, cls)
+        }
+
+    def _spawn_random_stock(self, cls: type[Item], containers: list[Container]):
+        """Spawn one ``cls`` and shelve it: an open container that accepts it
+        first, else the merchant's own inventory while it has room."""
+        try:
+            spawned = self._spawn_merchandise(cls.__name__)
+        except Exception:
+            spawned = None
+        if not spawned:
+            return
+        self._maybe_enchant(spawned)
+        self._backfill_base_value(spawned)
+        elig = self._containers_accepting_type(self._open_containers(containers), spawned)
+        if elig:
+            random.choice(elig).inventory.append(spawned)
+        elif self._merchant_slots_remaining() > 0:
+            self.inventory.append(spawned)
+        # Otherwise nothing accepted it and the spawn is dropped -- reachable
+        # only when ``spawn_item`` (which resolves by ``cls.__name__``)
+        # returns an instance of a different class than the one rolled.
 
     # ── Shop conditions ────────────────────────────────────────────────────────
 

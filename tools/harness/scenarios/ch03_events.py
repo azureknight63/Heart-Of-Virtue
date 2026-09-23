@@ -52,21 +52,11 @@ class Ch03EventsScenario(Scenario):
         # ------------------------------------------------------------------
         # Setup: resolve player, tile, session
         # ------------------------------------------------------------------
-        sm = client._session_manager
-        player = sm.get_player(client.session_id)
-        session = sm.get_session(client.session_id)
-
-        if player is None or session is None:
-            return []
-
-        universe = getattr(player, "universe", None)
-        if universe is None:
+        live = self._live_player_tile(client)
+        if live is None:
             # MinimalPlayer fallback — story events require a full universe.
             return []
-
-        tile = universe.get_tile(player.location_x, player.location_y)
-        if tile is None:
-            return []
+        player, session, universe, tile = live
 
         player.current_room = tile
         player.in_combat = False

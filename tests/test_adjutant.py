@@ -332,3 +332,65 @@ def test_set_combatant_stats_level_noop_without_growth_profile():
     assert result["success"] is True
     assert npc.level == 1  # unchanged -- sync_level no-ops with no profile
     assert result["updated"]["level"] == 1
+
+
+# --- pin_combatant_loot: a fight's drop made deterministic (#642) -----------
+
+def test_pin_combatant_loot_makes_the_drop_certain():
+    """The victory_loot harness scenario can only exercise collect-loot's
+    identity half when the fight drops a name Jean also carries. A rolled
+    table cannot promise that; a pinned one must, even on the worst roll."""
+    npc = Slime()
+    player, tile = _arena_player(npcs=[npc])
+    npc.current_room = tile
+    adj = TheAdjutant()
+
+    result = adj.pin_combatant_loot(player, "Fodder Pit", 0, "Restorative", 2)
+
+    assert result == {"success": True, "name": npc.name,
+                      "item": "Restorative", "qty": 2}
+    assert npc.loot == {"Restorative": {"chance": 100, "qty": 2}}
+    # randint's upper bound is inclusive: 100 is the worst roll there is.
+    with patch("src.npc._loot.random.randint", return_value=100):
+        npc.roll_loot()
+    tile.spawn_item.assert_called_once_with("Restorative", 2)
+
+
+def test_pin_combatant_loot_defaults_to_one_unit():
+    npc = Slime()
+    player, _ = _arena_player(npcs=[npc])
+    TheAdjutant().pin_combatant_loot(player, "Fodder Pit", 0, "Draught")
+    assert npc.loot == {"Draught": {"chance": 100, "qty": 1}}
+
+
+def test_pin_combatant_loot_rejects_anything_but_an_item_class():
+    """``spawn_item`` resolves the name with getattr on src.items, so an
+    unchecked name would reach an arbitrary module attribute. Only concrete
+    Item subclasses may be pinned."""
+    npc = Slime()
+    original = npc.loot
+    player, _ = _arena_player(npcs=[npc])
+    adj = TheAdjutant()
+    for bad in ("NoSuchItem", "Slime", "importlib", "Item", "", None, 7):
+        result = adj.pin_combatant_loot(player, "Fodder Pit", 0, bad)
+        assert result["success"] is False, bad
+    assert npc.loot is original
+
+
+def test_pin_combatant_loot_rejects_a_bad_quantity():
+    npc = Slime()
+    player, _ = _arena_player(npcs=[npc])
+    adj = TheAdjutant()
+    for bad in (0, -1, "r1-2", 1.5, True, 1000):
+        result = adj.pin_combatant_loot(player, "Fodder Pit", 0, "Restorative", bad)
+        assert result["success"] is False, bad
+
+
+def test_pin_combatant_loot_bad_arena_tile_or_index():
+    player, _ = _arena_player(npcs=[Slime()])
+    adj = TheAdjutant()
+    assert adj.pin_combatant_loot(player, "Nowhere", 0, "Restorative")["success"] is False
+    assert adj.pin_combatant_loot(player, "Fodder Pit", 5, "Restorative")["success"] is False
+    empty = MockPlayer()
+    empty.map = {}
+    assert adj.pin_combatant_loot(empty, "Fodder Pit", 0, "Restorative")["success"] is False

@@ -8,13 +8,21 @@ from ..reporter import BugReport, BugSeverity, BugCategory
 
 _MAX_ROUNDS = 20  # safety cap to avoid infinite loops
 
-# Arena tile navigation: direction sequence from (0,0) to each scenario tile.
+#: The map the arena routes below are written for. On any other map they
+#: name nothing, so the scenario fights in whatever room Jean starts in.
+_ARENA_MAP = "combat-testing-arena"
+
+#: Arena routes from the Proving Grounds (0, 0) to each scenario tile, as
+#: ``(direction, arena tile the step enters)``. Tile names are the Adjutant's
+#: ``ARENA_TILES`` keys, which the debug roster ops take. The arena has no
+#: path to the Crucible that avoids the Fodder Pit, so a route's transit
+#: tiles are pacified rather than walked around (#642).
 _SCENARIO_NAV = {
-    "fodder":       ["east"],           # (0,0) → (1,0) Fodder Pit
-    "boss":         ["east", "east"],   # (0,0) → (2,0) The Crucible
-    "ally":         ["south"],          # (0,0) → (0,1) Ally Courtyard
-    "status_dummy": ["south", "east"],  # (0,0) → (1,1) Status Chamber
-    "custom":       ["east"],           # (0,0) → (1,0) Fodder Pit (custom roster)
+    "fodder":       [("east", "Fodder Pit")],
+    "boss":         [("east", "Fodder Pit"), ("east", "The Crucible")],
+    "ally":         [("south", "Ally Courtyard")],
+    "status_dummy": [("south", "Ally Courtyard"), ("east", "Status Chamber")],
+    "custom":       [("east", "Fodder Pit")],  # the Fodder Pit, custom roster
 }
 
 
@@ -25,10 +33,10 @@ class CombatScenario(Scenario):
     def run(self, client: GameClient) -> List[BugReport]:
         bugs = []
 
-        # Navigate to the correct arena tile.  The game always starts at (0,0)
-        # (Proving Grounds) which only has TheAdjutant — not a valid enemy.
-        # Move to the scenario tile before searching for combatants.
-        nav_bugs = self._navigate_to_scenario_tile(client)
+        # Navigate to the scenario's arena tile. The arena starts Jean at
+        # (0,0) (Proving Grounds), which only has TheAdjutant — not a valid
+        # enemy.
+        nav_bugs, started_on_arrival = self._navigate_to_scenario_tile(client)
         bugs += nav_bugs
         if nav_bugs:
             # Navigation failed — fall back to invalid-start check so the
@@ -36,47 +44,17 @@ class CombatScenario(Scenario):
             bugs += self._check_invalid_start(client)
             return bugs
 
-        # Find an NPC in the current room to fight.
-        enemy_id = self._find_enemy(client)
-        if not enemy_id:
-            # No enemy available — verify the API gracefully rejects a bad ID.
-            bugs += self._check_invalid_start(client)
-            return bugs
-
-        # Start combat ------------------------------------------------------
-        body = {"enemy_id": enemy_id}
-        resp = client.post("/api/combat/start", json=body)
-        bug = self._check_status(
-            resp, 201, "/api/combat/start", "POST",
-            "Start combat", request_body=body,
-        )
-        if bug:
-            bugs.append(bug)
-            return bugs
-
-        data = client.parse(resp)
-        bugs += self._check_fields(
-            data, ["success", "combat_id", "combatants", "turn_order"],
-            "/api/combat/start", "POST", "Start combat response", resp,
-        )
-
-        # Flag duplicate player in combatants list (known bug: Jean appears
-        # as both 'player' and 'ally_*' simultaneously).
-        combatants = data.get("combatants", [])
-        jean_entries = [c for c in combatants if c.get("is_player") or c.get("id") == "player"]
-        ally_jeans = [c for c in combatants if c.get("is_ally") and c.get("name") == "Jean"]
-        if ally_jeans:
-            bugs.append(self._bug(
-                title="Duplicate Jean in combatants: player appears as both 'player' and 'ally_*'",
-                severity=BugSeverity.HIGH,
-                category=BugCategory.WRONG_RESPONSE,
-                endpoint="/api/combat/start",
-                method="POST",
-                expected="Jean listed exactly once (as player, not as ally)",
-                actual=f"Jean appears {len(jean_entries)} time(s) as player + {len(ally_jeans)} time(s) as ally: {[c['id'] for c in ally_jeans]}",
-                response=resp,
-                request_body=body,
-            ))
+        if started_on_arrival:
+            # The tile's aggro roster spotted Jean as he walked in
+            # (check_for_combat's stealth roll), so the move itself opened
+            # the fight and POST /combat/start has nothing left to start.
+            print("[CombatScenario] Combat started on arrival; "
+                  "driving it without POST /api/combat/start.")
+        else:
+            start_bugs, started = self._start_combat(client)
+            bugs += start_bugs
+            if not started:
+                return bugs
 
         # Combat loop -------------------------------------------------------
         for round_num in range(1, _MAX_ROUNDS + 1):
@@ -124,13 +102,56 @@ class CombatScenario(Scenario):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _navigate_to_scenario_tile(self, client: GameClient) -> List[BugReport]:
-        """Move from the starting tile to the scenario combat tile.
+    def _start_combat(self, client: GameClient) -> Tuple[List[BugReport], bool]:
+        """POST /combat/start against the room's first enemy.
 
-        Reads the active_scenario from the CONFIG_FILE ini (if set) and
-        translates it to a sequence of direction moves.  Falls back to
-        the ``fodder`` route when the config is unavailable.
+        Returns ``(bugs, started)``. With no enemy in the room it checks that
+        a bogus id is rejected gracefully instead, and reports not started.
         """
+        bugs = []
+        enemy_id = self._find_enemy(client)
+        if not enemy_id:
+            # No enemy available — verify the API gracefully rejects a bad ID.
+            bugs += self._check_invalid_start(client)
+            return bugs, False
+
+        body = {"enemy_id": enemy_id}
+        resp = client.post("/api/combat/start", json=body)
+        bug = self._check_status(
+            resp, 201, "/api/combat/start", "POST",
+            "Start combat", request_body=body,
+        )
+        if bug:
+            bugs.append(bug)
+            return bugs, False
+
+        data = client.parse(resp)
+        bugs += self._check_fields(
+            data, ["success", "combat_id", "combatants", "turn_order"],
+            "/api/combat/start", "POST", "Start combat response", resp,
+        )
+
+        # Flag duplicate player in combatants list (known bug: Jean appears
+        # as both 'player' and 'ally_*' simultaneously).
+        combatants = data.get("combatants", [])
+        jean_entries = [c for c in combatants if c.get("is_player") or c.get("id") == "player"]
+        ally_jeans = [c for c in combatants if c.get("is_ally") and c.get("name") == "Jean"]
+        if ally_jeans:
+            bugs.append(self._bug(
+                title="Duplicate Jean in combatants: player appears as both 'player' and 'ally_*'",
+                severity=BugSeverity.HIGH,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/combat/start",
+                method="POST",
+                expected="Jean listed exactly once (as player, not as ally)",
+                actual=f"Jean appears {len(jean_entries)} time(s) as player + {len(ally_jeans)} time(s) as ally: {[c['id'] for c in ally_jeans]}",
+                response=resp,
+                request_body=body,
+            ))
+        return bugs, True
+
+    def _active_scenario(self) -> str:
+        """``[scenario] active_scenario`` from the CONFIG_FILE ini, else ``fodder``."""
         import configparser
         import os
 
@@ -143,10 +164,41 @@ class CombatScenario(Scenario):
                 scenario = cfg.get("scenario", "active_scenario", fallback="fodder").strip()
             except Exception as e:
                 print(f"[CombatScenario] Warning: failed to read CONFIG_FILE={config_path!r}: {e}. Falling back to 'fodder'.")
+        return scenario
 
-        directions = _SCENARIO_NAV.get(scenario, _SCENARIO_NAV["fodder"])
+    def _in_the_arena(self, client: GameClient) -> bool:
+        resp = client.get("/api/world")
+        if resp.status_code != 200:
+            return False
+        return client.parse(resp).get("room", {}).get("map_name") == _ARENA_MAP
+
+    def _navigate_to_scenario_tile(
+        self, client: GameClient
+    ) -> Tuple[List[BugReport], bool]:
+        """Walk from the Proving Grounds to the active scenario's arena tile.
+
+        Returns ``(bugs, combat started on arrival)``.
+
+        The routes are arena coordinates, so off the arena map (a config whose
+        ``startmap`` is a world map, or the default config) Jean stays where
+        he starts. Every tile a route passes THROUGH is pacified first: an
+        aggro roster there that spots Jean opens a fight, and the #543 guard
+        then refuses the next step. The final step may open the fight itself
+        for the same reason; that is reported, not treated as a failure.
+        """
+        if not self._in_the_arena(client):
+            return [], False
+
+        scenario = self._active_scenario()
+        route = _SCENARIO_NAV.get(scenario, _SCENARIO_NAV["fodder"])
         bugs = []
-        for direction in directions:
+        for _direction, transit_tile in route[:-1]:
+            bugs += self._pacify(client, transit_tile)
+        if bugs:
+            return bugs, False
+
+        started = False
+        for direction, _tile in route:
             body = {"direction": direction}
             resp = client.post("/api/world/move", json=body)
             bug = self._check_status(
@@ -155,9 +207,29 @@ class CombatScenario(Scenario):
                 request_body=body,
             )
             if bug:
-                bugs.append(bug)
-                break  # stop on first nav failure
-        return bugs
+                return [bug], False  # stop on first nav failure
+            started = bool(client.parse(resp).get("combat_started"))
+        return [], started
+
+    def _pacify(self, client: GameClient, arena: str) -> List[BugReport]:
+        """Set every hostile on arena tile ``arena`` to non-aggro."""
+        resp = client.get("/api/debug/arena")
+        bug = self._check_status(resp, 200, "/api/debug/arena", "GET",
+                                 f"Arena rosters (to pacify {arena})")
+        if bug:
+            return [bug]
+        roster = client.parse(resp).get("rosters", {}).get(arena, {})
+        for index, npc in enumerate(roster.get("npcs", [])):
+            if npc.get("friend"):
+                continue
+            body = {"arena": arena, "index": index, "stats": {"aggro": False}}
+            resp = client.post("/api/debug/arena/stats", json=body)
+            bug = self._check_status(resp, 200, "/api/debug/arena/stats", "POST",
+                                     f"Pacify a {arena} enemy en route",
+                                     request_body=body)
+            if bug:
+                return [bug]
+        return []
 
     # _find_enemy is inherited from Scenario (base.py).
 
