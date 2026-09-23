@@ -1394,15 +1394,15 @@ class TestFallbackTextRoutesToFlavorNotSpeech:
                     ]
                 },
                 "closing_lines_when_exhausted": ["She's done talking."],
+                # Issue #628: a mid-conversation fallback answers from
+                # fallback_replies, never from the chapter openers.
+                "fallback_replies": ["She keeps sorting. One eyebrow moves."],
             },
         )
         result = npc.chat_respond(chat_player(), "Hello.", "direct")
         assert result["llm_available"] is False
         assert result["npc_response"] == ""
-        assert (
-            result["npc_flavor"]
-            == "She glances up briefly, reading Jean's gear before his face."
-        )
+        assert result["npc_flavor"] == "She keeps sorting. One eyebrow moves."
 
     def test_a_failed_opening_routes_the_line_to_flavor(self):
         adapter = _WiredAdapter("", _opts("a?", "b?", "c?"))

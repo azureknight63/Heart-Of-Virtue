@@ -35,7 +35,9 @@ from unittest.mock import MagicMock, patch
 from src.npc._chat_llm import (
     JEAN_TONES,
     MAX_OPTION_CHARS,
+    _MAX_CONSECUTIVE_FALLBACK_REPLIES,
     _MIN_OPTION_CHARS,
+    _NEUTRAL_FALLBACK_REPLIES,
     ConversationalNPCMixin,
     scale_loquacity,
 )
@@ -49,6 +51,8 @@ from tests._npc_fixtures import (
     wired_chat_npc,
     equipped_item,
 )
+
+_PERSONA_DIR = Path(__file__).resolve().parent.parent / "ai" / "npc" / "human"
 
 
 @pytest.fixture
@@ -1951,17 +1955,24 @@ class TestGetFallbackNpcLine:
         line = npc._get_fallback_npc_line(is_opening=True, player=player)
         assert line == "Hello, friend!"
 
-    def test_get_fallback_npc_line_story_non_opening(self):
-        """Test story NPC non-opening fallback from config."""
+    def test_get_fallback_npc_line_story_non_opening_without_replies_is_neutral(self):
+        """A persona with no ``fallback_replies`` falls back to the neutral
+        module pool mid-conversation -- never to a closing line, which would
+        tell the player the NPC is done while the conversation carries on
+        (issue #628).
+        """
         npc = chat_npc(
             init=False,
             name="Gorran",
-            _chat_char_config={"closing_lines_when_exhausted": ["Goodbye."]},
+            _chat_char_config={
+                "conversation_starters_by_chapter": {"1": ["Is that armour yours?"]},
+                "closing_lines_when_exhausted": ["Goodbye."],
+            },
             _get_chapter=lambda player: "1",
         )
         player = MagicMock()
         line = npc._get_fallback_npc_line(is_opening=False, player=player)
-        assert line == "Goodbye."
+        assert line in _NEUTRAL_FALLBACK_REPLIES
 
     def test_get_fallback_npc_line_generic(self):
         """Test generic NPC uses personality speech sample."""
@@ -2030,23 +2041,70 @@ class TestGetFallbackNpcLine:
         line = npc._get_fallback_npc_line(is_opening=False, player=player, exhausted=True)
         assert line == "Farewell."
 
-    def test_get_fallback_npc_line_mid_conversation_prefers_starters(self):
-        """A non-exhausted mid-conversation LLM hiccup must not claim the NPC
-        is done talking — it should reuse chapter-flavor starters instead of
-        the 'done talking' closing lines.
+    def test_get_fallback_npc_line_mid_conversation_uses_fallback_replies(self):
+        """A non-exhausted mid-conversation LLM hiccup answers from the
+        persona's ``fallback_replies`` -- lines authored as a *response*.
+
+        Issue #628: this used to draw from ``conversation_starters_by_chapter``,
+        which are openers addressed to a Jean who has just walked up (Liss's
+        chapter-1 starter is "Jean's armor is from somewhere specific.
+        Where?"), so "Tell me more" was answered with a first-contact
+        question. The old version of this test pinned exactly that, hidden
+        behind an innocuous "Hello, friend!" fixture. The closing pool is
+        still wrong here too: it claims the NPC is done talking.
         """
+        starters = ["Where did that armour come from?", "Is the Golemite going west?"]
+        closing = ["Farewell."]
+        replies = ["He stirs the pot, and doesn't answer.", "He nods, once."]
         npc = chat_npc(
             init=False,
             name="Gorran",
             _chat_char_config={
-                "conversation_starters_by_chapter": {"1": ["Hello, friend!"]},
-                "closing_lines_when_exhausted": ["Farewell."],
+                "conversation_starters_by_chapter": {"1": starters},
+                "closing_lines_when_exhausted": closing,
+                "fallback_replies": replies,
             },
             _get_chapter=lambda player: "1",
         )
         player = MagicMock()
-        line = npc._get_fallback_npc_line(is_opening=False, player=player, exhausted=False)
-        assert line == "Hello, friend!"
+        lines = [
+            npc._get_fallback_npc_line(is_opening=False, player=player, exhausted=False)
+            for _ in range(4)
+        ]
+        assert all(line in replies for line in lines), lines
+        assert set(lines) == set(replies)  # rotates rather than repeating one
+
+    def test_get_fallback_npc_line_mid_conversation_never_uses_starters(self):
+        """With no ``fallback_replies`` and only starters authored, the
+        mid-conversation line comes from the neutral pool, not a starter."""
+        npc = chat_npc(
+            init=False,
+            name="Gorran",
+            _chat_char_config={
+                "conversation_starters_by_chapter": {"1": ["Where are you going?"]},
+            },
+            _get_chapter=lambda player: "1",
+        )
+        player = MagicMock()
+        for _ in range(len(_NEUTRAL_FALLBACK_REPLIES) + 1):
+            line = npc._get_fallback_npc_line(
+                is_opening=False, player=player, exhausted=False
+            )
+            assert line in _NEUTRAL_FALLBACK_REPLIES
+
+    def test_neutral_fallback_replies_are_non_interrogative_responses(self):
+        """The neutral pool must read as a response to anything Jean says,
+        for any persona: no questions, and none of any shipped persona's
+        prohibited phrases."""
+        prohibited = set()
+        for path in _PERSONA_DIR.glob("*.json"):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            prohibited.update(p.lower() for p in data.get("prohibited_phrases", []))
+        assert prohibited  # the glob found the personas
+        assert _NEUTRAL_FALLBACK_REPLIES
+        for line in _NEUTRAL_FALLBACK_REPLIES:
+            assert "?" not in line, line
+            assert not any(p in line.lower() for p in prohibited), line
 
     def test_get_fallback_npc_line_generic_rotates(self):
         """Generic-nomad fallback must vary rather than repeat the speech sample."""
@@ -2782,14 +2840,19 @@ class TestChatRespondHistoryIntegrity:
     actually worked.
     """
 
-    def _make_npc(self, starters, closing):
+    def _make_npc(self, starters, closing, replies=None, loquacity_base=None):
+        config = {
+            "conversation_starters_by_chapter": {"1": starters},
+            "closing_lines_when_exhausted": closing,
+        }
+        if replies is not None:
+            config["fallback_replies"] = replies
+        if loquacity_base is not None:
+            config["loquacity_base"] = loquacity_base
         return chat_npc(
             init=False,
             name="Mara",
-            _chat_char_config={
-                "conversation_starters_by_chapter": {"1": starters},
-                "closing_lines_when_exhausted": closing,
-            },
+            _chat_char_config=config,
             _chat_world_facts={},
             _chat_personality=None,
             _chat_history=[],
@@ -2861,25 +2924,89 @@ class TestChatRespondHistoryIntegrity:
             f"NPC repeated a line within one conversation: {lines_said}"
         )
 
-    def test_single_line_pool_ends_immediately_instead_of_repeating(self):
-        """A one-line authored pool is the tightest case for the duplicate
-        guard: rotation alone can never help (idx % 1 is always 0), so the
-        very first respond turn must detect the repeat against the opening
-        line itself and end there rather than echo it back.
+    def test_single_line_reply_pool_ends_instead_of_repeating(self):
+        """A one-line ``fallback_replies`` pool is the tightest case for the
+        duplicate guard: rotation alone can never help (idx % 1 is always 0),
+        so the second respond turn must detect the repeat and end there
+        rather than echo the reply back.
+
+        The opener comes from the starters and is never reused mid-
+        conversation (issue #628), so it is the *reply* pool that wraps.
         """
         npc = self._make_npc(
-            starters=["Only line."],
+            starters=["Only opener."],
             closing=["Goodbye now."],
+            replies=["Only reply."],
+            loquacity_base=10000,
         )
         player = self._make_player()
 
         opened = npc.chat_open(player)
         assert opened["npc_opening"] == ""
-        assert opened["npc_flavor"] == "Only line."
+        assert opened["npc_flavor"] == "Only opener."
 
-        resp = npc.chat_respond(player, "Question", "direct")
-        assert resp["npc_flavor"] != "Only line."
-        assert resp["conversation_ended"] is True
+        first = npc.chat_respond(player, "Tell me more.", "direct")
+        assert first["npc_flavor"] == "Only reply."
+        assert first["conversation_ended"] is False
+
+        second = npc.chat_respond(player, "Go on.", "direct")
+        assert second["npc_flavor"] == "Goodbye now."
+        assert second["conversation_ended"] is True
+
+    def test_large_reply_pool_does_not_extend_a_degraded_conversation(self):
+        """A bigger authored pool must not buy a longer degraded conversation.
+
+        Before issue #628 the mid-conversation pool was the three chapter
+        starters, so "pool wrapped -> force conversation_ended" bounded a
+        fully-degraded conversation at three fallback replies. Personas now
+        author six to ten ``fallback_replies``; without an explicit cap the
+        wrap would fire several turns later. Loquacity is set high so only
+        the cap can end it.
+        """
+        replies = [f"Reply {i}." for i in range(10)]
+        npc = self._make_npc(
+            starters=["Opener."],
+            closing=["Goodbye now."],
+            replies=replies,
+            loquacity_base=10000,
+        )
+        player = self._make_player()
+        npc.chat_open(player)
+
+        fallback_replies = 0
+        for i in range(len(replies) + 2):
+            resp = npc.chat_respond(player, f"Question {i}", "direct")
+            if resp["conversation_ended"]:
+                assert resp["npc_flavor"] == "Goodbye now."
+                break
+            assert resp["npc_flavor"] in replies
+            fallback_replies += 1
+        else:
+            pytest.fail("degraded conversation never ended")
+
+        assert fallback_replies == _MAX_CONSECUTIVE_FALLBACK_REPLIES
+
+    def test_reply_cap_counts_only_the_current_run(self):
+        """The cap is on *consecutive* fallback replies. A conversation that
+        opened with a fresh starter gets the full allowance even though an
+        earlier conversation's replies are still in the persisted history --
+        the opener row breaks the run."""
+        replies = [f"Reply {i}." for i in range(10)]
+        npc = self._make_npc(
+            starters=["Opener A.", "Opener B."],
+            closing=["Goodbye now."],
+            replies=replies,
+            loquacity_base=10000,
+        )
+        player = self._make_player()
+        npc.chat_open(player)
+        for i in range(_MAX_CONSECUTIVE_FALLBACK_REPLIES):
+            npc.chat_respond(player, f"Q{i}", "direct")
+        # Second conversation: a new opener row, then a reply is still allowed.
+        npc._chat_history.append({"npc": "Opener B.", "jean": "Hello again."})
+        _npc_text, flavor, ended = npc._resolve_fallback_response(player, False)
+        assert ended is False
+        assert flavor in replies
 
     def test_conversation_history_is_chronologically_ordered(self):
         """Each persisted row must pair an NPC line with Jean's reply TO it,
