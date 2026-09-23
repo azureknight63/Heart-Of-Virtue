@@ -296,15 +296,14 @@ class Ch02GuideToCitadel(
                 "Even more astonishingly, the elder spoke in a deep, rumbling voice, which Jean "
                 "was able to understand."
             )
-            # Speaker id is "Elder" (unnamed) until he introduces himself below —
-            # matches the reveal already preserved in the legacy description text
-            # ("Elder: ..." then "Votha Krr: ..."). The identity swaps to
-            # "Votha Krr" on his self-introduction beat.
+            # He wears his real id (so his portrait art renders) from this first
+            # beat, but is captioned "???" until he introduces himself below,
+            # where a same-id enter op swaps the displayed name in place (#657).
             say(
                 "You are a friend of Gorran. You are welcome here.",
-                "Elder",
+                "Votha Krr",
                 "neutral",
-                enter=enter_op("Elder", side=None),
+                enter=enter_op("Votha Krr", side=None, name="???"),
             )
             react("Jean", "happy")
             narrate(
@@ -320,7 +319,7 @@ class Ch02GuideToCitadel(
                 "Gorran rumbled briefly in reply, then turned and strode out of the chamber.",
                 exit=[exit_op("Gorran", span=2)],
             )
-            react("Elder", "concerned")
+            react("Votha Krr", "concerned")
             narrate("The elder turned back to Jean, his expression serious.")
             narrate(
                 "Now having gotten a chance to look at the elder, Jean could see he was a bit "
@@ -337,8 +336,7 @@ class Ch02GuideToCitadel(
                 "much weight they give that title.",
                 "Votha Krr",
                 "neutral",
-                enter=enter_op("Votha Krr", side=None, transition="instant"),
-                leave=exit_op("Elder", transition="instant"),
+                enter=enter_op("Votha Krr", side=None, transition="instant", name="Votha Krr"),
             )
             narrate(
                 "With that, a rolling rumble of laughter erupted from the elder's mouth like the "

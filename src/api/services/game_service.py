@@ -1068,29 +1068,44 @@ class GameService:
         live journal.
         """
         clean_output, segments, conversation = self._capture_conversation(msgs, player)
-        self._record_scene(player, clean_output, segments)
+        self._record_scene(player, clean_output, segments, conversation)
         return clean_output, segments, conversation
 
     @staticmethod
-    def _scene_lines(clean_output, segments):
+    def _scene_lines(clean_output, segments, conversation=None):
         """Flatten a captured event into journal transcript lines.
 
         Prefers ``segments`` so the transcript keeps the speaker attribution the
         staged conversation displayed; falls back to splitting the flattened
         prose on newlines, which are the original ``narrate()`` call boundaries
         (see :meth:`_chunk_narration_text`) and therefore its paragraph breaks.
+
+        A speaker is recorded under the ``name`` the stage captioned at that
+        beat, not their portrait id: the name starts from ``conversation``'s
+        cast and is overwritten by each beat's enter ops, exactly as the
+        client's ``computeStage`` does. A character staged as ``"???"`` until
+        they introduce themselves (#657) therefore stays ``"???"`` here too.
         """
         if segments:
-            return [
-                {"speaker": seg.get("speaker"), "text": seg.get("text", "")}
-                for seg in segments
-            ]
+            names = {
+                c.get("id"): c.get("name") or c.get("id")
+                for c in (conversation or {}).get("cast", [])
+            }
+            lines = []
+            for seg in segments:
+                for op in seg.get("enter") or []:
+                    names[op.get("id")] = op.get("name") or op.get("id")
+                speaker = seg.get("speaker")
+                lines.append(
+                    {"speaker": names.get(speaker, speaker), "text": seg.get("text", "")}
+                )
+            return lines
         return [
             {"speaker": None, "text": line}
             for line in (clean_output or "").split("\n")
         ]
 
-    def _record_scene(self, player, clean_output, segments):
+    def _record_scene(self, player, clean_output, segments, conversation=None):
         """File one scene in the player's journal transcript.
 
         Titled by the room it happened in rather than the event's class-shaped
@@ -1110,7 +1125,7 @@ class GameService:
             room = getattr(player, "current_room", None)
             journal.record_scene(
                 getattr(room, "name", None),
-                self._scene_lines(clean_output, segments),
+                self._scene_lines(clean_output, segments, conversation),
                 tick=self._game_tick(player),
             )
         except Exception:

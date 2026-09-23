@@ -79,7 +79,7 @@
                     "idle_message": "A wooden chest is sitting here.",
                     "hidden": false,
                     "hide_factor": 0,
-                    "discovery_message": " a wooden chest!",
+                    "discovery_message": "a wooden chest!",
                     "announce": "A wooden chest is sitting here.",
                     "keywords": [
                         "open",

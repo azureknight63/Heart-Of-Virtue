@@ -439,6 +439,19 @@ def test_after_the_rumbler_fight_defers_gorrans_name_until_the_reveal(game_servi
     assert all(s.get("speaker") != "Gorran" for s in segments[:reveal_index])
 
 
+def _displayed_names(conversation, segments):
+    """Mirror ConversationStage.computeStage's caption: the active speaker's
+    ``name`` from the initial cast, overwritten by each beat's enter ops."""
+    names = {c["id"]: c.get("name") or c["id"] for c in (conversation or {}).get("cast", [])}
+    shown = {}
+    for i, seg in enumerate(segments):
+        for op in seg.get("enter", []):
+            names[op["id"]] = op.get("name") or op["id"]
+        if seg.get("speaker"):
+            shown[i] = names.get(seg["speaker"], seg["speaker"])
+    return shown
+
+
 def test_ch02_guide_to_citadel_stage4_produces_staged_conversation(game_service):
     """Canary: the Votha Krr introduction (Pattern C -> say()/narrate() rollout)
     builds a real staged conversation, not just a legacy description string."""
@@ -466,18 +479,47 @@ def test_ch02_guide_to_citadel_stage4_produces_staged_conversation(game_service)
     assert cast["Jean"]["side"] == "left"
     assert cast["Gorran"]["side"] == "left"  # ally -> party-rule left
 
-    # The elder is unnamed ("Elder") until his self-introduction beat, matching
-    # the reveal the legacy description text preserves ("Elder: ..." then
-    # "Votha Krr: ...") — his name shouldn't leak onto the portrait label early.
-    elder_beats = [s for s in segments if s.get("speaker") == "Elder"]
-    assert any("welcome here" in s["text"].lower() for s in elder_beats)
-    votha_beats = [s for s in segments if s.get("speaker") == "Votha Krr"]
-    assert any("i am elder votha krr" in s["text"].lower() for s in votha_beats)
+    # #657: he wears his real portrait id ("Votha Krr") from his first beat,
+    # but his displayed name is "???" until his self-introduction beat — the
+    # generic "Elder" id (no portrait art -> placeholder silhouette) is gone.
+    assert all(s.get("speaker") != "Elder" for s in segments)
+    ops = [op for s in segments for op in s.get("enter", []) + s.get("exit", [])]
+    assert all(op["id"] != "Elder" for op in ops)
+    assert all(c["id"] != "Elder" for c in conversation["cast"])
 
-    # The self-introduction beat swaps "Elder" out for "Votha Krr".
+    votha_beats = [s for s in segments if s.get("speaker") == "Votha Krr"]
+    welcome = next(s for s in votha_beats if "welcome here" in s["text"].lower())
     reveal_beat = next(s for s in votha_beats if "i am elder votha krr" in s["text"].lower())
-    assert any(op["id"] == "Votha Krr" for op in reveal_beat.get("enter", []))
-    assert any(op["id"] == "Elder" for op in reveal_beat.get("exit", []))
+    assert segments.index(welcome) < segments.index(reveal_beat)
+
+    first_enter = next(
+        op for s in segments for op in s.get("enter", []) if op["id"] == "Votha Krr"
+    )
+    assert first_enter["name"] == "???"
+
+    reveal_enter = next(op for op in reveal_beat.get("enter", []) if op["id"] == "Votha Krr")
+    assert reveal_enter["name"] == "Votha Krr"
+    assert reveal_enter["transition"] == "instant"
+
+    # The caption the client shows (ConversationStage.computeStage: cast name,
+    # overwritten in place by each enter op) is "???" on every beat before the
+    # reveal and "Votha Krr" from the reveal on.
+    shown = _displayed_names(conversation, segments)
+    reveal_index = segments.index(reveal_beat)
+    for i, s in enumerate(segments):
+        if s.get("speaker") != "Votha Krr":
+            continue
+        expected = "???" if i < reveal_index else "Votha Krr"
+        assert shown[i] == expected, (i, s["text"][:40])
+    # His name is never in the displayed caption of any pre-reveal beat.
+    assert all(shown.get(i) != "Votha Krr" for i in range(reveal_index))
+
+    # The journal transcript records the name the scene displayed, not the id.
+    lines = game_service._scene_lines(out, segments, conversation)
+    welcome_line = next(ln for ln in lines if "welcome here" in ln["text"].lower())
+    reveal_line = next(ln for ln in lines if "i am elder votha krr" in ln["text"].lower())
+    assert welcome_line["speaker"] == "???"
+    assert reveal_line["speaker"] == "Votha Krr"
 
     # Gorran leaves partway through the scene, fading out over more than one beat.
     exits = [op for s in segments for op in s.get("exit", [])]
