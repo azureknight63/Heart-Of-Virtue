@@ -2107,6 +2107,28 @@ class TestConfigurationPrecedesDiscovery:
         assert first is second
         NpcChatLLMAdapter._instances.clear()
 
+    @pytest.mark.parametrize("build_fails", [False, True])
+    def test_prewarm_in_flight_spans_exactly_the_build(self, monkeypatch, build_fails):
+        """#637: the chat mixin asks this before building on the request path,
+        so it must read True while prewarm() builds, and False once it has
+        finished -- including when the build raised."""
+        monkeypatch.setattr(NpcChatLLMAdapter, "_instances", {})
+        monkeypatch.setattr(NpcChatLLMAdapter, "_prewarm_attempted", False)
+        seen = []
+
+        def building(self):
+            seen.append(NpcChatLLMAdapter.prewarm_in_flight())
+            if build_fails:
+                raise RuntimeError("catalogue down")
+
+        assert NpcChatLLMAdapter.prewarm_in_flight() is False
+        with patch.object(NpcChatLLMAdapter, "__init__", building):
+            NpcChatLLMAdapter.prewarm()
+
+        assert seen == [True]
+        assert NpcChatLLMAdapter.prewarm_in_flight() is False
+        assert ("default" in NpcChatLLMAdapter._instances) is not build_fails
+
 
 class TestWorldFactsBlock:
     def test_full_world_facts_block(self, monkeypatch):

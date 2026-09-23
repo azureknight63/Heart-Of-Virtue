@@ -234,6 +234,25 @@ class TestGetAdapter:
 
         assert npc._chat_adapter is ConversationalNPCMixin._ADAPTER_FAILED
 
+    def test_a_prewarm_in_flight_is_not_built_on_the_request_path(self):
+        """#637: while the world-load prewarm is still building the singleton,
+        a chat turn must not build a second one on the request (discovery and
+        validation are seconds of I/O), and must not latch _ADAPTER_FAILED --
+        the next turn picks up the warm adapter."""
+        sentinel = object()
+        module = MagicMock()
+        module.NpcChatLLMAdapter.prewarm_in_flight.return_value = True
+        module.NpcChatLLMAdapter.get_instance.return_value = sentinel
+        npc = chat_npc(init=False, _chat_adapter=None)
+
+        with patch("src.npc._chat_llm._load_llm_client_module", return_value=module):
+            assert npc._get_adapter() is None
+            module.NpcChatLLMAdapter.get_instance.assert_not_called()
+            assert npc._chat_adapter is None
+
+            module.NpcChatLLMAdapter.prewarm_in_flight.return_value = False
+            assert npc._get_adapter() is sentinel
+
     def test_an_already_cached_adapter_is_returned_without_loading(self):
         npc = chat_npc(init=False, _chat_adapter="cached_adapter")
 
@@ -1623,6 +1642,24 @@ class TestChatOpen:
         assert result["npc_opening"] == ""
         assert result["npc_flavor"] == "Nothing to say right now."
         assert len(result["jean_options"]) == 3
+
+    def test_a_turn_during_prewarm_serves_the_authored_fallback(self, player):
+        """#637: the turn that lands while the prewarm is still building gets
+        the deterministic fallback, and the NPC is not written off for good."""
+        module = MagicMock()
+        module.NpcChatLLMAdapter.prewarm_in_flight.return_value = True
+        npc = ready_npc(None)
+        npc._chat_adapter = None
+
+        with patch("src.npc._chat_llm._load_llm_client_module", return_value=module):
+            result = npc.chat_open(player)
+
+        assert result["success"] is True
+        assert result["llm_available"] is False
+        assert result["npc_flavor"] == "Nothing to say right now."
+        assert len(result["jean_options"]) == 3
+        module.NpcChatLLMAdapter.get_instance.assert_not_called()
+        assert npc._chat_adapter is None
 
     def test_qc_rejected_llm_text_falls_back_rather_than_shipping_it(self, player):
         """A model that narrates Jean must not reach the player at all."""

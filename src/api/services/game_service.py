@@ -1870,7 +1870,7 @@ class GameService:
         # the X button, the overlay, or a chat_open failure — see #336). Self-heal
         # by clearing the stale marker on this genuine non-chat action so loquacity
         # recovery resumes instead of being disabled for the rest of the session.
-        player.__dict__.pop("_active_chat_npc_id", None)
+        self._clear_active_chat(player)
 
         # Recover NPC loquacity on world beats (mirrors the terminal loop's intent
         # for ConversationalNPCMixin.loquacity_tick, which had no caller). Guarded so it
@@ -5117,8 +5117,12 @@ class GameService:
         if not hasattr(npc, "chat_open"):
             return {"success": False, "error": "NPC does not support chat"}
 
-        # Store active chat NPC ID
+        # Store active chat NPC ID. The npc_key the client will send to /end
+        # is not known until chat_open returns, so park an empty key (never a
+        # valid one) meanwhile: a late /end for the previous NPC that lands
+        # while this open is composing must not match it (#637).
         player.__dict__["_active_chat_npc_id"] = npc_id
+        player.__dict__["_active_chat_npc_key"] = ""
 
         # Call NPC's chat_open method
         try:
@@ -5127,7 +5131,7 @@ class GameService:
             # The conversation never actually started — clear the flag so
             # loquacity recovery isn't stuck disabled for the rest of the
             # session (see #336).
-            player.__dict__.pop("_active_chat_npc_id", None)
+            self._clear_active_chat(player)
             # str(e) on a provider SDK exception carries the endpoint URL, the
             # model id, the upstream status/body and a request id, and this
             # string is rendered verbatim in the player-facing error panel.
@@ -5139,7 +5143,12 @@ class GameService:
         # really begins, so clear the active-chat marker here too — otherwise
         # it would permanently suppress loquacity recovery on future moves.
         if not result.get("success") or result.get("conversation_ended"):
-            player.__dict__.pop("_active_chat_npc_id", None)
+            self._clear_active_chat(player)
+        elif result.get("npc_key"):
+            player.__dict__["_active_chat_npc_key"] = result["npc_key"]
+        else:
+            # No key to match /end against: fall back to an unconditional /end.
+            player.__dict__.pop("_active_chat_npc_key", None)
 
         return self._enrich_chat_result_with_relationship(result, npc)
 
@@ -5189,7 +5198,7 @@ class GameService:
             # without hitting /end, so clear the active-chat marker here — leaving
             # it set would permanently suppress NPC loquacity recovery on moves.
             if result.get("conversation_ended"):
-                player.__dict__.pop("_active_chat_npc_id", None)
+                self._clear_active_chat(player)
             return self._enrich_chat_result_with_relationship(result, npc)
         except Exception:
             # Same disclosure risk as npc_chat_open above: log the detail, send
@@ -5224,6 +5233,12 @@ class GameService:
         )
         return result
 
+    @staticmethod
+    def _clear_active_chat(player):
+        """Drop the active-chat marker and the npc_key it belongs to."""
+        player.__dict__.pop("_active_chat_npc_id", None)
+        player.__dict__.pop("_active_chat_npc_key", None)
+
     def npc_chat_end(
         self, player: "player_module.Player", npc_key: str
     ) -> Dict[str, Any]:
@@ -5236,8 +5251,14 @@ class GameService:
         Returns:
             Dict with success status and conversation summary
         """
-        # Clear active chat NPC
-        player.__dict__.pop("_active_chat_npc_id", None)
+        # Clear the active chat only when it is this NPC's. A panel closed
+        # after its /open resolved sends a late /end that can land after the
+        # next NPC's /open; it must not clear that conversation's marker (#637).
+        # No recorded key (an open whose result carried none, or a marker from
+        # an older build) keeps the old unconditional clear.
+        active_key = player.__dict__.get("_active_chat_npc_key")
+        if active_key is None or active_key == npc_key:
+            self._clear_active_chat(player)
 
         # Get conversation count from history if available
         count = 0
