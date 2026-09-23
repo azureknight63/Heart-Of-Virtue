@@ -273,6 +273,34 @@ class Item:
         if enchantment_level > 0:
             functions.add_random_enchantments(self, enchantment_level)
 
+    def __setstate__(self, state):
+        """Restore pickled state, then drop a pre-#624 baked stack count.
+
+        Behaves like pickle's default BUILD (a ``__dict__`` update plus any
+        slot state). The one addition (#643): a stack saved before #624 carries
+        ``stack_grammar()``'s old "Mineral Powder x3" name, and once it merges
+        with a fresh unit the count moves on and the suffix can never be
+        recognised again. So it is stripped here, on load, under the exact rule
+        ``stack_base_name`` applies -- only when the suffix is the digits of the
+        stack's own ``count``.
+
+        Stripping, not resetting to the class's default name: ``name`` is only
+        set in ``__init__`` (there is no class-level default to read), so a
+        reset would mean constructing a throwaway instance on every load, and
+        it would also overwrite any name deliberately customised after
+        construction.
+        """
+        slotstate = None
+        if isinstance(state, tuple) and len(state) == 2:
+            state, slotstate = state
+        if state:
+            self.__dict__.update(state)
+        if slotstate:
+            for key, value in slotstate.items():
+                setattr(self, key, value)
+        if "count" in self.__dict__ and "name" in self.__dict__:
+            self.name = stack_base_name(self)
+
     def __str__(self) -> str:
         return "{}\n=====\n{}\nValue: {}\n".format(
             self.name, self.description, self.value
