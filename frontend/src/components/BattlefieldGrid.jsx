@@ -8,6 +8,7 @@ import { categoryColor, categoryColorOrNull, categoryGlowOrNull } from '../utils
 import { lookupOr } from '../utils/lookup';
 import useDoubleRaf from '../hooks/useDoubleRaf';
 import useBattlefieldPan from '../hooks/useBattlefieldPan';
+import useTokenMoveTween from '../hooks/useTokenMoveTween';
 import useBattlefieldAnimations, {
   // Re-exported below so existing import sites (and their tests) keep resolving
   // these pure helpers through BattlefieldGrid, where they used to live.
@@ -772,6 +773,20 @@ const EntityTooltip = React.memo(({ entity, showDistance }) => {
 });
 
 // ---------------------------------------------------------------------------
+// TokenMoveTween — eases a token across its own world move (#668). A layer of
+// its own so the camera's instant re-index (the wrapper's cell translate) and
+// the attack motion (the inner div) never share an element with it.
+// ---------------------------------------------------------------------------
+const TokenMoveTween = ({ pos, children }) => {
+  const ref = useTokenMoveTween(pos, HALF_VIEW);
+  return (
+    <div ref={ref} data-testid="token-move-tween" style={{ width: '100%', height: '100%' }}>
+      {children}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // EntityLayer — renders all live combatants with interactions and animations
 // ---------------------------------------------------------------------------
 const EntityLayer = React.memo(({
@@ -870,9 +885,11 @@ const EntityLayer = React.memo(({
             alignItems: 'center',
             justifyContent: 'center',
             opacity: item.isDying ? 0 : 1,
-            transition: item.isDying
-              ? 'opacity 0.65s ease-out, transform 0.5s ease-in-out'
-              : 'transform 0.5s ease-in-out',
+            // No `transform` transition here (#668): this translate is
+            // camera-relative and must re-index instantly when the camera
+            // crosses a cell. The combatant's own move is tweened by
+            // TokenMoveTween below.
+            transition: item.isDying ? 'opacity 0.65s ease-out' : undefined,
             willChange: 'transform',
             cursor: item.isDying ? 'default' : 'pointer',
             pointerEvents: item.isDying ? 'none' : 'auto',
@@ -884,6 +901,7 @@ const EntityLayer = React.memo(({
             zIndex: animStates.length ? 100 : (isHighlighted ? 50 : (item.style.zIndex || 20))
           }}
         >
+          <TokenMoveTween pos={item.pos}>
           <div style={{
             width: '100%',
             height: '100%',
@@ -904,6 +922,7 @@ const EntityLayer = React.memo(({
               displaySymbol={item.displaySymbol}
             />
           </div>
+          </TokenMoveTween>
 
           {/* Hover tooltip, suppressed only for the entity already open in
               the selection panel. Suppressing on any selection would blind
@@ -2253,21 +2272,24 @@ function BattlefieldGrid({
     // Jean can be killed, and rendering both copies collides their React keys
     // (same id, same side suffix) as well as painting two tokens on one cell.
     if (combat?.player && !dyingIds.has(combat.player.id)) {
-      const style = getEntityStyle(getPos(combat.player));
-      if (style) result.push({ entity: combat.player, style, isFriendly: true, isHero: true });
+      const pos = getPos(combat.player);
+      const style = getEntityStyle(pos);
+      if (style) result.push({ entity: combat.player, pos, style, isFriendly: true, isHero: true });
     }
     combat?.allies?.forEach((ally) => {
       if (dyingIds.has(ally.id)) return;
       if (isLiving(ally)) {
-        const style = getEntityStyle(getPos(ally));
-        if (style) result.push({ entity: ally, style, isFriendly: true, isHero: false });
+        const pos = getPos(ally);
+        const style = getEntityStyle(pos);
+        if (style) result.push({ entity: ally, pos, style, isFriendly: true, isHero: false });
       }
     });
     combat?.enemies?.forEach((enemy) => {
       if (dyingIds.has(enemy.id)) return;
       if (isLiving(enemy)) {
-        const style = getEntityStyle(getPos(enemy));
-        if (style) result.push({ entity: enemy, style, isFriendly: false });
+        const pos = getPos(enemy);
+        const style = getEntityStyle(pos);
+        if (style) result.push({ entity: enemy, pos, style, isFriendly: false });
       }
     });
     // Dying combatants rendered from last-known snapshot during fade-out.
@@ -2280,6 +2302,7 @@ function BattlefieldGrid({
       if (style) {
         result.push({
           entity: dying.entity,
+          pos: dying.position,
           style,
           isFriendly: dying.friendly === true,
           isDying: true,
