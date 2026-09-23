@@ -6,7 +6,11 @@
         "exits": [
             "east"
         ],
-        "events": [],
+        "events": [
+            {
+                "class": "story.ch02.JamboShopIntroEvent"
+            }
+        ],
         "items": [],
         "npcs": [
             {

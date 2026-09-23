@@ -1631,3 +1631,137 @@ class AfterKingSlimeReturn(Event):
             self.set_story_gate(self.GATE_KEY)
             complete_objective(self.player, OBJ_CH02_VOTHA_KRR)
             self.tile.remove_event(self.name)
+
+
+class JamboShopIntroEvent(Event):
+    """
+    Jambo introduces himself the first time Jean steps into one of his tents
+    (issue #664), and teaches the shop through his own patter: the potions he
+    always keeps, what he pays for Jean's goods, the back-room crate, and the
+    restock that turns both over.
+
+    Authored on the entrance tile of BOTH tents (``grondia-jambos_shop`` and
+    ``eastern-descent-jambos-tent``) behind one gate, so whichever tent Jean
+    enters first carries the introduction and the other never repeats it.
+
+    Every mechanical claim in the dialogue is pinned to the mechanic behind it
+    by ``tests/test_issue_664_jambo_shop_intro.py::TestTheIntroTellsTheTruth``
+    -- change the shop, and that test names the line that has become untrue.
+
+    Sets: ``jambo_shop_intro_done``.
+    """
+
+    GATE_KEY = "jambo_shop_intro_done"
+
+    def __init__(self, player, tile, params=None, repeat=False, name="JamboShopIntro"):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def process(self):
+        if not self.player.skip_dialog:
+            begin_conversation(_JEAN_SOLO)
+            narrate(
+                "The tent flap fell closed behind Jean and the noise outside went soft. "
+                "The air was warm and close — dried herbs, lamp oil, something spiced "
+                "simmering out of sight. Behind a battered counter, a wiry man in an "
+                "enormous turban looked up, and a grin spread across his face as if Jean "
+                "were the best news he'd had all week."
+            )
+            say(
+                "A customer! Come in, come in — mind the rugs, they are older than they "
+                "look. Welcome to Jambo Heals U!",
+                "Jambo",
+                "happy",
+                enter=enter_op("Jambo", emotion="happy"),
+            )
+            narrate("He tapped his own chest, then pointed at Jean.")
+            say(
+                "Jambo. Heals. U. The sign explains everything. And U has a name, yes?",
+                "Jambo",
+                "curious",
+            )
+            say("Jean.", "Jean", "neutral")
+            say("Jean! Good. Short. Easy for the ledger.", "Jambo", "happy")
+            narrate(
+                "Jambo looked him over the way a tailor looks over a torn coat — the "
+                "grime, the scrapes, the tired set of his shoulders — and clicked his "
+                "tongue."
+            )
+            say(
+                "Jambo sees a man who has been walking a long way on very little. This "
+                "is fixable. This is what Jambo does.",
+                "Jambo",
+                "neutral",
+            )
+            narrate(
+                "He swept a hand along the counter, where bottles stood in a careful row "
+                "like soldiers on parade."
+            )
+            # Restoratives/Draughts/Antidotes: JamboHealsU.always_stock.
+            say(
+                "Everything on the counter is for sale. Restoratives, Draughts, "
+                "Antidotes — these Jambo always keeps. Nobody should come to Jambo "
+                "hurting and leave the same. The rest of the counter is whatever the "
+                "caravans brought last.",
+                "Jambo",
+                "neutral",
+            )
+            say("And if I've got something to sell?", "Jean", "curious")
+            # Merchant sell_modifier 0.5; reputation shifts both buy and sell
+            # prices (ShopSerializer.get_effective_*_modifier), and chat is how
+            # reputation moves.
+            say(
+                "Then Jambo buys! Half of what a thing is worth. The other half pays "
+                "for the tent, the turban, and Jambo's good mood.",
+                "Jambo",
+                "happy",
+            )
+            say("Half.", "Jean", "skeptical")
+            say(
+                "Half is honest. Jambo has met merchants who say 'full price' and mean "
+                "'a quarter.' And friends of Jambo always do a little better — on both "
+                "sides of the counter. Jambo likes to talk. This is a hint.",
+                "Jambo",
+                "neutral",
+            )
+            narrate("He jerked a thumb over his shoulder, toward the back of the tent.")
+            # The storage tile's Crate (merchant "Jambo"); merchandise Jean
+            # carries to the counter joins the Buy list
+            # (_collect_player_merchandise), and leaving drops it where he
+            # stands (drop_merchandise_items) -- the flap is the only way out.
+            say(
+                "Now. The counter is only the front of Jambo's tent. In the back room "
+                "there is a crate — more stock than the counter can hold. If Jean finds "
+                "something back there he likes, he brings it here to the counter, and "
+                "Jambo puts a price on it. Simple.",
+                "Jambo",
+                "neutral",
+            )
+            say(
+                "But nothing walks out of Jambo's tent unpaid. Try it, and Jean will "
+                "find it waiting by the flap. Jambo is very trusting. The flap is not.",
+                "Jambo",
+                "happy",
+            )
+            # Periodic restock (update_goods) re-rolls the counter AND clears
+            # and refills the crate.
+            say(
+                "Last thing, and this is the important one. Every so often new stock "
+                "comes in, and Jambo turns everything over — the counter and the crate, "
+                "both. What is here today may be gone the next time Jean comes through "
+                "that flap, and something new in its place. So if Jean sees a thing he "
+                "likes, Jean should not wait. Jambo says this as a friend.",
+                "Jambo",
+                "neutral",
+            )
+            narrate("He paused.")
+            say("Also as a merchant.", "Jambo", "happy")
+            say(
+                "He's given that speech a thousand times. He still means every word of it.",
+                "Jean",
+                "neutral",
+                thought=True,
+            )
+            say("Now! Jambo talks, Jean shops. Look around, look around.", "Jambo", "happy")
+        self.set_story_gate(self.GATE_KEY)
