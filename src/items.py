@@ -3412,11 +3412,15 @@ class Book(Special):
         #611's book read blank whenever the server started anywhere else. A
         failure is logged for us and reads as a blank book to the player:
         the path and the OS error are not the game's prose.
+
+        Issue #648: the gate is falsiness, not ``is None``. The legacy map
+        loader applies an authored ``"text": ""`` as a post-construction
+        ``setattr`` (``MAP_AUTHORED_ATTR_ALIASES`` routes it to ``_text``),
+        after ``__init__`` has already deferred to the file; an ``is None``
+        gate never opened it, and nothing logged.
         """
-        if self._text is None and self.text_file_path:
-            path = Path(self.text_file_path)
-            if not path.is_absolute():
-                path = _REPO_ROOT / path
+        if not self._text and self.text_file_path:
+            path = self._resolve_text_path()
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     self._text = f.read()
@@ -3424,6 +3428,20 @@ class Book(Special):
                 logger.warning("Could not load book text from %s: %s", path, e)
                 self._text = "This book is mysteriously blank."
         return self._text if self._text else "This book is mysteriously blank."
+
+    def _resolve_text_path(self) -> Path:
+        """The file ``text_file_path`` names, as the engine opens it.
+
+        Issue #648: a backslash is read as a separator. Maps are authored on
+        Windows, where ``src\\resources\\books\\x.txt`` opens; on Linux --
+        production -- the same string is one filename with no directory, and
+        the book read blank. A relative path is anchored at the repo root
+        (#611), never at the process's working directory.
+        """
+        path = Path(self.text_file_path.replace("\\", "/"))
+        if not path.is_absolute():
+            path = _REPO_ROOT / path
+        return path
 
     @text.setter
     def text(self, value: Optional[str]) -> None:
