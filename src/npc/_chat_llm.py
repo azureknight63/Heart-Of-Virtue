@@ -474,6 +474,22 @@ _warned_round_timeout: Optional[float] = None
 _MAX_TURN_STAGES = 4
 
 
+def _prewarm_in_flight(module: Any) -> bool:
+    """Whether ``module``'s NpcChatLLMAdapter is mid-prewarm (#637).
+
+    Compared with ``is True`` on purpose: an ``llm_client`` without the probe
+    (or a test double that answers every attribute with a truthy mock) must
+    read as "not in flight", i.e. the old build-on-demand behaviour.
+    """
+    probe = getattr(module.NpcChatLLMAdapter, "prewarm_in_flight", None)
+    if not callable(probe):
+        return False
+    try:
+        return probe() is True
+    except Exception:
+        return False
+
+
 def _turn_deadline(adapter: Any, started: Optional[float] = None) -> float:
     """The instant after which this turn may open no further provider stage.
 
@@ -1815,6 +1831,14 @@ class ConversationalNPCMixin:
             # registered in sys.modules (issue #380) — the adapter's singleton
             # state is no longer split across mutually-unaware module copies.
             module = _load_llm_client_module(_AI_DIR / "llm_client.py")
+            if module is not None and _prewarm_in_flight(module):
+                # The world-load prewarm is still building the singleton.
+                # Building a second one here would put discovery and
+                # validation on this request -- and, under eventlet, any of it
+                # that does not yield stalls every player's request (#637).
+                # This turn gets the deterministic fallback; nothing is
+                # latched, so the next turn picks up the warm adapter.
+                return None
             if module is not None:
                 self._chat_adapter = module.NpcChatLLMAdapter.get_instance()
             else:
