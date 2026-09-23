@@ -139,6 +139,16 @@ def arena_clear():
     return _run(lambda adj, player, body: adj.clear_room(player, body["arena"]))
 
 
+@debug_bp.route("/arena/loot", methods=["POST"])
+def arena_loot():
+    """Pin one arena NPC's drop (#642): body ``{arena, index, item, qty?}``."""
+    return _run(
+        lambda adj, player, body: adj.pin_combatant_loot(
+            player, body["arena"], body["index"], body["item"], body.get("qty", 1)
+        )
+    )
+
+
 @debug_bp.route("/arena/stats", methods=["POST"])
 def arena_stats():
     return _run(

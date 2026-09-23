@@ -321,3 +321,40 @@ class TestArenaOperations:
         assert resp.status_code == 200
         args = adj.set_combatant_stats.call_args[0]
         assert args[3] == {}
+
+    def test_arena_loot(self, client):
+        adj = MagicMock()
+        adj.pin_combatant_loot.return_value = {"success": True}
+        with _mock_auth_success(), patch(
+            "src.api.routes.debug._adjutant", return_value=adj
+        ):
+            resp = client.post(
+                "/api/debug/arena/loot",
+                json={"arena": "Fodder Pit", "index": 1, "item": "Draught", "qty": 3},
+            )
+        assert resp.status_code == 200
+        assert adj.pin_combatant_loot.call_args[0][1:] == ("Fodder Pit", 1, "Draught", 3)
+
+    def test_arena_loot_defaults_qty_to_one(self, client):
+        adj = MagicMock()
+        adj.pin_combatant_loot.return_value = {"success": True}
+        with _mock_auth_success(), patch(
+            "src.api.routes.debug._adjutant", return_value=adj
+        ):
+            resp = client.post(
+                "/api/debug/arena/loot",
+                json={"arena": "Fodder Pit", "index": 0, "item": "Draught"},
+            )
+        assert resp.status_code == 200
+        assert adj.pin_combatant_loot.call_args[0][4] == 1
+
+    def test_arena_loot_missing_item_is_400(self, client):
+        adj = MagicMock()
+        with _mock_auth_success(), patch(
+            "src.api.routes.debug._adjutant", return_value=adj
+        ):
+            resp = client.post(
+                "/api/debug/arena/loot", json={"arena": "Fodder Pit", "index": 0}
+            )
+        assert resp.status_code == 400
+        adj.pin_combatant_loot.assert_not_called()
