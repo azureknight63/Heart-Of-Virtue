@@ -13,6 +13,7 @@ import {
   hostileTelegraphWarning,
   TELEGRAPH_SEVERITIES,
   NO_REACHABLE_TARGET_REASON,
+  UNAVAILABLE_FALLBACK_REASON,
 } from './combatMoveStatus';
 import { makeTargetOption } from '../test/payloads';
 
@@ -183,8 +184,19 @@ describe('moveAvailability', () => {
       .toEqual({ available: false, reason: 'Not enough fatigue' });
   });
 
-  it('reports an unavailable move with no reason as unavailable, not as available', () => {
-    expect(moveAvailability({ available: false })).toEqual({ available: false, reason: '' });
+  // #627: a lock the server could not word -- or a reason_code this client
+  // has never heard of arriving without its sentence -- still says something,
+  // and it is the engine's own catch-all rather than an invented phrase.
+  it('gives an unavailable move with no sentence the generic fallback', () => {
+    expect(moveAvailability({ available: false }))
+      .toEqual({ available: false, reason: UNAVAILABLE_FALLBACK_REASON });
+    expect(moveAvailability({ available: false, reason: '', reason_code: 'from_the_future' }))
+      .toEqual({ available: false, reason: UNAVAILABLE_FALLBACK_REASON });
+  });
+
+  it('shows the engine sentence for a coded lock verbatim', () => {
+    expect(moveAvailability({ available: false, reason_code: 'fully_rested', reason: 'Already fully rested' }))
+      .toEqual({ available: false, reason: 'Already fully rested' });
   });
 
   // The #554 case: advertised available, nothing actually in reach.

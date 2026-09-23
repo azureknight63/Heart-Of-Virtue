@@ -471,6 +471,10 @@ MOVE_CONTRACT = {
     # literal dereference rather than on "reason", which would also match the
     # function's own return shape and could therefore never fail.
     "reason": Read("combatMoveStatus.js", "move.reason"),
+    # The closed-vocabulary code behind `reason` (#627, UnavailableReason in
+    # src/moves/_base.py). The card renders the sentence; the code rides on
+    # the card element so tooling can group locked cards by cause.
+    "reason_code": Read("CombatMovePanel.jsx", "move.reason_code"),
     "fatigue_cost": Read("CombatMovePanel.jsx", "move.fatigue_cost"),
     # These three moved together into `autoResolvedTargetId`: the panel and
     # LeftPanel each had their own copy of the three-term predicate, and a
@@ -2911,6 +2915,30 @@ class TestThePayloadBuildersMatchTheWire:
         [passive] = CombatantSerializer._serialize_passives(player)
 
         _assert_builder_matches_the_wire("makePassive", passive, "_serialize_passives")
+
+    def test_the_client_fallback_is_the_engines_own_catch_all(self):
+        """A lock arriving with no sentence shows ``UNAVAILABLE_FALLBACK_REASON``
+        (#627). It is the engine's ``UnavailableReason.UNAVAILABLE`` sentence,
+        not an invented one; reword either side and this fails."""
+        fallback = js_literal(
+            FRONTEND_SRC / "utils" / "combatMoveStatus.js",
+            "UNAVAILABLE_FALLBACK_REASON",
+        )
+        assert fallback == combat_adapter.CANNOT_USE_REASON
+
+    def test_a_locked_card_ships_its_code_beside_its_sentence(
+        self, real_adapter, real_combat_player
+    ):
+        """The emitter half of the ``reason_code`` read: a real refused move
+        carries a code from the vocabulary, and an available one carries None."""
+        from src.moves import Rest, UnavailableReason
+
+        real_combat_player.fatigue = real_combat_player.maxfatigue
+        real_combat_player.known_moves = [Rest(real_combat_player), Wait(real_combat_player)]
+        rest, wait = real_adapter._get_available_moves()
+        assert rest["reason_code"] == UnavailableReason.FULLY_RESTED.value
+        assert rest["reason"] == "Already fully rested"
+        assert wait["reason_code"] is None
 
     @pytest.mark.parametrize(
         "name, emitted",
