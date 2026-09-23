@@ -1012,6 +1012,11 @@ class SwapWeapon(Move):
     def viable(self):
         return bool(self.swappable_weapons())
 
+    def _unavailability_code(self):
+        if self.swappable_weapons():
+            return None
+        return UnavailableReason.NO_SPARE_WEAPON
+
     def execute(self, player):
         choice, self.weapon = self.weapon, None
         options = self.swappable_weapons()

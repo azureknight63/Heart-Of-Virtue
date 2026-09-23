@@ -1322,6 +1322,7 @@ class UnavailableReason(StrEnum):
     REQUIRES_PARRY = "requires_parry"
     FULLY_RESTED = "fully_rested"
     NO_USABLE_ITEMS = "no_usable_items"
+    NO_SPARE_WEAPON = "no_spare_weapon"
 
 
 #: The one sentence a locked move card shows for each code. Player-facing
@@ -1365,6 +1366,8 @@ UNAVAILABILITY_TEXT = {
     UnavailableReason.REQUIRES_PARRY: "Only while parrying",
     UnavailableReason.FULLY_RESTED: "Already fully rested",
     UnavailableReason.NO_USABLE_ITEMS: "No usable items",
+    # Swap Weapon (#671): nothing owned in the pack other than what is in hand.
+    UnavailableReason.NO_SPARE_WEAPON: "No other weapon in your pack",
 }
 
 

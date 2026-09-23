@@ -344,3 +344,31 @@ class TestEquipRouteCombatGate:
 
 def test_swap_weapon_is_reexported():
     assert "SwapWeapon" in moves.__all__
+
+
+# ---------------------------------------------------------------------------
+# Why it is locked (#627's reason vocabulary)
+# ---------------------------------------------------------------------------
+
+
+class TestSwapWeaponUnavailabilityReason:
+    def test_an_empty_pack_names_the_missing_spare_weapon(self):
+        from src.moves._base import UnavailableReason
+        player = Player()
+        move = _swap_move(player)
+        assert not move.viable()
+        assert move.unavailability_reason() is UnavailableReason.NO_SPARE_WEAPON
+
+    def test_a_spare_weapon_leaves_no_reason(self):
+        player, _dagger, _sword = _armed_player()
+        move = _swap_move(player)
+        assert move.viable()
+        assert move.unavailability_reason() is None
+
+    def test_the_adapter_ships_the_specific_sentence(self):
+        from src.moves._base import UNAVAILABILITY_TEXT, UnavailableReason
+        player = Player()
+        from src.api.combat_adapter import move_unavailability
+        code, text = move_unavailability(_swap_move(player), player, False)
+        assert code == UnavailableReason.NO_SPARE_WEAPON
+        assert text == UNAVAILABILITY_TEXT[UnavailableReason.NO_SPARE_WEAPON]
