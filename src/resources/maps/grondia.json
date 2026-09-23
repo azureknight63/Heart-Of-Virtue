@@ -1484,6 +1484,9 @@
             "go",
             "inside"
           ],
+          "crossing_keywords": [
+            "inside"
+          ],
           "events": [],
           "tile": null,
           "player": null,
@@ -1803,6 +1806,9 @@
           "announce": "An archway leads east toward the Eastern Road.",
           "keywords": [
             "enter",
+            "east"
+          ],
+          "crossing_keywords": [
             "east"
           ],
           "events": [],

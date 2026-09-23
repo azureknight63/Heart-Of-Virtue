@@ -272,11 +272,16 @@ class TestDeserializeSavedInstance:
         maps them to src.items / src.npc, so the classes must live there.
         """
         class DummyItem:
+            # Applied only if declared (#651).
+            MAP_AUTHORED_OVERRIDES = {"meta", "nums", "cls"}
+
             def __init__(self, name="Test", value=0):
                 self.name = name
                 self.value = value
 
         class DummyNPC:
+            MAP_AUTHORED_OVERRIDES = {"inventory"}  # applied only if declared (#651)
+
             def __init__(self, name="Dummy"):
                 self.name = name
                 self.inventory = []
@@ -384,19 +389,21 @@ class TestDeserializeSavedInstance:
         self, universe
     ):
         """The constructor kwargs are filtered to the real __init__ signature;
-        leftover props land on the instance as attributes."""
+        leftover props land on the instance as attributes when the class
+        declares them (Gold's ``count``), and are dropped when it does not
+        (#651)."""
         import src.items
 
         obj = universe._deserialize_saved_instance({
             "__class__": "Gold",
             "__module__": "items",
-            "props": {"amt": 10, "tags": ["rare", "valuable"]},
+            "props": {"amt": 10, "count": 25, "tags": ["rare", "valuable"]},
         })
 
         assert isinstance(obj, src.items.Gold)
         assert obj.amt == 10
-        assert obj.count == 10
-        assert obj.tags == ["rare", "valuable"]
+        assert obj.count == 25
+        assert "tags" not in vars(obj)
 
     def test_props_are_deserialized_recursively(self, universe, dummy_modules):
         """Nested plain dicts and lists survive; a nested marker resolves."""
@@ -443,6 +450,8 @@ class TestDeserializeSavedInstance:
         import src.items
 
         class Fragile:
+            MAP_AUTHORED_OVERRIDES = {"colour"}  # applied only if declared (#651)
+
             def __init__(self, required):  # never satisfiable from these props
                 self.required = required
 
@@ -452,12 +461,13 @@ class TestDeserializeSavedInstance:
         obj = universe._deserialize_saved_instance({
             '__class__': 'Fragile',
             '__module__': 'items',
-            'props': {'colour': 'red'},
+            'props': {'colour': 'red', 'shade': 'dark'},
         })
 
         assert isinstance(obj, Fragile)
         assert not hasattr(obj, 'required')
         assert obj.colour == 'red'
+        assert not hasattr(obj, 'shade')
 
     def test_deserialize_dict_without_a_class_key_returns_none(self, universe):
         assert universe._deserialize_saved_instance({}) is None

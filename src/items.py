@@ -205,7 +205,10 @@ class Item:
         "hidden", "hide_factor", "skills", "merchandise", "enchantment_level",
         "aliases",
     }
-    MAP_AUTHORED_OVERRIDES = {"hidden", "hide_factor", "name", "description", "announce"}
+    MAP_AUTHORED_OVERRIDES = {
+        "hidden", "hide_factor", "name", "description", "announce",
+        "discovery_message", "value", "weight",
+    }
 
     #: Issue #632: False marks an item the random merchant-stock roller must
     #: never select -- story items, quest keys, puzzle ingredients and lore
@@ -604,6 +607,9 @@ class Gold(Item):
     # functions.randomize_amount) -- not the rolled result for a range, same
     # non-determinism-is-the-point behavior as enchantment_level.
     MAP_AUTHORED_PARAMS = {"amt"}
+    #: The stack size itself: shipped legacy placements author ``count``
+    #: (Verdette's 40- and 20-gold pouches) beside a stale ``amt`` of 1.
+    MAP_AUTHORED_OVERRIDES = {"count"}
 
     def __init__(self, amt: int = 1) -> None:
         self.amt = functions.randomize_amount(amt)
@@ -649,6 +655,12 @@ class Weapon(Item):
     subtype: str
     wpnrange: Tuple[int, int]
     twohand: bool
+
+    #: A placed weapon's stat block (#651): every leaf hardcodes it in a
+    #: zero-arg __init__, so a per-placement tweak arrives by setattr.
+    MAP_AUTHORED_OVERRIDES = {
+        "damage", "str_req", "fin_req", "str_mod", "fin_mod", "wpnrange",
+    }
 
     def __init__(
         self,
@@ -734,6 +746,9 @@ class ProtectiveGear(Item):
     str_mod: Union[int, float]
     weight: Union[int, float]
     isequipped: bool
+
+    #: See Weapon: a placed piece's protection reaches it by setattr (#651).
+    MAP_AUTHORED_OVERRIDES = {"protection"}
     maintype: str
     subtype: str
 

@@ -32,12 +32,20 @@ def narration_text():
 
 
 class DummyItem:
+    # The legacy loader applies only declared props (#651); these are the
+    # attributes the tests below author beyond the constructor.
+    MAP_AUTHORED_OVERRIDES = {"level"}
+
     def __init__(self, name, value):
         self.name = name
         self.value = value
 
 
 class DummyMerchant:
+    # The legacy loader applies only declared props (#651); these are the
+    # attributes the tests below author beyond the constructor.
+    MAP_AUTHORED_OVERRIDES = {"meta"}
+
     def __init__(self, inventory):
         self.inventory = inventory
 

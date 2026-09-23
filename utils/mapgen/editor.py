@@ -1304,6 +1304,7 @@ class MapEditor:
                                 return d
                             try:
                                 consumed_keys: set = set()
+                                constructed = False
                                 try:
                                     param_names = [
                                         p.name
@@ -1323,6 +1324,7 @@ class MapEditor:
                                     # discard the just-constructed nested instances
                                     # and build fresh duplicates for no benefit.
                                     consumed_keys = set(init_kwargs)
+                                    constructed = True
                                 except Exception:
                                     inst = cls.__new__(cls)
                                     try:
@@ -1330,9 +1332,16 @@ class MapEditor:
                                     except Exception:
                                         pass
                                 # Recursively set any remaining attributes not covered
-                                # by the constructor call above.
+                                # by the constructor call above -- only those the
+                                # game's loader would apply too (#651). A dropped
+                                # key is never deserialized, and so is not written
+                                # back by a re-save either; the game ignores it.
                                 for k2, v2 in props.items():
                                     if k2 in consumed_keys:
+                                        continue
+                                    if not map_placeholders.legacy_prop_allowed(
+                                        cls, k2, constructed
+                                    ):
                                         continue
                                     setattr(inst, k2, deserialize_instance(v2))
                                 # Tagged so save_map's serialize_instance_for_save
