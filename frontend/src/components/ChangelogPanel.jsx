@@ -1,29 +1,31 @@
-import { useState } from 'react'
-import { colors, fonts, spacing, shadows, accessibility } from '../styles/theme'
+import { useId, useState } from 'react'
+import { colors, fonts, spacing, shadows } from '../styles/theme'
 import { CHANGELOG } from '../data/changelog'
+import CollapsibleSectionHeader from './CollapsibleSectionHeader'
 
 export default function ChangelogPanel({ defaultOpen = false, style = {} }) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
   const latest = CHANGELOG[0]
+  const entriesId = useId()
 
   return (
     <div style={{ position: 'relative', display: 'inline-block', ...style }}>
-      <button
-        type="button"
-        onClick={() => setIsOpen((o) => !o)}
-        aria-expanded={isOpen}
+      <CollapsibleSectionHeader
+        expanded={isOpen}
+        onToggle={() => setIsOpen((o) => !o)}
+        controlsId={entriesId}
         style={{
-          display: 'flex',
-          alignItems: 'center',
           gap: spacing.xs,
-          minHeight: accessibility.touchTarget,
+          width: 'auto',
           background: colors.bg.panelLight,
           border: `1px solid ${colors.border.light}`,
           borderRadius: '0.25rem',
           color: colors.text.dim,
-          cursor: 'pointer',
           fontFamily: fonts.main,
           fontSize: '11px',
+          fontWeight: 'normal',
+          letterSpacing: 'normal',
+          textTransform: 'none',
           padding: `4px ${spacing.sm}`,
           whiteSpace: 'nowrap',
           transition: 'color 0.2s',
@@ -32,18 +34,11 @@ export default function ChangelogPanel({ defaultOpen = false, style = {} }) {
         onMouseLeave={(e) => (e.currentTarget.style.color = colors.text.dim)}
       >
         <span>Changelog{latest ? ` (v${latest.version})` : ''}</span>
-        <span
-          style={{
-            display: 'inline-block',
-            fontSize: '10px',
-            transition: 'transform 0.2s',
-            transform: isOpen ? 'rotate(180deg)' : 'none',
-          }}
-        >
-          ▼
-        </span>
-      </button>
+      </CollapsibleSectionHeader>
 
+      {/* Always mounted so aria-controls always resolves; the popover itself
+          comes and goes (issue #640). */}
+      <div id={entriesId}>
       {isOpen && (
         <div
           style={{
@@ -97,6 +92,7 @@ export default function ChangelogPanel({ defaultOpen = false, style = {} }) {
           ))}
         </div>
       )}
+      </div>
     </div>
   )
 }

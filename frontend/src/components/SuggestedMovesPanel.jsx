@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId } from 'react'
 import { colors, spacing, shadows } from '../styles/theme'
+import CollapsibleSectionHeader from './CollapsibleSectionHeader'
 import { displayNameOf } from '../utils/combatMoveStatus'
 
 const STORAGE_KEY = 'hov_tactical_advisor_collapsed'
@@ -21,6 +22,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
     })
     const [hoveredSuggestionName, setHoveredSuggestionName] = useState(null)
     const [hoveredRepeatBtn, setHoveredRepeatBtn] = useState(false)
+    const bodyId = useId()
 
     useEffect(() => {
         if (isPlayerTurn) {
@@ -53,28 +55,35 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
 
     // Mobile collapsed view — compact tap-to-expand strip
     if (isMobile && isCollapsed) {
+        // The strip IS the toggle. Its body is not rendered while collapsed,
+        // but the region it names stays mounted (empty) so aria-controls
+        // always resolves (issue #640).
         return (
-            <div
-                onClick={handleToggle}
+            <>
+            <CollapsibleSectionHeader
+                expanded={false}
+                onToggle={handleToggle}
+                controlsId={bodyId}
                 style={{
                     width: '100%',
                     backgroundColor: 'rgba(10, 15, 10, 0.9)',
                     border: `1px solid ${colors.primary}66`,
                     borderRadius: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
                     padding: '7px 10px',
                     fontFamily: 'monospace',
-                    cursor: 'pointer',
                     opacity: isVisible ? 1 : 0,
                     transition: 'all 0.4s ease-out',
                     flexShrink: 0,
-                    touchAction: 'manipulation',
+                    color: colors.primary,
+                    fontWeight: 'normal',
+                    letterSpacing: 'normal',
+                    textTransform: 'none',
                 }}
             >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <div style={{
+                {/* Spans, not divs: a <button> may only hold phrasing content. */}
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{
+                        display: 'inline-block',
                         width: '6px', height: '6px', borderRadius: '50%',
                         backgroundColor: colors.primary,
                         boxShadow: `0 0 6px ${colors.primary}`,
@@ -96,9 +105,10 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                     {suggestionsLoading && (
                         <span style={{ color: colors.text.muted, fontSize: '10px' }}>analyzing…</span>
                     )}
-                </div>
-                <span style={{ color: colors.primary, fontSize: '12px', opacity: 0.7 }}>▼</span>
-            </div>
+                </span>
+            </CollapsibleSectionHeader>
+            <div id={bodyId} />
+            </>
         )
     }
 
@@ -120,21 +130,25 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
             flexShrink: 0
         }}>
             {/* Header */}
-            <div
-                onClick={handleToggle}
+            <CollapsibleSectionHeader
+                expanded={!isCollapsed}
+                onToggle={handleToggle}
+                controlsId={bodyId}
                 style={{
                     padding: '12px',
                     backgroundColor: `${colors.primary}22`,
                     borderBottom: isCollapsed ? 'none' : `1px solid ${colors.primary}44`,
-                    display: 'flex',
-                    alignItems: 'center',
                     gap: '8px',
-                    cursor: 'pointer',
-                    touchAction: 'manipulation',
+                    color: colors.primary,
+                    fontWeight: 'normal',
+                    letterSpacing: 'normal',
+                    textTransform: 'none',
                     userSelect: 'none',
                 }}
             >
-                <div style={{
+                <span style={{
+                    display: 'inline-block',
+                    flexShrink: 0,
                     width: '8px',
                     height: '8px',
                     borderRadius: '50%',
@@ -145,11 +159,11 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                 <span style={{ color: colors.primary, fontWeight: 'bold', fontSize: '14px', letterSpacing: '1px', flex: 1 }}>
                     TACTICAL ADVISOR
                 </span>
-                <span style={{ color: colors.primary, fontSize: '12px', opacity: 0.7 }}>
-                    {isMobile ? '▲' : (isCollapsed ? '▼' : '▲')}
-                </span>
-            </div>
+            </CollapsibleSectionHeader>
 
+            {/* Always mounted so aria-controls always resolves; the analysis
+                and the list inside it come and go (issue #640). */}
+            <div id={bodyId} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             {/* Body — hidden when collapsed */}
             {!isCollapsed && lastOutcome && (
                 <div style={{
@@ -326,6 +340,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                     )})
                 )}
             </div>}
+            </div>
         </div>
     )
 }

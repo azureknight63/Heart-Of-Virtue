@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
 import ChangelogPanel from './ChangelogPanel'
 import { CHANGELOG } from '../data/changelog'
+import { expectFoldContract } from '../test/foldContract'
 
 describe('ChangelogPanel', () => {
   it('renders the toggle button with the latest version number', () => {
@@ -41,5 +42,18 @@ describe('ChangelogPanel', () => {
         expect(screen.getByText(highlight)).toBeDefined()
       })
     })
+  })
+
+  // Issue #640: moved onto CollapsibleSectionHeader. It had aria-expanded but
+  // no aria-controls, and a rotating ▼ as its only state signal.
+  it('honours the fold contract in both states', () => {
+    render(<ChangelogPanel />)
+    const header = screen.getByRole('button', { name: /changelog/i })
+    const region = expectFoldContract(header, { expanded: false })
+    expect(region.textContent).toBe('')
+
+    fireEvent.click(header)
+    expect(expectFoldContract(header, { expanded: true })).toBe(region)
+    expect(region.textContent).toContain(CHANGELOG[0].highlights[0])
   })
 })
