@@ -2268,7 +2268,10 @@ class TestObjectSerializer:
         assert result["name"] == "Passageway"
         assert result["type"] == "Passageway"
         assert result["description"] == passage.description
-        assert result["keywords"] == passage.keywords
+        # The name word "passageway" resolves to ``enter`` itself, so the
+        # button row folds it into ENTER (#615); the engine list keeps it.
+        assert "passageway" in passage.keywords
+        assert result["keywords"] == ["enter", "go", "leave", "exit"]
         assert result["hidden"] is False
         assert result["hide_factor"] == 0
         assert result["passthrough"] is False
