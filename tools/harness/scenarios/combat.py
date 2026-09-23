@@ -56,6 +56,9 @@ class CombatScenario(Scenario):
             if not started:
                 return bugs
 
+        # Weapon swap (#671) --------------------------------------------------
+        bugs += self._check_weapon_swap(client)
+
         # Combat loop -------------------------------------------------------
         for round_num in range(1, _MAX_ROUNDS + 1):
             status_bugs, active = self._check_status_endpoint(client, round_num)
@@ -273,6 +276,93 @@ class CombatScenario(Scenario):
             f"Combat status round {round_num}", resp,
         )
         return bugs, bool(data.get("combat_active"))
+
+    def _check_weapon_swap(self, client: GameClient) -> List[BugReport]:
+        """Mid-combat weapon change goes through the Swap Weapon move (#671).
+
+        Always: the card is offered, and a swap naming a weapon the pack does
+        not hold is refused as a game-logic error, not a crash. When the pack
+        holds a spare (the arena loadout does): the free /inventory/equip route
+        refuses it mid-fight -- otherwise the swap's beat cost is optional --
+        and the swap itself then succeeds.
+        """
+        bugs = []
+        options = self._get_battle_state(client).get("available_options", [])
+        swap = next(
+            (o for o in options if isinstance(o, dict) and o.get("name") == "Swap Weapon"),
+            None,
+        )
+        if swap is None or not isinstance(swap.get("weapon_options"), list):
+            bugs.append(self._bug(
+                title="Swap Weapon card missing (or has no weapon_options list) in combat",
+                severity=BugSeverity.MEDIUM,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/combat/status",
+                method="GET",
+                expected="a 'Swap Weapon' move with a weapon_options list",
+                actual=f"swap card: {swap!r}",
+            ))
+            return bugs
+
+        body = {"move_type": "swap_weapon", "item_id": "not-a-weapon-handle"}
+        resp = client.post("/api/combat/move", json=body)
+        bug = self._check_no_crash(resp, "/api/combat/move", "POST", "Swap to a bogus weapon", request_body=body)
+        if bug:
+            bugs.append(bug)
+            return bugs
+        if client.parse(resp).get("success") is not False:
+            bugs.append(self._bug(
+                title="Swap Weapon accepted a weapon id not in the pack",
+                severity=BugSeverity.HIGH,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/combat/move",
+                method="POST",
+                expected="success=False for an item_id outside weapon_options",
+                actual=str(client.parse(resp))[:300],
+                response=resp,
+                request_body=body,
+            ))
+            return bugs
+
+        choices = swap["weapon_options"]
+        if not (swap.get("available") and choices):
+            return bugs
+        item_id = choices[0].get("id")
+
+        body = {"item_id": item_id}
+        resp = client.post("/api/inventory/equip", json=body)
+        if resp.status_code != 400:
+            bugs.append(self._bug(
+                title="Free /inventory/equip changed weapons mid-combat, bypassing Swap Weapon's beat cost",
+                severity=BugSeverity.HIGH,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/inventory/equip",
+                method="POST",
+                expected="HTTP 400 refusal for a weapon while in combat",
+                actual=f"HTTP {resp.status_code}",
+                response=resp,
+                request_body=body,
+            ))
+            return bugs
+
+        body = {"move_type": "swap_weapon", "item_id": item_id}
+        resp = client.post("/api/combat/move", json=body)
+        bug = self._check_status(resp, 200, "/api/combat/move", "POST", "Swap weapon", request_body=body)
+        if bug:
+            bugs.append(bug)
+        elif client.parse(resp).get("success") is not True:
+            bugs.append(self._bug(
+                title="Swap Weapon refused a weapon it offered",
+                severity=BugSeverity.HIGH,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/combat/move",
+                method="POST",
+                expected="success=True for an item_id from weapon_options",
+                actual=str(client.parse(resp))[:300],
+                response=resp,
+                request_body=body,
+            ))
+        return bugs
 
     def _get_battle_state(self, client: GameClient) -> dict:
         """Return the current battle_state dict from combat status."""

@@ -1,5 +1,5 @@
-"""Universal utility moves: Check, Wait, Rest, UseItem, Attack, Disrupt,
-StrategicInsight, MasterTactician."""
+"""Universal utility moves: Check, Wait, Rest, UseItem, SwapWeapon, Attack,
+Disrupt, StrategicInsight, MasterTactician."""
 
 from src.narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
@@ -931,6 +931,84 @@ class UseItem(Move):
         # terminal item-picker menu has been removed. Selecting this move just
         # opens/closes the bag (flavor via stage_announce).
         player.combat_exp["Basic"] += 1
+
+
+#: [prep, execute, recoil, cooldown] for SwapWeapon -- the price of changing
+#: weapons mid-fight (#671). The same 3-beat total as UseItem's [1, 1, 1, 0],
+#: on purpose: both are "reach into the bag" actions -- one beat to get a hand
+#: in there, one for the thing to happen (the equip lands on the execute
+#: beat), one to settle the grip -- and pricing a weapon differently from a
+#: potion would need a design reason nobody has given yet. No cooldown and no
+#: fatigue cost: the beats Jean spends open-handed ARE the penalty, and a
+#: cooldown on top would stop him correcting a wrong pick. Retune here only;
+#: the web client reads the numbers off the move's `stage_beats`.
+SWAP_WEAPON_STAGE_BEATS = (1, 1, 1, 0)
+
+
+class SwapWeapon(Move):
+    """Draw a different weapon from the pack in the middle of a fight.
+
+    The weapon is a selection, set as ``self.weapon`` by the combat adapter
+    (``select_weapon``) before the move is cast -- the same convention
+    ``Wait.duration`` and ``Turn.target_direction`` follow. The equip itself
+    is the engine's ``Player.equip_item``, so slot rules, ``eq_weapon``,
+    exp-category setup and the stat refresh are the ones every other equip
+    runs; nothing is re-derived here.
+    """
+
+    display_name = 'Swap Weapon'
+    web_animation = "pulse"
+
+    def __init__(self, player):
+        prep, execute, recoil, cooldown = SWAP_WEAPON_STAGE_BEATS
+        super().__init__(
+            name="Swap Weapon",
+            description=(
+                "Stow your weapon and draw another from your pack. "
+                "You are between weapons while you do it."
+            ),
+            xp_gain=0,
+            current_stage=0,
+            targeted=False,
+            stage_beat=[prep, execute, recoil, cooldown],
+            stage_announce=[
+                f"{player.name} reaches into his pack for another weapon.",
+                "",
+                f"{player.name} settles his grip.",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=player,
+            user=player,
+            category="Utility",
+        )
+        self.weapon = None
+
+    def swappable_weapons(self):
+        """Weapons Jean could swap to: owned, in the pack, not already in hand."""
+        return [
+            item for item in getattr(self.user, "inventory", None) or []
+            if getattr(item, "maintype", None) == "Weapon"
+            and hasattr(item, "isequipped")
+            and not item.isequipped
+            and not getattr(item, "merchandise", False)
+        ]
+
+    def viable(self):
+        return bool(self.swappable_weapons())
+
+    def execute(self, player):
+        choice, self.weapon = self.weapon, None
+        options = self.swappable_weapons()
+        if not options:
+            # Everything he could have drawn left the pack mid-swap.
+            narrate(f"{player.name} finds nothing else to draw.")
+            return
+        # A stale choice (sold, dropped, already equipped) falls back to the
+        # first weapon on offer rather than equipping something not in hand.
+        weapon = choice if choice in options else options[0]
+        player.equip_item(item_object=weapon)
 
 
 class CrusaderOath(Move):

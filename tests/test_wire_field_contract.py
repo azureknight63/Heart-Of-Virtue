@@ -751,6 +751,19 @@ MOVE_STAGE_BEATS_CONTRACT = {
 }
 
 
+# The Swap Weapon card (#671) carries one extra field no other move does: the
+# weapons `select_weapon` will accept. WeaponSwapPanel lists them as buttons
+# and submits the id, so both sub-fields are read.
+SWAP_WEAPON_MOVE_CONTRACT = {
+    "weapon_options": Read("WeaponSwapPanel.jsx", "swapMove?.weapon_options"),
+}
+
+SWAP_WEAPON_OPTION_CONTRACT = {
+    "id": Read("WeaponSwapPanel.jsx", "onSwap(option.id)"),
+    "name": Read("WeaponSwapPanel.jsx", "Draw {option.name}"),
+}
+
+
 @pytest.fixture
 def attack_payload_out_of_reach(real_combat_player):
     """Attack's ``_get_available_moves()`` entry, one living Slime past its reach.
@@ -774,6 +787,52 @@ def attack_payload_out_of_reach(real_combat_player):
         move_payloads = adapter._get_available_moves()
     assert move_payloads, "expected Attack to appear in available moves"
     return move_payloads[0]
+
+
+class TestSwapWeaponWireContract:
+    """#671: the swap card the inventory's Weapons tab is built from."""
+
+    def _swap_payload(self):
+        from src.items import Dagger, Shortsword
+        from src.moves import SwapWeapon
+
+        player = Player()
+        dagger, sword = Dagger(), Shortsword()
+        player.inventory.extend([dagger, sword])
+        with capture_narration():
+            player.equip_item(item_object=dagger)
+        player.known_moves = [SwapWeapon(player)]
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.combat_list = []
+        player.combat_list_allies = [player]
+        player.combat_proximity = {}
+        player.in_combat = True
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            payload = ApiCombatAdapter(player)._get_available_moves()[0]
+        return payload, sword
+
+    def test_swap_card_fields(self):
+        payload, sword = self._swap_payload()
+        _assert_contract(payload, MOVE_CONTRACT, "Swap Weapon card")
+        _assert_contract(payload, SWAP_WEAPON_MOVE_CONTRACT, "Swap Weapon card")
+        assert payload["weapon_options"], "expected the Shortsword on offer"
+        option = payload["weapon_options"][0]
+        _assert_contract(option, SWAP_WEAPON_OPTION_CONTRACT, "weapon_options[0]")
+        # The id the button submits must be the inventory row's own id, the
+        # handle `select_weapon` resolves (InventorySerializer emits the same).
+        assert option["id"] == wire_handle(sword)
+
+    def test_the_client_keys_on_the_engine_move_name(self):
+        """LeftPanel lifts the card out of the move panel by name; a rename on
+        either side would put a choice-less swap card back in the Misc
+        panel and leave the Weapons tab empty."""
+        from src.moves import SwapWeapon
+
+        assert js_literal(
+            FRONTEND_SRC / "utils" / "combatMoveStatus.js", "SWAP_WEAPON_MOVE_NAME"
+        ) == SwapWeapon(Player()).name
 
 
 class TestMoveWireContract:

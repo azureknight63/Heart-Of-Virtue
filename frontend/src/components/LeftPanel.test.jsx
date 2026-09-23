@@ -30,7 +30,14 @@ import { FLEE_BREAK_AWAY_DISTANCE_FT } from '../utils/combatMoveStatus';
 
 // Mock child components
 vi.mock('./PartyPanel', () => ({ default: ({ onClose }) => <div data-testid="party-panel"><button onClick={onClose}>Close Party</button></div> }));
-vi.mock('./InventoryDialog', () => ({ default: ({ onClose }) => <div data-testid="inventory-dialog"><button onClick={onClose}>Close Inv</button></div> }));
+vi.mock('./InventoryDialog', () => ({
+    default: ({ onClose, swapWeapon, canSwapWeapon, onSwapWeapon }) => (
+        <div data-testid="inventory-dialog" data-swap-move={swapWeapon?.name ?? ''} data-can-swap={String(!!canSwapWeapon)}>
+            <button onClick={onClose}>Close Inv</button>
+            <button onClick={() => onSwapWeapon?.('w-sword')}>Draw Mock Weapon</button>
+        </div>
+    ),
+}));
 vi.mock('./AccountDialog', () => ({ default: ({ onClose }) => <div data-testid="account-dialog"><button onClick={onClose}>Close Acc</button></div> }));
 vi.mock('./SettingsDialog', () => ({ default: ({ onClose }) => <div data-testid="audio-dialog"><button onClick={onClose}>Close Aud</button></div> }));
 vi.mock('./JournalDialog', () => ({ default: ({ onClose }) => <div data-testid="journal-dialog"><button onClick={onClose}>Close Journal</button></div> }));
@@ -850,6 +857,82 @@ describe('LeftPanel', () => {
         expect(screen.getByText('Slash')).toBeInTheDocument();
         expect(screen.queryByText('UseItem')).not.toBeInTheDocument();
         expect(screen.queryByText('Use Item')).not.toBeInTheDocument();
+    });
+
+    describe('weapon swap (#671)', () => {
+        const swapOption = (overrides = {}) => makeAvailableOption({
+            id: '5',
+            name: 'Swap Weapon',
+            category: 'Utility',
+            targeted: false,
+            fatigue_cost: 0,
+            stage_beats: { prep: 1, execute: 1, recoil: 1, cooldown: 0 },
+            weapon_options: [{ id: 'w-sword', name: 'Shortsword' }],
+            ...overrides,
+        });
+
+        it('keeps Swap Weapon out of the move panel -- the choice lives in the inventory', () => {
+            const combat = combatWith([
+                makeAvailableOption({ id: '1', name: 'Wait', category: 'Utility', targeted: false }),
+                swapOption(),
+            ]);
+            render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
+            fireEvent.click(screen.getByText('Miscellaneous Btn'));
+            expect(screen.getByText('Wait')).toBeInTheDocument();
+            expect(screen.queryByText('Swap Weapon')).not.toBeInTheDocument();
+        });
+
+        it('hands the swap move to the inventory and lets it act on the player turn', () => {
+            const combat = combatWith([swapOption()]);
+            render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
+            fireEvent.click(screen.getByText('Inventory Btn'));
+            const dialog = screen.getByTestId('inventory-dialog');
+            expect(dialog.dataset.swapMove).toBe('Swap Weapon');
+            expect(dialog.dataset.canSwap).toBe('true');
+        });
+
+        it('does not let the swap act when the engine marks it unavailable', () => {
+            const combat = combatWith([swapOption({ available: false, reason: 'Cannot use this move', weapon_options: [] })]);
+            render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
+            fireEvent.click(screen.getByText('Inventory Btn'));
+            expect(screen.getByTestId('inventory-dialog').dataset.canSwap).toBe('false');
+        });
+
+        it('does not let the swap act off-turn', () => {
+            const combat = combatWith([swapOption()], { awaiting_input: false });
+            render(<LeftPanel {...baseProps} mode="combat" combat={combat} />);
+            fireEvent.click(screen.getByText('Inventory Btn'));
+            expect(screen.getByTestId('inventory-dialog').dataset.canSwap).toBe('false');
+        });
+
+        it('offers no swap outside combat', () => {
+            render(<LeftPanel {...baseProps} mode="exploration" />);
+            fireEvent.click(screen.getByText('Inventory Btn'));
+            expect(screen.getByTestId('inventory-dialog').dataset.swapMove).toBe('');
+        });
+
+        it('submits the drawn weapon as a swap_weapon action and closes the pack', async () => {
+            const onCombatAction = vi.fn().mockResolvedValue({});
+            const onMoveSubmitted = vi.fn();
+            const combat = combatWith([swapOption()]);
+            render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} onMoveSubmitted={onMoveSubmitted} />);
+            fireEvent.click(screen.getByText('Inventory Btn'));
+            fireEvent.click(screen.getByText('Draw Mock Weapon'));
+            await waitFor(() => expect(onCombatAction).toHaveBeenCalledWith('swap_weapon', { item_id: 'w-sword' }));
+            expect(onMoveSubmitted).toHaveBeenCalled();
+            expect(screen.queryByTestId('inventory-dialog')).toBeNull();
+        });
+
+        it('survives a failed swap submission', async () => {
+            const onCombatAction = vi.fn().mockRejectedValue(new Error('boom'));
+            const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            const combat = combatWith([swapOption()]);
+            render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+            fireEvent.click(screen.getByText('Inventory Btn'));
+            fireEvent.click(screen.getByText('Draw Mock Weapon'));
+            await waitFor(() => expect(errorSpy).toHaveBeenCalled());
+            errorSpy.mockRestore();
+        });
     });
 
     // HeroPanel's base bounding box is 360x310; the wrapper scales by

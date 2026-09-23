@@ -177,6 +177,14 @@ describe('endpoints', () => {
       });
     });
 
+    it('calls performAction with swap_weapon type, carrying the weapon id (#671)', () => {
+      endpoints.combat.performAction('swap_weapon', { item_id: 'w-sword' });
+      expect(apiClient.post).toHaveBeenCalledWith('/combat/move', {
+        move_type: 'swap_weapon',
+        item_id: 'w-sword'
+      });
+    });
+
     it('calls performAction with flee type', () => {
       endpoints.combat.performAction('flee', {});
       expect(apiClient.post).toHaveBeenCalledWith('/combat/move', {

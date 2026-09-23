@@ -245,6 +245,15 @@ export function autoResolvedTargetId(move) {
 export const FLEE_BREAK_AWAY_DISTANCE_FT = 20;
 
 /**
+ * The engine's name for the Swap Weapon move (`SwapWeapon.name`,
+ * src/moves/_utility.py, #671). LeftPanel keys on it to lift the move out of
+ * the move panel and into the inventory's Weapons tab. Held to the engine by
+ * tests/test_wire_field_contract.py, so a rename there cannot silently put a
+ * choice-less swap card back in the Misc panel.
+ */
+export const SWAP_WEAPON_MOVE_NAME = 'Swap Weapon';
+
+/**
  * Whether a move can actually be cast right now, and why not.
  *
  * `move.available` alone is not enough (issue #554). The engine's own

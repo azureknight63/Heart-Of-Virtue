@@ -260,6 +260,72 @@ describe('InventoryDialog', () => {
     expect(screen.queryByTitle('Weapons')).not.toBeInTheDocument();
   });
 
+  describe('weapon swap in combat (#671)', () => {
+    const swapWeapon = {
+      id: '5',
+      name: 'Swap Weapon',
+      category: 'Utility',
+      available: true,
+      reason: null,
+      fatigue_cost: 0,
+      stage_beats: { prep: 1, execute: 1, recoil: 1, cooldown: 0 },
+      weapon_options: [{ id: 5, name: 'Steel Axe' }],
+    };
+
+    it('adds a Weapons tab in combat when the swap move is offered', () => {
+      render(
+        <InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch}
+          combatMode swapWeapon={swapWeapon} canSwapWeapon onSwapWeapon={vi.fn()} />
+      );
+      expect(screen.getByTitle('Consumables')).toBeInTheDocument();
+      expect(screen.getByTitle('Weapons')).toBeInTheDocument();
+      expect(screen.queryByTitle('Armor')).not.toBeInTheDocument();
+    });
+
+    it('opens the Weapons tab on the swap panel, not the free equip list', () => {
+      const onSwapWeapon = vi.fn();
+      render(
+        <InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch}
+          combatMode swapWeapon={swapWeapon} canSwapWeapon onSwapWeapon={onSwapWeapon} />
+      );
+      fireEvent.click(screen.getByTitle('Weapons'));
+      expect(screen.getByTestId('weapon-swap-cost').textContent).toContain('3 beats');
+      // The in-hand weapon is named from the inventory row the server marks
+      // equipped; the choices are the engine's list, not every weapon row.
+      expect(screen.queryByRole('button', { name: /Draw Wooden Bow/ })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /Draw Steel Axe/ }));
+      expect(onSwapWeapon).toHaveBeenCalledWith(5);
+      expect(screen.queryByTestId('item-detail')).toBeNull();
+    });
+
+    it('names the equipped weapon on the swap panel', () => {
+      const player = {
+        ...mockPlayer,
+        inventory: mockPlayer.inventory.map(i => (i.id === 1 ? { ...i, is_equipped: true } : i)),
+      };
+      render(
+        <InventoryDialog player={player} onClose={mockOnClose} onRefetch={mockOnRefetch}
+          combatMode swapWeapon={swapWeapon} canSwapWeapon onSwapWeapon={vi.fn()} />
+      );
+      fireEvent.click(screen.getByTitle('Weapons'));
+      expect(screen.getByText(/In hand:/).textContent).toContain('Iron Sword');
+    });
+
+    it('keeps the Weapons tab out of combat when no swap move is offered', () => {
+      render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} combatMode />);
+      expect(screen.queryByTitle('Weapons')).not.toBeInTheDocument();
+    });
+
+    it('still opens on Consumables in combat', () => {
+      render(
+        <InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch}
+          combatMode swapWeapon={swapWeapon} canSwapWeapon onSwapWeapon={vi.fn()} />
+      );
+      expect(screen.getByText('Health Potion')).toBeInTheDocument();
+      expect(screen.queryByTestId('weapon-swap-cost')).toBeNull();
+    });
+  });
+
   it('shows an empty-tab message when a category has no owned items', () => {
     const player = { ...mockPlayer, inventory: mockPlayer.inventory.filter(i => i.maintype !== 'Armor') };
     render(<InventoryDialog player={player} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
