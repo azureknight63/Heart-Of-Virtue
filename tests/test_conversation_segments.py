@@ -960,7 +960,7 @@ def test_guide_to_citadel_hands_every_stage_a_fresh_complete_payload(game_servic
         "Antidote",
         "Restorative",
     ]
-    assert player.teleported == ("grondia", (10, 5))
+    assert player.teleported == ("grondia", (12, 4))  # outside Jambo's tent (#663)
 
 
 def test_guide_to_citadel_pending_payload_tracks_the_stage_the_player_is_on(

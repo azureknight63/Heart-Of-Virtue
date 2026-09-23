@@ -7,7 +7,11 @@
             "east"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "class": "story.ch02.JamboShopIntroEvent"
+            }
+        ],
         "items": [],
         "npcs": [
             {
