@@ -1114,6 +1114,7 @@ class Passageway(Object):
         "persist", "hidden", "hide_factor", "passthrough", "name",
         "description", "idle_message", "discovery_message", "demo_end",
         "demo_end_ready_flag", "locked_until_flag", "locked_message",
+        "crossing_keywords",
     }
     #: The export reads the gate key as authored, not through the property's
     #: validated fallback, so a passageway with no key of its own round-trips
@@ -1132,6 +1133,15 @@ class Passageway(Object):
     #: this placement is locked at all (#669).
     locked_until_flag = None
     locked_message = None
+
+    #: Extra verbs that CROSS this placement, beyond ``enter``, its delegators
+    #: and the words of its own name -- authored per placement (#630): the
+    #: Eastern Gates' ``east``/``west`` and The Guesthold's ``inside``. They
+    #: resolve to ``enter`` through ``instance_keyword_aliases``, exactly as
+    #: the name words do, so intent is declared rather than inferred from the
+    #: advertised ``keywords``. Class-level default for older saves and for
+    #: placements that author none.
+    crossing_keywords = ()
 
     #: The story key the shipped demo edge (the nomad-camp Ferry Landing) is
     #: gated on, written by chapter 3's ``MaraObservationEvent`` once Mara's
@@ -1187,6 +1197,7 @@ class Passageway(Object):
         demo_end_ready_flag: str = None,
         locked_until_flag: str = None,
         locked_message: str = None,
+        crossing_keywords: list = None,
     ):
         aliases = [name.lower(), "passage"]
         super().__init__(
@@ -1206,6 +1217,16 @@ class Passageway(Object):
         for _word in type(self)._name_alias_words(name):
             # Advertised as data only. The word is instance-supplied; what it
             # means is fixed by `instance_keyword_aliases` on the class (#620).
+            if hasattr(self, _word) or _word in self.action_aliases:
+                continue
+            self.action_aliases.append(_word)
+            self.keywords.append(_word)
+        # Stored as authored; `_crossing_words` validates it where it is read,
+        # since the legacy loader and a save both write this attribute.
+        self.crossing_keywords = crossing_keywords
+        # Advertised so the client renders the button and the API authorizes
+        # the verb. What it MEANS is fixed by `instance_keyword_aliases`.
+        for _word in type(self)._crossing_words(crossing_keywords):
             if hasattr(self, _word) or _word in self.action_aliases:
                 continue
             self.action_aliases.append(_word)
@@ -1268,8 +1289,31 @@ class Passageway(Object):
         cleaned = str(name or "").lower().replace("'s", "").replace("'", "")
         return [w for w in cleaned.split() if len(w) > 3 and w.isalpha()]
 
+    @staticmethod
+    def _crossing_words(value):
+        """The whole, lower-case, alphabetic words ``crossing_keywords`` declares.
+
+        The value is map-authored or save-restored, so it is not trusted to be
+        a list: ``None`` declares nothing, a bare string is one word (never a
+        haystack), and non-strings, blanks and anything with a non-letter are
+        ignored. Verbs reach the API lower-cased, so the words are too.
+        """
+        if isinstance(value, str):
+            value = [value]
+        if not isinstance(value, (list, tuple)):
+            return []
+        words = []
+        for word in value:
+            if not isinstance(word, str):
+                continue
+            word = word.strip().lower()
+            if word.isalpha() and word not in words:
+                words.append(word)
+        return words
+
     def instance_keyword_aliases(self):
-        """``{authored word: method name}`` for this placement's own name words.
+        """``{authored word: method name}`` for this placement's own name words
+        and its declared ``crossing_keywords``.
 
         Read by :func:`resolve_interaction`. Declared on the CLASS on purpose:
         the words are instance data and a map or a save may influence them, but
@@ -1281,7 +1325,14 @@ class Passageway(Object):
         instance ``__dict__`` entry of that name -- a map prop, a save --
         win the lookup and be called here.
         """
-        return {word: "enter" for word in type(self)._name_alias_words(self.name)}
+        cls = type(self)
+        words = cls._name_alias_words(self.name) + cls._crossing_words(
+            getattr(self, "crossing_keywords", None)
+        )
+        # A word the class already declares keeps its own meaning:
+        # resolve_interaction consults this table only for undeclared names,
+        # and it must not advertise a crossing it would never dispatch.
+        return {word: "enter" for word in words if not hasattr(cls, word)}
 
     def is_crossing_handler(self, handler):
         """True when ``handler`` is one of this passageway's crossing methods.
@@ -1315,15 +1366,16 @@ class Passageway(Object):
         The API's confirmation arm asks here rather than spelling the rule
         itself, so the dispatch contract test can ask the same question
         instead of retyping it (a retyped mirror has failed open twice).
-        Two ways in, because neither alone is right: the verb crosses
-        (``is_crossing_handler``: ``enter``, its delegators, the name words),
-        or the placement ADVERTISES it -- an authored keyword is the author
-        saying "this verb uses it", which is how grondia's ``inside``/``east``
-        and eastern-descent's ``west`` cross while resolving to nothing. What
-        stays out is exactly the hole: an allow-listed verb the placement
-        never advertised.
+        Only a verb that CROSSES qualifies (``is_crossing_handler``: ``enter``,
+        its delegators, the name words and the declared
+        ``crossing_keywords``). Advertising a verb in ``keywords`` is not
+        enough (#630): that half used to admit any advertised verb, including
+        one authored for another purpose, and arming the crossing drops Jean's
+        unpaid merchandise and runs ``events_before`` before he confirms.
+        ``action`` is kept for the callers' shape; the verb has already been
+        resolved to ``handler``.
         """
-        return self.is_crossing_handler(handler) or action in advertised_keywords(self)
+        return self.is_crossing_handler(handler)
 
     def is_demo_edge(self, ready_flag=None):
         """True when this passageway is where the demo stops -- and, given

@@ -560,7 +560,7 @@ class GameService:
             # that is the engine's only implementation, so on any other target
             # the same arm resolves nothing and refuses it in fiction --
             # passageways included, since the step-through arm takes only
-            # verbs that cross or that the placement advertises (#620).
+            # verbs that cross (#620, #630).
             "take_all",
         }
     )
@@ -2769,9 +2769,9 @@ class GameService:
             # `_queue_passageway_confirmation` ran `drop_merchandise_items()` and
             # every `events_before` BEFORE the player was asked anything. Which
             # verbs may step through is the engine's rule
-            # (`Passageway.accepts_step_through`: the verb crosses, or the
-            # placement advertises it); what stays out is exactly the hole, an
-            # allow-list verb the placement never advertised, which falls to the
+            # (`Passageway.accepts_step_through`: the verb crosses -- `enter`,
+            # its delegators, the name words or a declared `crossing_keywords`
+            # entry, #630); anything else, advertised or not, falls to the
             # generic arm and is refused in fiction.
             elif (
                 isinstance(target, Passageway)
