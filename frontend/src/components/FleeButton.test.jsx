@@ -1,6 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import FleeButton from './FleeButton'
+import { accessibility } from '../styles/theme'
+import { stubPointerEnvironment, stubWideTouchTablet } from '../test/pointerEnvironment'
+import { expectTouchFloorOnEveryButton } from '../test/touchTargetAssertions'
 
 describe('FleeButton', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -85,5 +88,41 @@ describe('FleeButton', () => {
 
     fireEvent.mouseLeave(btn)
     expect(btn.style.background).toBe('rgb(10, 10, 10)')
+  })
+
+  // Issue #649: a combat control that costs a turn if missed. The floor is
+  // decided by the pointer (useLargeTouchTargets), not by the isMobile prop,
+  // so the wide touch tablet is the device that matters.
+  describe('44px touch-target floor', () => {
+    let env
+    afterEach(() => env?.restore())
+
+    it('floors the idle button on a wide touch tablet', () => {
+      env = stubWideTouchTablet()
+      const { container } = render(<FleeButton onFlee={vi.fn()} />)
+      expect(screen.getByTestId('flee-btn').style.minHeight).toBe(accessibility.touchTarget)
+      expectTouchFloorOnEveryButton(container)
+    })
+
+    it('floors both confirmation buttons on a wide touch tablet', () => {
+      env = stubWideTouchTablet()
+      const { container } = render(<FleeButton onFlee={vi.fn()} />)
+      fireEvent.click(screen.getByTestId('flee-btn'))
+      expect(screen.getByTestId('flee-confirm-yes').style.minHeight).toBe(accessibility.touchTarget)
+      expect(screen.getByTestId('flee-confirm-cancel').style.minHeight).toBe(accessibility.touchTarget)
+      expectTouchFloorOnEveryButton(container)
+    })
+
+    it('floors a narrow viewport even with a fine pointer', () => {
+      env = stubPointerEnvironment({ narrow: true, coarse: false })
+      const { container } = render(<FleeButton onFlee={vi.fn()} />)
+      expectTouchFloorOnEveryButton(container)
+    })
+
+    it('leaves a wide mouse-driven desktop unfloored', () => {
+      env = stubPointerEnvironment({ narrow: false, coarse: false })
+      render(<FleeButton onFlee={vi.fn()} />)
+      expect(screen.getByTestId('flee-btn').style.minHeight).toBe('')
+    })
   })
 })

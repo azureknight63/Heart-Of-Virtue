@@ -601,6 +601,10 @@ function nearestGuard(node, parents) {
  *   - a floor written as a bare `'44px'` rather than through the token. That
  *     is a different defect (the token rule in .claude/rules/frontend.md) and
  *     a different audit would be needed to see it.
+ *   - a control that never reads the token at all — there is nothing here
+ *     for the scan to find (issue #649: the glossary close and FleeButton).
+ *     That direction is covered per component, at render time, by
+ *     `expectTouchFloorOnEveryButton` in test/touchTargetAssertions.js.
  *   - an effective size lost to an ANCESTOR transform. HeroPanel's radial
  *     buttons declare the token unconditionally and are still shrunk below it
  *     by useHeroAutoScale; only the compensation's own gate is visible here.
