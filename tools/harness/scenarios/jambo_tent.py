@@ -1,4 +1,15 @@
-"""Jambo's tent: first-entry introduction (#664) through the real API.
+"""Jambo's tent: wayfinding (#663) and first-entry introduction (#664),
+through the real API.
+
+#663 half (runs first):
+  a. Ch02GuideToCitadel, driven stage by stage through /api/world/events and
+     /api/world/events/input, ends with Jean on the tent's exterior tile,
+     grondia (12, 4).
+  b. Crossing eastern-descent -> nomad camp through the real passageway plays
+     the camp's arrival beats and then the Jambo's-tent notice, in that
+     order, and sets ``nomad_camp_jambo_tent_noticed``.
+
+#664 half:
 
 Drives the crossing a player actually makes -- ``/api/world/interact`` on the
 tent's Passageway, then ``/api/world/events/input`` to confirm "Step
@@ -27,6 +38,7 @@ from ..client import GameClient
 from ..reporter import BugReport, BugSeverity, BugCategory
 
 _INTRO_GATE = "jambo_shop_intro_done"
+_NOTICE_GATE = "nomad_camp_jambo_tent_noticed"
 
 #: (label, exterior map, exterior coords, tent map)
 _TENTS = (
@@ -38,8 +50,8 @@ _TENTS = (
 class JamboTentScenario(Scenario):
     name = "jambo_tent"
     description = (
-        "Enter Jambo's tents through the real passageway flow and verify the "
-        "first-entry introduction plays once (#664)."
+        "Votha Krr and the camp arrival point Jean at Jambo's tent (#663); "
+        "entering it plays Jambo's introduction once (#664)."
     )
 
     def run(self, client: GameClient) -> List[BugReport]:
@@ -53,6 +65,11 @@ class JamboTentScenario(Scenario):
         map_names = {m.get("name") for m in universe.maps}
         player.in_combat = False
         player.combat_list = []
+
+        if "grondia" in map_names:
+            self._check_votha_sends_jean_to_the_tent(client, bugs, player, universe)
+        if {"eastern-descent", "eastern-descent-nomad-camp"} <= map_names:
+            self._check_camp_arrival_points_at_the_tent(client, bugs, player, universe)
 
         for label, outer_map, exterior, tent_map in _TENTS:
             if outer_map not in map_names or tent_map not in map_names:
@@ -125,6 +142,115 @@ class JamboTentScenario(Scenario):
                     actual=f"speakers={sorted(self._speakers(again))}",
                 ))
         return bugs
+
+    # ------------------------------------------------------------------
+    # #663
+    # ------------------------------------------------------------------
+
+    def _check_votha_sends_jean_to_the_tent(self, client, bugs, player, universe):
+        from src.story.ch02 import Ch02GuideToCitadel
+
+        player.teleport("grondia", (7, 5))
+        tile = player.current_room
+        tile.events_here = [Ch02GuideToCitadel(player, tile, params=None)]
+        client._session_manager.save_session(client.session_id)
+        resp = client.post("/api/world/events")
+        bug = self._check_status(resp, 200, "/api/world/events", "POST", "Votha: trigger")
+        if bug:
+            bugs.append(bug)
+            return
+        pending = [
+            e for e in client.parse(resp).get("events", [])
+            if e.get("needs_input") and e.get("event_id")
+        ]
+        if not pending:
+            bugs.append(self._bug(
+                title="Votha: Ch02GuideToCitadel did not start",
+                severity=BugSeverity.HIGH, category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/world/events", method="POST",
+                expected="a needs_input event", actual=str(client.parse(resp))[:400],
+            ))
+            return
+        event, saw_jambo_named = pending[0], False
+        for _ in range(12):
+            # First offered option each stage (the quest choice takes "a").
+            options = event.get("input_options") or [{"value": "continue"}]
+            body = {"event_id": event["event_id"], "user_input": options[0]["value"]}
+            resp = client.post("/api/world/events/input", json=body)
+            bug = self._check_status(
+                resp, 200, "/api/world/events/input", "POST", "Votha: advance",
+                request_body=body,
+            )
+            if bug:
+                bugs.append(bug)
+                return
+            data = client.parse(resp)
+            if "Jambo" in str(data.get("event", {}).get("segments", "")) or \
+                    "Jambo" in str(data.get("segments", "")):
+                saw_jambo_named = True
+            if not data.get("needs_input"):
+                break
+            event = data["event"]
+        where = (player.map.get("name"), (player.location_x, player.location_y))
+        if where != ("grondia", (12, 4)):
+            bugs.append(self._bug(
+                title="Votha: Ch02GuideToCitadel did not leave Jean outside Jambo's tent",
+                severity=BugSeverity.HIGH, category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/world/events/input", method="POST",
+                expected="grondia (12, 4)", actual=str(where),
+            ))
+        if not saw_jambo_named:
+            bugs.append(self._bug(
+                title="Votha: farewell never names Jambo",
+                severity=BugSeverity.MEDIUM, category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/world/events/input", method="POST",
+                expected="a staged segment mentioning Jambo", actual="none",
+            ))
+
+    def _check_camp_arrival_points_at_the_tent(self, client, bugs, player, universe):
+        descent = next(m for m in universe.maps if m.get("name") == "eastern-descent")
+        found = next(
+            (
+                (c, o.name)
+                for c, t in descent.items()
+                if isinstance(c, tuple)
+                for o in getattr(t, "objects_here", [])
+                if type(o).__name__ == "Passageway"
+                and getattr(o, "teleport_map", None) == "eastern-descent-nomad-camp"
+            ),
+            None,
+        )
+        if found is None:
+            bugs.append(self._bug(
+                title="Camp: no eastern-descent passage into the nomad camp",
+                severity=BugSeverity.HIGH, category=BugCategory.WRONG_RESPONSE,
+                endpoint="universe", method="SETUP",
+                expected="a Passageway to eastern-descent-nomad-camp", actual="none",
+            ))
+            return
+        coords, passage_name = found
+        player.teleport("eastern-descent", coords)
+        client._session_manager.save_session(client.session_id)
+        data = self._cross(client, bugs, passage_name, "Camp: arrive")
+        if data is None:
+            return
+        text = str(data)
+        liss, sign = text.find("My name's Liss"), text.find("Jambo Heals U")
+        if sign == -1 or liss == -1 or sign < liss:
+            bugs.append(self._bug(
+                title="Camp: Jambo's-tent notice missing or out of order",
+                severity=BugSeverity.MEDIUM, category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/world/events/input", method="POST",
+                expected="greeting (Liss) then the 'Jambo Heals U' notice",
+                actual=f"liss@{liss} sign@{sign}",
+            ))
+        if universe.story.get(_NOTICE_GATE) != "1":
+            bugs.append(self._bug(
+                title=f"Camp: story gate '{_NOTICE_GATE}' not set",
+                severity=BugSeverity.MEDIUM, category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/world/events/input", method="POST",
+                expected="'1'", actual=repr(universe.story.get(_NOTICE_GATE)),
+            ))
 
     # ------------------------------------------------------------------
     # helpers

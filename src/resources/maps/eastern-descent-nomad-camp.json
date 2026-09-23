@@ -1465,6 +1465,9 @@
                     "api_event_id": null,
                     "needs_input": false
                 }
+            },
+            {
+                "class": "story.ch03.JamboTentNoticeEvent"
             }
         ],
         "items": [],

@@ -37,6 +37,12 @@ _JEAN_SOLO = [("Jean", "left", "neutral")]
 _JEAN_GORRAN_ALLY = [("Jean", "left", "neutral"), ("Gorran", None, "neutral")]
 _JEAN_VOTHA_KRR = [("Jean", "left", "neutral"), ("Votha Krr", None, "neutral")]
 
+#: Where Ch02GuideToCitadel leaves Jean (issue #663): the Ecumerium tile whose
+#: "Jambo's Tent" passageway enters grondia-jambos_shop, so Votha Krr's
+#: directions end at the tent he just named. Pinned against the real map by
+#: tests/test_issue_663_jambo_tent_wayfinding.py.
+JAMBO_TENT_EXTERIOR = ("grondia", (12, 4))
+
 
 class AfterDefeatingLurker(Event):
     """
@@ -174,7 +180,7 @@ class Ch02GuideToCitadel(
         if self.player.skip_dialog:
             loot = [items.Antidote(5), items.Restorative(2)]
             self.player.add_items_to_inventory(loot)
-            self.player.teleport("grondia", (10, 5))
+            self.player.teleport(*JAMBO_TENT_EXTERIOR)
             self.needs_input = False
             self.completed = True
             self.tile.remove_event(self.name)
@@ -506,9 +512,26 @@ class Ch02GuideToCitadel(
             self.player.add_items_to_inventory(loot)
             narrate("With that, Votha Krr slowly got to his feet, his massive form towering over Jean.")
             say(
-                "May the earth guide your steps, Jean. You are a guest of our city. The "
-                "merchants of the Eastern Gate will have what you need for the road. Return to "
-                "me when you have dealt with the slimes.",
+                "May the earth guide your steps, Jean. You are a guest of our city.",
+                "Votha Krr",
+                "neutral",
+            )
+            say(
+                "Before you go down to the pools, find Jambo, the trader. His tent stands in "
+                "the Ecumerium — our market — beneath a painted sign. He sells remedies for "
+                "the kind of harm the pools will do.",
+                "Votha Krr",
+                "neutral",
+            )
+            say(
+                "He will tell you he is the finest healer in Grondia. He is certainly the "
+                "loudest.",
+                "Votha Krr",
+                "happy",
+            )
+            say("Jambo. The Ecumerium.", "Jean", "neutral")
+            say(
+                "Return to me when you have dealt with the slimes.",
                 "Votha Krr",
                 "neutral",
             )
@@ -519,14 +542,20 @@ class Ch02GuideToCitadel(
                 "curious",
             )
             narrate("He said it the same way he'd said it the first time. Like a door left open.")
+            narrate(
+                "The attendant who had brought the supplies walked Jean back out through the "
+                "Citadel's halls and east across the city, into the murmur of the market. He "
+                "stopped where a tent stood among the stone counters, pointed once at its "
+                "hand-painted sign, and went back the way they had come."
+            )
             self.input_prompt = ""
             self.input_options = [{"value": "done", "label": "Continue"}]
             self._stage = 8
             return
 
-        # Stage 8 — Cleanup
+        # Stage 8 — Cleanup: leave Jean outside Jambo's tent (#663)
         if self._stage == 8:
-            self.player.teleport("grondia", (10, 5))
+            self.player.teleport(*JAMBO_TENT_EXTERIOR)
             self.needs_input = False
             self.completed = True
             self.tile.remove_event(self.name)
