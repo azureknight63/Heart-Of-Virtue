@@ -8,6 +8,7 @@ without blocking for user input.
 
 from src import functions
 import contextlib
+import math
 import uuid
 import threading
 import logging
@@ -21,6 +22,7 @@ import src.moves as moves  # type: ignore
 from src.api.serializers.combat import (
     CombatStateSerializer,
     CombatantSerializer,
+    StateEffectSerializer,
     strip_combatant_prefix,
 )
 from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
@@ -32,6 +34,7 @@ from src.api.schemas.combat_beat import (
     SUGGESTIONS_EVENT,
     TURN_EVENT,
     UPDATE_EVENT,
+    build_beat_results,
 )
 from src.api.combat_beat_stream import CombatBeatStreamer
 from src.narration import ANSI_ESCAPE_RE
@@ -521,6 +524,29 @@ def _wire_animation(pending: dict) -> dict:
     if target is not None:
         animation["target_id"] = CombatantSerializer.stream_id(target)
     return animation
+
+
+def _vitals_of(entity):
+    """``(hp, visible status names)`` for one combatant, or None if unreadable.
+
+    The two facts a beat's floating-text results are measured from (#667).
+    The status filter is ``StateEffectSerializer.is_hidden`` -- the one owner
+    of the hidden rule -- so ``Dodging``/``Parrying`` never float up as
+    "+ Dodging" while staying off every status panel. A non-numeric or
+    non-finite ``hp`` (a degraded object) opts the combatant out instead of
+    shipping a NaN the client would render as "NaN HP".
+    """
+    hp = getattr(entity, "hp", None)
+    if isinstance(hp, bool) or not isinstance(hp, (int, float)) or not math.isfinite(hp):
+        return None
+    states = getattr(entity, "states", None)
+    names = set()
+    if isinstance(states, (list, tuple)):
+        for state in states:
+            if not StateEffectSerializer.is_hidden(state):
+                names.add(str(getattr(state, "name", "")))
+    names.discard("")
+    return hp, frozenset(names)
 
 
 def _take_resolution(pending: dict, beat: Optional[int] = None) -> dict:
@@ -2830,6 +2856,66 @@ class ApiCombatAdapter:
 
         return result
 
+    def _snapshot_vitals(self):
+        """``[(entity, wire id, vitals)]`` for every combatant, before a beat.
+
+        Holding the ENTITIES rather than a serialized roster is the point: the
+        beat drops a killed enemy from ``combat_list`` before it ends, so a
+        post-beat roster never sees the blow that killed it. Measuring the same
+        objects afterwards does. The wire id is taken now so the before and
+        after halves agree even if a combatant changes sides mid-beat.
+        """
+        snapshot = []
+        seen = set()
+        for entity in self._all_combatants():
+            # The player sits in combat_list_allies too.
+            if id(entity) in seen:
+                continue
+            seen.add(id(entity))
+            vitals = _vitals_of(entity)
+            if vitals is not None:
+                snapshot.append(
+                    (entity, CombatantSerializer.stream_id(entity), vitals)
+                )
+        return snapshot
+
+    def _attach_beat_results(self, vitals_before, beat_log):
+        """Hang this beat's floating-text results on its last log entry (#667).
+
+        The facts are the engine's own: HP and visible statuses measured on the
+        combatants that entered the beat (``_snapshot_vitals``), plus the
+        outcomes the engine published onto this beat's animation carriers.
+        ``build_beat_results`` owns the shape; see ``RESULT_KINDS``.
+
+        The LAST entry because the client reveals the log line by line, and the
+        beat's last line is when everything the beat did has been narrated.
+        A beat that narrated nothing has nowhere to put them and reports
+        nothing: a change with no line of its own is not something the player
+        was shown happening. Never raises -- this is presentation, and must not
+        cost the beat.
+        """
+        if not beat_log:
+            return
+        try:
+            before = {}
+            after = {}
+            for entity, cid, vitals in vitals_before:
+                current = _vitals_of(entity)
+                if current is None:
+                    continue
+                before[cid] = vitals
+                after[cid] = current
+            resolutions = [
+                entry["animation"]
+                for entry in beat_log
+                if isinstance(entry.get("animation"), dict)
+            ]
+            results = build_beat_results(before, after, resolutions)
+            if results:
+                beat_log[-1]["results"] = results
+        except Exception:
+            logger.exception("failed to attach beat results")
+
     def _run_move_beat(self, beat_states):
         """Process one beat of the player's move loop, appending its beat state.
 
@@ -2873,6 +2959,10 @@ class ApiCombatAdapter:
         # correct the slice below rather than losing the whole beat.
         self._log_trimmed_since_beat = 0
 
+        # Who entered the beat, and in what shape -- what the beat's
+        # floating-text results are measured against (#667).
+        vitals_before = self._snapshot_vitals()
+
         # Capture output for THIS beat only
         with self._capture_output():
             # Advance all player moves — tag so write() matches the right animation
@@ -2892,6 +2982,17 @@ class ApiCombatAdapter:
 
             # Increment beat
             self.player.combat_beat += 1
+
+        # This beat's own log window (see log_len_before above). Resolved
+        # here, before the event check, so an event-interrupted beat still
+        # carries its results on the lines it did narrate.
+        beat_window_start = max(
+            0, log_len_before - self._log_trimmed_since_beat
+        )
+        self._attach_beat_results(
+            vitals_before,
+            getattr(self.player, "combat_log", [])[beat_window_start:],
+        )
 
         # Check for combat events after each beat
         if self.on_event_callback:
@@ -2914,9 +3015,6 @@ class ApiCombatAdapter:
 
         # Add log to beat state — only entries added during THIS beat, not
         # the full cumulative combat log (see log_len_before above).
-        beat_window_start = max(
-            0, log_len_before - self._log_trimmed_since_beat
-        )
         beat_state["log"] = list(
             getattr(self.player, "combat_log", [])[beat_window_start:]
         )
