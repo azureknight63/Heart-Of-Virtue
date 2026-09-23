@@ -81,3 +81,12 @@ class TestBakedStackNameNormalisedOnLoad:
         item = Item("Relic x3", "An odd relic.", 1, "Special", "Relic", "a relic.")
         assert not hasattr(item, "count")
         assert _round_trip(item).name == "Relic x3"
+
+    def test_loaded_item_keeps_its_own_wire_handle(self):
+        """The override restores like default BUILD: a saved item's handle
+        survives the load (it is the same item, not a split)."""
+        from src.combatant import wire_handle
+
+        item = _baked(MineralPowder, "Mineral Powder", 3)
+        handle = wire_handle(item)
+        assert wire_handle(_round_trip(item)) == handle

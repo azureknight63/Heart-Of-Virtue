@@ -159,7 +159,12 @@ def test_every_wholesale_state_copy_in_src_goes_through_copy_item_state():
     assert "src/functions.py::copy_item_state" in sites, (
         f"the scan no longer finds copy_item_state itself -- it has gone quiet: {sorted(sites)}"
     )
-    assert sites == {"src/functions.py::copy_item_state"}, (
+    # ``Item.__setstate__`` (#643) is pickle's own BUILD restoring an object
+    # from ITS OWN saved state, not a split: a loaded item must keep its
+    # handle, and the override writes exactly what the default BUILD wrote
+    # before it (plus the baked-name strip). It is not a clone path.
+    allowed = {"src/functions.py::copy_item_state", "src/items.py::__setstate__"}
+    assert sites <= allowed, (
         "copies an object's whole state without functions.copy_item_state, so the "
-        f"copy inherits the source's wire handle (#633): {sorted(sites - {'src/functions.py::copy_item_state'})}"
+        f"copy inherits the source's wire handle (#633): {sorted(sites - allowed)}"
     )
