@@ -1536,6 +1536,93 @@ describe('BattlefieldGrid', () => {
             act(() => vi.advanceTimersByTime(700 + 50));
             expect(container.querySelector('svg[viewBox="-100 -100 200 200"]')).toBeNull();
         });
+
+        // Issue #670: the log (non-streaming, default) path used to diff only
+        // `enemies`, so an ally or Jean dying vanished with no burst. The
+        // streaming path already bursts both (beatToAnimations/findCombatant).
+        const BURST = 'svg[viewBox="-100 -100 200 200"]';
+        const gorran = { id: 'ally_gorran', name: 'Gorran', hp: 40, max_hp: 40, position: { x: 7, y: 6, facing: 'N' } };
+        const goblin = mockCombat.enemies[0];
+
+        const renderKill = (allBeatStates, targetId, extra = {}) => render(
+            <BattlefieldGrid
+                combat={{
+                    ...mockCombat,
+                    allies: [gorran],
+                    log: [
+                        { beat_index: 1, animation: { type: 'attack', source_id: 'enemy_goblin', target_id: targetId, outcome: 'hit' } },
+                    ],
+                }}
+                allBeatStates={allBeatStates}
+                currentBeatIndex={1}
+                tab="overview"
+                zoom={1}
+                displayedLogCount={1}
+                {...extra}
+            />
+        );
+
+        it('bursts an ally killed on the log path, drawn on the friendly side', () => {
+            const { container } = renderKill([
+                { player: mockCombat.player, allies: [gorran], enemies: [goblin] },
+                { player: mockCombat.player, allies: [{ ...gorran, hp: 0 }], enemies: [goblin] },
+            ], 'ally_gorran');
+
+            act(() => vi.advanceTimersByTime(800 + 50));
+            expect(container.querySelector(BURST)).not.toBeNull();
+            // The fading token keeps its alignment (ally = primary border, not danger).
+            const marker = container.querySelector('[aria-label^="Gorran:"]');
+            expect(marker).not.toBeNull();
+            const n = parseInt(colors.primary.slice(1), 16);
+            expect(marker.closest('[style*="border-color"]').style.borderColor)
+                .toBe(`rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`);
+
+            act(() => vi.advanceTimersByTime(700 + 50));
+            expect(container.querySelector(BURST)).toBeNull();
+        });
+
+        it('bursts an ally removed from the roster by the killing blow', () => {
+            const { container } = renderKill([
+                { player: mockCombat.player, allies: [gorran], enemies: [goblin] },
+                { player: mockCombat.player, allies: [], enemies: [goblin] },
+            ], 'ally_gorran');
+
+            act(() => vi.advanceTimersByTime(800 + 50));
+            expect(container.querySelector(BURST)).not.toBeNull();
+        });
+
+        it('bursts Jean when she is killed on the log path', () => {
+            const { container } = renderKill([
+                { player: mockCombat.player, allies: [], enemies: [goblin] },
+                { player: { ...mockCombat.player, hp: 0 }, allies: [], enemies: [goblin] },
+            ], 'player');
+
+            act(() => vi.advanceTimersByTime(800 + 50));
+            expect(container.querySelector(BURST)).not.toBeNull();
+        });
+
+        it('leaves a friendly death to the beat stream when streaming is on (no double burst)', () => {
+            // Streamed deaths come from beatToAnimations; the log diff must not
+            // also synthesize one, or Jean would burst twice.
+            const { container } = renderKill([
+                { player: mockCombat.player, allies: [], enemies: [goblin] },
+                { player: { ...mockCombat.player, hp: 0 }, allies: [], enemies: [goblin] },
+            ], 'player', { streaming: true });
+
+            act(() => vi.advanceTimersByTime(800 + 50));
+            expect(container.querySelector(BURST)).toBeNull();
+        });
+
+        it('does not burst a friendly who survives the blow', () => {
+            const { container } = renderKill([
+                { player: mockCombat.player, allies: [gorran], enemies: [goblin] },
+                { player: { ...mockCombat.player, hp: 5 }, allies: [{ ...gorran, hp: 1 }], enemies: [goblin] },
+            ], 'player');
+
+            act(() => vi.advanceTimersByTime(800 + 50));
+            expect(container.querySelector(BURST)).toBeNull();
+            expect(mockPlaySFX).not.toHaveBeenCalledWith('enemy_death', 1);
+        });
     });
 
     describe('effects layer visuals', () => {
