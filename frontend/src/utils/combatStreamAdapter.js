@@ -26,8 +26,11 @@ import { MAX_BEAT_RESOLUTIONS } from './combatBeatSchema';
  * Alignment has to travel with the death burst: the fading token is drawn from
  * this snapshot after the combatant has already left `combat.allies` /
  * `combat.enemies`, so at render time there is no pool left to infer it from.
+ *
+ * Also the log (non-streaming) path's kill diff in useBattlefieldAnimations
+ * (issue #670), so both paths resolve a victim and its side the same way.
  */
-function findCombatant(combat, id) {
+export function findCombatant(combat, id) {
   if (!combat) return null;
   if (id === 'player' || combat.player?.id === id) {
     return combat.player ? { entity: combat.player, friendly: true } : null;
