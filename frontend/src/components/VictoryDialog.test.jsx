@@ -206,6 +206,19 @@ describe('VictoryDialog', () => {
     expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
+  it('names the attribute picker and points input', () => {
+    render(
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+      />
+    );
+
+    expect(screen.getByRole('combobox', { name: /attribute/i })).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: /points/i })).toBeInTheDocument();
+  });
+
   it('handles attribute allocation successfully', async () => {
     mockOnAllocatePoints.mockResolvedValue({ success: true });
 
