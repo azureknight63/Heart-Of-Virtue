@@ -253,6 +253,39 @@ def authored_override_names(cls):
     return _collect_class_attr(cls, "MAP_AUTHORED_OVERRIDES", as_set=True)
 
 
+def legacy_prop_allowed(cls, key, constructed=True):
+    """True when a legacy full-dump prop ``key`` may be ``setattr``'d onto a
+    freshly built ``cls`` instance (issue #651).
+
+    The legacy loaders (``Universe._deserialize_saved_instance`` and the Map
+    Editor's ``load_map``) used to apply every prop in a dump. They now accept
+    exactly what the placeholder path accepts for the same concrete class:
+    a declared override (``MAP_AUTHORED_OVERRIDES``), or a declared
+    constructor param its own ``__init__`` takes (``MAP_AUTHORED_PARAMS`` and
+    the signature). A constructor param is re-applied after construction
+    because a dump is order-sensitive -- ``Container``'s ``start_open``
+    setter rewrites ``state`` -- and the legacy loader always re-applied it.
+
+    ``constructed=False`` is the loader's ``cls.__new__`` fallback: the
+    authored kwargs never reached ``__init__``, so any name the signature
+    takes is applied here instead, as the constructor would have.
+
+    A name that would shadow behaviour the class declares is never allowed,
+    whatever the declarations say (#620). Anything else is dropped silently,
+    as ``instantiate_placeholder`` drops an undeclared override: a full dump
+    carries runtime state (``target``, ``thread``, ``known_moves``) in every
+    placement, so a warning per key would be noise, not signal.
+    """
+    if not isinstance(key, str) or secure_pickle.shadows_class_behaviour(cls, key):
+        return False
+    if key in authored_override_names(cls):
+        return True
+    signature = _init_param_names(cls)
+    if key in authored_param_names(cls) and key in signature:
+        return True
+    return not constructed and key in signature
+
+
 def authored_attr_aliases(cls):
     """Return the ``{authored_name: actual_attribute_name}`` map for ``cls``.
 

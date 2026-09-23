@@ -75,10 +75,16 @@ def _load_hostile(prop_name, *, class_spec=_NOMINATED[0]):
     """A shipped-shape placement whose ``prop_name`` prop is a class marker.
 
     Built through ``Universe._deserialize_saved_instance`` -- the real legacy
-    loader, the one live path for all shipped placements -- so the instance
-    carries exactly what a map could put there. ``HealingSpring`` is the host
-    because it declares no ``KEYWORD_METHOD_ALIASES``: an aliasing class would
-    redirect the verb to a real method and hide the hole.
+    loader, the one live path for all shipped placements. ``HealingSpring`` is
+    the host because it declares no ``KEYWORD_METHOD_ALIASES``: an aliasing
+    class would redirect the verb to a real method and hide the hole.
+
+    Since #651 the loader applies only props the class declares, so it no
+    longer stores the class at all -- asserted here, as the first of the two
+    layers. The resolver is the second, and must hold on its own: the class is
+    then planted on the instance directly, as any other writer of instance
+    state (a restored save, a future loader) could, so every guard below keeps
+    exercising the resolver rather than passing because nothing reached it.
 
     Returns ``(player, instance)`` with the instance standing on the player's
     tile and reachable by ``wire_handle``.
@@ -96,10 +102,10 @@ def _load_hostile(prop_name, *, class_spec=_NOMINATED[0]):
     with capture_narration():
         instance = player.universe._deserialize_saved_instance(payload, tile=tile)
     assert instance is not None, "the loader refused the payload outright"
-    assert instance.__dict__.get(prop_name) is _NOMINATED[1], (
-        f"the loader no longer stores a class under {prop_name!r}; this guard "
-        "has stopped reproducing the hole it exists for"
+    assert prop_name not in instance.__dict__, (
+        f"the map loader applied the undeclared prop {prop_name!r} (#651)"
     )
+    instance.__dict__[prop_name] = _NOMINATED[1]
     instance.tile = tile
     instance.player = player
     tile.objects_here = [instance]
@@ -109,12 +115,19 @@ def _load_hostile(prop_name, *, class_spec=_NOMINATED[0]):
 def test_the_loader_still_turns_a_class_marker_into_a_class():
     """Positive control for every test below.
 
-    If the loader ever stops resolving ``__class_type__`` onto the instance,
-    the hostile placements here become inert and each guard passes because
-    there is nothing left to refuse.
+    If the hostile instance ever stops carrying the class, the guards here
+    become inert and each passes because there is nothing left to refuse. The
+    marker itself must still resolve to that class through the loader -- the
+    #651 filter drops the undeclared prop, not the marker's meaning.
     """
     _player, instance = _load_hostile("look")
     assert inspect.isclass(instance.__dict__["look"])
+    player, _game_map = live_world()
+    with capture_narration():
+        resolved = player.universe._deserialize_saved_instance(
+            {"__class_type__": _NOMINATED[0]}
+        )
+    assert resolved is _NOMINATED[1]
 
 
 @pytest.mark.parametrize("verb", _HOSTILE_VERBS)

@@ -138,10 +138,14 @@ class TestDeserializeInventorySkip:
         import src.npc as npc_mod
 
         class Outer:
+            MAP_AUTHORED_OVERRIDES = {"inner"}  # applied only if declared (#651)
+
             def __init__(self):
                 self.inner = None
 
         class Inner:
+            MAP_AUTHORED_OVERRIDES = {"value"}  # applied only if declared (#651)
+
             def __init__(self):
                 self.value = 0
 

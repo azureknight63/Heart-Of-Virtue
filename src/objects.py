@@ -179,7 +179,15 @@ class Object:
         "name", "description", "hidden", "hide_factor", "idle_message",
         "discovery_message", "aliases",
     }
-    MAP_AUTHORED_OVERRIDES = {"hidden", "hide_factor", "name", "description"}
+    # The prose and verb lists are overrides too (#651): most subclasses
+    # hardcode them in a zero-arg-style __init__, and every shipped legacy
+    # placement authors them -- 27 wall inscriptions' announce text, the
+    # Eastern Gate's "west" keyword -- through the post-construction sweep.
+    MAP_AUTHORED_OVERRIDES = {
+        "hidden", "hide_factor", "name", "description", "announce",
+        "idle_message", "discovery_message", "aliases", "keywords",
+        "action_aliases",
+    }
 
     #: ``{authored keyword: method name that implements it}``. Merged across
     #: the MRO by :func:`resolve_interaction`; empty means every keyword must
@@ -502,10 +510,14 @@ class Container(Object):
 
     # Issue #463: `inventory` is the nested-placeholder case the issue calls
     # out explicitly -- each element is itself an authored Item placeholder,
-    # resolved recursively. `state`/`revealed`/`possible_states` are
-    # deliberately excluded: state is derived from start_open then mutated at
-    # runtime (the classic "already opened" trap) and possible_states is a
-    # copied class constant -- none of these are authored data.
+    # resolved recursively. `revealed`/`possible_states` are deliberately
+    # excluded: possible_states is a copied class constant and revealed is
+    # runtime. `state` is mutated at runtime too (the classic "already
+    # opened" trap), and `start_open` is the preferred spelling -- but it IS
+    # an override, because fifteen shipped legacy placements (Grondia's
+    # shelves and stalls, the Fabricarium's Open Crate, both Remains) author
+    # an open container as `state: "opened"` with no start_open at all, and
+    # the legacy loader applies only declared props (#651).
     # `allowed_item_types` is stored under a different name than its
     # constructor kwarg (`allowed_subtypes`), so it's an override rather than
     # a param -- setattr doesn't care about the constructor's own names.
@@ -519,7 +531,9 @@ class Container(Object):
         "idle_message", "discovery_message", "nickname", "locked",
         "inventory", "events", "merchant", "stock_count", "open_message",
     }
-    MAP_AUTHORED_OVERRIDES = {"allowed_item_types", "inventory", "open_message"}
+    MAP_AUTHORED_OVERRIDES = {
+        "allowed_item_types", "inventory", "open_message", "state",
+    }
 
     @property
     def start_open(self) -> bool:

@@ -1091,6 +1091,12 @@ class Ch02GorranAtPools(Event):
 
     GATE_KEY = "gorran_at_pools"
 
+    #: Authored per placement: the Mineral Pools map runs this beat with an
+    #: exploration delay, and this __init__ takes neither kwarg, so they
+    #: arrive by post-construction setattr, which applies only declared
+    #: overrides (#651).
+    MAP_AUTHORED_OVERRIDES = {"delay_duration", "delay_mode"}
+
     def __init__(
         self, player, tile, params=None, repeat=False, name="Ch02GorranAtPools"
     ):
@@ -1263,6 +1269,12 @@ class Ch02FragmentReminder(Event):
     Attach to the arena tile alongside Ch02ArenaEntrance and
     AfterDefeatingKingSlime.
     """
+
+    #: Authored per placement: the Mineral Pools map runs this beat with an
+    #: exploration delay, and this __init__ takes neither kwarg, so they
+    #: arrive by post-construction setattr, which applies only declared
+    #: overrides (#651).
+    MAP_AUTHORED_OVERRIDES = {"delay_duration", "delay_mode"}
 
     def __init__(
         self,
