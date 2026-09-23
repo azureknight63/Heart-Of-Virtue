@@ -14,6 +14,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import CombatLog from '../CombatLog'
+import { DISCLOSURE_GLYPHS } from '../../styles/theme'
 import EventManager from '../EventManager'
 
 vi.mock('../EventDialog', () => ({
@@ -134,16 +135,16 @@ describe('CombatLog', () => {
 
   it('collapses and expands when the header is clicked', () => {
     render(<CombatLog log={[entry({ message: 'Jean strikes.' })]} />)
-    const header = screen.getByText('Combat Log').parentElement
+    const header = screen.getByRole('button', { name: 'Combat Log' })
 
     expect(entries().getByText('Jean strikes.')).toBeInTheDocument()
-    expect(within(header).getByText('▼')).toBeInTheDocument()
+    expect(within(header).getByText(DISCLOSURE_GLYPHS.expanded)).toBeInTheDocument()
 
     fireEvent.click(header)
     // The LIST goes, not the text outright: the announcer holds the newest
     // line whether the panel is open or shut.
     expect(screen.queryByTestId('combat-log-entries')).toBeNull()
-    expect(within(header).getByText('▶')).toBeInTheDocument()
+    expect(within(header).getByText(DISCLOSURE_GLYPHS.collapsed)).toBeInTheDocument()
 
     fireEvent.click(header)
     expect(entries().getByText('Jean strikes.')).toBeInTheDocument()

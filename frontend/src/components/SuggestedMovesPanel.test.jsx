@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import SuggestedMovesPanel from './SuggestedMovesPanel';
+import { expectFoldContract } from '../test/foldContract';
 
 describe('SuggestedMovesPanel', () => {
     /**
@@ -188,8 +189,8 @@ describe('SuggestedMovesPanel', () => {
             // Body and analysis all collapse; only the header survives.
             expect(screen.queryByText('Slash')).toBeNull();
             expect(screen.getByText('TACTICAL ADVISOR').textContent).toBe('TACTICAL ADVISOR');
-            // ...and the chevron flips to "expand".
-            expect(screen.getByText('▼').textContent).toBe('▼');
+            // ...and the header now says "collapsed".
+            expectFoldContract(screen.getByRole('button', { name: /tactical advisor/i }), { expanded: false });
         });
 
         it('requests fresh suggestions after expanding on the player turn', async () => {
@@ -470,6 +471,33 @@ describe('SuggestedMovesPanel', () => {
 
             fireEvent.click(screen.getByText('Slash').closest('div'));
             expect(onSuggestClick).toHaveBeenCalledWith(mockSuggestions[0]);
+        });
+    });
+
+    // Issue #640: both the desktop header and the mobile strip were
+    // `<div onClick>`s — unreachable by keyboard, no aria-expanded.
+    describe('fold contract (issue #640)', () => {
+        const header = () => screen.getByRole('button', { name: /tactical advisor/i });
+
+        it('folds a region holding the suggestions on desktop', async () => {
+            render(<SuggestedMovesPanel isPlayerTurn={true} suggestions={mockSuggestions} lastOutcome="It worked." />);
+            const region = expectFoldContract(header(), { expanded: true });
+            expect(region.contains(screen.getByText('Slash'))).toBe(true);
+            expect(region.contains(screen.getByText(/It worked\./))).toBe(true);
+
+            await act(async () => { fireEvent.click(header()); });
+            expect(expectFoldContract(header(), { expanded: false })).toBe(region);
+            expect(screen.queryByText('Slash')).toBeNull();
+        });
+
+        it('keeps the contract on the collapsed mobile strip', async () => {
+            localStorage.setItem('hov_tactical_advisor_collapsed', 'true');
+            render(<SuggestedMovesPanel isPlayerTurn={true} suggestions={mockSuggestions} isMobile={true} />);
+            expectFoldContract(header(), { expanded: false });
+
+            await act(async () => { fireEvent.click(header()); });
+            const region = expectFoldContract(header(), { expanded: true });
+            expect(region.contains(screen.getByText('Slash'))).toBe(true);
         });
     });
 });

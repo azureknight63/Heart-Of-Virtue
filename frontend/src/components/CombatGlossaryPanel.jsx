@@ -7,8 +7,9 @@ import {
   glossaryCategory,
 } from '../data/combatGlossary'
 import useHorizontalScrollEnd from '../hooks/useHorizontalScrollEnd'
+import { useLargeTouchTargets } from '../hooks/useLargeTouchTargets'
 import { useMobile } from '../hooks/useMobile'
-import { colors, fonts, shadows, spacing } from '../styles/theme'
+import { accessibility, colors, fonts, shadows, spacing } from '../styles/theme'
 
 /**
  * One glossary entry: name → what it is → how you see it happening.
@@ -93,6 +94,9 @@ function GlossaryEntryRow({ entry, highlighted, rowRef }) {
  */
 export default function CombatGlossaryPanel({ onClose, focusEntryId = null }) {
   const isMobile = useMobile()
+  // The 44px floor is a pointer question (#639, #649); `isMobile` above only
+  // decides the sheet-vs-dialog layout.
+  const needsLargeTargets = useLargeTouchTargets()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState(ALL_CATEGORIES)
   const searchRef = useRef(null)
@@ -193,7 +197,11 @@ export default function CombatGlossaryPanel({ onClose, focusEntryId = null }) {
             style={{
               background: 'none', border: 'none', color: colors.primary,
               fontSize: '16px', cursor: 'pointer',
-              padding: isMobile ? '10px' : '0 4px',
+              padding: needsLargeTargets ? '10px' : '0 4px',
+              ...(needsLargeTargets
+                ? { minWidth: accessibility.touchTarget, minHeight: accessibility.touchTarget }
+                : {}),
+              touchAction: 'manipulation',
             }}
           >
             ✕
@@ -250,6 +258,8 @@ export default function CombatGlossaryPanel({ onClose, focusEntryId = null }) {
                     backgroundColor: selected ? chip.color : 'rgba(0, 0, 0, 0.4)',
                     color: selected ? colors.text.inverse : chip.color,
                     fontFamily: fonts.main, cursor: 'pointer', whiteSpace: 'nowrap',
+                    minHeight: needsLargeTargets ? accessibility.touchTarget : undefined,
+                    touchAction: 'manipulation',
                   }}
                 >
                   {chip.label}
