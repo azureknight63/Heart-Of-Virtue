@@ -176,9 +176,9 @@ class TestWallInscription:
         p = _player()
         tile = _mock_tile()
         wi = objects.WallInscription(player=p, tile=tile, text="")
-        with patch.object(wi, "read") as mock_read:
-            wi.examine()
-        mock_read.assert_called_once()
+        # #626: a class-level alias IS its target, so an instance
+        # patch of the target can no longer be observed through it.
+        assert type(wi).examine is type(wi).read
 
 
 # ---------------------------------------------------------------------------
@@ -734,9 +734,9 @@ class TestFountain:
         p = _player()
         tile = _mock_tile()
         fountain = objects.Fountain(player=p, tile=tile)
-        with patch.object(fountain, "drink") as mock_drink:
-            fountain.use()
-        mock_drink.assert_called_once()
+        # #626: a class-level alias IS its target, so an instance
+        # patch of the target can no longer be observed through it.
+        assert type(fountain).use is type(fountain).drink
 
 
 # ---------------------------------------------------------------------------
@@ -837,9 +837,9 @@ class TestNoticeBoard:
         p = _player()
         tile = _mock_tile()
         board = objects.NoticeBoard(player=p, tile=tile)
-        with patch.object(board, "read") as mock_read:
-            board.use()
-        mock_read.assert_called_once()
+        # #626: a class-level alias IS its target, so an instance
+        # patch of the target can no longer be observed through it.
+        assert type(board).use is type(board).read
 
 
 # ---------------------------------------------------------------------------
@@ -959,15 +959,15 @@ class TestMarketGong:
         p = _player()
         tile = _mock_tile()
         gong = objects.MarketGong(player=p, tile=tile)
-        with patch.object(gong, "strike") as mock_strike:
-            gong.hit()
-        mock_strike.assert_called_once()
+        # #626: a class-level alias IS its target, so an instance
+        # patch of the target can no longer be observed through it.
+        assert type(gong).hit is type(gong).strike
 
     def test_bang_aliases_strike(self):
         """Line 1175-1176: bang() calls strike()."""
         p = _player()
         tile = _mock_tile()
         gong = objects.MarketGong(player=p, tile=tile)
-        with patch.object(gong, "strike") as mock_strike:
-            gong.bang()
-        mock_strike.assert_called_once()
+        # #626: a class-level alias IS its target, so an instance
+        # patch of the target can no longer be observed through it.
+        assert type(gong).bang is type(gong).strike
