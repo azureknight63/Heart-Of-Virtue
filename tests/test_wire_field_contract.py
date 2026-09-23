@@ -442,6 +442,149 @@ class TestCombatWireContract:
 
 
 # ----------------------------------------------------------------------------
+# Beat results: the floating combat text (#667)
+# ----------------------------------------------------------------------------
+# ApiCombatAdapter._attach_beat_results hangs a beat's results on its last log
+# entry; useFloatingCombatText reads them off the revealed log, and
+# floatTextEffectFor words each one. On the streaming path the streamer copies
+# them onto the combat:beat, where beatToAnimations reads them. Every read is
+# behind a validity check that answers "nothing to float" for a missing field,
+# so a rename would simply make the battlefield go quiet -- this bug class.
+
+LOG_ENTRY_RESULTS_CONTRACT = {
+    "results": Read("useFloatingCombatText.js", "entry?.results"),
+}
+
+HP_RESULT_CONTRACT = {
+    "id": Read("useFloatingCombatText.js", "result.id"),
+    "kind": Read("animationConfigs.js", "result.kind"),
+    "delta": Read("animationConfigs.js", "result.delta"),
+}
+
+STATUS_RESULT_CONTRACT = {
+    "id": Read("useFloatingCombatText.js", "result.id"),
+    "kind": Read("animationConfigs.js", "result.kind"),
+    "status": Read("animationConfigs.js", "result.status"),
+    "change": Read("animationConfigs.js", "result.change"),
+}
+
+OUTCOME_RESULT_CONTRACT = {
+    "id": Read("useFloatingCombatText.js", "result.id"),
+    "kind": Read("animationConfigs.js", "result.kind"),
+    "outcome": Read("animationConfigs.js", "result.outcome"),
+}
+
+STREAMED_BEAT_RESULTS_CONTRACT = {
+    "results": Read("combatStreamAdapter.js", "beat.results"),
+}
+
+
+class _ResultsScriptMove:
+    """A player move whose one beat hits, staggers and whiffs (#667).
+
+    Every attribute the adapter reads while casting and serializing is
+    present; the effects are exact so the contract is read off known results.
+    """
+
+    passive = False
+    targeted = True
+    instant = False
+    needs_duration = False
+    accepts_ally_target = False
+    web_animation = "attack"
+    category = "Attack"
+    description = ""
+    fatigue_cost = 0
+    beats_left = 0
+    stage_beat = (0, 0, 0, 0)
+
+    def __init__(self, target):
+        self.name = "Scripted"
+        self.display_name = "Scripted"
+        self.current_stage = 0
+        self.target = target
+        self.user = None
+        self._done = False
+
+    def advance(self, user):
+        from src.moves._base import OUTCOME_MISS, publish_outcome
+        from src.narration import narrate
+
+        if self._done:
+            return
+        self._done = True
+        self.target.hp -= 7
+        self.target.states.append(states.Staggered(self.target))
+        publish_outcome(user, OUTCOME_MISS, self.target)
+        narrate("Jean's attack just missed!")
+
+    def viable(self):
+        return True
+
+    def cast(self):
+        pass
+
+
+class TestBeatResultsWireContract:
+    @pytest.fixture
+    def beat(self):
+        """A real beat's state, run through the real adapter beat loop."""
+        from tests._combat_fixtures import engage, seeded
+
+        player = Player()
+        slime = Slime()
+        slime.hp = slime.maxhp = 9999
+        slime.damage = 0
+        engage(player, [slime])
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            adapter = ApiCombatAdapter(player)
+            adapter.initialize_combat([slime])
+        move = _ResultsScriptMove(slime)
+        player.known_moves = [move]
+        player.current_move = None
+        with seeded():
+            result = adapter._execute_move_inner(move)
+        return result["beat_states"][0]
+
+    @staticmethod
+    def _results(beat):
+        return beat["log"][-1]["results"]
+
+    def test_the_log_entry_carries_results(self, beat):
+        _assert_contract(beat["log"][-1], LOG_ENTRY_RESULTS_CONTRACT, "beat log entry")
+
+    @pytest.mark.parametrize(
+        "kind, contract",
+        [
+            ("hp", HP_RESULT_CONTRACT),
+            ("status", STATUS_RESULT_CONTRACT),
+            ("outcome", OUTCOME_RESULT_CONTRACT),
+        ],
+    )
+    def test_each_result_kind_spells_what_the_client_reads(self, beat, kind, contract):
+        found = [r for r in self._results(beat) if r["kind"] == kind]
+        assert found, f"fixture: expected a {kind!r} result, got {self._results(beat)}"
+        _assert_contract(found[0], contract, f"{kind} result")
+
+    def test_the_streamed_beat_carries_the_same_results(self, beat):
+        from src.api.combat_beat_stream import CombatBeatStreamer
+
+        emitted = []
+
+        class _Socket:
+            def emit(self, event, payload, room=None):
+                emitted.append(payload)
+
+        # Baseline HP taken from the beat itself; the diff is not under test.
+        streamer = CombatBeatStreamer(_Socket(), "room", beat["combatants"])
+        streamer.stream_beats([beat])
+
+        assert emitted, "the beat was not streamed"
+        _assert_contract(emitted[0], STREAMED_BEAT_RESULTS_CONTRACT, "combat:beat")
+        assert emitted[0]["results"] == self._results(beat)
+
+
+# ----------------------------------------------------------------------------
 # Move payload: combat.available_options[i] (src.api.combat_adapter
 # ApiCombatAdapter._get_available_moves)
 # ----------------------------------------------------------------------------

@@ -7,6 +7,7 @@ import { strikeFlashFor } from '../utils/animationConfigs';
 import { categoryColor, categoryColorOrNull, categoryGlowOrNull } from '../utils/categories';
 import { lookupOr } from '../utils/lookup';
 import useDoubleRaf from '../hooks/useDoubleRaf';
+import useFloatingCombatText from '../hooks/useFloatingCombatText';
 import useBattlefieldAnimations, {
   // Re-exported below so existing import sites (and their tests) keep resolving
   // these pure helpers through BattlefieldGrid, where they used to live.
@@ -1108,8 +1109,10 @@ const TravelDot = ({ fromStyle, toStyle, color, duration, delay = 0, size = 1 })
 // EffectsLayer — transient overlay visuals driven by the active animation's
 // config.effect: projectile streaks, expanding shockwave rings, rising buff
 // particles, and drain streams. Rendered only during the effect's phase.
+// `floatTexts` (floating combat text, #667) are one-phase pseudo-animations
+// from useFloatingCombatText, drawn through the same switch.
 // ---------------------------------------------------------------------------
-const EffectsLayer = React.memo(({ activeAnimations, getEntityStyle, combat }) => {
+const EffectsLayer = React.memo(({ activeAnimations, floatTexts, getEntityStyle, combat }) => {
   // Deliberately not the parent's `allCombatants` memo. Two reasons, both
   // load-bearing: EffectsLayer is a separate React.memo component and cannot
   // see that memo without prop-drilling it, and this lookup accepts the
@@ -1209,6 +1212,44 @@ const EffectsLayer = React.memo(({ activeAnimations, getEntityStyle, combat }) =
         );
         break;
       }
+      case 'floatText': {
+        // Floating combat text (#667): the engine's result, in words, rising
+        // off the cell it happened to. Anchored on the position captured when
+        // it spawned (useFloatingCombatText) — a killing blow's target is no
+        // longer in the state being drawn. aria-hidden: the combat log
+        // already narrates every one of these for assistive tech.
+        const anchor = anim.position ? getEntityStyle(anim.position, 140) : targetStyle;
+        if (!anchor) break;
+        content = (
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              ...anchor,
+              display: 'flex',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+            }}
+          >
+            <div
+              className="battlefield-float-text"
+              style={{
+                position: 'absolute',
+                bottom: `${60 + (effect.stack || 0) * 45}%`,
+                color: effect.color,
+                fontWeight: 'bold',
+                fontSize: '0.8rem',
+                whiteSpace: 'nowrap',
+                textShadow: `0 0 3px ${colors.bg.main}, 0 0 6px ${colors.bg.main}`,
+                animationDuration: `${duration}ms`,
+              }}
+            >
+              {effect.text}
+            </div>
+          </div>
+        );
+        break;
+      }
       case 'rise': {
         if (!sourceStyle) break;
         // Sparks climbing off the caster — offsets in % of the cell
@@ -1257,7 +1298,9 @@ const EffectsLayer = React.memo(({ activeAnimations, getEntityStyle, combat }) =
     );
   };
 
-  const overlays = (activeAnimations || []).map(renderEffect).filter(Boolean);
+  const overlays = [...(activeAnimations || []), ...(floatTexts || [])]
+    .map(renderEffect)
+    .filter(Boolean);
   return overlays.length ? overlays : null;
 });
 
@@ -1854,6 +1897,18 @@ function BattlefieldGrid({
     allBeatStates,
     combatId,
     combatActive,
+    combatSpeed,
+    isReloadRecovery,
+  });
+  // Floating combat text (#667) — kept out of activeAnimations on purpose: it
+  // must not hold the animation queue or style a token. See the hook.
+  const floatTexts = useFloatingCombatText({
+    streaming,
+    combatLog,
+    displayedLogCount,
+    activeAnimations,
+    combat,
+    combatId,
     combatSpeed,
     isReloadRecovery,
   });
@@ -2769,6 +2824,7 @@ function BattlefieldGrid({
 
         <EffectsLayer
           activeAnimations={activeAnimations}
+          floatTexts={floatTexts}
           getEntityStyle={getEntityStyle}
           combat={combat}
         />

@@ -5,8 +5,13 @@ import {
   getAnimationDuration,
   impactSfxFor,
   strikeFlashFor,
+  floatTextEffectFor,
+  FLOAT_TEXT_MS,
+  FLOAT_TEXT_PHASE,
+  FLOAT_TEXT_MAX_STATUS_CHARS,
 } from './animationConfigs';
-import { OUTCOMES } from './combatBeatSchema';
+import { OUTCOMES, TEXT_OUTCOMES } from './combatBeatSchema';
+import { colors } from '../styles/theme';
 
 describe('ANIMATION_CONFIGS', () => {
   const entries = Object.entries(ANIMATION_CONFIGS);
@@ -163,5 +168,73 @@ describe('strikeFlashFor', () => {
   it('returns an empty style for an unknown outcome rather than throwing', () => {
     expect(strikeFlashFor(undefined)).toEqual({});
     expect(strikeFlashFor('nonsense')).toEqual({});
+  });
+});
+
+// Floating combat text (#667): one engine result -> the words and colour that
+// float up off the target. The words carry the meaning on their own (pillar 5:
+// never colour alone); the colour is a theme token, never a literal.
+describe('floatTextEffectFor', () => {
+  const text = (result) => floatTextEffectFor(result)?.text;
+
+  it('words HP changes as signed HP amounts', () => {
+    expect(text({ id: 'e', kind: 'hp', delta: -33 })).toBe('-33 HP');
+    expect(text({ id: 'e', kind: 'hp', delta: 22 })).toBe('+22 HP');
+  });
+
+  it('words a status gained with +, a status cleared with -', () => {
+    expect(text({ id: 'e', kind: 'status', status: 'Staggered', change: 'added' })).toBe('+ Staggered');
+    expect(text({ id: 'e', kind: 'status', status: 'Poisoned', change: 'removed' })).toBe('- Poisoned');
+  });
+
+  it('words every text outcome', () => {
+    const words = TEXT_OUTCOMES.map((outcome) => text({ id: 'e', kind: 'outcome', outcome }));
+    expect(words).toEqual(['Miss!', 'Parried!', 'Blocked!', 'Deflected!', 'Absorbed!']);
+  });
+
+  it('colours by what happened, from theme tokens', () => {
+    const color = (result) => floatTextEffectFor(result).color;
+    expect(color({ id: 'e', kind: 'hp', delta: -1 })).toBe(colors.danger);
+    expect(color({ id: 'e', kind: 'hp', delta: 1 })).toBe(colors.success);
+    expect(color({ id: 'e', kind: 'status', status: 'S', change: 'added' })).toBe(colors.warning);
+    expect(color({ id: 'e', kind: 'status', status: 'P', change: 'removed' })).toBe(colors.success);
+    expect(color({ id: 'e', kind: 'outcome', outcome: 'miss' })).toBe(colors.text.main);
+    expect(color({ id: 'e', kind: 'outcome', outcome: 'parry' })).toBe(colors.teal);
+  });
+
+  it('is a floatText effect played in its own phase', () => {
+    expect(floatTextEffectFor({ id: 'e', kind: 'hp', delta: -1 })).toMatchObject({
+      kind: 'floatText',
+      phase: FLOAT_TEXT_PHASE,
+    });
+  });
+
+  it('drops anything it cannot word truthfully', () => {
+    // The log rides in the pickled save, so a result can be anything.
+    const junk = [
+      null,
+      'hp',
+      {},
+      { id: 'e', kind: 'hp', delta: 0 },
+      { id: 'e', kind: 'hp', delta: 0.4 },
+      { id: 'e', kind: 'hp', delta: 'lots' },
+      { id: 'e', kind: 'hp', delta: Infinity },
+      { id: 'e', kind: 'status', status: '', change: 'added' },
+      { id: 'e', kind: 'status', status: 'Poisoned', change: 'sideways' },
+      { id: 'e', kind: 'status', status: 42, change: 'added' },
+      { id: 'e', kind: 'outcome', outcome: 'hit' },
+      { id: 'e', kind: 'mystery' },
+    ];
+    junk.forEach((result) => expect(floatTextEffectFor(result)).toBeNull());
+  });
+
+  it('truncates an HP change to a whole number and a long status name', () => {
+    expect(text({ id: 'e', kind: 'hp', delta: -7.9 })).toBe('-7 HP');
+    const long = text({ id: 'e', kind: 'status', status: 'X'.repeat(80), change: 'added' });
+    expect(long.length).toBeLessThanOrEqual(2 + FLOAT_TEXT_MAX_STATUS_CHARS);
+  });
+
+  it('lives long enough to read', () => {
+    expect(FLOAT_TEXT_MS).toBeGreaterThanOrEqual(1000);
   });
 });
