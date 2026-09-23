@@ -1561,6 +1561,27 @@ _BRUSH_OFF_LINES = (
     "Not now.",
 )
 
+# Mid-conversation fallback lines for a persona that authors no
+# ``fallback_replies`` of its own (issue #628). Each must read as a *response*
+# to anything Jean said -- never a question, never a goodbye -- and suit any
+# speaker, so they carry no name or gendered pronoun. Rendered as narration
+# (see ``_flavor_only_turn``), like every authored fallback pool.
+_NEUTRAL_FALLBACK_REPLIES = (
+    "A pause. No answer comes.",
+    "A slow nod, and nothing more.",
+    "The words are taken in and left to settle, unanswered for now.",
+    "A glance away, then back. Still listening, saying nothing.",
+)
+
+# The most fallback replies a degraded conversation gets in a row before it is
+# ended with a closing line. Before issue #628 the mid-conversation pool was
+# the chapter starters -- three per persona -- and "pool wrapped -> end" was
+# what bounded a fully degraded conversation, at three replies. The authored
+# ``fallback_replies`` pools are larger (six to ten lines), so without this cap
+# the wrap would fire later and a conversation with no model behind it would
+# run longer than it ever did. Three keeps the old ceiling.
+_MAX_CONSECUTIVE_FALLBACK_REPLIES = 3
+
 
 _DEFAULT_MAX_PERSONALITY_FIELD_CHARS = 200
 
@@ -4266,7 +4287,7 @@ class ConversationalNPCMixin:
 
         ``npc_text`` is always ``""``: authored fallback pools
         (``conversation_starters_by_chapter``, ``closing_lines_when_exhausted``,
-        the brush-off line) are written as third-person narration, not
+        ``fallback_replies``, the brush-off line) are written as third-person narration, not
         first-person speech, so rendering them under the NPC's speaker label
         would be indistinguishable from something the NPC actually said
         (issue #532). The three call sites that need this — the loquacity
@@ -4301,9 +4322,25 @@ class ConversationalNPCMixin:
         has only one entry (rotation itself only guarantees that no two
         *consecutive* draws collide, and only for pools of two or more).
 
+        The wrap is not the only bound. A story NPC's mid-conversation pool is
+        its ``fallback_replies`` (issue #628), which is larger than the three
+        chapter starters it replaced, so the wrap alone would now let a
+        degraded conversation run longer than it ever did. After
+        ``_MAX_CONSECUTIVE_FALLBACK_REPLIES`` replies in a row it ends too.
+
         Returns ``(npc_text, npc_flavor, conversation_ended)`` — see
         ``_flavor_only_turn`` for why ``npc_text`` is always ``""``.
         """
+        if (
+            not conversation_ended
+            and self._consecutive_fallback_replies()
+            >= _MAX_CONSECUTIVE_FALLBACK_REPLIES
+        ):
+            conversation_ended = True
+            logger.info(
+                "chat_respond fallback reply cap reached; forcing conversation_ended. npc=%s",
+                self.name,
+            )
         line = self._get_fallback_npc_line(
             is_opening=False, player=player, exhausted=conversation_ended
         )
@@ -4913,6 +4950,36 @@ class ConversationalNPCMixin:
         setattr(self, counter_attr, idx + 1)
         return entry
 
+    def _fallback_reply_pool(self) -> Sequence[str]:
+        """Mid-conversation fallback lines for a story NPC (issue #628).
+
+        The persona's authored ``fallback_replies``, or the neutral module
+        pool when it declares none. Only meaningful with a character config;
+        a generic nomad builds its own pool in ``_get_fallback_npc_line``.
+        """
+        replies = (self._chat_char_config or {}).get("fallback_replies")
+        return replies or _NEUTRAL_FALLBACK_REPLIES
+
+    def _consecutive_fallback_replies(self) -> int:
+        """How many of the most recent NPC rows are fallback replies, in a row.
+
+        Counted from the end of ``self._chat_history`` and stopped at the
+        first row that is not from :meth:`_fallback_reply_pool` -- an opener
+        or a generated line breaks the run, so an earlier conversation's
+        replies still in the persisted history never count against this one.
+        Rows with no NPC line (Jean spoke first) are skipped, not counted.
+        """
+        pool = set(self._fallback_reply_pool())
+        run = 0
+        for entry in reversed(self._chat_history):
+            npc_line = entry.get("npc")
+            if not npc_line:
+                continue
+            if npc_line not in pool:
+                break
+            run += 1
+        return run
+
     def _get_fallback_npc_line(
         self, is_opening: bool, player, exhausted: bool = False
     ) -> str:
@@ -4927,6 +4994,14 @@ class ConversationalNPCMixin:
         below threshold — use the authored "done talking" closing lines) from
         a mid-conversation LLM hiccup (conversation continues — reusing a
         closing line here would falsely tell the player the NPC is done).
+
+        Persona keys read (``ai/npc/human/*.json``), one per situation:
+        ``conversation_starters_by_chapter`` for an opening,
+        ``closing_lines_when_exhausted`` for an ending, and
+        ``fallback_replies`` for a mid-conversation reply (issue #628) —
+        non-interrogative narration that reads as a response to anything
+        Jean said, falling back to ``_NEUTRAL_FALLBACK_REPLIES``.
+        ``tests/test_npc_persona_fallback_replies.py`` guards the last.
         """
         if self._chat_char_config:
             chapter = self._get_chapter(player)
@@ -4944,9 +5019,12 @@ class ConversationalNPCMixin:
                 if line:
                     return line
             else:
-                # Mid-conversation and not exhausted: chapter-flavor starters
-                # read as plausible filler without implying the NPC is done.
-                line = self._next_from_pool(starters) or self._next_from_pool(closing)
+                # Mid-conversation and not exhausted: a line authored as a
+                # response. Never a starter -- those are openers addressed to
+                # a Jean who has just walked up, often a direct question
+                # (issue #628) -- and never a closing line, which would claim
+                # the NPC is done while the conversation carries on.
+                line = self._next_from_pool(self._fallback_reply_pool())
                 if line:
                     return line
         else:

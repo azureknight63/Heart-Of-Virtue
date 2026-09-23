@@ -45,5 +45,15 @@
     "Devet turns back to the fire. The conversation has ended, though he hasn't said so.",
     "He nods once, very slightly. He is done.",
     "He stirs the pot. He doesn't look up again."
+  ],
+  "fallback_replies": [
+    "He stirs the pot, and doesn't answer.",
+    "He nods, once. The fire gets another stick.",
+    "He considers this for a while. Whatever he concludes, he keeps.",
+    "He hands Jean a heel of bread. That seems to be the reply.",
+    "He glances at the river, then back at the pot. He heard.",
+    "Something moves at the corners of his eyes. It might have been a smile.",
+    "He tastes the stew and adds a pinch of salt. He is still listening.",
+    "He says, 'Hm.' From him, it is nearly a paragraph."
   ]
 }
