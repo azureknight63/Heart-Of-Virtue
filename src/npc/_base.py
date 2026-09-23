@@ -18,7 +18,7 @@ from src.items import Item  # type: ignore
 
 from ._combat import NPCCombatMixin
 from ._loot import NPCLootMixin, loot
-from ._progression import AllyProgressionMixin
+from ._progression import AllyProgressionMixin, LevelSyncMixin
 from src.narration import narrate
 
 # Combatant._init_resistances() seeds every status resistance at 1.0 (immune to
@@ -31,7 +31,7 @@ _STATUS_RESISTANCE_BASELINE_COMMON = 0.3
 _STATUS_RESISTANCE_BASELINE_BOSS = 0.15
 
 
-class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
+class NPC(LevelSyncMixin, NPCCombatMixin, NPCLootMixin, Combatant):
     alert_message = "appears!"
 
     # Issue #463: authored-placeholder metadata. PARAMS are real constructor
@@ -42,6 +42,11 @@ class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
     # whose zero-arg __init__ ignores all of this) can still have a map
     # author tweak an individual placed instance's stats/resistances/hidden
     # state via post-construction setattr, without a new Python subclass.
+    #
+    # "level" (issue #617) is declared in MAP_AUTHORED_OVERRIDES only, not
+    # PARAMS -- it is deliberately never a constructor kwarg, only a
+    # post-construction override, and even then not applied via the generic
+    # setattr loop (see map_placeholders._validated_level_override).
     MAP_AUTHORED_PARAMS = {
         "name", "description", "damage", "aggro", "exp_award",
         "maxhp", "protection", "speed", "finesse", "awareness",
@@ -53,7 +58,7 @@ class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
         "hidden", "hide_factor", "combat_delay",
         "maxhp", "damage", "protection", "speed", "finesse", "awareness",
         "maxfatigue", "endurance", "strength", "charisma", "intelligence",
-        "faith", "resistance_base", "status_resistance_base",
+        "faith", "resistance_base", "status_resistance_base", "level",
     }
 
     def __init__(
@@ -134,6 +139,14 @@ class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
         self.faith_base = faith
         self.fatigue = self.maxfatigue
         self.target = target
+        # Spawn-time level scaling (issue #617, LevelSyncMixin above). Every
+        # NPC genuinely carries a level now -- hostile spawns get scaled up
+        # from here at construction (src/npc_level_tables.py); allies climb
+        # from here too (Friend keeps its own exp/level-cap machinery via
+        # AllyProgressionMixin). Set unconditionally so a class with no
+        # growth_profile (merchants, citizens, TheAdjutant) still reports a
+        # legible level=1 rather than lacking the attribute at all.
+        self.level = 1
         self.known_moves = [moves.NpcRest(self)]
         self.current_move = None
         self.states = []
@@ -266,8 +279,9 @@ class Friend(AllyProgressionMixin, NPC):
         self.keywords = ["talk"]
         self.knocked_out = False  # True while sitting out a fight after being KO'd
         # Ally progression (see _progression.py). Static growth; only classes
-        # that declare a growth_profile ever gain exp or level.
-        self.level = 1
+        # that declare a growth_profile ever gain exp or level. `level` is
+        # already set to 1 by NPC.__init__ above (issue #617); only `exp` is
+        # ally-specific (AllyProgressionMixin.gain_exp banks it).
         self.exp = 0
 
     def wounded_flavor(self):

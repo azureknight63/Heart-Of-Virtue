@@ -143,11 +143,18 @@ def client_ip() -> str:
     rule that disagrees between endpoints is a limiter one of them can be
     walked past.
 
-    It reads ``request.remote_addr``, which is the direct client IP by default
-    (no proxy/load balancer in this deployment) and automatically becomes the
-    real client IP if the opt-in ProxyFix is ever configured (see
-    ``src/api/app.py::_apply_proxy_fix`` / ``TRUSTED_PROXY_COUNT`` and
-    ``tests/test_proxy_fix.py``).
+    It reads ``request.remote_addr``. Production *does* sit behind a web
+    server proxying ``/games/HeartOfVirtue/api/*`` to this API (see
+    ``docs/development/deployment.md``), but ``TRUSTED_PROXY_COUNT`` is not
+    currently set there, so the opt-in ProxyFix (``src/api/app.py::
+    _apply_proxy_fix``) is off and ``remote_addr`` resolves to the proxy's
+    own address for every request — every IP-keyed limiter in production
+    currently shares one bucket across all clients (see issue #654). This
+    starts returning the real client IP once ``TRUSTED_PROXY_COUNT`` is set
+    to the correct hop count *and* the fronting proxy is confirmed to set
+    ``X-Forwarded-For`` itself (see ``tests/test_proxy_fix.py`` — setting the
+    count without that confirmation lets a client spoof any IP and dodge the
+    limiter entirely).
     """
     try:
         ip = request.remote_addr or "unknown"

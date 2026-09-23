@@ -297,11 +297,13 @@ class TestCombatStateSerializer:
         `enemy.level * 10`; real NPCs define neither, so every real battle
         summary awarded 0. The expectation below is read off the NPCs rather
         than written as a literal, so it follows a retuned `exp_award`.
+        Since issue #617, NPCs genuinely carry `level` (spawn-time scaling) --
+        `_calculate_experience` has no `level` fallback at all any more, so
+        that no longer needs asserting here as a precondition.
         """
         slime, goblin = _npc(name="Slime"), _npc(name="Goblin")
         for enemy in (slime, goblin):
             assert not hasattr(enemy, "exp_reward")
-            assert not hasattr(enemy, "level")
         goblin.exp_award = 120
 
         total = self.CombatStateSerializer._calculate_experience([slime, goblin])
@@ -930,9 +932,13 @@ class TestNPCSerializer:
         assert result["idle_message"] == slime.idle_message
         assert result["alert_message"] == slime.alert_message
 
-    def test_enemies_have_no_level_so_the_default_is_what_ships(self):
+    def test_unleveled_enemy_serializes_its_real_level_one(self):
+        """Issue #617: ``NPC.__init__`` now sets ``self.level = 1``
+        unconditionally (spawn-time region scaling bumps it from there), so
+        this is the NPC's genuine attribute, not the serializer's
+        ``getattr(..., 1)`` default papering over an absent one."""
         slime = self._slime()
-        assert not hasattr(slime, "level")
+        assert slime.level == 1
 
         assert self.NPCSerializer.serialize(slime)["level"] == 1
 

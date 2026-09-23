@@ -56,38 +56,49 @@ _log = logging.getLogger(__name__)
 #: in the message the player reads -- so they could disagree.
 MAX_MANUAL_SAVES = 20
 
-#: Serializes resolving a victory's loot phase (issue #621).
+#: One re-entrant lock per player, serializing every inventory/floor mutation
+#: for that player (issue #641). Production runs gunicorn with
+#: ``--worker-class eventlet -w 1``: one process serves many greenlets
+#: concurrently for the SAME session, so two requests against one ``Player``
+#: object can interleave at any yield point. Take, drop, equip/unequip, shop
+#: buy/sell/buyback, post-combat loot collection and the shared interaction
+#: dispatch (floor take, container take) all move objects between
+#: ``player.inventory`` and a tile's/container's/merchant's list, and until
+#: this lock only ``collect_combat_loot`` had ever been guarded at all.
 #:
-#: ``collect_combat_loot`` reads the offer, withdraws it, moves the objects and
-#: marks the victory resolved. Under the threaded Socket.IO server two requests
-#: for one session hold the SAME ``Player`` object, so a second collect could
-#: read the offer inside ``_offered_drops`` before the first cleared it, and
-#: both would then walk the same handles: the loser either reports collecting
-#: what the winner took, or races the ``item in tile.items_here`` check and
-#: raises out of ``list.remove``.
+#: Folds in what used to be a separate ``_LOOT_PHASE_LOCK`` (issue #621): that
+#: was a process-wide, loot-only ``threading.Lock`` around just
+#: ``collect_combat_loot``'s own read/take/resolve section, reasoned to be
+#: safe globally because the section was microseconds long and touched
+#: nothing else. It never covered the other seven entry points below, which
+#: ran completely unlocked -- a still-open gap this lock closes by covering
+#: all eight under one per-player key instead of one lock per call site.
 #:
-#: NOT the combat adapter's ``_beat_lock``, which is the obvious candidate and
-#: the wrong one. Three reasons, in order of weight:
+#: Keyed on the player OBJECT itself via a ``WeakKeyDictionary`` -- never
+#: ``id(player)`` (CPython recycles freed heap addresses, so a stale id can
+#: silently resolve to whatever now lives there) and never
+#: ``wire_handle(player)`` (that mints a persisted attribute for what is a
+#: purely in-process concern; see the wire-id rules in
+#: ``.claude/rules/api-layer.md``). A ``WeakKeyDictionary`` entry drops on its
+#: own once the player is garbage collected, so no session cleanup path needs
+#: to know this dict exists.
 #:
-#: 1. The adapter is not a stable object across this window. Anything that
-#:    finds ``_combat_adapter`` missing builds a NEW ``ApiCombatAdapter`` (see
-#:    ``get_combat_status``), and ``_discard_fight_state`` deletes it outright
-#:    on flee and load. Two threads could hold two different adapters' locks
-#:    and exclude nothing.
-#: 2. There need not be an adapter at all when a loot call arrives, so the
-#:    lock would have to be optional -- and a fallback lock is exactly the
-#:    second lock ordering that must not be introduced.
-#: 3. ``_beat_lock`` is held across whole move loops. Borrowing it would park
-#:    an out-of-combat request behind in-combat beat execution for nothing.
-#:
-#: A module-level lock is safe here precisely because the guarded region is
-#: closed: it acquires no other lock, performs no I/O, and only mutates lists
-#: and attributes, so it cannot be one half of a cycle. Nothing reaches
-#: ``collect_combat_loot`` while holding ``_beat_lock`` either -- its only
-#: caller is the ``/api/combat/collect-loot`` route. Global rather than
-#: per-player because the section is microseconds long and a lock table keyed
-#: on players is machinery this does not need.
-_LOOT_PHASE_LOCK = threading.Lock()
+#: RLock, not Lock: ``equip_item`` calls ``self.unequip_item`` internally when
+#: toggling gear off, so a plain ``Lock`` would deadlock the very call it
+#: exists to protect.
+_PLAYER_MUTATION_LOCKS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+
+def _player_mutation_lock(player: Any) -> threading.RLock:
+    """The lock guarding every inventory/floor mutation for ``player``.
+
+    ``setdefault`` is a single dict operation with no yield point, so two
+    callers racing to create the first lock for a player still end up
+    sharing the one lock ``setdefault`` actually inserted, rather than one
+    each.
+    """
+    return _PLAYER_MUTATION_LOCKS.setdefault(player, threading.RLock())
+
 
 #: One NPC chat turn per player at a time (#618 scrub; maintainer decision
 #: 2026-09-19). A turn the client abandoned at its deadline keeps running and
@@ -2693,91 +2704,100 @@ class GameService:
 
         is_container = isinstance(target, Container)
 
-        # The verb set is the engine's (Container.LOOK_INSIDE_VERBS),
-        # not a copy kept here — the copy is how `search`, `look` and
-        # `lift` came to be authored across 6 shipped placements that
-        # the API then failed to recognise (#553).
-        if is_container and action in Container.LOOK_INSIDE_VERBS:
-            events_triggered.extend(
-                self._open_container_for_loot(request)
-            )
-        elif (
-            action in _CONTAINER_ITEM_VERBS
-            and hasattr(target, "_parent_container")
-        ):
-            # Use transfer_item for items in containers
-            qty_to_take = (
-                quantity
-                if quantity is not None
-                else getattr(target, "count", 1)
-            )
-            transfer_item(target._parent_container, player, target, qty_to_take)
-            if hasattr(target._parent_container, "refresh_description"):
-                target._parent_container.refresh_description()
-
-            if action == "take":
-                # stack_sentence_label, like every other "Jean takes ..."
-                # line: the count used to ride in a name #624 stopped baking.
-                narrate(f"{player.name} takes {stack_sentence_label(target, qty_to_take)}.")
-            else:
-                # Proceed with equipment logic
-                target.equip(player)
-        elif _is_demo_end_crossing(target, handler):
-            # The demo stops at this passageway (#552), gated inside the
-            # engine on the placement's ready flag (#579). No crossing
-            # happens either way, so no "Step through?" confirmation is
-            # queued; `enter` (not `end_demo`, which it already delegates
-            # to) returns whether THIS call closed the demo, and that verdict
-            # is the wire's `beta_end` -- the same flag the combat adapter
-            # sets on the Lurker path -- so the client raises BetaEndDialog.
-            # The class-resolved handler, not `target.enter`: an instance
-            # lookup here was one hop past the resolver #620 closed.
-            beta_end = bool(handler(player))
-        # `not _is_demo_end_passageway(target)`: this arm asks "step
-        # through?", and the arm above has already handled every verb that
-        # WOULD step through a demo-end passageway. What reached here is a
-        # verb that resolves to nothing
-        # callable (examine/look/check/...), and arming the confirmation for
-        # those meant confirming it ran `_commit_teleport` -- which now ends
-        # the demo instead of crossing, but with `beta_end` never set, so the
-        # player got the closing beat and the story gate and no BetaEndDialog.
-        #
-        # The verb test is #620. This arm used to key off the TYPE alone and
-        # never look at `handler`, so every verb on
-        # `_ALLOWED_INTERACTION_VERBS` armed a crossing confirmation on any
-        # ordinary passageway -- LOOT a city gate and
-        # `_queue_passageway_confirmation` ran `drop_merchandise_items()` and
-        # every `events_before` BEFORE the player was asked anything. Which
-        # verbs may step through is the engine's rule
-        # (`Passageway.accepts_step_through`: the verb crosses, or the
-        # placement advertises it); what stays out is exactly the hole, an
-        # allow-list verb the placement never advertised, which falls to the
-        # generic arm and is refused in fiction.
-        elif (
-            isinstance(target, Passageway)
-            and not _is_demo_end_passageway(target)
-            and session_data is not None
-            and target.accepts_step_through(handler, action)
-        ):
-            events_triggered.extend(
-                self._queue_passageway_confirmation(request)
-            )
-        else:
-            # A keyword the class does not implement resolved to None
-            # above and is refused in fiction; it used to raise
-            # AttributeError into the broad
-            # except below, which then handed the player
-            # "Error executing action: '<Class>' object has no
-            # attribute '<verb>'" (#553).
-            if handler is None:
-                return _InteractionOutcome(
-                    events_triggered,
-                    beta_end,
-                    _unsupported_action_message(target, action),
+        # #641: every mutating arm below (container loot, container-item
+        # transfer, and the generic handler dispatch -- which is how a floor
+        # `take`/`drop` reaches `Item.take`/`Item.drop` in src/items.py) can
+        # move an item between a tile/container and this player's inventory.
+        # Serialized against every other inventory/floor mutation for this
+        # player (collect, equip/unequip, drop, shop) so none of them can
+        # interleave with it -- the shared chokepoint both "take floor item
+        # via interact" and "take from open container" go through.
+        with _player_mutation_lock(player):
+            # The verb set is the engine's (Container.LOOK_INSIDE_VERBS),
+            # not a copy kept here — the copy is how `search`, `look` and
+            # `lift` came to be authored across 6 shipped placements that
+            # the API then failed to recognise (#553).
+            if is_container and action in Container.LOOK_INSIDE_VERBS:
+                events_triggered.extend(
+                    self._open_container_for_loot(request)
                 )
-            _call_interaction_handler(handler, player, quantity)
+            elif (
+                action in _CONTAINER_ITEM_VERBS
+                and hasattr(target, "_parent_container")
+            ):
+                # Use transfer_item for items in containers
+                qty_to_take = (
+                    quantity
+                    if quantity is not None
+                    else getattr(target, "count", 1)
+                )
+                transfer_item(target._parent_container, player, target, qty_to_take)
+                if hasattr(target._parent_container, "refresh_description"):
+                    target._parent_container.refresh_description()
 
-        return _InteractionOutcome(events_triggered, beta_end, None)
+                if action == "take":
+                    # stack_sentence_label, like every other "Jean takes ..."
+                    # line: the count used to ride in a name #624 stopped baking.
+                    narrate(f"{player.name} takes {stack_sentence_label(target, qty_to_take)}.")
+                else:
+                    # Proceed with equipment logic
+                    target.equip(player)
+            elif _is_demo_end_crossing(target, handler):
+                # The demo stops at this passageway (#552), gated inside the
+                # engine on the placement's ready flag (#579). No crossing
+                # happens either way, so no "Step through?" confirmation is
+                # queued; `enter` (not `end_demo`, which it already delegates
+                # to) returns whether THIS call closed the demo, and that verdict
+                # is the wire's `beta_end` -- the same flag the combat adapter
+                # sets on the Lurker path -- so the client raises BetaEndDialog.
+                # The class-resolved handler, not `target.enter`: an instance
+                # lookup here was one hop past the resolver #620 closed.
+                beta_end = bool(handler(player))
+            # `not _is_demo_end_passageway(target)`: this arm asks "step
+            # through?", and the arm above has already handled every verb that
+            # WOULD step through a demo-end passageway. What reached here is a
+            # verb that resolves to nothing
+            # callable (examine/look/check/...), and arming the confirmation for
+            # those meant confirming it ran `_commit_teleport` -- which now ends
+            # the demo instead of crossing, but with `beta_end` never set, so the
+            # player got the closing beat and the story gate and no BetaEndDialog.
+            #
+            # The verb test is #620. This arm used to key off the TYPE alone and
+            # never look at `handler`, so every verb on
+            # `_ALLOWED_INTERACTION_VERBS` armed a crossing confirmation on any
+            # ordinary passageway -- LOOT a city gate and
+            # `_queue_passageway_confirmation` ran `drop_merchandise_items()` and
+            # every `events_before` BEFORE the player was asked anything. Which
+            # verbs may step through is the engine's rule
+            # (`Passageway.accepts_step_through`: the verb crosses, or the
+            # placement advertises it); what stays out is exactly the hole, an
+            # allow-list verb the placement never advertised, which falls to the
+            # generic arm and is refused in fiction.
+            elif (
+                isinstance(target, Passageway)
+                and not _is_demo_end_passageway(target)
+                and session_data is not None
+                and target.accepts_step_through(handler, action)
+            ):
+                events_triggered.extend(
+                    self._queue_passageway_confirmation(request)
+                )
+            else:
+                # A keyword the class does not implement resolved to None
+                # above and is refused in fiction; it used to raise
+                # AttributeError into the broad
+                # except below, which then handed the player
+                # "Error executing action: '<Class>' object has no
+                # attribute '<verb>'" (#553).
+                if handler is None:
+                    return _InteractionOutcome(
+                        events_triggered,
+                        beta_end,
+                        _unsupported_action_message(target, action),
+                    )
+                _call_interaction_handler(handler, player, quantity)
+
+            return _InteractionOutcome(events_triggered, beta_end, None)
 
     def _resolve_interaction_target(self, player, target_id, session_data):
         """The tile the player is on, and the entity `target_id` names on it.
@@ -5264,9 +5284,12 @@ class GameService:
         are looked for where the fight was fought, not where the player now
         stands (:meth:`_loot_tile`).
 
-        The offer read, the take and the resolve run under
-        :data:`_LOOT_PHASE_LOCK` so a second request cannot be served an offer
-        the first is already spending.
+        The offer read, the take and the resolve run under this player's
+        :func:`_player_mutation_lock` (issue #641; formerly a loot-only
+        ``_LOOT_PHASE_LOCK``) so a second request -- another tab's collect,
+        or a concurrent take/drop/equip/shop call for the same player --
+        cannot be served an offer, or a floor, the first is already
+        spending.
 
         This call is the victory's resolve signal (:meth:`_end_loot_phase`), so
         once the tile is found the loot phase ends whatever was taken. If the
@@ -5295,18 +5318,22 @@ class GameService:
         if getattr(player, "in_combat", False):
             return {"success": False, "error": self._LOOT_DURING_COMBAT_MESSAGE}
 
-        tile = self._loot_tile(player)
-        if tile is None:
-            if item_names:
-                # Nothing taken and nothing forgotten: the drops stay listed and
-                # the victory stays open, so the player can retry or skip. This
-                # used to wipe combat_drops and report success (issue #610).
-                return {"success": False, "error": self._LOOT_TILE_NOT_FOUND_MESSAGE}
-            # Skipping picks nothing up, so it needs no tile to resolve.
-            self._end_loot_phase(player)
-            return {"success": True, "collected": [], "skipped": []}
+        # #641: the tile lookup, the offer read, the take and the resolve all
+        # run under this player's lock, so a concurrent take/drop/equip/shop
+        # call for the same player cannot interleave with any of it.
+        with _player_mutation_lock(player):
+            tile = self._loot_tile(player)
+            if tile is None:
+                if item_names:
+                    # Nothing taken and nothing forgotten: the drops stay listed
+                    # and the victory stays open, so the player can retry or
+                    # skip. This used to wipe combat_drops and report success
+                    # (issue #610).
+                    return {"success": False, "error": self._LOOT_TILE_NOT_FOUND_MESSAGE}
+                # Skipping picks nothing up, so it needs no tile to resolve.
+                self._end_loot_phase(player)
+                return {"success": True, "collected": [], "skipped": []}
 
-        with _LOOT_PHASE_LOCK:
             offered = self._offered_drops(player)
             # Withdrawn as soon as it is read: a second collect in flight
             # (another tab) then finds nothing on offer, rather than the same
@@ -5317,12 +5344,12 @@ class GameService:
             )
             self._end_loot_phase(player)
 
-        if collected and hasattr(player, "stack_inv_items"):
-            player.stack_inv_items()
-        if hasattr(player, "refresh_weight"):
-            player.refresh_weight()
+            if collected and hasattr(player, "stack_inv_items"):
+                player.stack_inv_items()
+            if hasattr(player, "refresh_weight"):
+                player.refresh_weight()
 
-        return {"success": True, "collected": collected, "skipped": skipped}
+            return {"success": True, "collected": collected, "skipped": skipped}
 
     @staticmethod
     def _loot_request_error(item_names: Any) -> Optional[Dict[str, Any]]:
@@ -5504,8 +5531,8 @@ class GameService:
             player.combat_end_summary = None
 
     #: The most distinct names one collect may ask for. A fight's offer holds
-    #: a handful; the request is client-sized and walked under the
-    #: process-wide ``_LOOT_PHASE_LOCK``, so a longer list is refused up front.
+    #: a handful; the request is client-sized and walked under this player's
+    #: :func:`_player_mutation_lock`, so a longer list is refused up front.
     _MAX_LOOT_REQUEST_NAMES = 64
 
     #: Why a collect took nothing when the fight's tile could not be found.
@@ -5622,6 +5649,19 @@ class GameService:
         Returns:
             Dict with success, shop_state, and sell_inventory.
         """
+        # Found in a /review pass on this branch: this method's "restock if
+        # empty" check (below) is a check-then-act TOCTOU -- two concurrent
+        # calls (two tabs, a client retry) can both see empty stock and both
+        # regenerate it -- and Merchant._collect_player_merchandise mutates
+        # player.inventory, the same list every other entry point in this
+        # file now serializes via _player_mutation_lock. This method was the
+        # one mutation path #641 missed. Split into `_get_shop_state_locked`
+        # so the lock wraps one call rather than reindenting the whole body.
+        with _player_mutation_lock(player):
+            return self._get_shop_state_locked(player, npc_id)
+
+    def _get_shop_state_locked(self, player: Any, npc_id: str) -> Dict[str, Any]:
+        """``get_shop_state``'s body, run under the caller's :func:`_player_mutation_lock`."""
         from src.api.serializers.shop_serializer import ShopSerializer
 
         merchant = self._find_merchant(player, npc_id)
@@ -5700,6 +5740,20 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
+        # #641: serialized against take/drop/equip/collect and the other shop
+        # ops for this player -- the gold-sufficiency check and the transfer
+        # it guards must not interleave with a concurrent mutation of the
+        # same purse or inventory (a second buy seeing pre-deduction gold
+        # would otherwise pass its own check and get the item for free).
+        # Split into `_shop_buy_locked` so the lock wraps one call rather
+        # than reindenting the whole method body.
+        with _player_mutation_lock(player):
+            return self._shop_buy_locked(player, npc_id, item_id, quantity)
+
+    def _shop_buy_locked(
+        self, player: Any, npc_id: str, item_id: str, quantity: int
+    ) -> Dict[str, Any]:
+        """``shop_buy``'s body, run under the caller's :func:`_player_mutation_lock`."""
         from src.inventory_utils import transfer_gold, transfer_item
         from src.api.serializers.shop_serializer import ShopSerializer
 
@@ -5778,6 +5832,17 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
+        # #641: serialized against take/drop/equip/collect and the other shop
+        # ops for this player -- see shop_buy's note on the same TOCTOU shape.
+        # Split into `_shop_sell_locked` so the lock wraps one call rather
+        # than reindenting the whole method body.
+        with _player_mutation_lock(player):
+            return self._shop_sell_locked(player, npc_id, item_id, quantity)
+
+    def _shop_sell_locked(
+        self, player: Any, npc_id: str, item_id: str, quantity: int
+    ) -> Dict[str, Any]:
+        """``shop_sell``'s body, run under the caller's :func:`_player_mutation_lock`."""
         from src.inventory_utils import transfer_gold, transfer_item
         from src.api.serializers.shop_serializer import (
             ShopSerializer,
@@ -5907,6 +5972,17 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
+        # #641: serialized against take/drop/equip/collect and the other shop
+        # ops for this player -- see shop_buy's note on the same TOCTOU shape.
+        # Split into `_shop_buyback_locked` so the lock wraps one call rather
+        # than reindenting the whole method body.
+        with _player_mutation_lock(player):
+            return self._shop_buyback_locked(player, npc_id, item_id)
+
+    def _shop_buyback_locked(
+        self, player: Any, npc_id: str, item_id: str
+    ) -> Dict[str, Any]:
+        """``shop_buyback``'s body, run under the caller's :func:`_player_mutation_lock`."""
         from src.inventory_utils import transfer_gold, transfer_item
         from src.api.serializers.shop_serializer import (
             ShopSerializer,
@@ -6118,22 +6194,26 @@ class GameService:
         Returns:
             Dictionary with ``success``/``message`` or ``error``
         """
-        if not hasattr(item, "isequipped"):
-            return {"error": f"{getattr(item, 'name', 'Item')} cannot be equipped"}
+        # #641: guards the whole toggle, including the delegated unequip
+        # below -- `_player_mutation_lock` is an `RLock` precisely so that
+        # reentrant call does not deadlock.
+        with _player_mutation_lock(player):
+            if not hasattr(item, "isequipped"):
+                return {"error": f"{getattr(item, 'name', 'Item')} cannot be equipped"}
 
-        if item.isequipped:
-            return self.unequip_item(player, item)
+            if item.isequipped:
+                return self.unequip_item(player, item)
 
-        if getattr(item, "merchandise", False):
-            return {"error": f"You must purchase {item.name} before equipping it"}
+            if getattr(item, "merchandise", False):
+                return {"error": f"You must purchase {item.name} before equipping it"}
 
-        with capture_narration() as _msgs:
-            player.equip_item(item_object=item)
-        return {
-            "success": True,
-            "message": f"{item.name} equipped",
-            "messages": self._narration_texts(_msgs),
-        }
+            with capture_narration() as _msgs:
+                player.equip_item(item_object=item)
+            return {
+                "success": True,
+                "message": f"{item.name} equipped",
+                "messages": self._narration_texts(_msgs),
+            }
 
     def unequip_item(self, player: "player_module.Player", item) -> Dict[str, Any]:
         """Unequip a currently-equipped inventory item via the engine.
@@ -6145,18 +6225,21 @@ class GameService:
         Returns:
             Dictionary with ``success``/``message`` or ``error``
         """
-        if not hasattr(item, "isequipped"):
-            return {"error": f"{getattr(item, 'name', 'Item')} cannot be unequipped"}
-        if not item.isequipped:
-            return {"error": f"{item.name} is not equipped"}
+        # #641: reentrant so `equip_item`'s toggle-off call lands inside an
+        # already-held lock rather than deadlocking on it.
+        with _player_mutation_lock(player):
+            if not hasattr(item, "isequipped"):
+                return {"error": f"{getattr(item, 'name', 'Item')} cannot be unequipped"}
+            if not item.isequipped:
+                return {"error": f"{item.name} is not equipped"}
 
-        with capture_narration() as _msgs:
-            player.unequip_item(item_object=item)
-        return {
-            "success": True,
-            "message": f"{item.name} unequipped",
-            "messages": self._narration_texts(_msgs),
-        }
+            with capture_narration() as _msgs:
+                player.unequip_item(item_object=item)
+            return {
+                "success": True,
+                "message": f"{item.name} unequipped",
+                "messages": self._narration_texts(_msgs),
+            }
 
     def drop_item(self, player: "player_module.Player", item) -> Dict[str, Any]:
         """Drop an inventory item onto the player's current tile.
@@ -6178,28 +6261,32 @@ class GameService:
         if not tile or not hasattr(tile, "items_here"):
             return {"error": "Cannot drop item: invalid current location"}
 
-        with capture_narration() as _msgs:
-            if getattr(item, "isequipped", False):
-                player.unequip_item(item_object=item)
+        # #641: serialized against take/collect/equip/shop for this player --
+        # the unequip, the inventory removal and the floor placement must not
+        # interleave with a concurrent mutation of the same lists.
+        with _player_mutation_lock(player):
+            with capture_narration() as _msgs:
+                if getattr(item, "isequipped", False):
+                    player.unequip_item(item_object=item)
 
-            try:
-                player.inventory.remove(item)
-            except (ValueError, AttributeError):
-                return {"error": "Item not found in inventory"}
+                try:
+                    player.inventory.remove(item)
+                except (ValueError, AttributeError):
+                    return {"error": "Item not found in inventory"}
 
-            tile.items_here.append(item)
-            if hasattr(item, "stack_grammar"):
-                item.stack_grammar()
-            # Narrate the drop so `messages` is the single source of truth for
-            # the dialog (the engine has no drop verb; mirrors the take action).
-            narrate(f"{getattr(player, 'name', 'Jean')} drops {getattr(item, 'name', 'the item')}.")
+                tile.items_here.append(item)
+                if hasattr(item, "stack_grammar"):
+                    item.stack_grammar()
+                # Narrate the drop so `messages` is the single source of truth for
+                # the dialog (the engine has no drop verb; mirrors the take action).
+                narrate(f"{getattr(player, 'name', 'Jean')} drops {getattr(item, 'name', 'the item')}.")
 
-        return {
-            "success": True,
-            "message": f"Dropped {getattr(item, 'name', 'item')}",
-            "messages": self._narration_texts(_msgs),
-            "item_name": getattr(item, "name", None),
-        }
+            return {
+                "success": True,
+                "message": f"Dropped {getattr(item, 'name', 'item')}",
+                "messages": self._narration_texts(_msgs),
+                "item_name": getattr(item, "name", None),
+            }
 
     def use_item(
         self,
@@ -6226,6 +6313,27 @@ class GameService:
             Dictionary with ``success``/``message``/``messages``/``target_name``
             or ``error``.
         """
+        # Found by the /review skill's adversarial pass: the other 9 mutation
+        # entry points in this file take _player_mutation_lock, but this one
+        # didn't. Consumable ``use()`` implementations (e.g. Restorative,
+        # src/items.py) are a plain check-then-act -- read player.hp, apply
+        # the effect, THEN decrement count, THEN remove the exhausted item --
+        # with no lock of their own. Two concurrent uses of a single-count
+        # item can both pass the check before either decrements, and the
+        # second `inventory.remove(self)` on an already-removed item raises
+        # an uncaught ValueError. Split into `_use_item_locked` so the lock
+        # wraps one call rather than reindenting the whole body.
+        with _player_mutation_lock(player):
+            return self._use_item_locked(player, item, target=target, user=user)
+
+    def _use_item_locked(
+        self,
+        player: "player_module.Player",
+        item,
+        target=None,
+        user=None,
+    ) -> Dict[str, Any]:
+        """``use_item``'s body, run under the caller's :func:`_player_mutation_lock`."""
         if getattr(item, "merchandise", False):
             return {"error": f"You must purchase {item.name} before using it"}
         if not hasattr(item, "use"):
@@ -6249,8 +6357,27 @@ class GameService:
 
         # ``item.use`` emits through the narration sink; suppress any dramatic
         # ``time.sleep`` pauses so the request does not block on real time.
-        with capture_narration() as _msgs, patch("time.sleep", return_value=None):
-            item.use(target, user=user)
+        #
+        # The lock above closes the INTERLEAVING race (#641/#656), but not
+        # this one: two requests that each resolved the same not-yet-
+        # exhausted item (e.g. via the same wire handle) before either
+        # reached this method still serialize through it one after the
+        # other -- correctly -- and the second, now-legitimate call can
+        # still find a `count`-exhausted item, because a single Restorative
+        # (power=60, so as little as 48 HP at the low end of its roll) does
+        # not always fully close a 50 HP gap. Consumable `use()`
+        # implementations (Restorative among them, src/items.py) have no
+        # upfront "am I already spent" guard, so a second call raises
+        # `ValueError` out of `inventory.remove(self)` deep inside their own
+        # exhausted-removal branch. Catching it here -- rather than adding
+        # the guard to every Consumable subclass -- protects all of them
+        # uniformly; matches `drop_item`'s identical catch shape a few
+        # methods up.
+        try:
+            with capture_narration() as _msgs, patch("time.sleep", return_value=None):
+                item.use(target, user=user)
+        except ValueError:
+            return {"error": f"{getattr(item, 'name', 'Item')} is no longer available"}
 
         messages = self._narration_texts(_msgs)
         message = "\n".join(messages).strip() or f"{getattr(item, 'name', 'Item')} used"

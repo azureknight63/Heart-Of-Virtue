@@ -24,6 +24,7 @@ import {
 } from '../utils/combatMoveStatus';
 import { useFeatureFlag } from '../utils/featureFlags';
 import { isLiving } from '../utils/combatEntities';
+import LevelChip from './LevelChip';
 
 export { revealedLogEntries, takeAnimationBatch, removeBatchByIdentity };
 
@@ -806,8 +807,9 @@ const EntityTooltip = React.memo(({ entity, showDistance }) => {
   return (
     <div className="absolute top-full left-1/2 -translate-x-1/2 mt-4 z-[100] animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-none">
       <div className="bg-black/90 border border-orange/40 rounded px-2 py-1 shadow-2xl backdrop-blur-md min-w-[120px]">
-        <div className="text-white text-[10px] font-bold uppercase tracking-wider border-b border-white/10 pb-1 mb-1">
-          {entity.name}
+        <div className="text-white text-[10px] font-bold uppercase tracking-wider border-b border-white/10 pb-1 mb-1 flex items-center justify-between gap-2">
+          <span>{entity.name}</span>
+          {entity.level !== undefined && <LevelChip level={entity.level} />}
         </div>
         {/* Distance is what the positional layer turns on — every move carries
             an mvrange and ranged accuracy decays with it — so it belongs on
@@ -992,7 +994,10 @@ const SelectedEntityPanel = React.memo(({ entity, onClose }) => {
         {/* Header */}
         <div className="flex justify-between items-start mb-3 border-b border-white/10 pb-2">
           <div>
-            <GameText weight="bold" size="sm" variant="secondary">{entity.name}</GameText>
+            <div className="flex items-center gap-2">
+              <GameText weight="bold" size="sm" variant="secondary">{entity.name}</GameText>
+              {entity.level !== undefined && <LevelChip level={entity.level} />}
+            </div>
             {entity.distance !== undefined && (
               <div className="text-white/50 text-[10px] font-mono mt-0.5">{entity.distance} ft away</div>
             )}

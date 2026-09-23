@@ -426,3 +426,132 @@ def test_load_single_json_map_refuses_gadget_payloads_in_map_content(tmp_path):
     assert tile.events_here == []
     # The tile itself still loads — a hostile entry is dropped, not fatal.
     assert tile.description == 'd'
+
+
+def test_deserialize_saved_instance_legacy_npc_shape_gets_spawn_time_level():
+    """Issue #617: the legacy full-dump shape ({"__class__", "__module__",
+    "props"}) is a genuinely separate construction path from
+    map_placeholders.instantiate_placeholder (only the newer authored-
+    placeholder payload shape goes through that function -- see the branch
+    at the top of _deserialize_saved_instance). combat-testing-arena.json
+    and other shipped maps still author NPCs in this legacy shape, so if
+    apply_enemy_level is only wired into instantiate_placeholder, every
+    hostile NPC placed via the legacy shape silently never gets spawn-time
+    leveling -- growth_profile is never set, and a later sync_level() call
+    (e.g. the /api/debug/arena/stats level op) is a silent no-op.
+    """
+    from src.tiles import MapTile
+    import src.npc_level_tables as npc_level_tables
+
+    monkeypatch_region = {"KingSlime": 6}
+    original_region = npc_level_tables.REGION_ENEMY_LEVELS.get("_legacy_test_region")
+    original_profile = npc_level_tables.ENEMY_GROWTH_PROFILES.get("KingSlime")
+    npc_level_tables.REGION_ENEMY_LEVELS["_legacy_test_region"] = monkeypatch_region
+    npc_level_tables.ENEMY_GROWTH_PROFILES["KingSlime"] = {"maxhp": 60, "damage": 10}
+    try:
+        tile = MapTile(None, {"name": "_legacy_test_region"}, 2, 0)
+        # No explicit "maxhp"/"damage" props -- this payload mirrors a plain
+        # legacy placement with only identity/flavour props authored, so the
+        # assertion below isolates "does leveling apply at all" from the
+        # separate override-precedence question instantiate_placeholder's
+        # ordering comment addresses.
+        payload = {
+            "__class__": "KingSlime",
+            "__module__": "npc",
+            "props": {
+                "name": "King Slime",
+                "description": "d",
+                "aggro": True,
+                "exp_award": 500,
+                "friend": False,
+            },
+        }
+        u = Universe()
+        inst = u._deserialize_saved_instance(payload, tile=tile)
+
+        assert inst is not None
+        # A boss (is_boss=True) never rolls -- it must land exactly on the
+        # region's base level, with growth_profile actually applied.
+        assert inst.level == 6, (
+            "legacy-shape NPC placements must get spawn-time leveling too, "
+            "not just the newer authored-placeholder shape"
+        )
+        # KingSlime's own hardcoded level-1 baseline (src/npc/_enemies.py) is
+        # maxhp=400; 5 levels of the {"maxhp": 60, ...} profile on top of it.
+        assert inst.maxhp == 400 + 5 * 60
+    finally:
+        if original_region is None:
+            npc_level_tables.REGION_ENEMY_LEVELS.pop("_legacy_test_region", None)
+        else:
+            npc_level_tables.REGION_ENEMY_LEVELS["_legacy_test_region"] = original_region
+        if original_profile is None:
+            npc_level_tables.ENEMY_GROWTH_PROFILES.pop("KingSlime", None)
+        else:
+            npc_level_tables.ENEMY_GROWTH_PROFILES["KingSlime"] = original_profile
+
+
+def test_deserialize_saved_instance_legacy_authored_level_prop_drives_the_roll():
+    """An explicit "level" prop on a legacy NPC payload must act as the
+    same kind of override instantiate_placeholder's "overrides.level" is --
+    driving the spawn roll directly -- and must not ALSO be applied a
+    second time via the generic props setattr loop (which would just
+    redundantly setattr the same final value, but the exclusion is what
+    the fix actually adds and needs its own coverage).
+    """
+    from src.tiles import MapTile
+    import src.npc_level_tables as npc_level_tables
+    from unittest.mock import patch
+
+    original_profile = npc_level_tables.ENEMY_GROWTH_PROFILES.get("Slime")
+    npc_level_tables.ENEMY_GROWTH_PROFILES["Slime"] = {"maxhp": 6, "damage": 3}
+    try:
+        tile = MapTile(None, {"name": "_legacy_test_region_2"}, 1, 0)
+        payload = {
+            "__class__": "Slime",
+            "__module__": "npc",
+            "props": {"name": "Slime", "description": "d", "level": 4},
+        }
+        u = Universe()
+        # Patch the roll so a non-boss's level is deterministic; also proves
+        # the raw "level": 4 prop reached apply_enemy_level as the override
+        # (roll_spawn_level is called with base=4, not some default).
+        # NOTE: Slime.__init__ itself draws a random.randint for its
+        # procedural name suffix (src/genericng.py) before this ever runs --
+        # since `random` is one shared stdlib module, patching
+        # "src.npc_level_tables.random.randint" catches that unrelated call
+        # too, so assert on the roll call specifically (assert_any_call),
+        # not on the mock's total call count.
+        with patch("src.npc_level_tables.random.randint", return_value=4) as mock_randint:
+            inst = u._deserialize_saved_instance(payload, tile=tile)
+
+        mock_randint.assert_any_call(
+            4 - npc_level_tables.NPC_LEVEL_VARIANCE, 4 + npc_level_tables.NPC_LEVEL_VARIANCE
+        )
+        assert inst.level == 4
+        # Slime's hardcoded baseline (src/npc/_enemies.py) is maxhp=20; 3
+        # levels of the {"maxhp": 6, ...} profile on top of it.
+        assert inst.maxhp == 20 + 3 * 6
+    finally:
+        if original_profile is None:
+            npc_level_tables.ENEMY_GROWTH_PROFILES.pop("Slime", None)
+        else:
+            npc_level_tables.ENEMY_GROWTH_PROFILES["Slime"] = original_profile
+
+
+def test_deserialize_saved_instance_non_npc_level_prop_is_unaffected():
+    """A class with no sync_level (an Item, here) keeps an authored "level"
+    prop as a plain attribute -- the new exclusion in the props loop must
+    only fire when apply_enemy_level actually claimed the NPC, never for
+    an unrelated class that happens to also use the word "level".
+    """
+    payload = {
+        "__class__": "DummyItem",
+        "__module__": "items",
+        "props": {"name": "Gate", "value": 1, "level": 7},
+    }
+    u = Universe()
+    inst = u._deserialize_saved_instance(payload)
+
+    assert isinstance(inst, DummyItem)
+    assert not hasattr(inst, "sync_level")
+    assert inst.level == 7

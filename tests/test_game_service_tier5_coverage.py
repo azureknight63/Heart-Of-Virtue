@@ -2494,12 +2494,21 @@ class TestUseItem:
         adapter._add_log_entry.assert_any_call(5, "Line two", "combat")
 
     def test_in_combat_creates_missing_combat_log_without_adapter(self, game_service):
-        from types import SimpleNamespace
         from src.narration import narrate
 
-        player = SimpleNamespace(
-            name="Jean", in_combat=True, combat_beat=4, combat_proximity={}
-        )
+        # A plain object, not types.SimpleNamespace: use_item now takes
+        # _player_mutation_lock (issue #641/#656), whose WeakKeyDictionary
+        # requires a weakly-referenceable key -- SimpleNamespace instances
+        # are not (TypeError: cannot create weak reference to
+        # 'types.SimpleNamespace' object), but an ordinary class instance is.
+        class _Player:
+            pass
+
+        player = _Player()
+        player.name = "Jean"
+        player.in_combat = True
+        player.combat_beat = 4
+        player.combat_proximity = {}
         item = MagicMock()
         item.merchandise = False
         item.name = "Bomb"

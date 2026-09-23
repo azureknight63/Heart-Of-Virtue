@@ -291,9 +291,31 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     cls.__init__(inst)  # type: ignore
                 except Exception:
                     pass
+
+            # Spawn-time level scaling (issue #617). This is the legacy
+            # full-dump placement shape, a genuinely
+            # separate construction path from
+            # map_placeholders.instantiate_placeholder (only the newer
+            # authored-placeholder payload shape reaches that function, via
+            # the branch at the top of this method) -- combat-testing-arena.json
+            # and other shipped maps still author NPCs this way, so leveling
+            # must be wired in here too, not just on the placeholder path.
+            # map_placeholders._apply_spawn_time_level is the single shared
+            # implementation both call sites use (see its docstring); applied
+            # BEFORE the props/setattr loop below for the same ordering
+            # reason instantiate_placeholder documents: a level-up's stat
+            # refresh re-derives live stats from each `*_base` attribute, so
+            # running it after an explicit authored `maxhp`/`damage` prop
+            # would silently clobber that prop back to the scaled baseline.
+            spawn_level_applied = map_placeholders._apply_spawn_time_level(
+                inst, tile, props.get(map_placeholders._LEVEL_OVERRIDE_KEY)
+            )
+
             # Apply remaining props as attributes
             for k, v in props.items():
                 try:
+                    if k == map_placeholders._LEVEL_OVERRIDE_KEY and spawn_level_applied:
+                        continue
                     # Skip setting player or tile if they're null - let runtime set these
                     if k in ("player", "tile") and v is None:
                         continue

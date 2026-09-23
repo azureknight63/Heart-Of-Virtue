@@ -13,8 +13,22 @@ what "green" means, and what to do when it stops.
 | `/games/HeartOfVirtue/api/*` | proxied by the web server to the host API | the SPA's own `/api/info` fetch proves this path works |
 
 Not in this repo and not visible from here: the web server's config inside the
-container (the stock WordPress image is Apache; the CSP doc assumes nginx) and
-the systemd unit. `-Status` reports what can be observed from outside.
+container (the stock WordPress image is Apache; a comment in
+`deploy/heart-of-virtue.service` says nginx — the two sources disagree and
+neither has been confirmed against the live config). `-Status` reports what
+can be observed from outside. The systemd unit itself **is** mirrored in this
+repo, at `deploy/heart-of-virtue.service`.
+
+**Known gap (issue #654):** `TRUSTED_PROXY_COUNT` is not set in production's
+`.env`, so `ProxyFix` is off and the API sees the proxy's IP as
+`request.remote_addr` for every request — every IP-keyed rate limiter
+(`src/api/rate_limiter.py::client_ip`) currently shares one bucket across all
+players, so one client's failed logins can throttle everyone. Do not set
+`TRUSTED_PROXY_COUNT` without first confirming, from the actual proxy config,
+that it sets `X-Forwarded-For` itself rather than passing through whatever
+the client sent — otherwise a client can spoof any IP and bypass the
+limiter. That confirmation requires reading the live container's web server
+config, which is not available from this repo.
 
 Every build the script deploys carries the commit it was built from, in a
 `.hov-commit` file beside its `index.html`. That is how a rollback names the

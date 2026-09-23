@@ -88,7 +88,9 @@ PLAYER_ATTRS = (
     "faith",
 )
 
-# NPC stats editable via the debug interface.
+# NPC stats editable via the debug interface. "level" is handled specially
+# in set_combatant_stats (routed through sync_level, not a raw setattr) --
+# see the comment there.
 NPC_EDITABLE_STATS = (
     "hp",
     "maxhp",
@@ -104,6 +106,7 @@ NPC_EDITABLE_STATS = (
     "faith",
     "aggro",
     "friend",
+    "level",
 )
 
 
@@ -414,6 +417,20 @@ class TheAdjutant(Friend):
                 )
                 setattr(target, stat, bool_val)
                 updated[stat] = bool_val
+                continue
+            if stat == "level":
+                # A raw setattr(target, "level", N) would move the number
+                # without rescaling HP/damage/etc, leaving the NPC's stats
+                # mismatched with its displayed level -- a footgun for
+                # whoever uses this to test balance. Route through
+                # sync_level (LevelSyncMixin) instead, same as a real
+                # spawn-time level assignment (src/npc_level_tables.py) and
+                # set_ally_progression below. Classes with no growth_profile
+                # (most arena test NPCs today) are an intentional no-op here
+                # -- sync_level already behaves that way everywhere else.
+                if hasattr(target, "sync_level"):
+                    target.sync_level(int(value))
+                updated[stat] = int(getattr(target, "level", 1) or 1)
                 continue
             int_val = int(value)
             setattr(target, stat, int_val)
