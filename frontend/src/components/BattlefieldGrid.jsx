@@ -7,6 +7,8 @@ import { strikeFlashFor } from '../utils/animationConfigs';
 import { categoryColor, categoryColorOrNull, categoryGlowOrNull } from '../utils/categories';
 import { lookupOr } from '../utils/lookup';
 import useDoubleRaf from '../hooks/useDoubleRaf';
+import useBattlefieldPan from '../hooks/useBattlefieldPan';
+import useTokenMoveTween from '../hooks/useTokenMoveTween';
 import useBattlefieldAnimations, {
   // Re-exported below so existing import sites (and their tests) keep resolving
   // these pure helpers through BattlefieldGrid, where they used to live.
@@ -61,69 +63,9 @@ const CAMERA_EPSILON = 0.004; // settle threshold (cells)
 export const VIEW_MODE_FOLLOW = 'follow';
 export const VIEW_MODE_FIT = 'fit';
 
-// Pointer travel above which a mouseup is treated as the end of a pan gesture
-// rather than a click on the map.
-const DRAG_CLICK_THRESHOLD_PX = 6;
-
-const clampNumber = (value, min, max) => Math.max(min, Math.min(max, value));
-
-/**
- * Split one axis of drag travel into whole cells of camera-window shift and
- * a sub-cell remainder, clamped so the window never leaves the arena.
- *
- * `totalPx` is the gesture's cumulative screen-space travel on this axis;
- * `[minCells, maxCells]` is the legal window shift in the same screen sense
- * (always contains 0 — see panCellBounds). The clamp is applied before the
- * split, so a stopped edge has no half-cell of void hanging off it: the
- * remainder is 0 there, not "whatever was left over".
- *
- * A zero or unmeasurable cell size (jsdom, a collapsed panel) yields no
- * movement at all rather than NaN in a transform.
- */
-export const splitPanAxis = (totalPx, cellPx, minCells, maxCells) => {
-  if (!Number.isFinite(cellPx) || cellPx <= 0) return { cells: 0, residual: 0 };
-  // Clamped in CELL units, not px: a measured cell size is rarely a clean
-  // float, and `(maxCells * cellPx) / cellPx` can come back as 2.9999…, which
-  // truncated to one cell short of the bound with a whole cell of remainder.
-  // Clamping the ratio makes the bound itself the result at a stopped edge.
-  const travelCells = clampNumber(totalPx / cellPx, minCells, maxCells);
-  // trunc, not floor: the remainder keeps the sign of the travel, so a
-  // leftward drag reads as "-3 cells and -7px", never "-4 cells and +23px".
-  const cells = Math.trunc(travelCells);
-  // A whole-cell result (the integer bounds, or travel that lands exactly on
-  // a cell) has no remainder by definition; otherwise it is measured in px
-  // off the travel, which keeps it exact rather than a product of two floats.
-  const residual = travelCells === cells ? 0 : totalPx - cells * cellPx;
-  return { cells, residual };
-};
-
-/**
- * How far the camera window may be shifted, in cells, on one axis.
- *
- * The window's low edge sits at `lowEdge` and spans `size` cells over an arena
- * of `mapSize` cells (legal coordinates `0 .. mapSize - 1`). The shift may
- * bring the window onto the arena but never carry it further off: the low
- * bound is "no further into the void than 0, or than the window already
- * is", the high bound the mirror of that on the far edge. Both always admit 0,
- * so the unpanned camera is legal wherever it starts, and when the window
- * already covers the whole arena (fit mode framing every cell, or a small
- * arena inside the follow window) the range collapses to `[0, 0]`.
- */
-export const panCellBounds = (lowEdge, size, mapSize) => ({
-  min: Math.min(lowEdge, 0) - lowEdge,
-  max: Math.max(lowEdge, mapSize - size) - lowEdge,
-});
-
-/**
- * Both axes' legal window shifts, in world cells: `x` shifts leftX, `y`
- * shifts topY. The window's low edge on y is its BOTTOM row
- * (topY - gridCols + 1); a shift of that edge is a shift of topY, so the
- * bounds come back in topY's sense directly.
- */
-const windowPanBounds = ({ leftX, topY, gridCols, mapSize }) => ({
-  x: panCellBounds(leftX, gridCols, mapSize),
-  y: panCellBounds(topY - gridCols + 1, gridCols, mapSize),
-});
+// Pan geometry lives in utils/battlefieldPan.js (#623); these two are
+// re-exported for the component tests that pin them.
+export { splitPanAxis, panCellBounds } from '../utils/battlefieldPan';
 
 // Arena ceiling, mirroring get_dynamic_grid_size's clamp in
 // src/coordinate_config.py. Bounds a gridCols^2 loop and DOM-node count.
@@ -831,6 +773,20 @@ const EntityTooltip = React.memo(({ entity, showDistance }) => {
 });
 
 // ---------------------------------------------------------------------------
+// TokenMoveTween — eases a token across its own world move (#668). A layer of
+// its own so the camera's instant re-index (the wrapper's cell translate) and
+// the attack motion (the inner div) never share an element with it.
+// ---------------------------------------------------------------------------
+const TokenMoveTween = ({ pos, children }) => {
+  const ref = useTokenMoveTween(pos, HALF_VIEW);
+  return (
+    <div ref={ref} data-testid="token-move-tween" style={{ width: '100%', height: '100%' }}>
+      {children}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // EntityLayer — renders all live combatants with interactions and animations
 // ---------------------------------------------------------------------------
 const EntityLayer = React.memo(({
@@ -929,9 +885,11 @@ const EntityLayer = React.memo(({
             alignItems: 'center',
             justifyContent: 'center',
             opacity: item.isDying ? 0 : 1,
-            transition: item.isDying
-              ? 'opacity 0.65s ease-out, transform 0.5s ease-in-out'
-              : 'transform 0.5s ease-in-out',
+            // No `transform` transition here (#668): this translate is
+            // camera-relative and must re-index instantly when the camera
+            // crosses a cell. The combatant's own move is tweened by
+            // TokenMoveTween below.
+            transition: item.isDying ? 'opacity 0.65s ease-out' : undefined,
             willChange: 'transform',
             cursor: item.isDying ? 'default' : 'pointer',
             pointerEvents: item.isDying ? 'none' : 'auto',
@@ -943,6 +901,7 @@ const EntityLayer = React.memo(({
             zIndex: animStates.length ? 100 : (isHighlighted ? 50 : (item.style.zIndex || 20))
           }}
         >
+          <TokenMoveTween pos={item.pos}>
           <div style={{
             width: '100%',
             height: '100%',
@@ -963,6 +922,7 @@ const EntityLayer = React.memo(({
               displaySymbol={item.displaySymbol}
             />
           </div>
+          </TokenMoveTween>
 
           {/* Hover tooltip, suppressed only for the entity already open in
               the selection panel. Suppressing on any selection would blind
@@ -1958,45 +1918,6 @@ function BattlefieldGrid({
   const [, forceSnapRender] = useState(0);
   const bumpSnapRender = useCallback(() => forceSnapRender((n) => n + 1), []);
 
-  // Touch pan — a separate layer that moves independently of the RAF camera,
-  // so panning doesn't interfere with the smooth camera animation.
-  const panLayerRef = useRef(null);
-  const gridContainerRef = useRef(null);
-  // The pan is two quantities. Whole cells of travel shift the camera WINDOW
-  // (`panCells`, in world cells: leftX += x, topY += y), which is what lets a
-  // drag reveal map area the render had culled. What is left over after the
-  // whole cells (`touchPanRef`, screen px, always under one cell) is a CSS
-  // translate on the pan layer, so the motion stays smooth between cell steps.
-  // Before #592 the pan was translate-only, clamped to 40% of the box, and
-  // could never show anything the 13x13 window had not already rendered.
-  const touchPanRef = useRef({ x: 0, y: 0 }); // sub-cell remainder, screen px
-  const panCellsRef = useRef({ x: 0, y: 0 }); // authoritative copy for the handlers
-  const [panCells, setPanCells] = useState(panCellsRef.current); // render copy
-  const commitPanCells = useCallback((x, y) => {
-    const cur = panCellsRef.current;
-    if (cur.x === x && cur.y === y) return;
-    panCellsRef.current = { x, y };
-    setPanCells(panCellsRef.current);
-  }, []);
-  // The unpanned window, mirrored for the drag handlers. Those live in one
-  // effect whose deps must not include the window (rebinding mid-gesture drops
-  // the drag), and the window is derived further down the render anyway, so
-  // the render writes it here and applyDelta reads it.
-  const viewRef = useRef({ leftX: 0, topY: 0, gridCols: VIEW_SIZE, mapSize: 0 });
-  const touchStartRef = useRef(null);           // { x, y } of last touch point
-  const panDecayRafRef = useRef(null);
-  // Accumulated pointer travel for the current drag. A drag that ends over the
-  // map background also fires a click; without this the gesture would clear
-  // the selected-combatant panel every time the player panned.
-  const dragTravelRef = useRef(0);
-  // Per-gesture measurements (cell size, clamp range), captured at gesture
-  // start — see applyDelta.
-  const dragBoundsRef = useRef(null);
-  // Mirrors "pan is non-zero" into React so the recenter affordance can render.
-  // Panning is sticky (it used to spring back to center the instant you let
-  // go, which made the advertised "drag to pan" do nothing), so the player
-  // needs a way back — and needs to know they are looking away from Jean.
-  const [isPanned, setIsPanned] = useState(false);
 
   // Resolve the arena's width in CELLS: API value → bounding box of entity
   // positions → 9.
@@ -2032,204 +1953,6 @@ function BattlefieldGrid({
     return Math.min(MAX_MAP_SIZE, maxCoord) + 1;
   }, [mapSize, allCombatants]);
 
-  // Touch pan handlers — attached via useEffect so touchmove can be non-passive
-  const applyPanTransform = useCallback(() => {
-    const { x, y } = touchPanRef.current;
-    if (panLayerRef.current) {
-      panLayerRef.current.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
-    }
-    // React bails out when the value is unchanged, so calling this per frame
-    // during a drag costs nothing beyond the comparison.
-    const cells = panCellsRef.current;
-    const panned = cells.x !== 0 || cells.y !== 0 || Math.abs(x) > 2 || Math.abs(y) > 2;
-    setIsPanned((prev) => (prev === panned ? prev : panned));
-  }, []);
-
-  /** Stop an in-flight recenter ease, if any. */
-  const cancelPanDecay = useCallback(() => {
-    if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
-  }, []);
-
-  /** Drop both halves of the pan at once — the window shift and the remainder. */
-  const resetPan = useCallback(() => {
-    cancelPanDecay();
-    touchPanRef.current = { x: 0, y: 0 };
-    commitPanCells(0, 0);
-    applyPanTransform();
-  }, [cancelPanDecay, commitPanCells, applyPanTransform]);
-
-  /** Ease the pan offset back to zero (the recenter affordance). */
-  const recenterPan = useCallback(() => {
-    // The cell shift drops in one step — it is a re-render, not a transform,
-    // and easing it would mean a React commit per frame. The remainder eases.
-    commitPanCells(0, 0);
-    const pan = touchPanRef.current;
-    if (Math.abs(pan.x) < 0.5 && Math.abs(pan.y) < 0.5) {
-      resetPan();
-      return;
-    }
-    touchPanRef.current = { x: pan.x * 0.82, y: pan.y * 0.82 };
-    applyPanTransform();
-    panDecayRafRef.current = requestAnimationFrame(recenterPan);
-  }, [applyPanTransform, commitPanCells, resetPan]);
-
-  useEffect(() => {
-    const el = gridContainerRef.current;
-    if (!el) return;
-
-    // Cell size and clamp range are captured once per gesture, not per move:
-    // the viewport cannot resize mid-drag, and reading the rect on every
-    // pointer move (60-120/s) forces a synchronous layout flush over a
-    // subtree holding up to thousands of grid cells. The pan layer is the
-    // box the cells are laid out in (the viewport box, letterboxed square
-    // when that flag is on), so its width and height over gridCols are the
-    // two sides of one cell. It is mounted in the same tree as `el`, so it
-    // is set whenever this runs.
-    const measureGesture = () => {
-      const view = viewRef.current;
-      const box = panLayerRef.current.getBoundingClientRect();
-      const { x, y } = windowPanBounds(view);
-      dragBoundsRef.current = {
-        // One cell size PER AXIS. With `squareBattlefieldCells` off (the
-        // default) the box fills the panel, so a cell is 1/gridCols of the
-        // width and 1/gridCols of the height — two different numbers, the
-        // same two `getEntityStyle` sizes tokens with. Measuring one off the
-        // width and using it for both axes stepped rows at the column pitch.
-        cellPxX: box.width / view.gridCols,
-        cellPxY: box.height / view.gridCols,
-        // Screen-space ranges. Dragging right (+px) reveals lower x, so the
-        // screen shift is the negation of the leftX shift; dragging down
-        // (+px) reveals higher y, the same sense as the topY shift.
-        minX: -x.max, maxX: -x.min,
-        minY: y.min, maxY: y.max,
-      };
-    };
-
-    const applyDelta = (dx, dy) => {
-      // Lazily initialised so a synthetic move with no preceding down-event
-      // still clamps.
-      if (!dragBoundsRef.current) measureGesture();
-      const { cellPxX, cellPxY, minX, maxX, minY, maxY } = dragBoundsRef.current;
-      dragTravelRef.current += Math.abs(dx) + Math.abs(dy);
-
-      // Rebuild the gesture's screen-space total from the committed cells
-      // plus the remainder, add the move, and split it again — one clamp,
-      // one rounding rule, for both the cells and the px they leave behind.
-      // Screen x runs opposite to the leftX shift (see measureGesture); that
-      // one sign flip is applied here and undone once on the commit below.
-      const cells = panCellsRef.current;
-      const rem = touchPanRef.current;
-      const screenTravelX = -cells.x * cellPxX + rem.x + dx;
-      const screenTravelY = cells.y * cellPxY + rem.y + dy;
-      const sx = splitPanAxis(screenTravelX, cellPxX, minX, maxX);
-      const sy = splitPanAxis(screenTravelY, cellPxY, minY, maxY);
-      touchPanRef.current = { x: sx.residual, y: sy.residual };
-      commitPanCells(-sx.cells, sy.cells);
-      applyPanTransform();
-    };
-
-    const beginDrag = (x, y) => {
-      cancelPanDecay();
-      measureGesture();
-      dragTravelRef.current = 0;
-      touchStartRef.current = { x, y };
-    };
-
-    // Touch handlers
-    const onTouchStart = (e) => {
-      if (e.touches.length !== 1) return;
-      beginDrag(e.touches[0].clientX, e.touches[0].clientY);
-    };
-    const onTouchMove = (e) => {
-      if (!touchStartRef.current || e.touches.length !== 1) return;
-      e.preventDefault();
-      const dx = e.touches[0].clientX - touchStartRef.current.x;
-      const dy = e.touches[0].clientY - touchStartRef.current.y;
-      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      applyDelta(dx, dy);
-    };
-    // Pan is sticky: releasing keeps the view where the player put it. The
-    // recenter button (and starting a new fight) is what returns it.
-    const onTouchEnd = () => {
-      touchStartRef.current = null;
-    };
-
-    // Mouse drag handlers
-    const onMouseDown = (e) => {
-      if (e.button !== 0) return;
-      beginDrag(e.clientX, e.clientY);
-      el.style.cursor = 'grabbing';
-    };
-    const onMouseMove = (e) => {
-      if (!touchStartRef.current) return;
-      const dx = e.clientX - touchStartRef.current.x;
-      const dy = e.clientY - touchStartRef.current.y;
-      touchStartRef.current = { x: e.clientX, y: e.clientY };
-      applyDelta(dx, dy);
-    };
-    const onMouseUp = () => {
-      if (!touchStartRef.current) return;
-      touchStartRef.current = null;
-      el.style.cursor = '';
-    };
-
-    el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
-    el.addEventListener('touchend', onTouchEnd, { passive: true });
-    el.addEventListener('mousedown', onMouseDown);
-    // mousemove/mouseup on window so drag works when cursor leaves the grid
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    return () => {
-      el.removeEventListener('touchstart', onTouchStart);
-      el.removeEventListener('touchmove', onTouchMove);
-      el.removeEventListener('touchend', onTouchEnd);
-      el.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      cancelPanDecay();
-    };
-    // `tab` is load-bearing: the enemies tab early-returns a different tree, so
-    // the container this effect binds to unmounts and a NEW one mounts on the
-    // way back. Without re-running, the listeners stay attached to the detached
-    // node and panning is silently dead for the rest of the session.
-    //
-    // The window (leftX/topY/gridCols) is deliberately NOT a dep: it changes
-    // every time the camera steps a cell, and rebinding the listeners
-    // mid-gesture drops the drag. It reaches the handlers through viewRef.
-  }, [applyPanTransform, commitPanCells, cancelPanDecay, tab]);
-
-  // Reset the touch-pan offset when the fight identity changes, so a new fight
-  // does not open with the camera parked where the last one left it.
-  //
-  // Runs unconditionally: it does NOT branch on "is this a new fight", so it
-  // needs no prev-refs and cannot compete with useBattlefieldAnimations'
-  // private fight-boundary detection (see the note on that effect - two
-  // recorders of the same transition would make the second one miss it).
-  //
-  // Keyed on the props Battlefield passes from the top-level combat object,
-  // NOT on `combat` - that prop is a beat state here, and
-  // serialize_combat_state emits neither field, so reading them off it made
-  // this dep flip uuid <-> undefined every time displayState alternated shape,
-  // resetting the camera mid-fight.
-  //
-  // Also keyed on the view mode: the cell shift is relative to whichever
-  // window the mode produces, and a shift chosen against a 13-cell follow
-  // window means nothing against a fit frame (or vice versa).
-  useEffect(() => {
-    resetPan();
-  }, [combatId, combatActive, isFitMode, resetPan]);
-
-  // Clicking the map background clears the selection — as the panel's own
-  // close-button tooltip promised. The previous `e.target === e.currentTarget`
-  // test never passed: the pan and content layers are full-bleed children with
-  // default pointer-events, so a background click always resolved to one of
-  // them and Escape was the only way out. Entity and panel clicks stop
-  // propagation, so anything that reaches this handler *is* the background.
-  const handleGridClick = useCallback(() => {
-    if (dragTravelRef.current > DRAG_CLICK_THRESHOLD_PX) return; // a pan, not a click
-    setSelectedEntity(null);
-  }, [setSelectedEntity]);
 
   const handleClearHover = useCallback(() => setHoveredEntity(null), []);
   const handleCloseSelectedEntity = useCallback(() => setSelectedEntity(null), [setSelectedEntity]);
@@ -2443,60 +2166,24 @@ function BattlefieldGrid({
   // it offsets the frame. Every consumer below — cellOf (the sole visibility
   // test), the background cells, the arena-bounds rectangle, the off-screen
   // markers — reads the panned window, so nothing can disagree about what is
-  // on screen.
-  //
-  // The viewRef write must stay BEFORE the panCells shift: the drag handlers
-  // clamp the shift against the UNPANNED window (why they read a ref at all
-  // is on its declaration), and a mirror of the panned window would let each
-  // gesture clamp against the last one's result.
-  const unpannedLeftX = leftX;
-  const unpannedTopY = topY;
-  viewRef.current = { leftX, topY, gridCols, mapSize: resolvedMapSize };
+  // on screen. The hook takes the UNPANNED window: it clamps the shift
+  // against it (see useBattlefieldPan).
+  const { panCells, isPanned, canPan, panLayerRef, gridContainerRef, recenterPan, wasDrag } = useBattlefieldPan({
+    leftX, topY, gridCols, mapSize: resolvedMapSize, combatId, combatActive, isFitMode, tab,
+  });
   leftX += panCells.x;
   topY += panCells.y;
 
-  // How far the window may legally shift from where this render put it. The
-  // re-clamp effect just below and the pan affordance at the end of the render
-  // read this; the drag handlers' `measureGesture` calls the same
-  // `windowPanBounds` on `viewRef` at gesture start. All three must agree.
-  const panBounds = useMemo(() => windowPanBounds({
-    leftX: unpannedLeftX, topY: unpannedTopY, gridCols, mapSize: resolvedMapSize,
-  }), [unpannedLeftX, unpannedTopY, gridCols, resolvedMapSize]);
-
-  // Whether a drag can move anything at all. panCellBounds collapses to
-  // [0, 0] whenever the window already covers the arena, and that is the
-  // ORDINARY case rather than an edge one: arenas scale to three columns per
-  // combatant (get_dynamic_grid_size in src/coordinate_config.py), so the
-  // two- and three-combatant fights that make up nearly the whole game are 10
-  // and 13 columns under a 13-cell frame. Fit mode reaches it by construction
-  // on any arena no wider than VIEW_SIZE (fitBox floors the frame there and
-  // clamps it inside the arena), and follow mode whenever Jean stands
-  // mid-arena.
-  //
-  // Derived from the bounds, deliberately NOT from the view mode (#612). The
-  // dead affordance was reported in fit mode, but it is slack-specific, not
-  // mode-specific: an `isFitMode` check would fix the report and leave the
-  // identical centre-arena follow case still advertising a dead gesture.
-  const canPan = panBounds.x.max > panBounds.x.min || panBounds.y.max > panBounds.y.min;
-
-  // The shift is clamped at gesture start against the window of that moment,
-  // and the window moves on its own: Jean steps while the player is panned
-  // (follow mode), or the fit frame re-derives. Re-clamp against the fresh
-  // window so the shift can never carry it past the arena edge in the beats
-  // before the next drag happens to fix it. Keyed on the UNPANNED window; a
-  // shift that is already legal is a no-op, so this cannot fight a drag.
-  useEffect(() => {
-    const { x, y } = panBounds;
-    const cur = panCellsRef.current;
-    const clampedX = clampNumber(cur.x, x.min, x.max);
-    const clampedY = clampNumber(cur.y, y.min, y.max);
-    if (clampedX === cur.x && clampedY === cur.y) return;
-    // A window pushed back onto the arena is a stopped edge, and a stopped
-    // edge has no remainder (see splitPanAxis) — clear the translate too.
-    touchPanRef.current = { x: 0, y: 0 };
-    commitPanCells(clampedX, clampedY);
-    applyPanTransform();
-  }, [panBounds, commitPanCells, applyPanTransform]);
+  // Clicking the map background clears the selection — as the panel's own
+  // close-button tooltip promised. The previous `e.target === e.currentTarget`
+  // test never passed: the pan and content layers are full-bleed children with
+  // default pointer-events, so a background click always resolved to one of
+  // them and Escape was the only way out. Entity and panel clicks stop
+  // propagation, so anything that reaches this handler *is* the background.
+  const handleGridClick = useCallback(() => {
+    if (wasDrag()) return; // a pan, not a click
+    setSelectedEntity(null);
+  }, [setSelectedEntity, wasDrag]);
 
   // Tokens shrink with the viewport, so the detail a marker can carry is a
   // function of cell size, not of which mode produced it — fit mode is
@@ -2585,21 +2272,24 @@ function BattlefieldGrid({
     // Jean can be killed, and rendering both copies collides their React keys
     // (same id, same side suffix) as well as painting two tokens on one cell.
     if (combat?.player && !dyingIds.has(combat.player.id)) {
-      const style = getEntityStyle(getPos(combat.player));
-      if (style) result.push({ entity: combat.player, style, isFriendly: true, isHero: true });
+      const pos = getPos(combat.player);
+      const style = getEntityStyle(pos);
+      if (style) result.push({ entity: combat.player, pos, style, isFriendly: true, isHero: true });
     }
     combat?.allies?.forEach((ally) => {
       if (dyingIds.has(ally.id)) return;
       if (isLiving(ally)) {
-        const style = getEntityStyle(getPos(ally));
-        if (style) result.push({ entity: ally, style, isFriendly: true, isHero: false });
+        const pos = getPos(ally);
+        const style = getEntityStyle(pos);
+        if (style) result.push({ entity: ally, pos, style, isFriendly: true, isHero: false });
       }
     });
     combat?.enemies?.forEach((enemy) => {
       if (dyingIds.has(enemy.id)) return;
       if (isLiving(enemy)) {
-        const style = getEntityStyle(getPos(enemy));
-        if (style) result.push({ entity: enemy, style, isFriendly: false });
+        const pos = getPos(enemy);
+        const style = getEntityStyle(pos);
+        if (style) result.push({ entity: enemy, pos, style, isFriendly: false });
       }
     });
     // Dying combatants rendered from last-known snapshot during fade-out.
@@ -2612,6 +2302,7 @@ function BattlefieldGrid({
       if (style) {
         result.push({
           entity: dying.entity,
+          pos: dying.position,
           style,
           isFriendly: dying.friendly === true,
           isDying: true,
