@@ -389,11 +389,7 @@ class WallSwitch(Object):
                 if not getattr(self.event_off, "repeat", False):
                     self.event_off = None
 
-    def push(self):
-        self.press()
-
-    def touch(self):
-        self.press()
+    push = touch = press
 
 
 class WallInscription(Object):
@@ -459,9 +455,7 @@ class WallInscription(Object):
         else:
             narrate(self.description)
 
-    def examine(self):
-        # Alias of read
-        self.read()
+    examine = read
 
 
 class Container(Object):
@@ -1081,8 +1075,7 @@ class HealingSpring(Object):
         cprint("Jean now has Clean status!", "green")
         player.apply_state(states.Clean(player))
 
-    def wash(self, player):
-        self.clean(player)  # this is an alias for clean
+    wash = clean
 
 
 class Passageway(Object):
@@ -1134,22 +1127,25 @@ class Passageway(Object):
     #: ``beta_end`` comes from ``end_demo``'s return value instead.
     DEMO_ENDED_FLAG = "demo_ended"
 
-    #: The verbs that DELEGATE to ``enter`` rather than aliasing it. Declared
-    #: once because ``__init__`` registers them as aliases and
-    #: ``CROSSING_METHOD_NAMES`` has to name the same set: adding a fourth
-    #: delegator and forgetting the tuple re-opens #552 exactly, with a
-    #: demo-end passageway crossable by a verb ``is_crossing_handler`` answers
-    #: False for. ``tests/test_object_action_dispatch_contract.py`` derives
-    #: the check from this attribute rather than a hand-kept list.
+    #: The class-level synonyms of ``enter`` (``go = leave = exit = enter``,
+    #: #626). Declared once because ``__init__`` registers them as
+    #: ``action_aliases`` and ``CROSSING_METHOD_NAMES`` has to name the same
+    #: set: adding a fourth crossing verb as its own METHOD and forgetting the
+    #: tuple re-opens #552 exactly, with a demo-end passageway crossable by a
+    #: verb ``is_crossing_handler`` answers False for.
+    #: ``tests/test_object_action_dispatch_contract.py`` derives the check from
+    #: this attribute rather than a hand-kept list.
     _DELEGATED_CROSSING_VERBS = ("go", "leave", "exit")
 
-    #: The methods that CROSS this passageway. The delegators above are
-    #: distinct bound methods, so an identity test against ``enter`` alone
-    #: answers False for all three -- which is how a demo-end passageway
-    #: stayed crossable by the only three verbs the shipped map authors
-    #: (#552). The authored name words (``ferry``, ``landing``) resolve to
-    #: ``enter`` itself (``instance_keyword_aliases``) and so answer through
-    #: that entry.
+    #: The methods that CROSS this passageway. Since #626 the three synonyms
+    #: are ``enter`` itself, so listing them is redundant today -- kept, so a
+    #: subclass that re-aliases one onto an override of its own still counts
+    #: as crossing. When they were distinct delegator methods an identity test
+    #: against ``enter`` alone answered False for all three -- which is how a
+    #: demo-end passageway stayed crossable by the only three verbs the shipped
+    #: map authors (#552). The authored name words (``ferry``, ``landing``)
+    #: resolve to ``enter`` itself (``instance_keyword_aliases``) and so answer
+    #: through that entry.
     CROSSING_METHOD_NAMES = ("enter", *_DELEGATED_CROSSING_VERBS)
 
     def __init__(
@@ -1274,7 +1270,7 @@ class Passageway(Object):
 
         The engine owns which verbs mean "use it", so callers that need to
         treat a crossing specially -- the API's demo-end gate -- ask here
-        rather than naming ``enter`` and silently missing its delegators.
+        rather than naming ``enter`` and silently missing its synonyms.
         """
         if handler is None:
             return False
@@ -1302,7 +1298,7 @@ class Passageway(Object):
         itself, so the dispatch contract test can ask the same question
         instead of retyping it (a retyped mirror has failed open twice).
         Two ways in, because neither alone is right: the verb crosses
-        (``is_crossing_handler``: ``enter``, its delegators, the name words),
+        (``is_crossing_handler``: ``enter``, its synonyms, the name words),
         or the placement ADVERTISES it -- an authored keyword is the author
         saying "this verb uses it", which is how grondia's ``inside``/``east``
         and eastern-descent's ``west`` cross while resolving to nothing. What
@@ -1465,17 +1461,11 @@ class Passageway(Object):
             return f"the {name[4:]}"
         return f"the {name.lower()}"
 
-    # Each hands back enter's verdict: on a demo-end passageway that is
-    # whether THIS call closed the demo, and a delegator that dropped it
-    # would read as "declined" to anyone dispatching the resolved handler.
-    def go(self, player):
-        return self.enter(player)
-
-    def leave(self, player):
-        return self.enter(player)
-
-    def exit(self, player):
-        return self.enter(player)
+    # Class-level aliases, not delegator methods (#626): each IS `enter`, so it
+    # hands back enter's verdict (on a demo-end passageway, whether THIS call
+    # closed the demo) and #615's handler grouping folds it into ENTER. A
+    # subclass overriding `enter` must re-alias these or they keep the base.
+    go = leave = exit = enter
 
 
 class MarketBell(Object):
@@ -1519,8 +1509,7 @@ class MarketBell(Object):
                 self.event = None
         functions.await_input()
 
-    def use(self):
-        self.ring()
+    use = ring
 
 
 class Fountain(Object):
@@ -1567,8 +1556,7 @@ class Fountain(Object):
         narrate("The craftsmanship of the fountain is simple but pleasant.")
         functions.await_input()
 
-    def use(self):  # alias
-        self.drink()
+    use = drink
 
 
 class StreetLantern(Object):
@@ -1641,8 +1629,7 @@ class StreetLantern(Object):
                 self.event_off = None
         functions.await_input()
 
-    def extinguish(self):
-        self.douse()
+    extinguish = douse
 
     def inspect(self):
         narrate(self.description)
@@ -1700,8 +1687,7 @@ class NoticeBoard(Object):
                 self._read_once = True
         functions.await_input()
 
-    def use(self):
-        self.read()
+    use = read
 
 
 class PrayerCandleRack(Object):
@@ -1751,8 +1737,7 @@ class PrayerCandleRack(Object):
                 self.event = None
         functions.await_input()
 
-    def use(self):
-        self.pray()
+    use = pray
 
 
 class MarketGong(Object):
@@ -1791,14 +1776,7 @@ class MarketGong(Object):
                 self.event = None
         functions.await_input()
 
-    def hit(self):
-        self.strike()
-
-    def bang(self):
-        self.strike()
-
-    def use(self):
-        self.strike()
+    hit = bang = use = strike
 
 
 class GeminateGeode(Object):
@@ -1881,14 +1859,7 @@ class GeminateGeode(Object):
             self.tile.objects_here.remove(self)
         functions.await_input()
 
-    def insert(self, player=None):
-        self.place(player)
-
-    def solve(self, player=None):
-        self.place(player)
-
-    def use(self, player=None):
-        self.place(player)
+    insert = solve = use = place
 
     def examine(self):
         narrate(self.description)
@@ -2025,8 +1996,7 @@ class WaterBarrel(Object):
     def examine(self):
         narrate(self.description)
 
-    def use(self):
-        self.drink()
+    use = drink
 
 
 class WashingBasin(Object):
@@ -2064,14 +2034,12 @@ class WashingBasin(Object):
         cprint("Jean now has Clean status!", "green")
         functions.await_input()
 
-    def clean(self):
-        self.wash()
+    clean = wash
 
     def examine(self):
         narrate(self.description)
 
-    def use(self):
-        self.wash()
+    use = wash
 
 
 class DryingRack(Object):
@@ -2148,14 +2116,8 @@ class DryingRack(Object):
         self._current_item = None
         functions.await_input()
 
-    def loot(self):
-        self.take()
-
-    def examine(self):
-        self.check()
-
-    def use(self):
-        self.take()
+    loot = use = take
+    examine = check
 
 
 class SupplyTent(Container):
@@ -2236,11 +2198,7 @@ class RiverCrossingMarker(Object):
         narrate(random.choice(self._MARKER_TEXT))
         functions.await_input()
 
-    def examine(self):
-        self.read()
-
-    def use(self):
-        self.read()
+    examine = use = read
 
 
 class CampBanner(Object):
@@ -2291,14 +2249,7 @@ class CampBanner(Object):
         narrate(random.choice(self._BANNER_LINES))
         functions.await_input()
 
-    def read(self):
-        self.examine()
-
-    def look(self):
-        self.examine()
-
-    def use(self):
-        self.examine()
+    read = look = use = examine
 
 
 class TravelersLogbook(Object):
@@ -2359,8 +2310,4 @@ class TravelersLogbook(Object):
         narrate(random.choice(self._ENTRIES))
         functions.await_input()
 
-    def examine(self):
-        self.read()
-
-    def use(self):
-        self.read()
+    examine = use = read

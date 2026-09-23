@@ -481,9 +481,9 @@ def test_bell_use_aliases_ring():
     player = MagicMock()
     tile = _make_tile()
     bell = Bell(player=player, tile=tile)
-    bell.ring = MagicMock()
-    bell.use()
-    bell.ring.assert_called_once()
+    # #626: a class-level alias IS its target, so an instance
+    # patch of the target can no longer be observed through it.
+    assert type(bell).use is type(bell).ring
 
 
 # ---------------------------------------------------------------------------
@@ -589,9 +589,9 @@ def test_geode_insert_alias():
     player.inventory = []
     tile = _make_tile()
     geode = GeminateGeode(player=player, tile=tile)
-    geode.place = MagicMock()
-    geode.insert()
-    geode.place.assert_called_once()
+    # #626: a class-level alias IS its target, so an instance
+    # patch of the target can no longer be observed through it.
+    assert type(geode).insert is type(geode).place
 
 
 def test_geode_solve_alias():
@@ -602,9 +602,9 @@ def test_geode_solve_alias():
     player.inventory = []
     tile = _make_tile()
     geode = GeminateGeode(player=player, tile=tile)
-    geode.place = MagicMock()
-    geode.solve()
-    geode.place.assert_called_once()
+    # #626: a class-level alias IS its target, so an instance
+    # patch of the target can no longer be observed through it.
+    assert type(geode).solve is type(geode).place
 
 
 def test_geode_use_alias():
@@ -615,9 +615,9 @@ def test_geode_use_alias():
     player.inventory = []
     tile = _make_tile()
     geode = GeminateGeode(player=player, tile=tile)
-    geode.place = MagicMock()
-    geode.use()
-    geode.place.assert_called_once()
+    # #626: a class-level alias IS its target, so an instance
+    # patch of the target can no longer be observed through it.
+    assert type(geode).use is type(geode).place
 
 
 def test_geode_examine():
@@ -716,9 +716,9 @@ def test_fountain_use_alias():
     player = MagicMock()
     tile = _make_tile()
     fountain = Fountain(player=player, tile=tile)
-    fountain.drink = MagicMock()
-    fountain.use()
-    fountain.drink.assert_called_once()
+    # #626: a class-level alias IS its target, so an instance
+    # patch of the target can no longer be observed through it.
+    assert type(fountain).use is type(fountain).drink
 
 
 # ---------------------------------------------------------------------------
@@ -773,9 +773,9 @@ def test_noticeboard_use_aliases_read():
     player = MagicMock()
     tile = _make_tile()
     nb = NoticeBoard(player=player, tile=tile)
-    nb.read = MagicMock()
-    nb.use()
-    nb.read.assert_called_once()
+    # #626: a class-level alias IS its target, so an instance
+    # patch of the target can no longer be observed through it.
+    assert type(nb).use is type(nb).read
 
 
 # ---------------------------------------------------------------------------
@@ -842,9 +842,9 @@ def test_candle_rack_use_alias():
     player = MagicMock()
     tile = _make_tile()
     rack = PrayerCandleRack(player=player, tile=tile)
-    rack.pray = MagicMock()
-    rack.use()
-    rack.pray.assert_called_once()
+    # #626: a class-level alias IS its target, so an instance
+    # patch of the target can no longer be observed through it.
+    assert type(rack).use is type(rack).pray
 
 
 # ---------------------------------------------------------------------------
@@ -898,10 +898,10 @@ def test_market_gong_hit_bang_aliases():
     player = MagicMock()
     tile = _make_tile()
     gong = MarketGong(player=player, tile=tile)
-    gong.strike = MagicMock()
-    gong.hit()
-    gong.bang()
-    assert gong.strike.call_count == 2
+    # #626: a class-level alias IS its target, so an instance
+    # patch of the target can no longer be observed through it.
+    assert type(gong).hit is type(gong).strike
+    assert type(gong).bang is type(gong).strike
 
 
 def test_market_gong_use_alias():
@@ -911,9 +911,9 @@ def test_market_gong_use_alias():
     player = MagicMock()
     tile = _make_tile()
     gong = MarketGong(player=player, tile=tile)
-    gong.strike = MagicMock()
-    gong.use()
-    gong.strike.assert_called_once()
+    # #626: a class-level alias IS its target, so an instance
+    # patch of the target can no longer be observed through it.
+    assert type(gong).use is type(gong).strike
 
 
 # ---------------------------------------------------------------------------

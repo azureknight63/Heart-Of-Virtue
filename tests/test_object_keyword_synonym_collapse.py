@@ -12,9 +12,9 @@ ships one verb per group. A keyword that resolves to nothing is kept as-is --
 the API refuses it in fiction, or (on a passageway) crosses on the target's
 type, as it did before.
 
-Out of scope, and pinned as such below so a later fix is a visible change:
-one-line delegators (``Passageway.go`` -> ``enter``) are distinct methods and
-stay separate groups (#626).
+Synonyms written as one-line delegator METHODS were invisible to this grouping
+until #626 turned them into class-level aliases (``go = leave = exit = enter``);
+``tests/test_object_synonym_aliases.py`` keeps them that way.
 """
 
 import pytest
@@ -73,9 +73,9 @@ def ferry():
 def test_the_ferrys_name_words_collapse_into_enter(ferry):
     # Precondition: the reported shape is still the shipped one.
     assert "ferry" in ferry.keywords and "landing" in ferry.keywords
-    # go/leave/exit are delegators (distinct methods) -- #626, not this issue.
-    # The client folds them anyway: they are the placement's action_aliases.
-    assert _wire_keywords(ferry) == ["enter", "go", "leave", "exit"]
+    # go/leave/exit are class-level aliases of enter since #626, so they fold
+    # into ENTER too (the client also hides them as action_aliases).
+    assert _wire_keywords(ferry) == ["enter"]
 
 
 def test_the_engine_keeps_every_authored_keyword(ferry):
