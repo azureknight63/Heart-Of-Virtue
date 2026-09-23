@@ -209,7 +209,8 @@ class Item:
 
     #: Issue #632: False marks an item the random merchant-stock roller must
     #: never select -- story items, quest keys, puzzle ingredients and lore
-    #: documents. Read by MerchantShopMixin._fill_remaining_stock. A per-class
+    #: documents. Read through is_randomly_selectable (issue #647), which every
+    #: random Item-class enumerator -- restock, shop conditions, loot -- calls. A per-class
     #: flag instead of a family ban because the family tree does not separate
     #: trade goods from story items: Commodity (Crystals, MineralPowder) is
     #: Special, and JeanWeddingBand is Accessory. always_stock and
@@ -539,6 +540,33 @@ class Item:
             self.interactions.remove("unequip")
             self.interactions.append("equip")
             functions.refresh_stat_bonuses(player)
+
+
+def is_randomly_selectable(cls: Any) -> bool:
+    """Whether a random roll over the item registry may ever pick ``cls``.
+
+    Issue #647: the single policy every reflective ``Item``-class enumerator
+    applies -- merchant restock (``MerchantShopMixin._fill_remaining_stock``),
+    the shop-condition class pick (``ShopCondition.random_item_base_class``)
+    and loot (``loot_tables.Loot.random_equipment``). A new enumerator calls
+    this rather than re-deriving the rule, so it inherits any change to it.
+
+    True for a proper ``Item`` subclass whose inherited ``stockable`` flag is
+    set; False for ``Item`` itself, non-``Item`` classes, and story items,
+    quest keys and lore documents (``stockable = False``). Authored lists
+    (``always_stock``, ``unique_item_factories``, explicit candidates) are a
+    deliberate choice and do not consult it. Enumerator-specific filters --
+    the shop's abstract-base exclusions, loot's level match -- are applied
+    on top, not folded in here.
+    """
+    try:
+        return (
+            cls is not Item
+            and issubclass(cls, Item)
+            and bool(getattr(cls, "stockable", True))
+        )
+    except TypeError:
+        return False
 
 
 class Gold(Item):

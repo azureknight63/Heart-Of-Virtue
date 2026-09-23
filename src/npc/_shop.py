@@ -504,22 +504,16 @@ class MerchantShopMixin:
         candidates: list[type[Item]] = []
         for _nm, obj in inspect.getmembers(items_module, inspect.isclass):
             try:
-                if obj is Item or not issubclass(obj, Item):
+                # Issue #647: the shared registry policy -- a proper Item
+                # subclass not flagged stockable = False (#632). The flag is
+                # inherited, so it covers whole subtrees such as Book.
+                if not items_module.is_randomly_selectable(obj):
                     continue
                 if obj in unique_factories or obj in _NEVER_STOCK_EXACT_CLASSES:
                     continue
                 # Family exclusion, not membership: the subclasses are the
                 # whole reason these are listed (issue #611).
                 if issubclass(obj, _NEVER_STOCK_FAMILIES):
-                    continue
-                # Issue #632: per-class opt-out for story items, quest keys,
-                # puzzle ingredients and lore documents. Unlike the identity
-                # test above it is inherited, so it covers whole subtrees such
-                # as Book. getattr's default is pure belt-and-braces: every
-                # class reaching this line is an Item subclass (the issubclass
-                # check above), so it inherits Item.stockable = True and the
-                # default can never actually be taken.
-                if not getattr(obj, "stockable", True):
                     continue
                 candidates.append(obj)
             except Exception:
