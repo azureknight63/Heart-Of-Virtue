@@ -1,24 +1,39 @@
 """Every ``text_file_path`` a shipped map authors actually loads.
 
-``Book.text`` (``src/items.py``) opens ``self.text_file_path`` **raw** -- no
-``os.path.normpath``, no ``pathlib`` round-trip -- and swallows the failure,
-handing the player "This book is mysteriously blank." instead. So a map
-authored on Windows with ``src\\resources\\books\\...`` loads fine for its
-author and ships silently blank to production, where the only evidence is a
-red line in a server log nobody reads. That is exactly how Jambo's book came
-to read blank at Grondia's Tent Lounge.
+``Book.text`` (``src/items.py``) swallows a failed open and hands the player
+"This book is mysteriously blank." instead, so the only evidence of a broken
+authored path is a line in a server log nobody reads. That is how Jambo's book
+came to read blank at Grondia's Tent Lounge: the map authored
+``src\\resources\\books\\...``, which opened for its Windows author and not on
+Linux.
 
 **This guard must not normalise, and that is the whole point.** Checking
 ``os.path.exists(raw.replace("\\", "/"))`` would have passed on the bug this
 exists to catch: by normalised existence the tree read "2 of 3 paths resolve";
-by the open the engine actually performs it read "1 of 3 resolves on Linux".
+by the open the engine actually performed it read "1 of 3 resolves on Linux".
 So the check goes through a real ``Book`` and asserts the player does not get
 the blank-book fallback -- the engine's own open, on the authored string, as
 authored.
 
-The authored paths are relative, so they resolve against the process CWD. The
-game and the API both run from the repo root; the test pins that with
-``chdir`` rather than inheriting whatever directory pytest was invoked from.
+**Issue #648 moved the normalisation into the engine, deliberately.**
+``Book._resolve_text_path`` now reads a backslash as a separator, so the
+Windows spelling resolves at runtime rather than being caught here at test
+time. This guard still does no normalising of its own: it agrees with the new
+behaviour because it asks the engine, and the separator control below was
+rewritten on purpose to pin that agreement rather than left to flip silently.
+The authoring convention -- forward slashes only -- is still enforced, by
+``tests/test_map_authored_file_paths.py``.
+
+#648 also found a second, silent blank-book mechanism the raw-``Book`` check
+could not see: an authored ``"text": ""`` arrives as a post-construction
+``setattr`` through the legacy loader and, under the old ``_text is None``
+gate, suppressed the file entirely. The placement test at the bottom therefore
+also builds each book from its **full authored prop set** through
+``Universe._deserialize_saved_instance``, the loader the shipped maps use.
+
+The authored paths are relative; ``Book.text`` anchors them at the repo root.
+The test still pins the CWD with ``chdir`` so nothing depends on where pytest
+was invoked.
 """
 
 import os
@@ -27,6 +42,7 @@ from typing import Any, Iterator, List, NamedTuple, Set
 import pytest
 
 from src.items import Book
+from src.universe import Universe
 from tests import _map_scan
 from tests._source_scan import ROOT
 
@@ -68,6 +84,18 @@ class BookPath(NamedTuple):
         return f"{self.map_name}{self.json_path} -> {self.raw!r}"
 
 
+class BookPlacement(NamedTuple):
+    """One authored book placement: its path, and the payload that carries it."""
+
+    map_name: str
+    json_path: str
+    raw: str
+    payload: dict
+
+    def __str__(self) -> str:
+        return f"{self.map_name}{self.json_path} -> {self.raw!r}"
+
+
 def _walk(node: Any, map_name: str, json_path: str) -> Iterator[BookPath]:
     """Every ``text_file_path`` anywhere in one decoded map.
 
@@ -87,6 +115,25 @@ def _walk(node: Any, map_name: str, json_path: str) -> Iterator[BookPath]:
     elif isinstance(node, list):
         for index, child in enumerate(node):
             yield from _walk(child, map_name, f"{json_path}[{index}]")
+
+
+def _walk_placements(node: Any, map_name: str, json_path: str) -> Iterator[BookPlacement]:
+    """Every whole placement payload whose props author a ``text_file_path``.
+
+    The payload, not just the path: ``_walk`` above sees the one key, and so
+    cannot see a sibling prop (an authored ``"text": ""``) that stops the
+    engine from ever opening it.
+    """
+    if isinstance(node, dict):
+        for key in ("props", "params"):
+            props = node.get(key)
+            if isinstance(props, dict) and isinstance(props.get("text_file_path"), str):
+                yield BookPlacement(map_name, json_path, props["text_file_path"], node)
+        for key, child in node.items():
+            yield from _walk_placements(child, map_name, f"{json_path}.{key}")
+    elif isinstance(node, list):
+        for index, child in enumerate(node):
+            yield from _walk_placements(child, map_name, f"{json_path}[{index}]")
 
 
 def _authored_book_paths() -> List[BookPath]:
@@ -139,32 +186,33 @@ def test_guard_reads_through_a_real_book_open(tmp_path):
     os.name == "nt",
     reason=(
         "Windows resolves '\\' and '/' interchangeably, so the backslashed "
-        "spelling below opens there by design and no control can tell the two "
-        "apart. That is not a gap in the guard: the defect it exists for -- "
-        "authored on Windows, blank on Linux -- is POSIX-only, and CI runs on "
-        "Linux. test_guard_reads_through_a_real_book_open keeps the rest of "
-        "this control cross-platform."
+        "spelling below opens there with or without the engine's help and no "
+        "control can tell the two apart. The defect -- authored on Windows, "
+        "blank on Linux -- is POSIX-only, and CI runs on Linux."
     ),
 )
-def test_guard_does_not_normalise_separators(at_repo_root, tmp_path):
+def test_guard_reads_separators_the_way_the_engine_does(at_repo_root, tmp_path):
     """Control for the check itself: it must read paths the way the engine does.
 
-    A real, readable file named with backslash separators -- the shape the
-    Grondia map authored -- still has to come back blank here. If it did not,
-    this guard would be measuring ``os.path.exists`` on a normalised copy and
-    would have passed on the defect it was written for.
+    Before #648 this asserted a backslashed path came back **blank**, because
+    that is what the engine did. #648 changed the engine, so the assertion was
+    inverted deliberately: a real, readable file named with backslash
+    separators -- the shape the Grondia map authored -- now reads. The guard
+    still performs no normalisation itself; it passes because ``Book`` does.
 
     ``at_repo_root`` is not decoration: backslashing an absolute POSIX path
-    yields ``\\tmp\\...``, which is *relative*, so what it resolves against is
-    the CWD. Pinning that keeps the assertion from depending on where pytest
-    happened to be invoked.
+    yields ``\\tmp\\...``, which is *relative*, so the engine anchors it at the
+    repo root -- where it resolves to nothing. The spelling used here is
+    therefore made relative to the repo root first, as a map would author it.
     """
     book_file = tmp_path / "control.txt"
     book_file.write_text("readable", encoding="utf-8")
-    backslashed = str(book_file).replace("/", "\\")
+    relative = os.path.relpath(book_file, ROOT)
+    backslashed = relative.replace("/", "\\")
+    assert "\\" in backslashed
 
-    assert Book(text_file_path=str(book_file)).text == "readable"
-    assert Book(text_file_path=backslashed).text == BLANK_BOOK
+    assert Book(text_file_path=relative).text == "readable"
+    assert Book(text_file_path=backslashed).text == "readable"
 
 
 def test_authored_book_paths_are_readable(at_repo_root):
@@ -183,4 +231,39 @@ def test_authored_book_paths_are_readable(at_repo_root):
         + "\nBook.text opens the authored string raw, so Windows separators "
         "resolve for their author and fail on Linux. Author map paths with "
         "forward slashes."
+    )
+
+
+def test_authored_book_placements_load_through_the_map_loader(at_repo_root):
+    """Each book built from its full authored prop set, as the game builds it.
+
+    Issue #648: a raw ``Book(text_file_path=...)`` cannot see a sibling prop
+    that suppresses the open -- an authored ``"text": ""`` did exactly that,
+    silently. So every placement goes through the real loader, and the
+    placement count must match the path count: a placement the walk misses
+    would otherwise approve itself by absence.
+    """
+    placements = [
+        placement
+        for map_file, decoded in _map_scan.map_data()
+        for placement in _walk_placements(decoded, map_file.name, "")
+    ]
+    assert len(placements) == len(_authored_book_paths()), (
+        "the placement walk and the path walk disagree on how many books are "
+        "authored; a book whose payload is not reached is not checked here"
+    )
+
+    universe = Universe()
+    offenders = []
+    for placement in placements:
+        if placement.raw in KNOWN_UNWRITTEN:
+            continue
+        book = universe._deserialize_saved_instance(placement.payload)
+        if not isinstance(book, Book) or book.text == BLANK_BOOK:
+            offenders.append(placement)
+
+    assert not offenders, (
+        "authored book placements that hand the player "
+        f"{BLANK_BOOK!r} once loaded through the map loader:\n  "
+        + "\n  ".join(str(offender) for offender in offenders)
     )

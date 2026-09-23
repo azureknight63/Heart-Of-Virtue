@@ -209,7 +209,8 @@ class Item:
 
     #: Issue #632: False marks an item the random merchant-stock roller must
     #: never select -- story items, quest keys, puzzle ingredients and lore
-    #: documents. Read by MerchantShopMixin._fill_remaining_stock. A per-class
+    #: documents. Read through is_randomly_selectable (issue #647), which every
+    #: random Item-class enumerator -- restock, shop conditions, loot -- calls. A per-class
     #: flag instead of a family ban because the family tree does not separate
     #: trade goods from story items: Commodity (Crystals, MineralPowder) is
     #: Special, and JeanWeddingBand is Accessory. always_stock and
@@ -539,6 +540,33 @@ class Item:
             self.interactions.remove("unequip")
             self.interactions.append("equip")
             functions.refresh_stat_bonuses(player)
+
+
+def is_randomly_selectable(cls: Any) -> bool:
+    """Whether a random roll over the item registry may ever pick ``cls``.
+
+    Issue #647: the single policy every reflective ``Item``-class enumerator
+    applies -- merchant restock (``MerchantShopMixin._fill_remaining_stock``),
+    the shop-condition class pick (``ShopCondition.random_item_base_class``)
+    and loot (``loot_tables.Loot.random_equipment``). A new enumerator calls
+    this rather than re-deriving the rule, so it inherits any change to it.
+
+    True for a proper ``Item`` subclass whose inherited ``stockable`` flag is
+    set; False for ``Item`` itself, non-``Item`` classes, and story items,
+    quest keys and lore documents (``stockable = False``). Authored lists
+    (``always_stock``, ``unique_item_factories``, explicit candidates) are a
+    deliberate choice and do not consult it. Enumerator-specific filters --
+    the shop's abstract-base exclusions, loot's level match -- are applied
+    on top, not folded in here.
+    """
+    try:
+        return (
+            cls is not Item
+            and issubclass(cls, Item)
+            and bool(getattr(cls, "stockable", True))
+        )
+    except TypeError:
+        return False
 
 
 class Gold(Item):
@@ -3412,11 +3440,15 @@ class Book(Special):
         #611's book read blank whenever the server started anywhere else. A
         failure is logged for us and reads as a blank book to the player:
         the path and the OS error are not the game's prose.
+
+        Issue #648: the gate is falsiness, not ``is None``. The legacy map
+        loader applies an authored ``"text": ""`` as a post-construction
+        ``setattr`` (``MAP_AUTHORED_ATTR_ALIASES`` routes it to ``_text``),
+        after ``__init__`` has already deferred to the file; an ``is None``
+        gate never opened it, and nothing logged.
         """
-        if self._text is None and self.text_file_path:
-            path = Path(self.text_file_path)
-            if not path.is_absolute():
-                path = _REPO_ROOT / path
+        if not self._text and self.text_file_path:
+            path = self._resolve_text_path()
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     self._text = f.read()
@@ -3424,6 +3456,20 @@ class Book(Special):
                 logger.warning("Could not load book text from %s: %s", path, e)
                 self._text = "This book is mysteriously blank."
         return self._text if self._text else "This book is mysteriously blank."
+
+    def _resolve_text_path(self) -> Path:
+        """The file ``text_file_path`` names, as the engine opens it.
+
+        Issue #648: a backslash is read as a separator. Maps are authored on
+        Windows, where ``src\\resources\\books\\x.txt`` opens; on Linux --
+        production -- the same string is one filename with no directory, and
+        the book read blank. A relative path is anchored at the repo root
+        (#611), never at the process's working directory.
+        """
+        path = Path(self.text_file_path.replace("\\", "/"))
+        if not path.is_absolute():
+            path = _REPO_ROOT / path
+        return path
 
     @text.setter
     def text(self, value: Optional[str]) -> None:

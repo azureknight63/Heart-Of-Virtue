@@ -30,11 +30,14 @@ class Loot:
     def random_equipment(tile, level, enchantment):
         candidates = []
         eq_level = int(level)
-        for name, obj in inspect.getmembers(items):
-            if inspect.isclass(obj):
-                if hasattr(obj, "level"):
-                    if eq_level == obj.level:
-                        candidates.append(name)
+        for name, obj in inspect.getmembers(items, inspect.isclass):
+            # Issue #647: the shared registry policy first. The level match
+            # alone kept story items out only because they happen to have no
+            # level; the policy keeps them out on purpose.
+            if not items.is_randomly_selectable(obj):
+                continue
+            if getattr(obj, "level", None) == eq_level:
+                candidates.append(name)
         select = random.randint(0, len(candidates) - 1)
         drop = tile.spawn_item(candidates[select], amt=1, hidden=False, hfactor=0)
         try:
