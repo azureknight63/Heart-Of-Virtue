@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import EventDialog, { submissionErrorMessage } from './EventDialog';
 import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds';
+import { colors } from '../styles/theme';
 
 /**
  * EventDialog tests.
@@ -162,6 +163,30 @@ describe('EventDialog', () => {
 
       expect(buttonFor('Touch it').textContent).toBe('[1] Touch it');
       expect(screen.getByText(/Press 1-2 to select/i)).toBeInTheDocument();
+    });
+  });
+
+  // Issue #659: the inline style darkens the button background but GameButton's
+  // `primary` variant paints `text.inverse` (black) text — black on near-black.
+  // The text colour must be overridden alongside the background.
+  describe('choice button text colour (issue #659)', () => {
+    it('never renders black text on the darkened choice background', () => {
+      renderDialog({ ...mockEvent, input_options: [{ label: 'Continue', value: 'go' }] });
+      finishText();
+
+      const button = buttonFor('Continue');
+      expect(button).not.toHaveStyle({ color: colors.text.inverse });
+      expect(button).toHaveStyle({ color: colors.primary });
+    });
+
+    it('uses the secondary text colour for unselected and lime for the selected option', () => {
+      renderDialog();
+      finishText();
+
+      expect(buttonFor('Touch it')).toHaveStyle({ color: colors.text.highlight });
+      fireEvent.click(buttonFor('Touch it'));
+      expect(buttonFor('Touch it')).toHaveStyle({ color: colors.primary });
+      expect(buttonFor('Touch it')).not.toHaveStyle({ color: colors.text.inverse });
     });
   });
 

@@ -930,6 +930,13 @@ body.damage-flash-active::before {
   user-select: none;
 }
 
+/* ConversationStage's AUTO-ADVANCE countdown bar (issue #658). The duration
+ * is set inline, from the same value that arms the advance timer. */
+@keyframes conversation-auto-advance-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
 /*
  * Settings dialog's "Reduced motion" toggle (#540 item 15). App.jsx mirrors
  * the `reducedMotion` feature flag onto this class on <html> so it applies
