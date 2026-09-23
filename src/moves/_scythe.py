@@ -9,6 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    UnavailableReason,
     GLANCE_MARGIN,
     weapon_scaled_power,
     apply_facing_damage,
@@ -86,6 +87,14 @@ class Reap(Move):
         if not hasattr(self.user, "combat_proximity"):
             return False
         return any(e.is_alive() for e in self.user.combat_proximity)
+
+    def _unavailability_code(self):
+        code = super()._unavailability_code()
+        if code is not None or not hasattr(self.user, "combat_proximity"):
+            return code
+        if any(e.is_alive() for e in self.user.combat_proximity):
+            return None
+        return UnavailableReason.NO_OPPONENTS
 
     def evaluate(self):
         self.power = weapon_scaled_power(self.user, self.AREA_POWER_FACTOR)

@@ -8,7 +8,7 @@ import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, PassiveMove  # noqa: F401
+from ._base import Move, PassiveMove, UnavailableReason  # noqa: F401
 
 
 def _apply_sentinels_vigil(advancer, defender):
@@ -128,6 +128,11 @@ class Parry(Move):
             viability = False
         return viability
 
+    def _unavailability_code(self):
+        if self.user.name == "Jean" and not self.user.eq_weapon:
+            return UnavailableReason.NO_WEAPON
+        return None
+
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
@@ -210,6 +215,18 @@ class Advance(Move):
             if combatant.is_alive() and distance > 1:
                 return True
         return False
+
+    def _unavailability_code(self):
+        if not hasattr(self.user, "combat_proximity"):
+            return None
+        proximity = self.user.combat_proximity
+        if self.target and self.target in proximity:
+            if self.target.is_alive() and proximity[self.target] <= 1:
+                return UnavailableReason.ALREADY_ADJACENT
+            return None
+        if any(c.is_alive() and d > 1 for c, d in proximity.items()):
+            return None
+        return UnavailableReason.ALREADY_ADJACENT
 
     def evaluate(self):
         pass
@@ -390,6 +407,18 @@ class Withdraw(Move):
                 if min_dist > _MAX_FLEE_DISTANCE:
                     viability = False
         return viability
+
+    def _unavailability_code(self):
+        # Jean's gate only: an NPC's HP and flee-distance gates steer the AI
+        # and never reach a move card, so they fall to the generic code.
+        if not hasattr(self.user, "combat_proximity") or self.user.name != "Jean":
+            return None
+        if any(
+            distance < self.mvrange[1]
+            for distance in self.user.combat_proximity.values()
+        ):
+            return None
+        return UnavailableReason.NO_ENEMY_NEAR
 
     def evaluate(self):
         pass
@@ -615,6 +644,11 @@ class TacticalRetreat(Move):
         if not hasattr(self.user, "combat_proximity"):
             return False
         return len(self.user.combat_proximity) > 0
+
+    def _unavailability_code(self):
+        if hasattr(self.user, "combat_proximity") and not self.user.combat_proximity:
+            return UnavailableReason.NO_OPPONENTS
+        return None
 
     def evaluate(self):
         pass
@@ -1024,6 +1058,11 @@ class Turn(Move):
         # Turn is always viable if in coordinate-based combat
         return True
 
+    def _unavailability_code(self):
+        if getattr(self.user, "combat_position", None) is None:
+            return UnavailableReason.NOT_POSITIONED
+        return None
+
     def evaluate(self):
         """Adjusts move attributes based on current game state."""
         pass
@@ -1104,6 +1143,11 @@ class QuickSwap(Move):
         """Check if there are nearby allies to swap with."""
         nearby_allies = self._get_nearby_allies()
         return len(nearby_allies) > 0
+
+    def _unavailability_code(self):
+        if self._get_nearby_allies():
+            return None
+        return UnavailableReason.NO_ALLY_NEAR
 
     def _get_nearby_allies(self):
         """Find all allies within swapping range (1-4 squares)."""
