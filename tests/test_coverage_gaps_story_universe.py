@@ -919,7 +919,7 @@ class TestCh02GuideToCitadel:
         ev, player, tile = self._make(skip_dialog=True)
         ev.process()
         player.add_items_to_inventory.assert_called()
-        player.teleport.assert_called_with("grondia", (10, 5))
+        player.teleport.assert_called_with("grondia", (12, 4))  # outside Jambo's tent (#663)
         assert ev.completed is True
         tile.remove_event.assert_called()
 
@@ -1051,7 +1051,7 @@ class TestCh02GuideToCitadel:
         ev.process(user_input="a")  # stage 6 -> 7
         ev.process()  # stage 7 -> 8 (loot + prompt)
         ev.process()  # stage 8 -> complete
-        player.teleport.assert_called_with("grondia", (10, 5))
+        player.teleport.assert_called_with("grondia", (12, 4))  # outside Jambo's tent (#663)
         assert ev.completed is True
         tile.remove_event.assert_called()
 

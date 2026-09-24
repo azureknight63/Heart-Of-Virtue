@@ -43,5 +43,15 @@
     "Liss loses interest abruptly and goes back to looking at the stone.",
     "She blinks, clearly thinking about something else now.",
     "She waves a hand vaguely and wanders off. She might come back later."
+  ],
+  "fallback_replies": [
+    "She turns the stone over in her hand, listening with her whole face.",
+    "She repeats the last few words under her breath, trying them out like a new stone.",
+    "She nods fast, three times, like she's storing it somewhere safe.",
+    "She grins, wide and unguarded, and turns the stone over faster.",
+    "She says, 'Huh.' A moment later, more quietly: 'Huh.'",
+    "She crouches to pick something up off the ground without taking her eyes off Jean.",
+    "She starts a sentence, abandons it, and starts another. Neither one gets finished.",
+    "Her whole face goes bright with a thought she hasn't found the words for yet."
   ]
 }

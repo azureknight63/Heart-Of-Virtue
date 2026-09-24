@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { beatToAnimations } from './combatStreamAdapter';
-import { MAX_BEAT_RESOLUTIONS } from './combatBeatSchema';
+import { MAX_BEAT_RESOLUTIONS, MAX_BEAT_RESULTS } from './combatBeatSchema';
 
 const combat = {
   player: { id: 'player', position: { x: 6, y: 6 } },
@@ -24,6 +24,38 @@ const beat = (over = {}) => ({
 });
 
 describe('beatToAnimations', () => {
+  it('hands the beat results to the lead layer only, so they float once (#667)', () => {
+    const results = [
+      { id: 'enemy_1', kind: 'hp', delta: -33 },
+      { id: 'enemy_2', kind: 'outcome', outcome: 'miss' },
+    ];
+    const anims = beatToAnimations(
+      beat({
+        results,
+        sfx: [
+          { index: 0, kind: 'impact', outcome: 'hit', target_id: 'enemy_1' },
+          { index: 1, kind: 'impact', outcome: 'miss', target_id: 'enemy_2' },
+        ],
+      }),
+      combat
+    );
+    expect(anims[0].results).toEqual(results);
+    expect(anims[1].results).toBeUndefined();
+  });
+
+  it('carries no results when the beat has none, or a malformed value', () => {
+    expect(beatToAnimations(beat(), combat)[0].results).toBeUndefined();
+    expect(beatToAnimations(beat({ results: 'nope' }), combat)[0].results).toBeUndefined();
+  });
+
+  it('caps the results a beat can hand over', () => {
+    const results = Array.from({ length: MAX_BEAT_RESULTS + 5 }, (_, i) => ({
+      id: 'enemy_1', kind: 'hp', delta: -(i + 1),
+    }));
+    const [lead] = beatToAnimations(beat({ results }), combat);
+    expect(lead.results).toHaveLength(MAX_BEAT_RESULTS);
+  });
+
   it('produces the actor move animation carrying the beat', () => {
     const [anim] = beatToAnimations(beat(), combat);
     expect(anim).toMatchObject({

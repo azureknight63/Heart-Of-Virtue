@@ -85,9 +85,10 @@ def execute_move():
 
     Request body:
         {
-            "move_type": "attack|defend|cast|item",
+            "move_type": "attack|defend|cast|item|swap_weapon",
             "move_id": str,
-            "target_id": str (optional)
+            "target_id": str (optional),
+            "item_id": str (optional; move_type "swap_weapon" only)
         }
 
     Returns:
@@ -132,6 +133,7 @@ def execute_move():
             direction,
             session_id=session.session_id,
             session_data=session.data,
+            item_id=data.get("item_id"),
         )
 
         if "error" in result:

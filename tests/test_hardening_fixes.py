@@ -280,6 +280,7 @@ class TestSearchAutoTakeHardening:
     def _make_search_player(self, inventory, weight_tolerance):
         """Build a minimal player mock for search() tests."""
         player = Mock()
+        player.in_combat = False  # search is exploration-only
         player.name = "Jean"
         player.finesse = 100
         player.intelligence = 100

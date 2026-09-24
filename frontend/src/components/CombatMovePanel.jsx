@@ -191,6 +191,10 @@ function MoveCard({
     <div
       data-testid="move-card"
       data-available={isAvailable ? 'true' : 'false'}
+      // The engine's code for the lock (#627), so tooling can group locked
+      // cards by cause without parsing the sentence. Absent when available,
+      // and for the client-derived #554 lock, which has no engine code.
+      data-reason-code={!isAvailable && move.reason_code ? move.reason_code : undefined}
       onMouseEnter={() => {
           if (isAvailable) {
               onHoverChange(true);

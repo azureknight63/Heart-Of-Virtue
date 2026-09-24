@@ -202,6 +202,75 @@ describe('AUTO-ADVANCE (issue #538 item 1)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// AUTO-ADVANCE progress bar (issue #658)
+// ---------------------------------------------------------------------------
+
+describe('AUTO-ADVANCE progress bar (issue #658)', () => {
+    const bar = () => screen.queryByRole('progressbar', { name: /auto-advance/i });
+
+    it('is never shown when the setting is off', () => {
+        render(<ConversationStage segments={SEGMENTS} onComplete={vi.fn()} />);
+        tick(BASE_MS_PER_CHAR * 20); // beat one finished typing
+        expect(screen.getByText('Beat one.')).toBeInTheDocument();
+        expect(bar()).toBeNull();
+    });
+
+    it('appears only once the beat has finished typing, i.e. once the timer is armed', () => {
+        usePreferences.mockReturnValue(prefs({ autoAdvance: true }));
+        render(<ConversationStage segments={SEGMENTS} onComplete={vi.fn()} />);
+
+        expect(bar()).toBeNull(); // still typing: nothing is armed yet
+        tick(BASE_MS_PER_CHAR * 20);
+        expect(bar()).toBeInTheDocument();
+    });
+
+    it('runs for exactly the dwell the auto-advance timer uses', () => {
+        usePreferences.mockReturnValue(prefs({ autoAdvance: true }));
+        render(<ConversationStage segments={SEGMENTS} onComplete={vi.fn()} />);
+        tick(BASE_MS_PER_CHAR * 20);
+
+        const delay = autoAdvanceDelay('Beat one.', DEFAULT_TEXT_SPEED);
+        const fill = screen.getByTestId('auto-advance-fill');
+        expect(fill.style.animationDuration).toBe(`${delay}ms`);
+        expect(bar()).toHaveAttribute('aria-valuemax', String(delay));
+
+        // And the timer really does fire on that same value.
+        tick(delay - 1);
+        expect(screen.getByText('Beat one.')).toBeInTheDocument();
+        tick(1);
+        expect(screen.queryByText('Beat one.')).toBeNull();
+    });
+
+    it('follows the TEXT SPEED setting, like the timer does', () => {
+        // Long enough that both speeds clear the 900ms floor, so the two
+        // dwells genuinely differ and a bar pinned to one speed would fail.
+        const line = 'The camp fires burn low, and the wind carries ash off the ridge.';
+        const fast = 2;
+        expect(autoAdvanceDelay(line, fast)).not.toBe(autoAdvanceDelay(line, DEFAULT_TEXT_SPEED));
+        usePreferences.mockReturnValue(prefs({ autoAdvance: true, textSpeed: fast }));
+        render(<ConversationStage segments={[{ text: line, in_conversation: false }, ...SEGMENTS]} onComplete={vi.fn()} />);
+        tick(BASE_MS_PER_CHAR * 80);
+
+        expect(screen.getByTestId('auto-advance-fill').style.animationDuration)
+            .toBe(`${autoAdvanceDelay(line, fast)}ms`);
+    });
+
+    it('disappears once the scene is complete, and never shows in live mode', () => {
+        usePreferences.mockReturnValue(prefs({ autoAdvance: true }));
+        const onComplete = vi.fn();
+        const authored = render(<ConversationStage segments={SEGMENTS} onComplete={onComplete} />);
+        settle(2000);
+        expect(onComplete).toHaveBeenCalledTimes(1);
+        expect(bar()).toBeNull();
+        authored.unmount();
+
+        render(<ConversationStage segments={SEGMENTS} mode="live" onComplete={vi.fn()} />);
+        tick(BASE_MS_PER_CHAR * 40);
+        expect(bar()).toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
 // SKIP SCENE
 // ---------------------------------------------------------------------------
 

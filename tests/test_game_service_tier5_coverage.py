@@ -2390,6 +2390,15 @@ class TestEquipUnequipDropExtra:
 # ============================================================================
 
 
+def _on_jeans_turn(player):
+    """State the combat turn explicitly: a MagicMock adapter would otherwise
+    read as mid-windup and off-turn, which use_item now refuses (the client's
+    isMyTurn gate, 2026-09-24)."""
+    adapter = player._combat_adapter
+    adapter.awaiting_input = True
+    adapter._abortable_move.return_value = None
+
+
 class TestUseItem:
     def test_merchandise_rejected(self, game_service, mock_player):
         item = MagicMock()
@@ -2431,6 +2440,7 @@ class TestUseItem:
 
     def test_ally_target_in_range_succeeds(self, game_service, mock_player):
         mock_player.in_combat = True
+        _on_jeans_turn(mock_player)
         ally = MagicMock()
         ally.name = "Gorran"
         mock_player.combat_proximity = {ally: 3}
@@ -2445,6 +2455,7 @@ class TestUseItem:
 
     def test_ally_target_out_of_range_rejected(self, game_service, mock_player):
         mock_player.in_combat = True
+        _on_jeans_turn(mock_player)
         ally = MagicMock()
         ally.name = "Gorran"
         mock_player.combat_proximity = {ally: 9999}
@@ -2460,9 +2471,11 @@ class TestUseItem:
         from src.narration import narrate
 
         mock_player.in_combat = True
+        _on_jeans_turn(mock_player)
         mock_player.combat_beat = 2
         adapter = MagicMock()
         mock_player._combat_adapter = adapter
+        _on_jeans_turn(mock_player)
         item = MagicMock()
         item.merchandise = False
         item.name = "Bomb"
@@ -2475,9 +2488,11 @@ class TestUseItem:
         from src.narration import narrate
 
         mock_player.in_combat = True
+        _on_jeans_turn(mock_player)
         mock_player.combat_beat = 5
         adapter = MagicMock()
         mock_player._combat_adapter = adapter
+        _on_jeans_turn(mock_player)
 
         def _use(target, user=None):
             narrate("Line one")

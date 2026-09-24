@@ -293,6 +293,8 @@ function StageDialogueCard({
     showHint,
     hintText,
     hintVisible,
+    autoAdvanceMs = null,
+    beatKey,
 }) {
     const isDialogue = Boolean(speaker)
     return (
@@ -383,6 +385,56 @@ function StageDialogueCard({
                     {hintText}
                 </span>
             )}
+            {autoAdvanceMs !== null && (
+                <AutoAdvanceBar key={beatKey} durationMs={autoAdvanceMs} />
+            )}
+        </div>
+    )
+}
+
+/**
+ * AutoAdvanceBar — how long until AUTO-ADVANCE walks the beat on (issue #658).
+ *
+ * A single CSS animation over `durationMs`, which the stage passes as the SAME
+ * number it arms its timer with, so the bar and the timer cannot disagree. The
+ * parent remounts it per beat (`key`) to restart the fill. Pure CSS rather than
+ * a requestAnimationFrame loop: no re-render per frame, and the app-wide
+ * `.reduced-motion` rule (styles/index.css) already collapses animations, which
+ * leaves a static full bar — still saying "this will advance on its own",
+ * without the motion.
+ *
+ * No `aria-valuenow`: a value ticking at frame rate would be announcement noise,
+ * so it reads as a labelled progressbar whose text states the dwell.
+ */
+function AutoAdvanceBar({ durationMs }) {
+    return (
+        <div
+            role="progressbar"
+            aria-label="Auto-advance"
+            aria-valuemin={0}
+            aria-valuemax={durationMs}
+            aria-valuetext={`Next line in ${(durationMs / 1000).toFixed(1)} seconds`}
+            style={{
+                marginTop: spacing.xs,
+                height: '3px',
+                borderRadius: '2px',
+                backgroundColor: colors.alpha.secondary[20],
+                overflow: 'hidden',
+            }}
+        >
+            <div
+                data-testid="auto-advance-fill"
+                style={{
+                    height: '100%',
+                    backgroundColor: colors.secondary,
+                    transformOrigin: 'left center',
+                    transform: 'scaleX(0)',
+                    animationName: 'conversation-auto-advance-fill',
+                    animationDuration: `${durationMs}ms`,
+                    animationTimingFunction: 'linear',
+                    animationFillMode: 'forwards',
+                }}
+            />
         </div>
     )
 }
@@ -568,14 +620,21 @@ function ConversationStage({
     // leave a hands-free reader with one mandatory click and nothing to decide.
     // `stageComplete` then keeps the timer from re-arming, which is the only
     // thing it can do here: it is set BY the completing call, not before it.
+    //
+    // `autoAdvanceMs` is computed during render (null = not armed) so the
+    // progress bar below renders from the exact value the timer is armed with
+    // (issue #658) rather than re-deriving it.
+    // String(...) first: calling .trim() straight on a value read out of
+    // `segments` makes the React Compiler assume `segments` may be mutated,
+    // and it then refuses the `computeStage` memo above.
+    const autoAdvanceText = String(current.text || '').trim()
+    const autoAdvanceArmed = Boolean(autoAdvance && !isLive && isComplete && !stageComplete && autoAdvanceText)
+    const autoAdvanceMs = autoAdvanceArmed ? autoAdvanceDelay(autoAdvanceText, textSpeed) : null
     useEffect(() => {
-        if (!autoAdvance || isLive) return undefined
-        if (!isComplete || stageComplete) return undefined
-        const text = (current.text || '').trim()
-        if (!text) return undefined
-        const timer = setTimeout(() => advance(), autoAdvanceDelay(text, textSpeed))
+        if (autoAdvanceMs === null) return undefined
+        const timer = setTimeout(() => advance(), autoAdvanceMs)
         return () => clearTimeout(timer)
-    }, [autoAdvance, isLive, isComplete, stageComplete, current.text, textSpeed, advance])
+    }, [autoAdvanceMs, advance])
 
     // Enter/Space advance the conversation while it is active.
     //
@@ -698,6 +757,8 @@ function ConversationStage({
                 showHint={!isLive && !stageComplete}
                 hintVisible={isComplete}
                 hintText={CONTINUE_HINT}
+                autoAdvanceMs={autoAdvanceMs}
+                beatKey={beatIndex}
             />
 
             {staged && !stackPortraits && <PortraitColumn members={rightMembers} area="right" {...columnProps} />}

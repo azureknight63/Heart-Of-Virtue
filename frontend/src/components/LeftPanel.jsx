@@ -22,7 +22,7 @@ import FleeButton from './FleeButton'
 import FeedbackDialog from './FeedbackDialog'
 import CooldownTray from './CooldownTray'
 import { MODAL_BACKGROUND_PROPS } from './BaseDialog'
-import { moveAvailability, FLEE_BREAK_AWAY_DISTANCE_FT, autoResolvedTargetId } from '../utils/combatMoveStatus'
+import { moveAvailability, FLEE_BREAK_AWAY_DISTANCE_FT, autoResolvedTargetId, SWAP_WEAPON_MOVE_NAME } from '../utils/combatMoveStatus'
 import HeatMeter from './HeatMeter'
 import ShopDialog from './ShopDialog'
 import useCombatLogPlayback from '../hooks/useCombatLogPlayback'
@@ -210,15 +210,39 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     [combat?.input_type, rawMoves, lastKnownMoves]
   )
 
+  // UseItem and Swap Weapon are cast from the inventory, where the player
+  // picks WHAT to use or draw; a bare card in the move panel could only cast
+  // them with no choice made.
   const availableMoves = useMemo(
     () => Array.isArray(movesForButtons)
       ? movesForButtons.filter(move => {
           const name = move.name || ''
-          return name !== 'UseItem' && name !== 'Use Item'
+          return name !== 'UseItem' && name !== 'Use Item' && name !== SWAP_WEAPON_MOVE_NAME
         })
       : [],
     [movesForButtons]
   )
+
+  // The Swap Weapon card (#671), handed to the inventory's Weapons tab. Gated
+  // like canFlee: only on the player's turn, and only when the engine says
+  // the move is available -- the engine re-checks both on submit.
+  const swapWeaponMove = useMemo(
+    () => (mode === 'combat' && Array.isArray(movesForButtons)
+      ? movesForButtons.find(m => m?.name === SWAP_WEAPON_MOVE_NAME) || null
+      : null),
+    [mode, movesForButtons]
+  )
+  const canSwapWeapon = isMyTurn && swapWeaponMove?.available === true
+
+  const handleSwapWeapon = async (itemId) => {
+    setShowInventory(false)
+    notifyMoveSubmitted()
+    try {
+      await onCombatAction('swap_weapon', { item_id: itemId })
+    } catch (err) {
+      console.error('Failed to swap weapon:', err)
+    }
+  }
 
   const cooldownMoves = useMemo(
     () => movesForButtons.filter(m => (m.cooldown_remaining || 0) > 0),
@@ -776,6 +800,9 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           onClose={() => setShowInventory(false)}
           onRefetch={onRefetch}
           combatMode={mode === 'combat'}
+          swapWeapon={swapWeaponMove}
+          canSwapWeapon={canSwapWeapon}
+          onSwapWeapon={handleSwapWeapon}
         />
       )}
 

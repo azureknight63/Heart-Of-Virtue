@@ -116,8 +116,18 @@ reference resolves.
 Format is detected **per element** by shape, not by a global file version:
 
 - `{"class", "params"}` → placeholder (this issue).
-- `{"__class__", "__module__", "props"}` → legacy, reconstructed exactly as
-  before.
+- `{"__class__", "__module__", "props"}` → legacy. Constructor kwargs are
+  filtered to the real `__init__` signature as before, but since issue #651
+  the post-construction `setattr` sweep applies only what the placeholder
+  path would accept for that concrete class — a declared override, or a
+  declared param its `__init__` takes (`map_placeholders.legacy_prop_allowed`;
+  on the `cls.__new__` fallback, any signature name). Everything else in a
+  full dump (runtime state such as `target`, `thread`, `known_moves`) is
+  dropped silently, as an undeclared override is, and is never even
+  deserialized. `tests/test_legacy_map_prop_allowlist.py` derives from the
+  shipped maps every prop that changes a loaded instance and requires each to
+  be declared or recorded as deliberately unauthorable. The Map Editor's
+  legacy `load_map` branch applies the same rule.
 - `{"__class_type__"}` → bare class reference, unchanged.
 
 Nothing forces a migration. An element loaded from a legacy map is tagged

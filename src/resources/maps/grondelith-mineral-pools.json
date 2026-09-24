@@ -34,7 +34,7 @@
           "idle_message": "An ascending passage leads back toward Grondia.",
           "hidden": false,
           "hide_factor": 0,
-          "discovery_message": " a passage back to Grondia!",
+          "discovery_message": "a passage back to Grondia!",
           "announce": "An ascending passage leads back toward Grondia.",
           "aliases": [
             "path to grondia",
@@ -134,7 +134,7 @@
           "idle_message": "One of the atrium's sacred springs burbles quietly here.",
           "hidden": false,
           "hide_factor": 0,
-          "discovery_message": " a healing spring!",
+          "discovery_message": "a healing spring!",
           "announce": "One of the atrium's sacred springs burbles quietly here.",
           "aliases": [],
           "keywords": [
@@ -1170,7 +1170,7 @@
           "idle_message": "A hollow geode rests on a stone pedestal here, waiting.",
           "hidden": false,
           "hide_factor": 0,
-          "discovery_message": " a hollow geode resting on a stone pedestal!",
+          "discovery_message": "a hollow geode resting on a stone pedestal!",
           "announce": "A hollow geode rests on a stone pedestal here, waiting.",
           "aliases": [
             "geode",

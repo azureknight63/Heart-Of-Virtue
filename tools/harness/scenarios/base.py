@@ -2,10 +2,19 @@
 
 import json
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
+from typing import Any, List, NamedTuple, Optional, Tuple
 
 from ..client import GameClient
 from ..reporter import BugReport, BugSeverity, BugCategory
+
+
+class LivePlayerTile(NamedTuple):
+    """The in-process engine objects behind a harness session."""
+
+    player: Any
+    session: Any
+    universe: Any
+    tile: Any
 
 
 class Scenario(ABC):
@@ -19,6 +28,27 @@ class Scenario(ABC):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _live_player_tile(self, client: GameClient) -> Optional[LivePlayerTile]:
+        """Resolve session -> player -> universe -> the tile Jean stands on.
+
+        For scenarios that stage engine state in-process (story events, a
+        conjured merchant) before driving the real HTTP routes. ``None`` when
+        any link is missing -- e.g. a MinimalPlayer session with no universe,
+        which is a harness limitation, not a bug.
+        """
+        sm = client._session_manager
+        player = sm.get_player(client.session_id)
+        session = sm.get_session(client.session_id)
+        if player is None or session is None:
+            return None
+        universe = getattr(player, "universe", None)
+        if universe is None:
+            return None
+        tile = universe.get_tile(player.location_x, player.location_y)
+        if tile is None:
+            return None
+        return LivePlayerTile(player, session, universe, tile)
 
     def _find_enemy(self, client: "GameClient"):
         """Return the first hostile NPC ID from the current room, or None."""

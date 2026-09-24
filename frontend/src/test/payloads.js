@@ -663,6 +663,8 @@ export function makeAvailableOption(overrides = {}) {
       fatigue_cost: ATTACK_CARD_FATIGUE_COST,
       available: true,
       reason: null,
+      // The code behind `reason` (#627); null while available, as the adapter sends it.
+      reason_code: null,
       targeted,
       viable_targets: viableTargets,
       // Derived, as the adapter derives it (`is_targeted and

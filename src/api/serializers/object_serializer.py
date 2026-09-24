@@ -98,6 +98,13 @@ class ObjectSerializer:
 
                 obj_data["keywords"] = new_k
 
+        # After the state rewrite, so an "open"/"unlock" it appends joins the
+        # group of any authored synonym instead of becoming a second button.
+        if not is_dict and isinstance(obj_data.get("keywords"), list):
+            obj_data["keywords"] = ObjectSerializer.collapse_synonyms(
+                obj, obj_data["keywords"]
+            )
+
         if has_attr("open_message"):
             obj_data["open_message"] = get_attr("open_message")
         if has_attr("idle_message"):
@@ -108,6 +115,65 @@ class ObjectSerializer:
             obj_data["passthrough"] = get_attr("passthrough")
 
         return obj_data
+
+    @staticmethod
+    def collapse_synonyms(obj: Any, keywords: List[Any]) -> List[Any]:
+        """One button per distinct call: drop keywords that resolve to the
+        same handler as an earlier one (issue #615).
+
+        ``resolve_interaction`` is the single authority on what a keyword
+        calls, so grouping is by its answer. The Ferry Landing's ``ferry`` and
+        ``landing`` resolve to ``enter`` itself, and render as ENTER alone.
+        Handlers compare with ``==``: every lookup mints a fresh bound method,
+        so ``is`` would never match.
+
+        The group's verb is its first AUTHORED keyword -- keyword order is the
+        author's (and ``Passageway.__init__``'s) statement of which verb leads,
+        and it is stable across requests. ``__name__`` would relabel a
+        ``KEYWORD_METHOD_ALIASES`` verb (a Book's READ as USE). The one
+        exception is a keyword in ``action_aliases``: the client hides those,
+        so one is the verb only when the whole group is aliases.
+
+        Kept untouched: a keyword resolving to nothing (the API refuses it in
+        fiction, or a passageway crosses on its type), and anything the
+        resolver cannot look up. Separate one-line delegator methods are
+        distinct handlers and stay separate buttons (#626). Returns a new
+        list; the engine's own ``keywords`` -- which the API's advertised-verb
+        check reads -- is never touched.
+        """
+        from src.objects import resolve_interaction
+
+        hidden = getattr(obj, "action_aliases", None)
+        if not isinstance(hidden, (list, tuple, set, frozenset)):
+            hidden = ()  # a degraded object never breaks the row
+        groups = []  # [handler, [keywords in authored order]]
+        placed = []  # per keyword: its group, or None when kept as-is
+        for keyword in keywords:
+            try:
+                handler = resolve_interaction(obj, keyword)
+            except Exception:
+                handler = None
+            group = None
+            if handler is not None:
+                group = next((g for g in groups if g[0] == handler), None)
+                if group is None:
+                    group = [handler, []]
+                    groups.append(group)
+                group[1].append(keyword)
+            placed.append(group)
+
+        def primary(group):
+            return next((k for k in group[1] if k not in hidden), group[1][0])
+
+        result = []
+        emitted = []
+        for keyword, group in zip(keywords, placed):
+            if group is None:
+                result.append(keyword)
+            elif not any(group is g for g in emitted):
+                emitted.append(group)
+                result.append(primary(group))
+        return result
 
     @staticmethod
     def serialize(obj: Any) -> Dict[str, Any]:

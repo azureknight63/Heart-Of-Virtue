@@ -3,6 +3,8 @@
 from src.narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
+import logging
+from enum import StrEnum
 from types import SimpleNamespace
 import src.states as states  # noqa: F401
 import src.functions as functions  # noqa: F401
@@ -1277,6 +1279,130 @@ TELEGRAPH_SEVERITIES = ("normal", "heavy", "deadly")
 TELEGRAPH_SEVERITY_NORMAL = TELEGRAPH_SEVERITIES[0]
 
 
+class UnavailableReason(StrEnum):
+    """Why a move cannot be cast right now: a closed vocabulary (issue #627).
+
+    ``Move.viable()`` answers *whether*; ``Move.unavailability_reason()``
+    answers *why*, as one of these codes. Closed rather than free prose so
+    the answer is testable and the client can group on it; the sentence the
+    player reads for each code lives once, in ``UNAVAILABILITY_TEXT`` below.
+
+    A ``StrEnum`` so a code IS its wire string -- the adapter ships
+    ``code.value`` and nothing has to translate it back.
+
+    Most codes are the engine's own verdicts, returned by a move's
+    ``_unavailability_code``. A few name a refusal the combat adapter
+    decides itself (cooldown, fatigue, the targeted range split), because
+    those checks live there; they are in the one vocabulary so every locked
+    card carries a code, not only the ones the engine explains.
+    """
+
+    #: The genuine catch-all: the move refused and cannot say why.
+    UNAVAILABLE = "unavailable"
+    # -- adapter-decided (cooldown, fatigue and range are checked there) --
+    ON_COOLDOWN = "on_cooldown"
+    INSUFFICIENT_FATIGUE = "insufficient_fatigue"
+    NO_TARGET = "no_target"
+    NO_TARGET_IN_RANGE = "no_target_in_range"
+    TARGET_TOO_FAR = "target_too_far"
+    # -- engine-decided --
+    NO_WEAPON = "no_weapon"
+    WRONG_WEAPON = "wrong_weapon"
+    NO_AMMUNITION = "no_ammunition"
+    NO_ENEMY_IN_REACH = "no_enemy_in_reach"
+    NO_ENEMY_NEAR = "no_enemy_near"
+    ALREADY_ADJACENT = "already_adjacent"
+    NO_OPPONENTS = "no_opponents"
+    NO_ALLY_NEAR = "no_ally_near"
+    NOT_POSITIONED = "not_positioned"
+    NOT_IN_COMBAT = "not_in_combat"
+    ATTRIBUTE_NOT_HIGHEST = "attribute_not_highest"
+    FAITH_TOO_LOW = "faith_too_low"
+    ALREADY_ACTIVE = "already_active"
+    APATHY = "apathy"
+    REQUIRES_PARRY = "requires_parry"
+    FULLY_RESTED = "fully_rested"
+    NO_USABLE_ITEMS = "no_usable_items"
+    NO_SPARE_WEAPON = "no_spare_weapon"
+
+
+#: The one sentence a locked move card shows for each code. Player-facing
+#: prose (pillar 4), so it lives here with the rest of the engine's copy --
+#: move descriptions and stage announcements are engine text too -- rather
+#: than in the adapter or a serializer. Terse, in-fiction-neutral, and it says
+#: what is in the way. `tests/test_move_unavailability_reasons.py` holds the
+#: map total over the enum.
+#:
+#: Two entries are defaults the adapter sharpens with a number or a noun it
+#: already owns: ON_COOLDOWN becomes "Available in N beats" (the wording the
+#: combat glossary attaches its explainer to) and WRONG_WEAPON names the
+#: weapon ("Requires a crossbow"). The other adapter-decided sentences are the
+#: exact strings the adapter shipped before the codes existed; tests and the
+#: glossary pin them, so they are carried over verbatim.
+UNAVAILABILITY_TEXT = {
+    UnavailableReason.UNAVAILABLE: "Cannot use this move",
+    UnavailableReason.ON_COOLDOWN: "Still recovering",
+    UnavailableReason.INSUFFICIENT_FATIGUE: "Not enough fatigue",
+    UnavailableReason.NO_TARGET: "No valid target",
+    UnavailableReason.NO_TARGET_IN_RANGE: "No valid target in range",
+    UnavailableReason.TARGET_TOO_FAR: "Enemy out of range (too far)",
+    UnavailableReason.NO_WEAPON: "No weapon equipped",
+    UnavailableReason.WRONG_WEAPON: "Needs a different weapon",
+    UnavailableReason.NO_AMMUNITION: "No arrows to shoot",
+    UnavailableReason.NO_ENEMY_IN_REACH: "No enemy within reach",
+    UnavailableReason.NO_ENEMY_NEAR: "No enemy close enough to back away from",
+    UnavailableReason.ALREADY_ADJACENT: "No one is out of reach",
+    UnavailableReason.NO_OPPONENTS: "No opponents on the field",
+    UnavailableReason.NO_ALLY_NEAR: "No ally close enough to swap with",
+    UnavailableReason.NOT_POSITIONED: "Not positioned on the battlefield",
+    UnavailableReason.NOT_IN_COMBAT: "Only usable in combat",
+    UnavailableReason.ATTRIBUTE_NOT_HIGHEST: "Its attribute is not your single highest",
+    # Crusader's Oath: faith below each of strength, finesse, speed,
+    # endurance and charisma (intelligence is not compared, so "lowest"
+    # would be false).
+    UnavailableReason.FAITH_TOO_LOW: "Faith too low to swear on",
+    UnavailableReason.ALREADY_ACTIVE: "Already in effect",
+    # Hollowed is the only apathy-type state, and the name the status panel shows.
+    UnavailableReason.APATHY: "Hollowed: no faith to swear on",
+    UnavailableReason.REQUIRES_PARRY: "Only while parrying",
+    UnavailableReason.FULLY_RESTED: "Already fully rested",
+    UnavailableReason.NO_USABLE_ITEMS: "No usable items",
+    # Swap Weapon (#671): nothing owned in the pack other than what is in hand.
+    UnavailableReason.NO_SPARE_WEAPON: "No other weapon in your pack",
+}
+
+
+def weapon_requirement_code(user, requirement):
+    """NO_WEAPON / WRONG_WEAPON when ``user``'s hand fails ``requirement``, else None.
+
+    Bare-handed is modelled two ways (an absent ``eq_weapon``, or the
+    ``items.Fists`` a Player always falls back to, subtype "Unarmed"); both
+    satisfy an "Unarmed" requirement, as ``Jab._is_unarmed`` documents. Only a
+    truly empty hand is NO_WEAPON -- a fists-only move refused while holding a
+    sword is a wrong weapon, not a missing one.
+    """
+    return weapon_code_for(getattr(user, "eq_weapon", None), requirement)
+
+
+def weapon_code_for(weapon, requirement):
+    """The weapon rule itself, for ``weapon`` in hand: NO_WEAPON / WRONG_WEAPON,
+    or None when it satisfies ``requirement``.
+
+    The one place that decides whether a weapon satisfies a move. The combat
+    adapter phrases the answer (``weapon_requirement_reason``); it does not
+    re-derive it.
+    """
+    requirement = tuple(requirement or ())
+    if not requirement:
+        return None
+    subtype = "Unarmed" if weapon is None else getattr(weapon, "subtype", None)
+    if subtype in requirement:
+        return None
+    if weapon is None:
+        return UnavailableReason.NO_WEAPON
+    return UnavailableReason.WRONG_WEAPON
+
+
 class Move:  # master class for all moves
     # Animation type the web client plays for this move ("attack", "pulse",
     # "pierce", "projectile", ...). Subclasses declare their type as a class
@@ -1824,6 +1950,49 @@ class Move:  # master class for all moves
         """Check arbitrary conditions to see if the move is available for use; return True or False"""
         viability = True
         return viability
+
+    def unavailability_reason(self):
+        """Why this move cannot be cast right now, or None when it can (#627).
+
+        ``viable()`` is the rule and is asked first, so the two cannot
+        disagree about *whether*: None exactly when ``viable()`` is true.
+        Only a refusal is then explained, by ``_unavailability_code`` -- and
+        anything that is not a code in ``UnavailableReason`` (a move with no
+        diagnosis, an out-of-vocabulary value, a diagnosis that raises) folds
+        to the generic ``UNAVAILABLE`` rather than reaching the wire.
+
+        No ``user`` parameter, deliberately: ``viable()`` reads
+        ``self.user``, and a reason asked about some other combatant could
+        contradict the verdict it is explaining.
+        """
+        if self.viable():
+            return None
+        try:
+            return UnavailableReason(self._unavailability_code())
+        except Exception:  # an unknown code or a diagnosis that raises
+            # Folded, not raised -- but logged, so a buggy diagnosis shows up
+            # somewhere other than a vague "Cannot use this move".
+            logging.getLogger(__name__).debug(
+                "unavailability diagnosis failed for %s", type(self).__name__, exc_info=True
+            )
+            return UnavailableReason.UNAVAILABLE
+
+    def _unavailability_code(self):
+        """The first condition ``viable()`` fails on, as an ``UnavailableReason``.
+
+        Called only once ``viable()`` has said no. Override beside the
+        ``viable()`` it explains, checking the same conditions in the same
+        order and returning None for any branch it cannot name (the caller
+        then says ``UNAVAILABLE``). It must never name a blocker while
+        ``viable()`` would say yes -- ``tests/test_move_unavailability_reasons.py``
+        drives every castable move through a spread of real states to hold it
+        to that.
+
+        This default explains only the declared weapon requirement, which
+        ``tests/test_disabled_move_reasons.py`` already holds to each
+        ``viable()`` body; every other objection is the move's own to name.
+        """
+        return weapon_requirement_code(self.user, self.weapon_requirement)
 
     def learnable_when(self, player) -> bool:
         """Override to gate skill-tree availability on player state (e.g. stat thresholds)."""

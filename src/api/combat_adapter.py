@@ -8,6 +8,7 @@ without blocking for user input.
 
 from src import functions
 import contextlib
+import math
 import uuid
 import threading
 import logging
@@ -21,6 +22,7 @@ import src.moves as moves  # type: ignore
 from src.api.serializers.combat import (
     CombatStateSerializer,
     CombatantSerializer,
+    StateEffectSerializer,
     strip_combatant_prefix,
 )
 from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
@@ -32,6 +34,7 @@ from src.api.schemas.combat_beat import (
     SUGGESTIONS_EVENT,
     TURN_EVENT,
     UPDATE_EVENT,
+    build_beat_results,
 )
 from src.api.combat_beat_stream import CombatBeatStreamer
 from src.narration import ANSI_ESCAPE_RE
@@ -43,11 +46,16 @@ from src.combatant import (
     REPORTED_BEAT_KEY,
     combatant_handle,
     find_by_handle,
+    wire_handle,
 )
+from src.moves import SwapWeapon
 from src.moves._base import (
     select_weighted_target,
     display_name_of,
     TELEGRAPH_SEVERITY_NORMAL,
+    UNAVAILABILITY_TEXT,
+    UnavailableReason,
+    weapon_code_for,
 )
 from src.events import purge_orphaned_combat_events
 from src.story import gorran_flavor
@@ -255,39 +263,49 @@ MAX_INSTANT_STAGES = 20
 #: `test_combat_adapter_gaps2`/`gaps3`, `tests/api/test_combat_refusal_api`),
 #: so a reworded literal leaves those assertions pinning a sentence the code no
 #: longer produces -- green, and testing nothing. Importing the constant moves
-#: the assertion with the wording. `NO_WEAPON_REASON` was named first for
-#: exactly that reason and its siblings were left as literals, which made the
-#: module's test-facing surface half-named for no stated reason.
+#: the assertion with the wording.
 #:
-#: Public (no leading underscore) because they ARE the module's test-facing
-#: surface, like `move_unavailability_reason` and `combat_alert_line` beside
-#: them -- the private spelling had two test importers, both updated with the
-#: rename rather than left on an alias.
-NO_WEAPON_REASON = "No weapon equipped"
+#: Since #627 the sentences themselves live in the engine, one per code of the
+#: closed `UnavailableReason` vocabulary (`UNAVAILABILITY_TEXT`,
+#: src/moves/_base.py): player-facing prose sits with the rest of the engine's
+#: copy, not in the bridge. These names stay as this module's test-facing
+#: surface and are read from that one mapping, never retyped.
+NO_WEAPON_REASON = UNAVAILABILITY_TEXT[UnavailableReason.NO_WEAPON]
 
-#: The genuine catch-all: `viable()` returned a bare bool and nothing about
-#: range, weapon or fatigue explains it. Kept deliberately vague -- guessing
-#: here is what shipped issue #565.
-CANNOT_USE_REASON = "Cannot use this move"
+#: The genuine catch-all: `viable()` refused and the move's own diagnosis
+#: (`Move.unavailability_reason`) could not name why. Kept deliberately vague
+#: -- guessing here is what shipped issue #565.
+CANNOT_USE_REASON = UNAVAILABILITY_TEXT[UnavailableReason.UNAVAILABLE]
+#: Swap Weapon cast from a path that names no weapon while more than one is
+#: on offer (#671): the client must send ``select_weapon``.
+SWAP_WEAPON_NEEDS_A_CHOICE = "Choose which weapon to draw"
 
 #: A targeted move with no `mvrange` at all, so there is no band to compare.
-NO_TARGET_REASON = "No valid target"
+NO_TARGET_REASON = UNAVAILABILITY_TEXT[UnavailableReason.NO_TARGET]
 
 #: Out of range, for a move that DOES outreach a sword: the miss is as likely
 #: to be a target it may not legally hit as one that is merely distant. The
 #: client has its own twin of this sentence in
 #: `frontend/src/utils/combatMoveStatus.js` (`NO_REACHABLE_TARGET_REASON`),
 #: pinned across the boundary by `test_combat_glossary_contract`.
-NO_TARGET_IN_RANGE_REASON = "No valid target in range"
+NO_TARGET_IN_RANGE_REASON = UNAVAILABILITY_TEXT[UnavailableReason.NO_TARGET_IN_RANGE]
 
 #: Out of range for a move that cannot outreach a sword -- see
 #: `_outreaches_melee` for which of the two sentences a band earns.
-TOO_FAR_REASON = "Enemy out of range (too far)"
+TOO_FAR_REASON = UNAVAILABILITY_TEXT[UnavailableReason.TARGET_TOO_FAR]
 
 #: Not enough fatigue to pay for the move. Emitted from two places (the move
 #: route's `{"error": ...}` and the availability list's `reason`), which is why
 #: it is named: the two had to agree and nothing said so.
-NOT_ENOUGH_FATIGUE_REASON = "Not enough fatigue"
+NOT_ENOUGH_FATIGUE_REASON = UNAVAILABILITY_TEXT[UnavailableReason.INSUFFICIENT_FATIGUE]
+
+#: Engine verdicts a TARGETED move's range ladder may sharpen. Both mean "no
+#: objection beyond reach": the ladder knows the move's band and which of the
+#: two range sentences it earns. Any other code (no parry up, a mastery's
+#: attribute) is the real blocker and is reported as the engine gave it.
+_RANGE_LADDER_CODES = frozenset(
+    {UnavailableReason.UNAVAILABLE, UnavailableReason.NO_ENEMY_IN_REACH}
+)
 
 #: The compass the Turn move offers, and the facing each answer resolves to.
 #: ONE table, offered from and accepted against the same place: a direction
@@ -338,47 +356,54 @@ def _weapon_noun_phrase(subtype, with_article=True):
     return functions.indefinite_article(noun) + " " + noun
 
 
-def move_unavailability_reason(move, player, is_targeted):
-    """Why a non-viable move cannot be cast, as one player-facing sentence.
+def move_unavailability(move, player, is_targeted):
+    """Why a non-viable move cannot be cast: ``(code, sentence)`` (#627).
 
-    ``viable()`` hands back a bare bool, so this reconstructs the objection.
-    Extracted from ``_get_available_moves``' reason ladder, which ran to six
-    indentation levels inside a 147-line method while every terminal branch
-    was a single string: as a function it is early returns, and
-    ``tests/test_disabled_move_reasons.py`` can call it directly instead of
-    standing up an adapter, a RockRumbler and a seeded RNG to reach one arm.
+    ``code`` is an ``UnavailableReason`` from the engine's closed vocabulary
+    and ``sentence`` the line the locked card shows. The engine answers *why*
+    through ``Move.unavailability_reason()``; this layer only sharpens the
+    few answers it holds more detail for, and every sentence it ships comes
+    out of the engine's ``UNAVAILABILITY_TEXT`` or names the weapon.
 
     What is in Jean's hand is asked FIRST, before the targeted/untargeted
     split: a weapon requirement holds regardless of range or target, it is
     the objection the player cannot fix by walking, and the range guess below
     happily passes while the real blocker is the sword he is holding
     (issue #565). ``weapon_requirement_reason`` returns None when the
-    requirement is satisfied, so a correctly-armed move falls through to the
-    range reasons.
+    requirement is satisfied, so a correctly-armed move falls through.
 
-    There is deliberately no "No weapon equipped" arm for an UNTARGETED move.
-    One existed, gated on ``move.name == "Attack" and not eq_weapon``, and it
-    was unreachable twice over: the engine's ``Attack`` is ``targeted=True``
-    (src/moves/_utility.py), so the targeted arm always claims it, and a
-    Player always has an ``eq_weapon`` anyway -- ``Player.__init__`` equips
-    ``items.Fists()``, which is truthy. Only doubles with ``targeted=False``
-    ever ran it. Routing that sentence to a bare-handed Jean means giving
-    ``Attack`` a ``weapon_requirement``, this project's declared mechanism
-    (asked before the split, AST-checked by that same test file) -- a
-    move-availability change, so it is left to its own issue.
+    Then the engine's own verdict. An untargeted move reports it as-is --
+    before #627 every one of them fell through to "Cannot use this move",
+    whatever the cause. A targeted move does too unless the verdict is only
+    "unavailable" or "no enemy within reach": then the range ladder below,
+    which knows the move's band, picks the sharper of the two range sentences.
+
+    There is deliberately no "No weapon equipped" arm for an UNTARGETED
+    ``Attack``. One existed, gated on ``move.name == "Attack" and not
+    eq_weapon``, and it was unreachable twice over: the engine's ``Attack`` is
+    ``targeted=True`` (src/moves/_utility.py), and a Player always has an
+    ``eq_weapon`` anyway -- ``Player.__init__`` equips ``items.Fists()``,
+    which is truthy. Routing that sentence to a bare-handed Jean means giving
+    ``Attack`` a ``weapon_requirement`` -- a move-availability change, so it
+    is left to its own issue.
     """
     weapon_reason = weapon_requirement_reason(
         move, getattr(player, "eq_weapon", None)
     )
     if weapon_reason is not None:
-        return weapon_reason
+        # Non-None exactly when weapon_code_for is: one rule decides both.
+        code = weapon_code_for(
+            getattr(player, "eq_weapon", None), getattr(move, "weapon_requirement", ())
+        )
+        return code, weapon_reason
 
-    if not is_targeted:
-        return CANNOT_USE_REASON
+    code = _engine_unavailability_code(move)
+    if not is_targeted or code not in _RANGE_LADDER_CODES:
+        return code, UNAVAILABILITY_TEXT[code]
 
     mvrange = getattr(move, "mvrange", None)
     if not mvrange:
-        return NO_TARGET_REASON
+        return UnavailableReason.NO_TARGET, NO_TARGET_REASON
 
     range_min, range_max = mvrange
     enemies_in_range = any(
@@ -386,7 +411,7 @@ def move_unavailability_reason(move, player, is_targeted):
         for dist in player.combat_proximity.values()
     )
     if enemies_in_range:
-        return CANNOT_USE_REASON
+        return code, UNAVAILABILITY_TEXT[code]
     # The melee/reach split: only a move that cannot outreach a sword gets the
     # "too far" wording, because for a longer-ranged move the miss is as
     # likely to be a target it may not legally hit.
@@ -394,11 +419,34 @@ def move_unavailability_reason(move, player, is_targeted):
     # `_range_ring` are the two readers of MELEE_REACH_FT, and they had drifted
     # to opposite inclusivity at the boundary -- see that predicate's docstring
     # and tests/test_disabled_move_reasons.py's boundary class.
-    return (
-        NO_TARGET_IN_RANGE_REASON
-        if _outreaches_melee(range_max)
-        else TOO_FAR_REASON
-    )
+    if _outreaches_melee(range_max):
+        return UnavailableReason.NO_TARGET_IN_RANGE, NO_TARGET_IN_RANGE_REASON
+    return UnavailableReason.TARGET_TOO_FAR, TOO_FAR_REASON
+
+
+def move_unavailability_reason(move, player, is_targeted):
+    """The sentence half of :func:`move_unavailability`."""
+    return move_unavailability(move, player, is_targeted)[1]
+
+
+def _engine_unavailability_code(move):
+    """``move.unavailability_reason()``, folded into the closed vocabulary.
+
+    Anything the vocabulary does not name -- a double with no hook, a hook
+    that raises, None from a move the adapter already judged unviable, an
+    out-of-vocabulary value -- becomes ``UNAVAILABLE``, so only a known code
+    (and therefore a known sentence) ever reaches the wire.
+    """
+    hook = getattr(move, "unavailability_reason", None)
+    if not callable(hook):
+        return UnavailableReason.UNAVAILABLE
+    try:
+        return UnavailableReason(hook())
+    except Exception:
+        logger.debug(
+            "unavailability_reason failed for %s", type(move).__name__, exc_info=True
+        )
+        return UnavailableReason.UNAVAILABLE
 
 
 def weapon_requirement_reason(move, weapon):
@@ -421,22 +469,17 @@ def weapon_requirement_reason(move, weapon):
     term.
     """
     requirement = tuple(getattr(move, "weapon_requirement", ()) or ())
-    if not requirement:
-        return None
-    # The engine models bare-handed two ways -- an absent/None ``eq_weapon``
-    # (most NPCs) or an ``items.Fists()`` whose subtype is "Unarmed", which is
-    # what ``Player.__init__`` equips and ``unequip_item`` restores. Both count
-    # as satisfying an Unarmed requirement; ``Jab._is_unarmed`` documents the
-    # pair, and reading only the subtype here would tell a genuinely
-    # bare-handed Jean that Jab "requires bare hands".
-    subtype = "Unarmed" if weapon is None else getattr(weapon, "subtype", None)
-    if subtype in requirement:
+    # Whether the hand satisfies the move is the engine's rule (both
+    # bare-handed models count as Unarmed -- see weapon_code_for); this only
+    # phrases the verdict.
+    code = weapon_code_for(weapon, requirement)
+    if code is None:
         return None
     # A fists-only move is not asking for equipment, so the empty-handed
     # wording below would be exactly backwards for it.
     if set(requirement) == {"Unarmed"}:
         return "Requires " + _weapon_noun_phrase("Unarmed")
-    if weapon is None:
+    if code is UnavailableReason.NO_WEAPON:
         return NO_WEAPON_REASON
     subtypes = sorted(requirement)
     phrases = [_weapon_noun_phrase(subtypes[0])] + [
@@ -521,6 +564,29 @@ def _wire_animation(pending: dict) -> dict:
     if target is not None:
         animation["target_id"] = CombatantSerializer.stream_id(target)
     return animation
+
+
+def _vitals_of(entity):
+    """``(hp, visible status names)`` for one combatant, or None if unreadable.
+
+    The two facts a beat's floating-text results are measured from (#667).
+    The status filter is ``StateEffectSerializer.is_hidden`` -- the one owner
+    of the hidden rule -- so ``Dodging``/``Parrying`` never float up as
+    "+ Dodging" while staying off every status panel. A non-numeric or
+    non-finite ``hp`` (a degraded object) opts the combatant out instead of
+    shipping a NaN the client would render as "NaN HP".
+    """
+    hp = getattr(entity, "hp", None)
+    if isinstance(hp, bool) or not isinstance(hp, (int, float)) or not math.isfinite(hp):
+        return None
+    states = getattr(entity, "states", None)
+    names = set()
+    if isinstance(states, (list, tuple)):
+        for state in states:
+            if not StateEffectSerializer.is_hidden(state):
+                names.add(str(getattr(state, "name", "")))
+    names.discard("")
+    return hp, frozenset(names)
 
 
 def _take_resolution(pending: dict, beat: Optional[int] = None) -> dict:
@@ -1554,6 +1620,10 @@ class ApiCombatAdapter:
         # _beat_lock for the race and why the lock is reentrant. The wrapper
         # exists so the body below keeps its indentation and stays reviewable
         # against its history.
+        if not reinit:
+            ensure = getattr(self.player, "ensure_swap_weapon", None)
+            if callable(ensure):
+                ensure()
         with self._beat_lock:
             return self._initialize_combat_locked(enemies, reinit=reinit)
 
@@ -1913,6 +1983,8 @@ class ApiCombatAdapter:
             return self._handle_combined_selection(
                 command.get("move_name"), command.get("target_id")
             )
+        elif command_type == "select_weapon":
+            return self._handle_weapon_selection(command.get("item_id"))
         elif command_type == "cancel_selection":
             return self._handle_cancel_selection()
         else:
@@ -2158,15 +2230,78 @@ class ApiCombatAdapter:
         else:
             selected_move.target = self.player
 
-        self.player.current_move = selected_move
-        self.player.current_move.user = self.player
+        choice_error = self._resolve_swap_choice(selected_move)
+        if choice_error is not None:
+            return choice_error
+        return self._commit_and_execute(selected_move)
+
+    def _resolve_swap_choice(self, move) -> Optional[Dict[str, Any]]:
+        """Settle Swap Weapon's weapon for a cast that named none.
+
+        ``select_weapon`` names the weapon; every other path (a move card,
+        repeat-last, a suggestion) does not. Such a cast draws the one weapon
+        on offer when there is exactly one, and is refused otherwise -- never
+        a guess, and never a choice left over from an aborted swap
+        (maintainer decision, 2026-09-24). Returns an error dict, or None.
+        """
+        if not isinstance(move, SwapWeapon):
+            return None
+        options = move.swappable_weapons()
+        if len(options) == 1:
+            move.weapon = options[0]
+            return None
+        move.weapon = None
+        return {"error": SWAP_WEAPON_NEEDS_A_CHOICE}
+
+    def _commit_and_execute(self, move) -> Dict[str, Any]:
+        """Make ``move`` the player's current move, log it, and run it.
+
+        The tail every one-shot selection shares once its target (or other
+        selection) is on the move: ``select_move_and_target`` and
+        ``select_weapon``. Preconditions must already have passed.
+        """
+        self.player.current_move = move
+        move.user = self.player
         self._add_log_entry(
             self.output_capture.current_round,
-            f"{self.player.name} uses {display_name_of(selected_move)}!",
+            f"{self.player.name} uses {display_name_of(move)}!",
             "player_action",
         )
+        return self._execute_move(move)
 
-        return self._execute_move(selected_move)
+    def _handle_weapon_selection(self, item_id) -> Dict[str, Any]:
+        """Cast Swap Weapon at the inventory weapon ``item_id`` names (#671).
+
+        The weapon is a selection like a target: it is resolved against the
+        move's own offer (``SwapWeapon.swappable_weapons``, the list
+        ``_get_available_moves`` publishes as ``weapon_options``) and set on
+        the move as ``move.weapon`` before it is cast, so a crafted id can
+        name neither the weapon already in hand nor anything outside the
+        pack. Every refusal happens before any combat state is touched.
+        """
+        if self.input_type != "move_selection":
+            return {"error": "Not expecting move selection"}
+        if not isinstance(item_id, str) or not item_id:
+            return {"error": "Invalid weapon"}
+
+        move = next(
+            (m for m in self.player.known_moves if isinstance(m, SwapWeapon)),
+            None,
+        )
+        if move is None:
+            return {"error": "Swap Weapon is not a move you know"}
+
+        precondition_error = self._check_move_preconditions(move)
+        if precondition_error is not None:
+            return precondition_error
+
+        weapon = find_by_handle(move.swappable_weapons(), item_id)
+        if weapon is None:
+            return {"error": "That weapon is not in your pack to draw"}
+
+        move.weapon = weapon
+        move.target = self.player
+        return self._commit_and_execute(move)
 
     def _handle_move_selection(self, move_index: int) -> Dict[str, Any]:
         """Handle player selecting a move."""
@@ -2193,6 +2328,9 @@ class ApiCombatAdapter:
         precondition_error = self._check_move_preconditions(selected_move)
         if precondition_error is not None:
             return precondition_error
+        choice_error = self._resolve_swap_choice(selected_move)
+        if choice_error is not None:
+            return choice_error
 
         self.player.current_move = selected_move
         self.player.current_move.user = self.player
@@ -2830,6 +2968,66 @@ class ApiCombatAdapter:
 
         return result
 
+    def _snapshot_vitals(self):
+        """``[(entity, wire id, vitals)]`` for every combatant, before a beat.
+
+        Holding the ENTITIES rather than a serialized roster is the point: the
+        beat drops a killed enemy from ``combat_list`` before it ends, so a
+        post-beat roster never sees the blow that killed it. Measuring the same
+        objects afterwards does. The wire id is taken now so the before and
+        after halves agree even if a combatant changes sides mid-beat.
+        """
+        snapshot = []
+        seen = set()
+        for entity in self._all_combatants():
+            # The player sits in combat_list_allies too.
+            if id(entity) in seen:
+                continue
+            seen.add(id(entity))
+            vitals = _vitals_of(entity)
+            if vitals is not None:
+                snapshot.append(
+                    (entity, CombatantSerializer.stream_id(entity), vitals)
+                )
+        return snapshot
+
+    def _attach_beat_results(self, vitals_before, beat_log):
+        """Hang this beat's floating-text results on its last log entry (#667).
+
+        The facts are the engine's own: HP and visible statuses measured on the
+        combatants that entered the beat (``_snapshot_vitals``), plus the
+        outcomes the engine published onto this beat's animation carriers.
+        ``build_beat_results`` owns the shape; see ``RESULT_KINDS``.
+
+        The LAST entry because the client reveals the log line by line, and the
+        beat's last line is when everything the beat did has been narrated.
+        A beat that narrated nothing has nowhere to put them and reports
+        nothing: a change with no line of its own is not something the player
+        was shown happening. Never raises -- this is presentation, and must not
+        cost the beat.
+        """
+        if not beat_log:
+            return
+        try:
+            before = {}
+            after = {}
+            for entity, cid, vitals in vitals_before:
+                current = _vitals_of(entity)
+                if current is None:
+                    continue
+                before[cid] = vitals
+                after[cid] = current
+            resolutions = [
+                entry["animation"]
+                for entry in beat_log
+                if isinstance(entry.get("animation"), dict)
+            ]
+            results = build_beat_results(before, after, resolutions)
+            if results:
+                beat_log[-1]["results"] = results
+        except Exception:
+            logger.exception("failed to attach beat results")
+
     def _run_move_beat(self, beat_states):
         """Process one beat of the player's move loop, appending its beat state.
 
@@ -2873,6 +3071,10 @@ class ApiCombatAdapter:
         # correct the slice below rather than losing the whole beat.
         self._log_trimmed_since_beat = 0
 
+        # Who entered the beat, and in what shape -- what the beat's
+        # floating-text results are measured against (#667).
+        vitals_before = self._snapshot_vitals()
+
         # Capture output for THIS beat only
         with self._capture_output():
             # Advance all player moves — tag so write() matches the right animation
@@ -2892,6 +3094,17 @@ class ApiCombatAdapter:
 
             # Increment beat
             self.player.combat_beat += 1
+
+        # This beat's own log window (see log_len_before above). Resolved
+        # here, before the event check, so an event-interrupted beat still
+        # carries its results on the lines it did narrate.
+        beat_window_start = max(
+            0, log_len_before - self._log_trimmed_since_beat
+        )
+        self._attach_beat_results(
+            vitals_before,
+            getattr(self.player, "combat_log", [])[beat_window_start:],
+        )
 
         # Check for combat events after each beat
         if self.on_event_callback:
@@ -2914,9 +3127,6 @@ class ApiCombatAdapter:
 
         # Add log to beat state — only entries added during THIS beat, not
         # the full cumulative combat log (see log_len_before above).
-        beat_window_start = max(
-            0, log_len_before - self._log_trimmed_since_beat
-        )
         beat_state["log"] = list(
             getattr(self.player, "combat_log", [])[beat_window_start:]
         )
@@ -4079,6 +4289,10 @@ class ApiCombatAdapter:
                 "fatigue_cost": move.fatigue_cost,
                 "available": True,
                 "reason": None,
+                # The closed-vocabulary code behind `reason` (UnavailableReason,
+                # src/moves/_base.py), None while available. `reason` is the
+                # sentence the card shows; the code is what a client groups on.
+                "reason_code": None,
                 "targeted": is_targeted,
                 "viable_targets": viable_targets,
                 "requires_target_selection": is_targeted and len(viable_targets) > 1,
@@ -4112,20 +4326,32 @@ class ApiCombatAdapter:
                 )
                 move_data["cooldown_remaining"] = cd_remaining
                 move_data["cooldown_max"] = max(cd_max, cd_remaining)
+                move_data["available"] = False
+                move_data["reason_code"] = UnavailableReason.ON_COOLDOWN.value
+                # The beat count sharpens ON_COOLDOWN's default sentence; the
+                # glossary's "beat" explainer attaches to exactly this wording.
                 if move.beats_left > 0:
-                    move_data["available"] = False
                     move_data["reason"] = f"Available in {move.beats_left + 1} beats"
                 else:
-                    move_data["available"] = False
                     move_data["reason"] = "Available next beat"
             elif move.fatigue_cost > 0 and self.player.fatigue < move.fatigue_cost:
                 move_data["available"] = False
+                move_data["reason_code"] = UnavailableReason.INSUFFICIENT_FATIGUE.value
                 move_data["reason"] = NOT_ENOUGH_FATIGUE_REASON
             elif not is_viable:
+                code, sentence = move_unavailability(move, self.player, is_targeted)
                 move_data["available"] = False
-                move_data["reason"] = move_unavailability_reason(
-                    move, self.player, is_targeted
-                )
+                move_data["reason_code"] = code.value
+                move_data["reason"] = sentence
+
+            if isinstance(move, SwapWeapon):
+                # The weapons `select_weapon` will accept, as the inventory's
+                # own row ids -- the client lists these, it does not
+                # re-derive which weapons count (#671).
+                move_data["weapon_options"] = [
+                    {"id": wire_handle(weapon), "name": weapon.name}
+                    for weapon in move.swappable_weapons()
+                ]
 
             moves.append(move_data)
 

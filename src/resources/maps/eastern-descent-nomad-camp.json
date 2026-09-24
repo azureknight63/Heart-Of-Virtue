@@ -1465,6 +1465,9 @@
                     "api_event_id": null,
                     "needs_input": false
                 }
+            },
+            {
+                "class": "story.ch03.JamboTentNoticeEvent"
             }
         ],
         "items": [],
@@ -5155,7 +5158,7 @@
     "(4, 1)": {
         "id": "tile_4_1",
         "title": "Nursery",
-        "description": "A small wooden fence rings a clearing of short grass and dirt.\nThere's a length of twine strung across the only gap in the fence. Inside, several small wooden toys are scattered in the dust. \nA small wooden box sits with its lid wide open, as if hoping someone will notice its sad predicament.",
+        "description": "A small wooden fence rings a clearing of short grass and dirt.\nThere's a length of twine strung across the only gap in the fence. Inside, several small wooden toys are scattered in the dust.\nA small wooden box sits with its lid wide open, as if hoping someone will notice its sad predicament.",
         "exits": [
             "south",
             "west",

@@ -57,5 +57,14 @@
     "Vespera closes the ledger. 'We'll be here when you need something else. Safe travels.'",
     "She nods toward Kaelen. 'He'll keep forging. I'll keep the books. Either way, come back when you're ready.'",
     "She returns to the armor racks. The conversation has ended, but the stall remains open."
+  ],
+  "fallback_replies": [
+    "Vespera makes a small note in the ledger. She doesn't say what it is.",
+    "Her gaze drops to Jean's shoulder straps, then comes back up. She's listening, and measuring.",
+    "She tilts her head; the brass wire in her braid catches the light. 'Hm.'",
+    "She glances at Kaelen. Something passes between them that doesn't need saying.",
+    "She tightens a buckle on the rack and lets the words sit a while.",
+    "She says, 'Hm. Fair point or not, it's heard.' Her hands go back to the stitching.",
+    "A dry half-smile. She keeps her own counsel on it."
   ]
 }

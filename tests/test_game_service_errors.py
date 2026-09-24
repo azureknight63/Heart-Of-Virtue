@@ -226,7 +226,10 @@ class TestStartCombatErrors:
 
         result = game_service.start_combat(mock_player, wire_handle(MagicMock()))
 
-        assert result == {"error": "Enemy not found"}
+        # Refused before any lookup now (2026-09-24): no second fight mid-fight.
+        from src.api.services.game_service import _NOT_DURING_COMBAT_MESSAGE
+
+        assert result == {"error": _NOT_DURING_COMBAT_MESSAGE}
         assert mock_player.in_combat is True
 
 

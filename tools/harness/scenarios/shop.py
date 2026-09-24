@@ -11,7 +11,9 @@ a purchase or a sale, so every bug in the transaction logic was invisible to
 rung 2. ``_check_sell_buyback_round_trip`` closes that: it seats a Merchant on
 the player's tile in-process (the same trick ``ch02_events`` uses to stage
 story events) and then drives the real HTTP routes for the full
-state → sell → state → buyback loop.
+state → sell → buyback loop. The buyback row is read from the ``shop_state``
+the sell response carries, which is the state the client renders next, so
+there is no second GET /state in between.
 
 It sells from a *stack*, partially, into a stock the merchant already holds,
 because that is the arrangement that broke: ``stack_inv_items`` dissolves the
@@ -19,7 +21,7 @@ sold object into the merchant's existing same-name stack, so the buyback
 ledger can only find its way back by name (#624).
 """
 
-from typing import Any, List, Optional
+from typing import Any, List, NamedTuple, Optional
 
 from .base import Scenario
 from ..client import GameClient
@@ -38,11 +40,20 @@ _ROUND_TRIP_MERCHANT_GOLD = 2000
 _ROUND_TRIP_PLAYER_GOLD = 1000
 
 
+class _StagedMerchant(NamedTuple):
+    """What ``_stage_round_trip_merchant`` seated, for the round trip."""
+
+    merchant_id: str
+    item_name: str
+    item_type: str
+
+
 class ShopScenario(Scenario):
     name = "shop"
     description = (
         "Verify shop state/buy/sell/buyback endpoints reject bad input "
-        "gracefully (no 5xx)."
+        "gracefully (no 5xx), then sell part of a stack to a staged merchant "
+        "and buy it back (#624)."
     )
 
     def run(self, client: GameClient) -> List[BugReport]:
@@ -163,8 +174,13 @@ class ShopScenario(Scenario):
     # ------------------------------------------------------------------
 
     def _round_trip_bug(self, endpoint: str, method: str, title: str,
-                        expected: str, actual: str) -> BugReport:
-        """A functional-logic bug in the sell/buyback round trip."""
+                        expected: str, actual: str, response=None,
+                        request_body: Optional[dict] = None) -> BugReport:
+        """A functional-logic bug in the sell/buyback round trip.
+
+        Pass the ``response`` (and ``request_body``) that showed it, so the
+        report carries the payload a fixer needs.
+        """
         return self._bug(
             title=title,
             severity=BugSeverity.HIGH,
@@ -173,25 +189,21 @@ class ShopScenario(Scenario):
             method=method,
             expected=expected,
             actual=actual,
+            response=response,
+            request_body=request_body,
         )
 
-    def _stage_round_trip_merchant(self, client: GameClient) -> Optional[tuple]:
+    def _stage_round_trip_merchant(self, client: GameClient) -> Optional[_StagedMerchant]:
         """Seat a stocked Merchant on the player's tile.
 
-        Returns ``(merchant_id, item_name, item_type)``, or None when the
-        harness session has no full universe (MinimalPlayer) — a harness
-        limitation, not a bug, exactly as ``ch02_events`` treats the same case.
+        Returns None when the harness session has no full universe
+        (MinimalPlayer) — a harness limitation, not a bug, exactly as
+        ``ch02_events`` treats the same case.
         """
-        sm = client._session_manager
-        player = sm.get_player(client.session_id)
-        if player is None:
+        live = self._live_player_tile(client)
+        if live is None:
             return None
-        universe = getattr(player, "universe", None)
-        if universe is None:
-            return None
-        tile = universe.get_tile(player.location_x, player.location_y)
-        if tile is None:
-            return None
+        player, tile = live.player, live.tile
 
         # Lazy imports — src modules are shimmed by bug_hunt.py's bootstrap.
         from src.combatant import wire_handle
@@ -228,7 +240,9 @@ class ShopScenario(Scenario):
         player.inventory.append(Gold(amt=_ROUND_TRIP_PLAYER_GOLD))
         player.inventory.append(_powder(_ROUND_TRIP_PLAYER_STACK, merchandise=False))
 
-        return wire_handle(merchant), MineralPowder().name, MineralPowder.__name__
+        return _StagedMerchant(
+            wire_handle(merchant), MineralPowder().name, MineralPowder.__name__
+        )
 
     def _check_sell_buyback_round_trip(self, client: GameClient) -> List[BugReport]:
         """Sell part of a stack into the merchant's own stock, then redeem it."""
@@ -260,6 +274,7 @@ class ShopScenario(Scenario):
                 f"Player's {item_name} stack is missing from the sell tab",
                 f"sell_inventory lists the player's {item_type} stack",
                 "sell_inventory does not list it at all",
+                response=resp,
             )]
 
         body = {
@@ -285,6 +300,8 @@ class ShopScenario(Scenario):
                 "A completed sale produced no buyback offer",
                 "shop_state.buyback_items holds one row for the sold units",
                 "buyback_items is empty",
+                response=resp,
+                request_body=body,
             )]
 
         body = {"npc_id": merchant_id, "item_id": buyback_rows[0]["id"]}
@@ -304,6 +321,8 @@ class ShopScenario(Scenario):
                 "Buyback of a partially-sold stack was refused",
                 "the just-sold units are redeemable from the buyback tab",
                 f"buyback refused: {data.get('error')!r}",
+                response=resp,
+                request_body=body,
             ))
         return bugs
 

@@ -26,8 +26,9 @@ contract. In code order:
   1. ``Container`` + a verb in ``Container.LOOK_INSIDE_VERBS`` -> ``open()``
   2. a verb in ``_CONTAINER_ITEM_VERBS`` on a container's item -> transfer
   3. a demo-end ``Passageway`` + a CROSSING verb -> ends the demo
-  4. any OTHER ``Passageway`` + ``session_data`` + a verb that CROSSES or that
-     the placement advertises -> queues a transition event
+  4. any OTHER ``Passageway`` + ``session_data`` + a verb that CROSSES
+     (``enter``, its delegators, the name words, the placement's declared
+     ``crossing_keywords``) -> queues a transition event
   5. everything else -> ``resolve_interaction(target, action)``
 
 Only arm 5 is a real attribute lookup, so the others are expressed here as the
@@ -40,7 +41,10 @@ special (``tests/test_ferry_demo_end.py`` pins that behaviour).
 Arm 4's verb test is issue #620, and the mirror below used to be missing it
 in the same way: it returned True for EVERY non-demo-end ``Passageway``,
 which was accurate while arm 4 keyed off the target's type alone and fails
-open now that it does not.
+open now that it does not. #630 then dropped arm 4's "or the placement
+advertises it" half: a crossing verb is declared (``crossing_keywords``), so
+the mirror has to build each placement WITH its authored list props, or the
+three placements that declare one would read as undispatchable here.
 """
 
 import functools
@@ -109,7 +113,8 @@ def _instantiate(cls, props=None):
     here while resolving fine in the game, and the mirror's old unconditional
     "every Passageway is dispatchable" hid it completely. Only the scalar
     props are passed: the loader deserializes nested payloads first, and this
-    scan deliberately does not walk them.
+    scan deliberately does not walk them. A list of strings a class declares
+    authored is plain data too (``crossing_keywords``, #630) and is passed.
 
     The fallback exists to mirror the loader, not to be used: every class in
     the shipped maps constructs normally today, and
@@ -121,8 +126,15 @@ def _instantiate(cls, props=None):
         params = inspect.signature(cls.__init__).parameters
     except (TypeError, ValueError):  # pragma: no cover - builtins only
         params = {}
+    authored_lists = map_placeholders.authored_param_names(cls)
     for key, value in (props or {}).items():
-        if key in params and isinstance(value, (str, int, float, bool, type(None))):
+        if key not in params:
+            continue
+        if isinstance(value, (str, int, float, bool, type(None))) or (
+            key in authored_lists
+            and isinstance(value, list)
+            and all(isinstance(v, str) for v in value)
+        ):
             kwargs[key] = value
     if "player" in params:
         kwargs["player"] = _player()
@@ -169,11 +181,10 @@ def _object_placements():
         else:
             keywords = list(getattr(instance, "keywords", []) or [])
         # Put them back on the instance, which is what the loader's
-        # ``setattr`` of the authored props does. ``_is_dispatchable`` reads
-        # them there because arm 4 does (issue #620): the "step through?"
-        # confirmation is armed for a verb the placement ADVERTISES as well as
-        # for one that crosses, and three shipped passageways author a
-        # crossing verb their name does not contain.
+        # ``setattr`` of the authored props does, so the mirror sees the
+        # placement as the game does. (Arm 4 reads only whether a verb
+        # crosses since #630; the three passageways whose crossing verb their
+        # name does not contain declare it in ``crossing_keywords``.)
         instance.keywords = keywords
         rows.append((
             placement.map_name,

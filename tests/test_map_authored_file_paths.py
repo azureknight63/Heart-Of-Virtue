@@ -110,6 +110,12 @@ def test_no_map_authors_a_windows_path_separator():
     A backslash-separated path resolves on Windows and nowhere else, so the
     book it points at loads for the author and is blank for everyone running
     Linux or CI.
+
+    Issue #648 taught ``Book.text`` to read a backslash as a separator, so a
+    book no longer reads blank for this. The convention is kept anyway: this
+    scan covers every authored path, not only books, and the resolution test
+    below checks them as POSIX paths -- nothing else that reads an authored
+    path has been taught the same tolerance.
     """
     offenders = [entry for entry in authored_paths() if "\\" in entry.value]
     assert offenders == [], (

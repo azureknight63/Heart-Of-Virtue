@@ -9,6 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    UnavailableReason,
     apply_glancing_blow,
     resolve_pipeline_strike,
     weapon_scaled_power,
@@ -150,8 +151,10 @@ class WhirlAttack(Move):
             or self.user.combat_position is None
         ):
             return False
+        return self._enemy_within_reach()
 
-        # Check if there are enemies within range
+    def _enemy_within_reach(self):
+        """A living combatant stands within the spin's radius, measured on the grid."""
         for enemy in self.user.combat_proximity.keys():
             if enemy.is_alive():
                 if (
@@ -164,6 +167,13 @@ class WhirlAttack(Move):
                     if dist <= self.mvrange[1]:
                         return True
         return False
+
+    def _unavailability_code(self):
+        if getattr(self.user, "combat_position", None) is None:
+            return UnavailableReason.NOT_POSITIONED
+        if self._enemy_within_reach():
+            return None
+        return UnavailableReason.NO_ENEMY_IN_REACH
 
     #: Fraction of a full weapon swing each enemy in the spin takes. The
     #: lowest area factor in the roster — Whirl Attack hits a full 360 degrees
@@ -329,6 +339,11 @@ class VertigoSpin(Move):
             return 1 <= dist <= self.mvrange[1]
 
         return False
+
+    def _unavailability_code(self):
+        if getattr(self.user, "combat_position", None) is None:
+            return UnavailableReason.NOT_POSITIONED
+        return None
 
     #: Fraction of a full weapon swing this deals. Above the pure area moves
     #: (it is single-target) but well below a real attack — the status is the
@@ -715,6 +730,20 @@ class Riposte(Move):
             range_min <= dist <= range_max
             for dist in self.user.combat_proximity.values()
         )
+
+    def _unavailability_code(self):
+        code = super()._unavailability_code()
+        if code is not None or not hasattr(self.user, "combat_proximity"):
+            return code
+        if not any(isinstance(s, states.Parrying) for s in self.user.states):
+            return UnavailableReason.REQUIRES_PARRY
+        range_min, range_max = self.mvrange
+        if any(
+            range_min <= dist <= range_max
+            for dist in self.user.combat_proximity.values()
+        ):
+            return None
+        return UnavailableReason.NO_ENEMY_IN_REACH
 
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):

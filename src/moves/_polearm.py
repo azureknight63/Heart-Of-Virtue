@@ -5,6 +5,7 @@ import random  # a test patches the dice through this module's binding
 import src.states as states
 import src.positions as positions
 from ._base import (
+    UnavailableReason,
     weapon_scaled_power,
     apply_facing_damage,
     flat_arc_strike_damage,
@@ -33,6 +34,19 @@ def _living_hostile_in_arc(move):
         enemy.is_alive() and distance <= max_range
         for enemy, distance in move._hostiles_in_proximity()
     )
+
+
+def _arc_swing_unavailability(move):
+    """Why an arc swing (Sweep, HalberdSpin) is refused, or None (#627).
+
+    The weapon first, as their ``viable()`` checks it, then the arc itself.
+    """
+    code = Move._unavailability_code(move)
+    if code is not None:
+        return code
+    if _living_hostile_in_arc(move):
+        return None
+    return UnavailableReason.NO_ENEMY_IN_REACH
 
 
 class OverheadSmash(Move):
@@ -198,6 +212,9 @@ class Sweep(Move):
         if getattr(self.user.eq_weapon, "subtype", None) != "Polearm":
             return False
         return _living_hostile_in_arc(self)
+
+    def _unavailability_code(self):
+        return _arc_swing_unavailability(self)
 
     def evaluate(self):
         self.power = weapon_scaled_power(self.user, self.AREA_POWER_FACTOR)
@@ -403,6 +420,9 @@ class HalberdSpin(Move):
         if getattr(self.user.eq_weapon, "subtype", None) != "Polearm":
             return False
         return _living_hostile_in_arc(self)
+
+    def _unavailability_code(self):
+        return _arc_swing_unavailability(self)
 
     def evaluate(self):
         self.power = weapon_scaled_power(self.user, self.AREA_POWER_FACTOR)

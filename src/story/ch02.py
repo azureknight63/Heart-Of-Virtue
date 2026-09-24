@@ -37,6 +37,12 @@ _JEAN_SOLO = [("Jean", "left", "neutral")]
 _JEAN_GORRAN_ALLY = [("Jean", "left", "neutral"), ("Gorran", None, "neutral")]
 _JEAN_VOTHA_KRR = [("Jean", "left", "neutral"), ("Votha Krr", None, "neutral")]
 
+#: Where Ch02GuideToCitadel leaves Jean (issue #663): the Ecumerium tile whose
+#: "Jambo's Tent" passageway enters grondia-jambos_shop, so Votha Krr's
+#: directions end at the tent he just named. Pinned against the real map by
+#: tests/test_issue_663_jambo_tent_wayfinding.py.
+JAMBO_TENT_EXTERIOR = ("grondia", (12, 4))
+
 
 class AfterDefeatingLurker(Event):
     """
@@ -174,7 +180,7 @@ class Ch02GuideToCitadel(
         if self.player.skip_dialog:
             loot = [items.Antidote(5), items.Restorative(2)]
             self.player.add_items_to_inventory(loot)
-            self.player.teleport("grondia", (10, 5))
+            self.player.teleport(*JAMBO_TENT_EXTERIOR)
             self.needs_input = False
             self.completed = True
             self.tile.remove_event(self.name)
@@ -296,15 +302,14 @@ class Ch02GuideToCitadel(
                 "Even more astonishingly, the elder spoke in a deep, rumbling voice, which Jean "
                 "was able to understand."
             )
-            # Speaker id is "Elder" (unnamed) until he introduces himself below —
-            # matches the reveal already preserved in the legacy description text
-            # ("Elder: ..." then "Votha Krr: ..."). The identity swaps to
-            # "Votha Krr" on his self-introduction beat.
+            # He wears his real id (so his portrait art renders) from this first
+            # beat, but is captioned "???" until he introduces himself below,
+            # where a same-id enter op swaps the displayed name in place (#657).
             say(
                 "You are a friend of Gorran. You are welcome here.",
-                "Elder",
+                "Votha Krr",
                 "neutral",
-                enter=enter_op("Elder", side=None),
+                enter=enter_op("Votha Krr", side=None, name="???"),
             )
             react("Jean", "happy")
             narrate(
@@ -320,25 +325,25 @@ class Ch02GuideToCitadel(
                 "Gorran rumbled briefly in reply, then turned and strode out of the chamber.",
                 exit=[exit_op("Gorran", span=2)],
             )
-            react("Elder", "concerned")
+            react("Votha Krr", "concerned")
             narrate("The elder turned back to Jean, his expression serious.")
             narrate(
                 "Now having gotten a chance to look at the elder, Jean could see he was a bit "
                 "smaller in form than Gorran, though still quite large by human standards. "
-                "Rather than the craggy, harsh exterior of other Golemites, this elder had a "
-                "smooth, almost polished appearance. Many years of erosion had worn away the "
-                "rough edges of his form, much like stones in a riverbed. His eyes were deep-set "
+                "Where Gorran was solid and smooth, this elder was weathered like an old cliff "
+                "face — pitted, webbed with fine cracks, and draped across the shoulders and "
+                "crown in thick moss that glowed faintly green and gold, as if life had simply "
+                "moved into the places where the stone had given way. His eyes were deep-set "
                 "and wise, and they seemed to hold a depth of knowledge that spoke of centuries "
                 "of experience. He opened his mouth to speak."
             )
             say(
-                "Welcome, little one. I am Elder Votha Krr. Within this city, I serve on its "
+                "I am Elder Votha Krr. Within this city, I serve on its "
                 "council of leaders — though some among us are more foolish than others in how "
                 "much weight they give that title.",
                 "Votha Krr",
                 "neutral",
-                enter=enter_op("Votha Krr", side=None, transition="instant"),
-                leave=exit_op("Elder", transition="instant"),
+                enter=enter_op("Votha Krr", side=None, transition="instant", name="Votha Krr"),
             )
             narrate(
                 "With that, a rolling rumble of laughter erupted from the elder's mouth like the "
@@ -506,9 +511,22 @@ class Ch02GuideToCitadel(
             self.player.add_items_to_inventory(loot)
             narrate("With that, Votha Krr slowly got to his feet, his massive form towering over Jean.")
             say(
-                "May the earth guide your steps, Jean. You are a guest of our city. The "
-                "merchants of the Eastern Gate will have what you need for the road. Return to "
-                "me when you have dealt with the slimes.",
+                "That bundle will not see you through the pools. Before you go down, find "
+                "Jambo, the trader. His tent stands in the Ecumerium — our market — beneath "
+                "a painted sign. He sells what the pools will take from you.",
+                "Votha Krr",
+                "neutral",
+            )
+            say(
+                "He will tell you he is the finest healer in Grondia. He is certainly the "
+                "loudest.",
+                "Votha Krr",
+                "happy",
+            )
+            say("Jambo. The Ecumerium.", "Jean", "neutral")
+            say(
+                "May the earth guide your steps, Jean. You are a guest of our city. Return "
+                "to me when you have dealt with the slimes.",
                 "Votha Krr",
                 "neutral",
             )
@@ -519,14 +537,35 @@ class Ch02GuideToCitadel(
                 "curious",
             )
             narrate("He said it the same way he'd said it the first time. Like a door left open.")
+            narrate(
+                "The attendant who had brought the supplies beckoned, and Jean followed him "
+                "out of the council chamber, down through the Citadel's forecourt — past the "
+                "braziers and the carved reliefs of clan houses he could not read — and east "
+                "into the city."
+            )
+            narrate(
+                "The passages widened, and the murmur Jean had been half-hearing grew into "
+                "the full noise of trade. The Ecumerium opened beneath a high vaulted ceiling: "
+                "an arcade of stone counters and low booths, banners and signboards swinging "
+                "from iron hooks, the air thick with spice resin. Golemite merchants called "
+                "their wares in rumbling voices, and every stall Jean passed was cut from the "
+                "same patient stone."
+            )
+            narrate(
+                "Every stall but one. Among the counters stood a tent — weathered canvas, a "
+                "small iron bell hung beside its flap, and a hand-painted sign in bright, "
+                "uneven letters: \"Jambo Heals U.\" The attendant stopped before it, pointed once "
+                "at the tent flap, and waited until Jean nodded. Then he turned and went back "
+                "the way they had come."
+            )
             self.input_prompt = ""
             self.input_options = [{"value": "done", "label": "Continue"}]
             self._stage = 8
             return
 
-        # Stage 8 — Cleanup
+        # Stage 8 — Cleanup: leave Jean outside Jambo's tent (#663)
         if self._stage == 8:
-            self.player.teleport("grondia", (10, 5))
+            self.player.teleport(*JAMBO_TENT_EXTERIOR)
             self.needs_input = False
             self.completed = True
             self.tile.remove_event(self.name)
@@ -1091,6 +1130,12 @@ class Ch02GorranAtPools(Event):
 
     GATE_KEY = "gorran_at_pools"
 
+    #: Authored per placement: the Mineral Pools map runs this beat with an
+    #: exploration delay, and this __init__ takes neither kwarg, so they
+    #: arrive by post-construction setattr, which applies only declared
+    #: overrides (#651).
+    MAP_AUTHORED_OVERRIDES = {"delay_duration", "delay_mode"}
+
     def __init__(
         self, player, tile, params=None, repeat=False, name="Ch02GorranAtPools"
     ):
@@ -1263,6 +1308,12 @@ class Ch02FragmentReminder(Event):
     Attach to the arena tile alongside Ch02ArenaEntrance and
     AfterDefeatingKingSlime.
     """
+
+    #: Authored per placement: the Mineral Pools map runs this beat with an
+    #: exploration delay, and this __init__ takes neither kwarg, so they
+    #: arrive by post-construction setattr, which applies only declared
+    #: overrides (#651).
+    MAP_AUTHORED_OVERRIDES = {"delay_duration", "delay_mode"}
 
     def __init__(
         self,
@@ -1631,3 +1682,201 @@ class AfterKingSlimeReturn(Event):
             self.set_story_gate(self.GATE_KEY)
             complete_objective(self.player, OBJ_CH02_VOTHA_KRR)
             self.tile.remove_event(self.name)
+
+
+class JamboShopIntroEvent(Event):
+    """
+    Jambo introduces himself the first time Jean steps into one of his tents
+    (issue #664), and teaches the shop through his own patter: the potions he
+    always keeps, what he pays for Jean's goods, the back-room crate, and the
+    restock that turns both over.
+
+    Authored on the entrance tile of BOTH tents (``grondia-jambos_shop`` and
+    ``eastern-descent-jambos-tent``) behind one gate, so whichever tent Jean
+    enters first carries the introduction and the other never repeats it.
+
+    Every mechanical claim in the dialogue is pinned to the mechanic behind it
+    by ``tests/test_issue_664_jambo_shop_intro.py::TestTheIntroTellsTheTruth``
+    -- change the shop, and that test names the line that has become untrue.
+
+    Sets: ``jambo_shop_intro_done``.
+    """
+
+    GATE_KEY = "jambo_shop_intro_done"
+
+    def __init__(self, player, tile, params=None, repeat=False, name="JamboShopIntro"):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def process(self):
+        if not self.player.skip_dialog:
+            with_gorran = _find_gorran(_party(self.player)) is not None
+            begin_conversation(_JEAN_GORRAN_ALLY if with_gorran else _JEAN_SOLO)
+            narrate(
+                "The tent flap fell closed behind Jean and the noise outside went soft. "
+                "The air was warm and close — dried herbs, lamp oil, something spiced "
+                "simmering out of sight. Behind a battered counter, a wiry man in an "
+                "enormous turban looked up, and a grin spread across his face as if Jean "
+                "were the best news he'd had all week."
+            )
+            say(
+                "A customer! Come in, come in — mind the rugs, they are older than they "
+                "look. Welcome to Jambo Heals U — finest healer in Grondia, and anywhere "
+                "else Jambo pitches this tent!",
+                "Jambo",
+                "happy",
+                enter=enter_op("Jambo", emotion="happy"),
+            )
+            narrate("He tapped his own chest, then pointed at Jean.")
+            say(
+                "Jambo. Heals. U. The sign explains everything. And U has a name, yes?",
+                "Jambo",
+                "curious",
+            )
+            say("Jean.", "Jean", "neutral")
+            say("Jean! Good. Short. Easy for the ledger.", "Jambo", "happy")
+            if with_gorran:
+                narrate(
+                    "His eyes went past Jean to the Golemite filling the tent flap, "
+                    "and his grin did not falter for a moment."
+                )
+                say(
+                    "And the stone one. Jambo does not have a potion for stone. "
+                    "Jambo is thinking about it.",
+                    "Jambo",
+                    "curious",
+                )
+                narrate("Gorran did not move.")
+            narrate(
+                "Jambo looked him over the way a tailor looks over a torn coat — the "
+                "grime, the scrapes, the tired set of his shoulders — and clicked his "
+                "tongue."
+            )
+            say(
+                "Jambo sees a man who has been walking a long way on very little. This "
+                "is fixable. This is what Jambo does.",
+                "Jambo",
+                "neutral",
+            )
+            narrate(
+                "He swept a hand along the counter, where bottles stood in a careful row "
+                "like soldiers on parade."
+            )
+            # Restoratives/Draughts/Antidotes: JamboHealsU.always_stock.
+            say(
+                "Everything on the counter is for sale. Restoratives, Draughts, "
+                "Antidotes — these Jambo always keeps. Nobody should come to Jambo "
+                "hurting and leave the same. The rest of the counter is whatever the "
+                "caravans brought last.",
+                "Jambo",
+                "neutral",
+            )
+            say("And if I've got something to sell?", "Jean", "curious")
+            # Merchant sell_modifier 0.5; reputation shifts both buy and sell
+            # prices (ShopSerializer.get_effective_*_modifier), and chat is how
+            # reputation moves.
+            say(
+                "Then Jambo buys! Half of what a thing is worth. The other half pays "
+                "for the tent, the turban, and Jambo's good mood.",
+                "Jambo",
+                "happy",
+            )
+            say("Half.", "Jean", "skeptical")
+            say(
+                "Half is honest. Jambo has met merchants who say 'full price' and mean "
+                "'a quarter.' And friends of Jambo always do a little better — on both "
+                "sides of the counter. Jambo likes to talk. Jambo remembers who talks back.",
+                "Jambo",
+                "neutral",
+            )
+            narrate("He jerked a thumb over his shoulder, toward the back of the tent.")
+            # The storage tile's Crate (merchant "Jambo"); merchandise Jean
+            # carries to the counter joins the Buy list
+            # (_collect_player_merchandise), and leaving drops it where he
+            # stands (drop_merchandise_items) -- the flap is the only way out.
+            say(
+                "Now. The counter is only the front of Jambo's tent. In the back room "
+                "there is a crate — more stock than the counter can hold. If Jean finds "
+                "something back there he likes, he brings it here to the counter, and "
+                "Jambo puts a price on it. Simple.",
+                "Jambo",
+                "neutral",
+            )
+            say(
+                "But nothing walks out of Jambo's tent unpaid. Try it, and Jean will "
+                "find it waiting by the flap. Jambo is very trusting. The flap is not.",
+                "Jambo",
+                "happy",
+            )
+            # Periodic restock (update_goods) re-rolls the counter AND clears
+            # and refills the crate.
+            say(
+                "Last thing, the important one. Every so often the caravans come, and "
+                "Jambo turns everything over — counter and crate, both. What is here "
+                "today may be gone tomorrow. If Jean likes a thing, Jean should not "
+                "wait. Jambo says this as a friend.",
+                "Jambo",
+                "neutral",
+            )
+            narrate("He paused.")
+            say("Also as a merchant.", "Jambo", "happy")
+            say(
+                "I'd bet he's given that speech a thousand times. I'd bet he meant it every time.",
+                "Jean",
+                "neutral",
+                thought=True,
+            )
+            say("Now! Jambo talks, Jean shops. Look around, look around.", "Jambo", "happy")
+        self.set_story_gate(self.GATE_KEY)
+
+
+class JamboTentExitReminderEvent(Event):
+    """
+    Jean steps back out of Jambo's Grondia tent and remembers where he is
+    meant to be going: the Mineral Pools, southwest, as Votha Krr told him.
+
+    Authored on the Ecumerium tile the Tent Flap returns to
+    (``JAMBO_TENT_EXTERIOR``). Votha's teleport lands Jean on that same tile
+    *before* he has been inside, so the beat waits for
+    ``JamboShopIntroEvent.GATE_KEY`` -- the first time Jean is back on the
+    tile after the introduction is the first time he leaves the tent. Once
+    the pools are cleansed (``AfterDefeatingKingSlime.GATE_KEY``) the
+    reminder has nothing to point at and retires unheard.
+
+    Sets: ``jambo_tent_exit_reminder_done``.
+    """
+
+    GATE_KEY = "jambo_tent_exit_reminder_done"
+
+    def __init__(self, player, tile, params=None, repeat=False, name="JamboTentExitReminder"):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        if self.retire_if_gate_set():
+            return
+        if self.retire_if_gate_set(AfterDefeatingKingSlime.GATE_KEY):
+            return
+        if not self.gate_is_set(JamboShopIntroEvent.GATE_KEY):
+            return
+        self.pass_conditions_to_process()
+
+    def process(self):
+        if not self.player.skip_dialog:
+            begin_conversation(_JEAN_SOLO)
+            narrate(
+                "The tent flap dropped shut behind Jean, and the Ecumerium's noise "
+                "closed around him again — the rumble of Golemite bargaining, the creak "
+                "of signboards on their hooks. His pack sat heavier on his shoulders "
+                "than it had going in."
+            )
+            say(
+                "The pools. Votha said southwest, down beneath the city. The slimes "
+                "won't clear themselves out.",
+                "Jean",
+                "neutral",
+                thought=True,
+            )
+        self.set_story_gate(self.GATE_KEY)

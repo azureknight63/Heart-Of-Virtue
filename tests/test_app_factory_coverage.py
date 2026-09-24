@@ -930,6 +930,19 @@ class TestDebugRoutesGuard:
         app, _ = _make_app(config=_ProdConfig)
         assert "/api/debug/routes" not in {str(r) for r in app.url_map.iter_rules()}
 
+    def test_loot_pin_op_exists_only_under_testing(self):
+        """#642: the loot-pinning op rewrites an NPC's loot table, so it must
+        ride the same TESTING-only gate as the rest of the debug blueprint.
+        Asserted both ways, so the absence half cannot pass merely because
+        the route was never written."""
+        rule = "/api/debug/arena/loot"
+        testing_app, _ = _make_app(config=_FastTestConfig)
+        assert rule in {str(r) for r in testing_app.url_map.iter_rules()}
+        prod_app, _ = _make_app(config=_ProdConfig)
+        assert rule not in {str(r) for r in prod_app.url_map.iter_rules()}
+        resp = prod_app.test_client().post(rule, json={})
+        assert resp.status_code == 404
+
 
 # ---------------------------------------------------------------------------
 # /health -- unauthenticated, so what it says matters

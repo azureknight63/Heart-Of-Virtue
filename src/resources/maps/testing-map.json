@@ -1369,7 +1369,7 @@
                     "idle_message": "A burlap sack is sitting here.",
                     "hidden": false,
                     "hide_factor": 0,
-                    "discovery_message": " a burlap sack!",
+                    "discovery_message": "a burlap sack!",
                     "announce": "A burlap sack is sitting here.",
                     "keywords": [
                         "open",
@@ -2626,7 +2626,7 @@
                     "idle_message": "An offering box sits near the shrine.",
                     "hidden": false,
                     "hide_factor": 0,
-                    "discovery_message": " a container!",
+                    "discovery_message": "a container!",
                     "announce": "An offering box sits near the shrine.",
                     "keywords": [
                         "open",
@@ -3221,7 +3221,7 @@
                     "idle_message": "A chest wrapped in webbing sits in the corner.",
                     "hidden": false,
                     "hide_factor": 0,
-                    "discovery_message": " a container!",
+                    "discovery_message": "a container!",
                     "announce": "A chest wrapped in webbing sits in the corner.",
                     "keywords": [
                         "open",

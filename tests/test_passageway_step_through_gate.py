@@ -14,18 +14,18 @@ passageway's ``events_before``, and only then stores the pending event.
 
 LOOT a city gate and Jean put down everything he was carrying to sell.
 
-The gate is now ``Passageway.accepts_step_through(handler, action)``:
-``is_crossing_handler(handler)`` or an advertised keyword. The second half is
-not slack: a placement's name words resolve to ``enter`` (through the
-class-declared ``instance_keyword_aliases``, words of the NAME only, over three
-letters, alphabetic), so a placement that authors a crossing verb its name does
-not contain resolves to nothing. Three
-shipped ones do -- grondia (11, 5) ``inside``, grondia (15, 5) ``east`` and
-eastern-descent (0, 2) ``west``, two of them main-path city gates -- and they
-worked only because this arm ignored the handler. An authored keyword is the
-author saying "this verb uses it", which ``_verb_refusal`` already treats as
-authoritative, and issue #620's other half independently stops a map from
-nominating a handler at all.
+The gate is now ``Passageway.accepts_step_through(handler, action)``, which
+since #630 is ``is_crossing_handler(handler)`` alone. #620 shipped it with a
+second half -- "or the placement advertises the verb" -- because a
+placement's name words resolve to ``enter`` (through the class-declared
+``instance_keyword_aliases``, words of the NAME only, over three letters,
+alphabetic), so a crossing verb the name does not contain resolved to
+nothing. Three shipped ones do -- grondia (11, 5) ``inside``, grondia (15, 5)
+``east`` and eastern-descent (0, 2) ``west``, two of them main-path city
+gates. They now declare it in ``crossing_keywords``, which
+``instance_keyword_aliases`` maps to ``enter`` as it does the name words, so
+intent is stated rather than inferred from ``keywords``
+(tests/test_passageway_crossing_keywords.py).
 
 Both directions are checked here: the unadvertised allow-list verbs must arm
 nothing and drop nothing, and every verb a shipped passageway does advertise
@@ -246,15 +246,33 @@ def test_malformed_authored_keywords_advertise_only_whole_words(
 
 
 def test_a_bare_string_keyword_still_advertises_itself(game_service, passageway_world):
-    """The whole word still counts -- tolerance, not a new refusal."""
+    """The whole word still counts -- tolerance, not a new refusal. A bare
+    string ``keywords`` still authorizes the verb; with it declared a
+    crossing (#630), it crosses."""
     player, way = passageway_world
     way.keywords = "inside"
+    way.crossing_keywords = ["inside"]
 
     result = interact_with(game_service, player, way, "inside", {})
 
     assert _step_throughs(result) == [
         f"{PassagewayTransitionEvent.NAME_PREFIX}{way.name}"
     ], result
+
+
+def test_an_advertised_keyword_alone_does_not_cross(game_service, passageway_world):
+    """#630: the advertised half of the old gate is gone. The same verb,
+    advertised but not declared a crossing, arms nothing and drops nothing."""
+    player, way = passageway_world
+    way.keywords = "inside"
+    spy = _MerchandiseSpy(player)
+    session_data = {}
+
+    result = interact_with(game_service, player, way, "inside", session_data)
+
+    assert _step_throughs(result) == [], result
+    assert not session_data.get("pending_events"), session_data
+    assert spy.calls == 0
 
 
 # ---------------------------------------------------------------------------
@@ -277,13 +295,14 @@ def test_every_verb_the_placement_advertises_still_arms_the_crossing(
 
 
 def _shipped_passageway_keywords():
-    """``(map, coord, name, keyword)`` for every keyword every shipped
-    ``Passageway`` placement authors.
+    """``(map, coord, name, keyword, crossing_keywords)`` for every keyword
+    every shipped ``Passageway`` placement authors.
 
     Read out of the map JSON, so a map that starts authoring a new verb is
     exercised without anyone remembering to add it here. The three rows that
     make this test matter -- ``inside``, ``east``, ``west`` -- resolve to
-    nothing and are admitted by the advertised half of the gate alone.
+    nothing by name and cross only because the placement declares them in
+    ``crossing_keywords`` (#630).
     """
     rows = []
     for path, data in map_data():
@@ -293,9 +312,10 @@ def _shipped_passageway_keywords():
                 if ref is None or ref.class_name != "Passageway":
                     continue
                 name = ref.props.get("name")
+                crossing = tuple(ref.props.get("crossing_keywords") or ())
                 for keyword in ref.props.get("keywords") or []:
                     if isinstance(keyword, str):
-                        rows.append((path.name, coord, name, keyword))
+                        rows.append((path.name, coord, name, keyword, crossing))
     return rows
 
 
@@ -307,45 +327,55 @@ def test_the_shipped_keyword_population_is_real():
         f"only {len(_SHIPPED_KEYWORDS)} authored Passageway keywords found — "
         "the map scan has stopped matching"
     )
+    def _probe(name, crossing=()):
+        return Passageway(player=None, tile=None, crossing_keywords=list(crossing),
+                          **({"name": name} if name else {}))
+
+    # #630 dropped the `action in target.keywords` escape hatch this test used
+    # to keep load-bearing. What replaces it: the verbs the name does not
+    # contain are still in the maps (so `crossing_keywords` is load-bearing)...
+    by_name_only = [
+        row for row in _SHIPPED_KEYWORDS
+        if resolve_interaction(_probe(row[2]), row[3]) is None
+    ]
+    assert by_name_only, (
+        "no shipped passageway authors a crossing verb its name lacks any more; "
+        "crossing_keywords is no longer exercised by the shipped maps"
+    )
+    # ...and with the placement's declared crossing_keywords, none of them
+    # resolves to nothing: the gate needs no second half.
     unresolvable = [
         row for row in _SHIPPED_KEYWORDS
-        if resolve_interaction(
-            Passageway(player=None, tile=None, **({"name": row[2]} if row[2] else {})),
-            row[3],
-        ) is None
+        if resolve_interaction(_probe(row[2], row[4]), row[3]) is None
     ]
-    assert unresolvable, (
-        "no shipped passageway authors a keyword that resolves to nothing any "
-        "more, so the `action in target.keywords` half of the gate is no "
-        "longer load-bearing — if the maps were cleaned up, consider dropping "
-        "it (and the escape hatch it is) rather than deleting this assertion"
-    )
+    assert unresolvable == [], unresolvable
 
 
 @pytest.mark.parametrize(
-    "map_name,coord,name,keyword",
+    "map_name,coord,name,keyword,crossing",
     _SHIPPED_KEYWORDS,
     ids=[f"{r[0]}:{r[1]}:{r[3]}" for r in _SHIPPED_KEYWORDS],
 )
 def test_every_shipped_passageway_keyword_still_crosses(
-    game_service, map_name, coord, name, keyword
+    game_service, map_name, coord, name, keyword, crossing
 ):
     """The blocking case: two of these are main-path city gates.
 
     Built the way the loader builds them -- constructor kwargs first, then the
     authored ``keywords`` applied over whatever ``__init__`` derived -- because
-    that overwrite is exactly what makes ``inside``/``east``/``west`` reach the
-    gate at all.
+    that overwrite is what makes ``inside``/``east``/``west`` authorized at
+    all -- and the placement's ``crossing_keywords`` is what makes them cross.
     """
     player, game_map = live_world(coords=REACHABLE_WORLD_COORDS, start=(0, 0))
     tile = game_map[(0, 0)]
     way = plain_passageway(player, tile, name=name or "Passageway")
+    way.crossing_keywords = list(crossing)
     way.teleport_map, way.teleport_tile = REACHABLE_DESTINATION
     # This placement's own keywords. Keyed by where it sits, not by name
     # alone: every unnamed placement shares the name None, and grouping on
     # that pooled all of their keywords onto one probe.
     placement = (map_name, coord, name)
-    way.keywords = [k for m, c, n, k in _SHIPPED_KEYWORDS if (m, c, n) == placement]
+    way.keywords = [k for m, c, n, k, _x in _SHIPPED_KEYWORDS if (m, c, n) == placement]
     tile.objects_here = [way]
 
     result = interact_with(game_service, player, way, keyword, {})
@@ -366,7 +396,7 @@ def test_the_three_name_less_crossing_keywords_are_still_in_the_maps():
         ("grondia.json", "(15, 5)", "east"),
         ("eastern-descent.json", "(0,2)", "west"),
     }
-    found = {(m, c, k) for m, c, _n, k in _SHIPPED_KEYWORDS}
+    found = {(m, c, k) for m, c, _n, k, _x in _SHIPPED_KEYWORDS}
     assert anchors <= found, sorted(anchors - found)
 
 

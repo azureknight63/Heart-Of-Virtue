@@ -312,6 +312,7 @@ class TestLoquacityRecovery:
     def test_no_recovery_during_active_chat(self):
         svc = self._service()
         player = MagicMock()
+        player.in_combat = False  # chat is exploration-only
         player.__dict__["_active_chat_npc_id"] = "Mara"
         player.npc_chat_histories = {
             "Mara": {
@@ -344,6 +345,7 @@ class TestLoquacityRecovery:
             "conversation_ended": True,
         }
         player = MagicMock()
+        player.in_combat = False  # chat is exploration-only
         player.__dict__["_active_chat_npc_id"] = "Mara"
         svc._find_chat_npc = MagicMock(return_value=npc)
         svc._enrich_chat_result_with_relationship = lambda result, n: result
@@ -361,6 +363,7 @@ class TestLoquacityRecovery:
             "conversation_ended": False,
         }
         player = MagicMock()
+        player.in_combat = False  # chat is exploration-only
         player.__dict__["_active_chat_npc_id"] = "Mara"
         svc._find_chat_npc = MagicMock(return_value=npc)
         svc._enrich_chat_result_with_relationship = lambda result, n: result

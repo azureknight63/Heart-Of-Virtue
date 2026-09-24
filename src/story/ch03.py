@@ -4,6 +4,7 @@ Chapter 03 events
 
 from src.events import Event, gate_is_set, map_name_for_tile
 from src.functions import print_slow
+from src.story.ch02 import JamboShopIntroEvent
 from src.npc import Anvil
 from src.objects import Passageway
 from src.journal import (
@@ -32,6 +33,7 @@ _JEAN_MARA_GORRAN = [
     ("Mara", None, "neutral"),
     ("Gorran", None, "neutral"),
 ]
+_JEAN_GORRAN = [("Jean", "left", "neutral"), ("Gorran", None, "neutral")]
 _JEAN_DEVET = [("Jean", "left", "neutral"), ("Devet", None, "neutral")]
 _JEAN_GORRAN_LISS = [
     ("Jean", "left", "neutral"),
@@ -319,6 +321,94 @@ class CampEntryGreetingEvent(Event):
             "Ask around the nomad camp for a way across the river.",
             chapter=3,
         )
+
+
+class JamboTentNoticeEvent(Event):
+    """
+    Fires once on CampEntry (3,0) -- the tile Jambo's camp tent opens from --
+    right after CampEntryGreetingEvent (issue #663). The tent passageway used
+    to be one object among several in a long tile description; this beat
+    points Jean at it by name.
+
+    Authored after CampEntryGreetingEvent in the tile's events list and gated
+    on that event's GATE_KEY, so on first arrival the three beats on this tile
+    play in order -- smell, greeting, tent -- and the tent is never mentioned
+    before Liss has come and gone.
+
+    Branches on whether Jean has already met Jambo in Grondia
+    (``JamboShopIntroEvent.GATE_KEY``): a stranger's shop sign, or a familiar
+    one somewhere it has no business being yet.
+
+    Gate: 'camp_entry_greeting_done' must be set.
+    Sets: 'nomad_camp_jambo_tent_noticed'.
+    """
+
+    GATE_KEY = "nomad_camp_jambo_tent_noticed"
+
+    def __init__(
+        self, player, tile, params=None, repeat=False, name="JamboTentNotice"
+    ):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        if self.retire_if_gate_set():
+            return
+        if not self.gate_is_set(CampEntryGreetingEvent.GATE_KEY):
+            return
+        self.pass_conditions_to_process()
+
+    def process(self):
+        if not self.player.skip_dialog:
+            begin_conversation(_JEAN_GORRAN)
+            narrate(
+                "Just inside the boundary stakes, a little apart from the other tents, stood "
+                "a small tent — its canvas weathered, its sign hand-painted and cheerful: "
+                "JAMBO HEALS U."
+            )
+            if self.gate_is_set(JamboShopIntroEvent.GATE_KEY):
+                say("Jambo Heals U.", "Jean", "surprised")
+                say(
+                    "Same sign. Same tent, near enough. Last I saw him, he was "
+                    "selling potions in Grondia.",
+                    "Jean",
+                    "surprised",
+                )
+                say(
+                    "How does a man with that much stock get down a mountain "
+                    "before we do?",
+                    "Jean",
+                    "skeptical",
+                )
+                narrate(
+                    "Gorran made the low sound again. If it was an answer, it wasn't "
+                    "one Jean could use."
+                )
+                say(
+                    "Well. If he's here, he's selling. Worth a look before we cross.",
+                    "Jean",
+                    "neutral",
+                )
+            else:
+                say("'Jambo Heals U.'", "Jean", "curious")
+                say(
+                    "Somebody in this camp sells medicine — and has opinions about "
+                    "spelling.",
+                    "Jean",
+                    "happy",
+                )
+                say(
+                    "Worth a look before we cross. If that river's as cold as it "
+                    "sounds, I want more in my pack than good intentions.",
+                    "Jean",
+                    "neutral",
+                )
+                narrate(
+                    "Gorran's head turned toward the tent flap and stayed there a "
+                    "moment. Then he looked back at Jean, and waited."
+                )
+        self.set_story_gate(self.GATE_KEY)
 
 
 class MaraFirstContactEvent(Event):

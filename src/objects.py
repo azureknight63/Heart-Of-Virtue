@@ -179,7 +179,15 @@ class Object:
         "name", "description", "hidden", "hide_factor", "idle_message",
         "discovery_message", "aliases",
     }
-    MAP_AUTHORED_OVERRIDES = {"hidden", "hide_factor", "name", "description"}
+    # The prose and verb lists are overrides too (#651): most subclasses
+    # hardcode them in a zero-arg-style __init__, and every shipped legacy
+    # placement authors them -- 27 wall inscriptions' announce text, the
+    # Eastern Gate's "west" keyword -- through the post-construction sweep.
+    MAP_AUTHORED_OVERRIDES = {
+        "hidden", "hide_factor", "name", "description", "announce",
+        "idle_message", "discovery_message", "aliases", "keywords",
+        "action_aliases",
+    }
 
     #: ``{authored keyword: method name that implements it}``. Merged across
     #: the MRO by :func:`resolve_interaction`; empty means every keyword must
@@ -389,11 +397,7 @@ class WallSwitch(Object):
                 if not getattr(self.event_off, "repeat", False):
                     self.event_off = None
 
-    def push(self):
-        self.press()
-
-    def touch(self):
-        self.press()
+    push = touch = press
 
 
 class WallInscription(Object):
@@ -459,9 +463,7 @@ class WallInscription(Object):
         else:
             narrate(self.description)
 
-    def examine(self):
-        # Alias of read
-        self.read()
+    examine = read
 
 
 class Container(Object):
@@ -502,10 +504,14 @@ class Container(Object):
 
     # Issue #463: `inventory` is the nested-placeholder case the issue calls
     # out explicitly -- each element is itself an authored Item placeholder,
-    # resolved recursively. `state`/`revealed`/`possible_states` are
-    # deliberately excluded: state is derived from start_open then mutated at
-    # runtime (the classic "already opened" trap) and possible_states is a
-    # copied class constant -- none of these are authored data.
+    # resolved recursively. `revealed`/`possible_states` are deliberately
+    # excluded: possible_states is a copied class constant and revealed is
+    # runtime. `state` is mutated at runtime too (the classic "already
+    # opened" trap), and `start_open` is the preferred spelling -- but it IS
+    # an override, because fifteen shipped legacy placements (Grondia's
+    # shelves and stalls, the Fabricarium's Open Crate, both Remains) author
+    # an open container as `state: "opened"` with no start_open at all, and
+    # the legacy loader applies only declared props (#651).
     # `allowed_item_types` is stored under a different name than its
     # constructor kwarg (`allowed_subtypes`), so it's an override rather than
     # a param -- setattr doesn't care about the constructor's own names.
@@ -519,7 +525,9 @@ class Container(Object):
         "idle_message", "discovery_message", "nickname", "locked",
         "inventory", "events", "merchant", "stock_count", "open_message",
     }
-    MAP_AUTHORED_OVERRIDES = {"allowed_item_types", "inventory", "open_message"}
+    MAP_AUTHORED_OVERRIDES = {
+        "allowed_item_types", "inventory", "open_message", "state",
+    }
 
     @property
     def start_open(self) -> bool:
@@ -561,7 +569,7 @@ class Container(Object):
         hide_factor: int = 0,
         start_open: bool = False,
         idle_message: str = "A container is sitting here.",
-        discovery_message: str = " a container!",
+        discovery_message: str = "a container!",
         player: Player = None,
         tile: MapTile = None,
         nickname: str = "container",
@@ -912,7 +920,7 @@ class Crate(Container):
             events=events,
             merchant=merchant,
             allowed_subtypes=allowed_subtypes,
-            discovery_message=" a large wooden crate!",
+            discovery_message="a large wooden crate!",
             player=player,
             tile=tile,
             nickname="crate",
@@ -955,7 +963,7 @@ class Shelf(Container):
             events=events,
             merchant=merchant,
             allowed_subtypes=allowed_subtypes,
-            discovery_message=" a wooden shelf!",
+            discovery_message="a wooden shelf!",
             player=player,
             tile=tile,
             nickname="shelf",
@@ -992,7 +1000,7 @@ class Shrine(Object):
             name="Shrine",
             description=description,
             idle_message="There is an ornate shrine here.",
-            discovery_message=" a shrine!",
+            discovery_message="a shrine!",
             player=player,
             tile=tile,
         )
@@ -1039,7 +1047,7 @@ class HealingSpring(Object):
             name="Healing Spring",
             description=description,
             idle_message="There is a small spring bubbling here.",
-            discovery_message=" a healing spring!",
+            discovery_message="a healing spring!",
             player=player,
             tile=tile,
         )
@@ -1081,8 +1089,7 @@ class HealingSpring(Object):
         cprint("Jean now has Clean status!", "green")
         player.apply_state(states.Clean(player))
 
-    def wash(self, player):
-        self.clean(player)  # this is an alias for clean
+    wash = clean
 
 
 class Passageway(Object):
@@ -1100,6 +1107,7 @@ class Passageway(Object):
         "persist", "hidden", "hide_factor", "passthrough", "name",
         "description", "idle_message", "discovery_message", "demo_end",
         "demo_end_ready_flag", "locked_until_flag", "locked_message",
+        "crossing_keywords",
     }
     #: The export reads the gate key as authored, not through the property's
     #: validated fallback, so a passageway with no key of its own round-trips
@@ -1119,6 +1127,15 @@ class Passageway(Object):
     locked_until_flag = None
     locked_message = None
 
+    #: Extra verbs that CROSS this placement, beyond ``enter``, its delegators
+    #: and the words of its own name -- authored per placement (#630): the
+    #: Eastern Gates' ``east``/``west`` and The Guesthold's ``inside``. They
+    #: resolve to ``enter`` through ``instance_keyword_aliases``, exactly as
+    #: the name words do, so intent is declared rather than inferred from the
+    #: advertised ``keywords``. Class-level default for older saves and for
+    #: placements that author none.
+    crossing_keywords = ()
+
     #: The story key the shipped demo edge (the nomad-camp Ferry Landing) is
     #: gated on, written by chapter 3's ``MaraObservationEvent`` once Mara's
     #: conversation chain completes (issue #579); ``ch03.py`` imports it
@@ -1134,22 +1151,25 @@ class Passageway(Object):
     #: ``beta_end`` comes from ``end_demo``'s return value instead.
     DEMO_ENDED_FLAG = "demo_ended"
 
-    #: The verbs that DELEGATE to ``enter`` rather than aliasing it. Declared
-    #: once because ``__init__`` registers them as aliases and
-    #: ``CROSSING_METHOD_NAMES`` has to name the same set: adding a fourth
-    #: delegator and forgetting the tuple re-opens #552 exactly, with a
-    #: demo-end passageway crossable by a verb ``is_crossing_handler`` answers
-    #: False for. ``tests/test_object_action_dispatch_contract.py`` derives
-    #: the check from this attribute rather than a hand-kept list.
+    #: The class-level synonyms of ``enter`` (``go = leave = exit = enter``,
+    #: #626). Declared once because ``__init__`` registers them as
+    #: ``action_aliases`` and ``CROSSING_METHOD_NAMES`` has to name the same
+    #: set: adding a fourth crossing verb as its own METHOD and forgetting the
+    #: tuple re-opens #552 exactly, with a demo-end passageway crossable by a
+    #: verb ``is_crossing_handler`` answers False for.
+    #: ``tests/test_object_action_dispatch_contract.py`` derives the check from
+    #: this attribute rather than a hand-kept list.
     _DELEGATED_CROSSING_VERBS = ("go", "leave", "exit")
 
-    #: The methods that CROSS this passageway. The delegators above are
-    #: distinct bound methods, so an identity test against ``enter`` alone
-    #: answers False for all three -- which is how a demo-end passageway
-    #: stayed crossable by the only three verbs the shipped map authors
-    #: (#552). The authored name words (``ferry``, ``landing``) resolve to
-    #: ``enter`` itself (``instance_keyword_aliases``) and so answer through
-    #: that entry.
+    #: The methods that CROSS this passageway. Since #626 the three synonyms
+    #: are ``enter`` itself, so listing them is redundant today -- kept, so a
+    #: subclass that re-aliases one onto an override of its own still counts
+    #: as crossing. When they were distinct delegator methods an identity test
+    #: against ``enter`` alone answered False for all three -- which is how a
+    #: demo-end passageway stayed crossable by the only three verbs the shipped
+    #: map authors (#552). The authored name words (``ferry``, ``landing``)
+    #: resolve to ``enter`` itself (``instance_keyword_aliases``) and so answer
+    #: through that entry.
     CROSSING_METHOD_NAMES = ("enter", *_DELEGATED_CROSSING_VERBS)
 
     def __init__(
@@ -1168,11 +1188,12 @@ class Passageway(Object):
         name: str = "Passageway",
         description: str = "A passageway leading elsewhere is here.",
         idle_message: str = "There is a passageway here.",
-        discovery_message: str = " a passageway!",
+        discovery_message: str = "a passageway!",
         demo_end: bool = False,
         demo_end_ready_flag: str = None,
         locked_until_flag: str = None,
         locked_message: str = None,
+        crossing_keywords: list = None,
     ):
         aliases = [name.lower(), "passage"]
         super().__init__(
@@ -1192,6 +1213,16 @@ class Passageway(Object):
         for _word in type(self)._name_alias_words(name):
             # Advertised as data only. The word is instance-supplied; what it
             # means is fixed by `instance_keyword_aliases` on the class (#620).
+            if hasattr(self, _word) or _word in self.action_aliases:
+                continue
+            self.action_aliases.append(_word)
+            self.keywords.append(_word)
+        # Stored as authored; `_crossing_words` validates it where it is read,
+        # since the legacy loader and a save both write this attribute.
+        self.crossing_keywords = crossing_keywords
+        # Advertised so the client renders the button and the API authorizes
+        # the verb. What it MEANS is fixed by `instance_keyword_aliases`.
+        for _word in type(self)._crossing_words(crossing_keywords):
             if hasattr(self, _word) or _word in self.action_aliases:
                 continue
             self.action_aliases.append(_word)
@@ -1254,8 +1285,31 @@ class Passageway(Object):
         cleaned = str(name or "").lower().replace("'s", "").replace("'", "")
         return [w for w in cleaned.split() if len(w) > 3 and w.isalpha()]
 
+    @staticmethod
+    def _crossing_words(value):
+        """The whole, lower-case, alphabetic words ``crossing_keywords`` declares.
+
+        The value is map-authored or save-restored, so it is not trusted to be
+        a list: ``None`` declares nothing, a bare string is one word (never a
+        haystack), and non-strings, blanks and anything with a non-letter are
+        ignored. Verbs reach the API lower-cased, so the words are too.
+        """
+        if isinstance(value, str):
+            value = [value]
+        if not isinstance(value, (list, tuple)):
+            return []
+        words = []
+        for word in value:
+            if not isinstance(word, str):
+                continue
+            word = word.strip().lower()
+            if word.isalpha() and word not in words:
+                words.append(word)
+        return words
+
     def instance_keyword_aliases(self):
-        """``{authored word: method name}`` for this placement's own name words.
+        """``{authored word: method name}`` for this placement's own name words
+        and its declared ``crossing_keywords``.
 
         Read by :func:`resolve_interaction`. Declared on the CLASS on purpose:
         the words are instance data and a map or a save may influence them, but
@@ -1267,14 +1321,21 @@ class Passageway(Object):
         instance ``__dict__`` entry of that name -- a map prop, a save --
         win the lookup and be called here.
         """
-        return {word: "enter" for word in type(self)._name_alias_words(self.name)}
+        cls = type(self)
+        words = cls._name_alias_words(self.name) + cls._crossing_words(
+            getattr(self, "crossing_keywords", None)
+        )
+        # A word the class already declares keeps its own meaning:
+        # resolve_interaction consults this table only for undeclared names,
+        # and it must not advertise a crossing it would never dispatch.
+        return {word: "enter" for word in words if not hasattr(cls, word)}
 
     def is_crossing_handler(self, handler):
         """True when ``handler`` is one of this passageway's crossing methods.
 
         The engine owns which verbs mean "use it", so callers that need to
         treat a crossing specially -- the API's demo-end gate -- ask here
-        rather than naming ``enter`` and silently missing its delegators.
+        rather than naming ``enter`` and silently missing its synonyms.
         """
         if handler is None:
             return False
@@ -1301,15 +1362,16 @@ class Passageway(Object):
         The API's confirmation arm asks here rather than spelling the rule
         itself, so the dispatch contract test can ask the same question
         instead of retyping it (a retyped mirror has failed open twice).
-        Two ways in, because neither alone is right: the verb crosses
-        (``is_crossing_handler``: ``enter``, its delegators, the name words),
-        or the placement ADVERTISES it -- an authored keyword is the author
-        saying "this verb uses it", which is how grondia's ``inside``/``east``
-        and eastern-descent's ``west`` cross while resolving to nothing. What
-        stays out is exactly the hole: an allow-listed verb the placement
-        never advertised.
+        Only a verb that CROSSES qualifies (``is_crossing_handler``: ``enter``,
+        its class-level aliases, the name words and the declared
+        ``crossing_keywords``). Advertising a verb in ``keywords`` is not
+        enough (#630): that half used to admit any advertised verb, including
+        one authored for another purpose, and arming the crossing drops Jean's
+        unpaid merchandise and runs ``events_before`` before he confirms.
+        ``action`` is kept for the callers' shape; the verb has already been
+        resolved to ``handler``.
         """
-        return self.is_crossing_handler(handler) or action in advertised_keywords(self)
+        return self.is_crossing_handler(handler)
 
     def is_demo_edge(self, ready_flag=None):
         """True when this passageway is where the demo stops -- and, given
@@ -1465,17 +1527,11 @@ class Passageway(Object):
             return f"the {name[4:]}"
         return f"the {name.lower()}"
 
-    # Each hands back enter's verdict: on a demo-end passageway that is
-    # whether THIS call closed the demo, and a delegator that dropped it
-    # would read as "declined" to anyone dispatching the resolved handler.
-    def go(self, player):
-        return self.enter(player)
-
-    def leave(self, player):
-        return self.enter(player)
-
-    def exit(self, player):
-        return self.enter(player)
+    # Class-level aliases, not delegator methods (#626): each IS `enter`, so it
+    # hands back enter's verdict (on a demo-end passageway, whether THIS call
+    # closed the demo) and #615's handler grouping folds it into ENTER. A
+    # subclass overriding `enter` must re-alias these or they keep the base.
+    go = leave = exit = enter
 
 
 class MarketBell(Object):
@@ -1519,8 +1575,7 @@ class MarketBell(Object):
                 self.event = None
         functions.await_input()
 
-    def use(self):
-        self.ring()
+    use = ring
 
 
 class Fountain(Object):
@@ -1567,8 +1622,7 @@ class Fountain(Object):
         narrate("The craftsmanship of the fountain is simple but pleasant.")
         functions.await_input()
 
-    def use(self):  # alias
-        self.drink()
+    use = drink
 
 
 class StreetLantern(Object):
@@ -1641,8 +1695,7 @@ class StreetLantern(Object):
                 self.event_off = None
         functions.await_input()
 
-    def extinguish(self):
-        self.douse()
+    extinguish = douse
 
     def inspect(self):
         narrate(self.description)
@@ -1700,8 +1753,7 @@ class NoticeBoard(Object):
                 self._read_once = True
         functions.await_input()
 
-    def use(self):
-        self.read()
+    use = read
 
 
 class PrayerCandleRack(Object):
@@ -1751,8 +1803,7 @@ class PrayerCandleRack(Object):
                 self.event = None
         functions.await_input()
 
-    def use(self):
-        self.pray()
+    use = pray
 
 
 class MarketGong(Object):
@@ -1791,14 +1842,7 @@ class MarketGong(Object):
                 self.event = None
         functions.await_input()
 
-    def hit(self):
-        self.strike()
-
-    def bang(self):
-        self.strike()
-
-    def use(self):
-        self.strike()
+    hit = bang = use = strike
 
 
 class GeminateGeode(Object):
@@ -1825,7 +1869,7 @@ class GeminateGeode(Object):
                 "sequence from the Atrium etching: blue, amber, grey."
             ),
             idle_message="A hollow geode rests on a stone pedestal here, waiting.",
-            discovery_message=" a hollow geode resting on a stone pedestal!",
+            discovery_message="a hollow geode resting on a stone pedestal!",
             player=player,
             tile=tile,
             aliases=["geode", "hollow geode", "pedestal", "stone pedestal"],
@@ -1881,14 +1925,7 @@ class GeminateGeode(Object):
             self.tile.objects_here.remove(self)
         functions.await_input()
 
-    def insert(self, player=None):
-        self.place(player)
-
-    def solve(self, player=None):
-        self.place(player)
-
-    def use(self, player=None):
-        self.place(player)
+    insert = solve = use = place
 
     def examine(self):
         narrate(self.description)
@@ -2025,8 +2062,7 @@ class WaterBarrel(Object):
     def examine(self):
         narrate(self.description)
 
-    def use(self):
-        self.drink()
+    use = drink
 
 
 class WashingBasin(Object):
@@ -2064,14 +2100,12 @@ class WashingBasin(Object):
         cprint("Jean now has Clean status!", "green")
         functions.await_input()
 
-    def clean(self):
-        self.wash()
+    clean = wash
 
     def examine(self):
         narrate(self.description)
 
-    def use(self):
-        self.wash()
+    use = wash
 
 
 class DryingRack(Object):
@@ -2148,14 +2182,8 @@ class DryingRack(Object):
         self._current_item = None
         functions.await_input()
 
-    def loot(self):
-        self.take()
-
-    def examine(self):
-        self.check()
-
-    def use(self):
-        self.take()
+    loot = use = take
+    examine = check
 
 
 class SupplyTent(Container):
@@ -2236,11 +2264,7 @@ class RiverCrossingMarker(Object):
         narrate(random.choice(self._MARKER_TEXT))
         functions.await_input()
 
-    def examine(self):
-        self.read()
-
-    def use(self):
-        self.read()
+    examine = use = read
 
 
 class CampBanner(Object):
@@ -2291,14 +2315,7 @@ class CampBanner(Object):
         narrate(random.choice(self._BANNER_LINES))
         functions.await_input()
 
-    def read(self):
-        self.examine()
-
-    def look(self):
-        self.examine()
-
-    def use(self):
-        self.examine()
+    read = look = use = examine
 
 
 class TravelersLogbook(Object):
@@ -2359,8 +2376,4 @@ class TravelersLogbook(Object):
         narrate(random.choice(self._ENTRIES))
         functions.await_input()
 
-    def examine(self):
-        self.read()
-
-    def use(self):
-        self.read()
+    examine = use = read

@@ -7,8 +7,9 @@ Requires the arena config:
 
 Flow:
   1. Stack the Fodder Pit through the test-only debug endpoints: two extra
-     Slimes, every enemy aggro and at 1 HP, so the fight is short and at least
-     one drop is all but certain (Slime loot is rolled, not scripted).
+     Slimes, every enemy aggro and at 1 HP, so the fight is short, and every
+     enemy's drop pinned to one ``_PINNED_DROP`` (``/api/debug/arena/loot``,
+     #642), so the fight always drops a name Jean also carries.
   2. Fight to victory and read the drops from ``end_state.items_dropped``.
   3. Plant a twin: Jean drops his own object of a dropped name on the fight
      tile (#621).
@@ -23,9 +24,10 @@ Flow:
   7. Walk back and check, by wire id, that exactly the fight's objects left
      the tile and the twin did not (#621).
 
-Steps 3, 4 and 7 need a twin candidate among the drops, which the loot roll
-does not guarantee; a run without one prints that the identity half was not
-exercised.
+Steps 3, 4 and 7 need a twin candidate among the drops. The pinned drop is
+one: the config starts Jean carrying a single ``_PINNED_DROP``. A run that
+still finds none (the config changed under the scenario) prints that the
+identity half was not exercised.
 """
 
 import os
@@ -42,6 +44,10 @@ _MAX_ROUNDS = 50
 _WALK_AWAY = "west"
 #: And the return trip.
 _BACK_TO_THE_FIGHT = "east"
+#: The item class every Fodder Pit enemy is pinned to drop. It must be one
+#: the victory-loot config starts Jean carrying exactly one of, so he can plant
+#: his own as the twin (steps 3, 4 and 7).
+_PINNED_DROP = "Restorative"
 
 
 class VictoryLootScenario(Scenario):
@@ -87,28 +93,10 @@ class VictoryLootScenario(Scenario):
         if not won:
             return bugs
 
-        resp = client.get("/api/combat/status")
-        bug = self._check_status(resp, 200, "/api/combat/status", "GET",
-                                 "Combat status after the victory")
-        if bug:
-            bugs.append(bug)
+        drop_names, read_bugs = self._read_victory_drops(client)
+        bugs += read_bugs
+        if drop_names is None:
             return bugs
-        end_state = client.parse(resp).get("end_state") or {}
-        if end_state.get("status") != "victory":
-            bugs.append(self._bug(
-                title="No victory end_state after winning a fight",
-                severity=BugSeverity.HIGH,
-                category=BugCategory.WRONG_RESPONSE,
-                endpoint="/api/combat/status",
-                method="GET",
-                expected="end_state.status == 'victory' until the loot is resolved",
-                actual=f"end_state = {end_state!r}",
-                response=resp,
-            ))
-            return bugs
-        drop_names = sorted({
-            d["name"] for d in end_state.get("items_dropped", []) if d.get("name")
-        })
 
         # 3. Plant a twin the fight did not drop ---------------------------
         floor_before = self._floor(client)
@@ -125,22 +113,72 @@ class VictoryLootScenario(Scenario):
             bugs += self._provoke_a_restack(client, drop_names)
 
         # 5. Walk away -----------------------------------------------------
-        body = {"direction": _WALK_AWAY}
-        resp = client.post("/api/world/move", json=body)
-        bug = self._check_status(resp, 200, "/api/world/move", "POST",
-                                 "Walk away from the won fight", request_body=body)
+        bug = self._move(client, _WALK_AWAY, "Walk away from the won fight")
         if bug:
             bugs.append(bug)
             return bugs
 
         # 6. Collect -------------------------------------------------------
+        collect_bugs, resolved = self._collect_and_verify(client, drop_names)
+        bugs += collect_bugs
+        if not resolved:
+            return bugs
+
+        # 7. Identity ------------------------------------------------------
+        bugs += self._check_only_the_fights_objects_left(
+            client, fight_drop_ids, twin_id
+        )
+
+        if not drop_names:
+            print(
+                "[VictoryLootScenario] Nothing dropped this run, so only the "
+                "victory resolve was checked, not loot delivery."
+            )
+        return bugs
+
+    # ------------------------------------------------------------------
+    # Steps
+    # ------------------------------------------------------------------
+
+    def _read_victory_drops(self, client: GameClient):
+        """Step 2's read-back: ``(sorted drop names, bugs)`` from the victory
+        ``end_state``, or ``(None, bugs)`` when there is no victory to read."""
+        resp = client.get("/api/combat/status")
+        bug = self._check_status(resp, 200, "/api/combat/status", "GET",
+                                 "Combat status after the victory")
+        if bug:
+            return None, [bug]
+        end_state = client.parse(resp).get("end_state") or {}
+        if end_state.get("status") != "victory":
+            return None, [self._bug(
+                title="No victory end_state after winning a fight",
+                severity=BugSeverity.HIGH,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/combat/status",
+                method="GET",
+                expected="end_state.status == 'victory' until the loot is resolved",
+                actual=f"end_state = {end_state!r}",
+                response=resp,
+            )]
+        drop_names = sorted({
+            d["name"] for d in end_state.get("items_dropped", []) if d.get("name")
+        })
+        return drop_names, []
+
+    def _collect_and_verify(self, client: GameClient, drop_names):
+        """Step 6: collect every drop from one tile away, then check it was
+        delivered, is in the inventory, and closed the victory.
+
+        Returns ``(bugs, resolved)``; ``resolved`` is False only when the
+        collect request itself failed, which leaves nothing for step 7.
+        """
+        bugs: List[BugReport] = []
         body = {"item_names": drop_names}
         resp = client.post("/api/combat/collect-loot", json=body)
         bug = self._check_status(resp, 200, "/api/combat/collect-loot", "POST",
                                  "Collect loot after walking away", request_body=body)
         if bug:
-            bugs.append(bug)
-            return bugs
+            return [bug], False
         result = client.parse(resp)
         collected = set(result.get("collected", []))
         if not result.get("success") or collected != set(drop_names):
@@ -190,35 +228,38 @@ class VictoryLootScenario(Scenario):
                 actual="end_state still present",
                 response=resp,
             ))
-
-        # 7. Identity ------------------------------------------------------
-        bugs += self._check_only_the_fights_objects_left(
-            client, fight_drop_ids, twin_id
-        )
-
-        if not drop_names:
-            print(
-                "[VictoryLootScenario] Nothing dropped this run, so only the "
-                "victory resolve was checked, not loot delivery."
-            )
-        return bugs
+        return bugs, True
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
-    def _in_the_arena(self, client: GameClient) -> bool:
+    def _room(self, client: GameClient) -> Optional[dict]:
+        """The ``room`` of GET /api/world, or None when the request failed."""
         resp = client.get("/api/world")
         if resp.status_code != 200:
+            return None
+        return client.parse(resp).get("room", {})
+
+    def _move(self, client: GameClient, direction: str, why: str) -> Optional[BugReport]:
+        """POST /api/world/move; the bug if it did not answer 200."""
+        body = {"direction": direction}
+        resp = client.post("/api/world/move", json=body)
+        return self._check_status(resp, 200, "/api/world/move", "POST",
+                                  why, request_body=body)
+
+    def _in_the_arena(self, client: GameClient) -> bool:
+        room = self._room(client)
+        if room is None:
             return False
-        room = client.parse(resp).get("room", {})
         return (
             room.get("map_name") == "combat-testing-arena"
             and (room.get("x"), room.get("y")) == (0, 0)
         )
 
     def _stack_the_pit(self, client: GameClient) -> List[BugReport]:
-        """Add Slimes, drop every Fodder Pit enemy to 1 HP (aggro), restore Jean."""
+        """Add Slimes; every Fodder Pit enemy to 1 HP (aggro) with its drop
+        pinned to ``_PINNED_DROP``; restore Jean."""
         for _ in range(_EXTRA_SLIMES):
             body = {"arena": _ARENA, "cls_name": "Slime"}
             resp = client.post("/api/debug/arena/add", json=body)
@@ -248,6 +289,9 @@ class VictoryLootScenario(Scenario):
                                      "Weaken a Fodder Pit enemy", request_body=body)
             if bug:
                 return [bug]
+            bug = self._pin_the_drop(client, index)
+            if bug:
+                return [bug]
 
         # Jean spawns below his maximum fatigue, and the shared move picker
         # never Rests, so top him up for one swing per enemy (plus misses).
@@ -256,16 +300,42 @@ class VictoryLootScenario(Scenario):
                                  "Restore Jean before the fight")
         return [bug] if bug else []
 
+    def _pin_the_drop(self, client: GameClient, index: int) -> Optional[BugReport]:
+        """Pin the enemy at ``index`` to drop one ``_PINNED_DROP`` (#642).
+
+        A rolled table can drop only Gold or a random equipment piece, and
+        neither has a twin Jean could plant, so an unpinned run could skip the
+        identity half entirely.
+        """
+        body = {"arena": _ARENA, "index": index, "item": _PINNED_DROP}
+        resp = client.post("/api/debug/arena/loot", json=body)
+        bug = self._check_status(resp, 200, "/api/debug/arena/loot", "POST",
+                                 "Pin a Fodder Pit enemy's drop", request_body=body)
+        if bug:
+            return bug
+        if not client.parse(resp).get("success"):
+            return self._bug(
+                title="Pinning a Fodder Pit enemy's drop was refused",
+                severity=BugSeverity.MEDIUM,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/debug/arena/loot",
+                method="POST",
+                expected=f"success pinning {_PINNED_DROP}",
+                actual=f"{client.parse(resp)!r}",
+                response=resp,
+                request_body=body,
+            )
+        return None
+
     def _floor(self, client: GameClient) -> Optional[dict]:
         """``{wire id: name}`` for everything on the tile Jean stands on.
 
         Ids, not names: the whole point of the identity half of this scenario
         is that two objects can share a name (issue #621).
         """
-        resp = client.get("/api/world")
-        if resp.status_code != 200:
+        room = self._room(client)
+        if room is None:
             return None
-        room = client.parse(resp).get("room", {})
         return {
             i["id"]: i.get("name")
             for i in room.get("items", [])
@@ -338,10 +408,7 @@ class VictoryLootScenario(Scenario):
         return planted[0], []
 
     def _walk_back_to_the_fight(self, client: GameClient) -> List[BugReport]:
-        body = {"direction": _BACK_TO_THE_FIGHT}
-        resp = client.post("/api/world/move", json=body)
-        bug = self._check_status(resp, 200, "/api/world/move", "POST",
-                                 "Walk back to the fight tile", request_body=body)
+        bug = self._move(client, _BACK_TO_THE_FIGHT, "Walk back to the fight tile")
         return [bug] if bug else []
 
     def _check_only_the_fights_objects_left(

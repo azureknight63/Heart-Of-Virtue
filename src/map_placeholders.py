@@ -253,6 +253,68 @@ def authored_override_names(cls):
     return _collect_class_attr(cls, "MAP_AUTHORED_OVERRIDES", as_set=True)
 
 
+#: Constructor params the engine injects itself and map data may never
+#: supply: the live Player and the MapTile a placement sits on. A map that
+#: could author them could plant a nested engine instance as either
+#: back-reference (#651 scrub follow-up).
+ENGINE_INJECTED_PARAMS = frozenset({"player", "tile"})
+
+
+def legacy_init_kwarg_allowed(cls, key):
+    """True when a legacy full-dump prop ``key`` may be passed to
+    ``cls.__init__``: any name the signature takes, except an engine
+    back-reference or a behaviour-shadowing name.
+
+    Wider than the setattr sweep on purpose: shipped maps pass undeclared
+    constructor args (a Consumable's required ``maintype``/``subtype``), and
+    the constructor decides how each is stored. What map data may never do is
+    hand it the engine's own ``player``/``tile`` (#651 scrub follow-up)."""
+    return (
+        isinstance(key, str)
+        and key in _init_param_names(cls)
+        and key not in ENGINE_INJECTED_PARAMS
+        and not secure_pickle.shadows_class_behaviour(cls, key)
+    )
+
+
+def legacy_prop_allowed(cls, key, constructed=True):
+    """True when a legacy full-dump prop ``key`` may be ``setattr``'d onto a
+    freshly built ``cls`` instance (issue #651).
+
+    The legacy loaders (``Universe._deserialize_saved_instance`` and the Map
+    Editor's ``load_map``) used to apply every prop in a dump. They now accept
+    exactly what the placeholder path accepts for the same concrete class:
+    a declared override (``MAP_AUTHORED_OVERRIDES``), or a declared
+    constructor param its own ``__init__`` takes (``MAP_AUTHORED_PARAMS`` and
+    the signature). A constructor param is re-applied after construction
+    because a dump is order-sensitive -- ``Container``'s ``start_open``
+    setter rewrites ``state`` -- and the legacy loader always re-applied it.
+
+    ``constructed=False`` is the loader's ``cls.__new__`` fallback: the
+    authored kwargs never reached ``__init__``, so any name the signature
+    takes is applied here instead, as the constructor would have -- except
+    ``ENGINE_INJECTED_PARAMS``, which map data may never supply on any path:
+    a map chooses the fallback just by authoring a prop that makes
+    ``__init__`` raise (#651 scrub follow-up).
+
+    A name that would shadow behaviour the class declares is never allowed,
+    whatever the declarations say (#620). Anything else is dropped silently,
+    as ``instantiate_placeholder`` drops an undeclared override: a full dump
+    carries runtime state (``target``, ``thread``, ``known_moves``) in every
+    placement, so a warning per key would be noise, not signal.
+    """
+    if not isinstance(key, str) or key in ENGINE_INJECTED_PARAMS:
+        return False
+    if secure_pickle.shadows_class_behaviour(cls, key):
+        return False
+    if key in authored_override_names(cls):
+        return True
+    signature = _init_param_names(cls)
+    if key in authored_param_names(cls) and key in signature:
+        return True
+    return not constructed and key in signature
+
+
 def authored_attr_aliases(cls):
     """Return the ``{authored_name: actual_attribute_name}`` map for ``cls``.
 
@@ -485,7 +547,10 @@ def instantiate_placeholder(payload, *, player=None, tile=None, _depth=0):
 
     authored = authored_param_names(cls)
     sig_names = _init_param_names(cls)
-    kwargs = {k: v for k, v in ctor_values.items() if k in authored and k in sig_names}
+    kwargs = {
+        k: v for k, v in ctor_values.items()
+        if k in authored and k in sig_names and k not in ENGINE_INJECTED_PARAMS
+    }
     if "player" in sig_names and "player" not in kwargs and player is not None:
         kwargs["player"] = player
     if "tile" in sig_names and "tile" not in kwargs and tile is not None:

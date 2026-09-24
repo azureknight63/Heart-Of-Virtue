@@ -226,6 +226,64 @@ class TestNpcChatEndAndHistory:
         assert result == {"success": True, "data": {"conversation_count": 3}}
         assert "_active_chat_npc_id" not in player.__dict__
 
+    def test_late_end_for_a_previous_npc_keeps_the_next_npcs_marker(
+        self, game_service, player, tile
+    ):
+        """#637: a panel closed after its /open resolved sends a late /end that
+        can land after the next NPC's /open. It must not clear that marker."""
+        tile.npcs_here = [
+            ChattyNPC(name="Mara", open_result={"success": True, "npc_key": "Mara"}),
+            ChattyNPC(name="Gorran", open_result={"success": True, "npc_key": "Gorran"}),
+        ]
+        game_service.npc_chat_open(player, "Mara")
+        game_service.npc_chat_open(player, "Gorran")
+
+        game_service.npc_chat_end(player, "Mara")
+
+        assert player.__dict__.get("_active_chat_npc_id") == "Gorran"
+
+        game_service.npc_chat_end(player, "Gorran")
+
+        assert "_active_chat_npc_id" not in player.__dict__
+
+    def test_an_empty_key_end_during_an_open_keeps_its_marker(
+        self, game_service, player, tile
+    ):
+        """While an /open is composing the stored key is the pending "" --
+        an /end carrying an empty key must not match it and clear it."""
+
+        class RacingNPC(ChattyNPC):
+            def chat_open(self, player):
+                game_service.npc_chat_end(player, "")
+                return super().chat_open(player)
+
+        tile.npcs_here = [
+            RacingNPC(name="Gorran", open_result={"success": True, "npc_key": "Gorran"}),
+        ]
+        game_service.npc_chat_open(player, "Gorran")
+
+        assert player.__dict__.get("_active_chat_npc_id") == "Gorran"
+
+    def test_late_end_landing_during_the_next_open_keeps_its_marker(
+        self, game_service, player, tile
+    ):
+        """#637: /end is not behind the chat-turn lock, so under eventlet A's
+        late /end can arrive while B's chat_open is still composing."""
+
+        class RacingNPC(ChattyNPC):
+            def chat_open(self, player):
+                game_service.npc_chat_end(player, "Mara")
+                return super().chat_open(player)
+
+        tile.npcs_here = [
+            ChattyNPC(name="Mara", open_result={"success": True, "npc_key": "Mara"}),
+            RacingNPC(name="Gorran", open_result={"success": True, "npc_key": "Gorran"}),
+        ]
+        game_service.npc_chat_open(player, "Mara")
+        game_service.npc_chat_open(player, "Gorran")
+
+        assert player.__dict__.get("_active_chat_npc_id") == "Gorran"
+
     def test_end_on_an_unknown_npc_reports_zero(self, game_service, player):
         player.npc_chat_histories = {}
         assert game_service.npc_chat_end(player, "Nobody") == {
