@@ -885,6 +885,9 @@
           "count": 3,
           "spawned_npcs": []
         }
+      },
+      {
+        "class": "story.ch02.JamboTentExitReminderEvent"
       }
     ],
     "items": [],

@@ -1829,3 +1829,54 @@ class JamboShopIntroEvent(Event):
             )
             say("Now! Jambo talks, Jean shops. Look around, look around.", "Jambo", "happy")
         self.set_story_gate(self.GATE_KEY)
+
+
+class JamboTentExitReminderEvent(Event):
+    """
+    Jean steps back out of Jambo's Grondia tent and remembers where he is
+    meant to be going: the Mineral Pools, southwest, as Votha Krr told him.
+
+    Authored on the Ecumerium tile the Tent Flap returns to
+    (``JAMBO_TENT_EXTERIOR``). Votha's teleport lands Jean on that same tile
+    *before* he has been inside, so the beat waits for
+    ``JamboShopIntroEvent.GATE_KEY`` -- the first time Jean is back on the
+    tile after the introduction is the first time he leaves the tent. Once
+    the pools are cleansed (``AfterDefeatingKingSlime.GATE_KEY``) the
+    reminder has nothing to point at and retires unheard.
+
+    Sets: ``jambo_tent_exit_reminder_done``.
+    """
+
+    GATE_KEY = "jambo_tent_exit_reminder_done"
+
+    def __init__(self, player, tile, params=None, repeat=False, name="JamboTentExitReminder"):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        if self.retire_if_gate_set():
+            return
+        if self.retire_if_gate_set(AfterDefeatingKingSlime.GATE_KEY):
+            return
+        if not self.gate_is_set(JamboShopIntroEvent.GATE_KEY):
+            return
+        self.pass_conditions_to_process()
+
+    def process(self):
+        if not self.player.skip_dialog:
+            begin_conversation(_JEAN_SOLO)
+            narrate(
+                "The tent flap dropped shut behind Jean, and the Ecumerium's noise "
+                "closed around him again — the rumble of Golemite bargaining, the creak "
+                "of signboards on their hooks. His pack sat heavier on his shoulders "
+                "than it had going in."
+            )
+            say(
+                "The pools. Votha said southwest, down beneath the city. The slimes "
+                "won't clear themselves out.",
+                "Jean",
+                "neutral",
+                thought=True,
+            )
+        self.set_story_gate(self.GATE_KEY)

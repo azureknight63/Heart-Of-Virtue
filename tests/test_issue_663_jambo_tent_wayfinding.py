@@ -329,3 +329,62 @@ class TestNomadCampArrivalSequence:
         notice.player, notice.tile = player, tile
         notice.check_conditions()
         assert JamboTentNoticeEvent.GATE_KEY not in universe.story
+
+
+def _exit_reminder(story):
+    from src.story.ch02 import JamboTentExitReminderEvent
+
+    player = Mock()
+    player.skip_dialog = False
+    player.universe = Mock()
+    player.universe.story = story
+    player.combat_list_allies = []
+    tile = Mock()
+    event = JamboTentExitReminderEvent(player=player, tile=tile)
+    tile.events_here = [event]
+    return event, player, tile
+
+
+class TestLeavingJambosTentPointsAtThePools:
+    """Maintainer review 2026-09-24: once Jean has shopped, the next step is
+    the Mineral Pools. Stepping back out of the tent flap is where he
+    remembers it -- southwest, as Votha Krr told him."""
+
+    def test_waits_while_jean_has_not_been_inside_yet(self):
+        """Votha's teleport lands Jean on this tile BEFORE the tent: no
+        reminder until Jambo's introduction has played."""
+        event, player, tile = _exit_reminder({})
+        with capture_narration() as messages:
+            event.check_conditions()
+        assert messages == []
+        assert event in tile.events_here
+
+    def test_fires_once_on_the_way_out(self):
+        from src.story.ch02 import JamboShopIntroEvent, JamboTentExitReminderEvent
+
+        event, player, tile = _exit_reminder({JamboShopIntroEvent.GATE_KEY: "1"})
+        with capture_narration() as messages:
+            event.check_conditions()
+        jean = _text(_spoken(messages, "Jean"))
+        assert "pools" in jean and "southwest" in jean
+        assert player.universe.story[JamboTentExitReminderEvent.GATE_KEY] == "1"
+        assert event not in tile.events_here
+
+    def test_retires_silently_once_the_pools_are_cleansed(self):
+        from src.story.ch02 import AfterDefeatingKingSlime, JamboShopIntroEvent
+
+        event, _player, tile = _exit_reminder({
+            JamboShopIntroEvent.GATE_KEY: "1",
+            AfterDefeatingKingSlime.GATE_KEY: "1",
+        })
+        with capture_narration() as messages:
+            event.check_conditions()
+        assert messages == []
+        assert event not in tile.events_here
+
+    def test_authored_on_the_tile_the_tent_flap_returns_to(self):
+        universe, _player = _build_universe("grondia.json", "grondia-jambos_shop.json")
+        flap = _find_passage(_map(universe, "grondia-jambos_shop")[(2, 2)], "Tent Flap")
+        outside = _map(universe, flap.teleport_map)[tuple(flap.teleport_tile)]
+        assert any(type(e).__name__ == "JamboTentExitReminderEvent"
+                   for e in outside.events_here)
