@@ -411,6 +411,9 @@ class CombatantSerializer:
             "name": getattr(combatant, "name", "Unknown"),
             "battle_symbol": getattr(combatant, "battle_symbol", None),
             "type": "player" if is_player else "npc",
+            # Drives boss BGM selection (GamePage's BGM-selection effect) —
+            # never True for the player.
+            "is_boss": bool(getattr(combatant, "is_boss", False)),
             "level": getattr(combatant, "level", 1),
             # `hp`/`maxhp`/`maxfatigue` are the engine's own names (see
             # src/combatant.py). The secondary `health`/`max_health`/

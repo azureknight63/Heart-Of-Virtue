@@ -185,6 +185,7 @@ export function makeCombatant(overrides = {}) {
       name: 'Jean',
       battle_symbol: null,
       type: 'player',
+      is_boss: false,
       level: 1,
       health: { current: hp, max: maxHp },
       hp,

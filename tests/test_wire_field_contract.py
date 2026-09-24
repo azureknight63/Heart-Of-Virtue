@@ -100,7 +100,7 @@ from src.api.constants import ITEM_USE_RANGE
 from src.moves import Attack, Check, PowerStrike, ShadowStep, ShootBow, Turn, Wait
 from src.moves._mastery import BloodOfMartyrs
 from ai.combat_strategist import CombatStrategist
-from src.npc._enemies import Slime
+from src.npc._enemies import KingSlime, Lurker, Slime
 from src.npc._merchants import Merchant
 from src.player import Player
 from src.universe import Universe
@@ -1035,6 +1035,10 @@ COMBATANT_CONTRACT = {
     # comment in frontend/src/utils/heat.js), which is the only reason the
     # duplication is survivable.
     "heat": Read("LeftPanel.jsx", "combat?.player?.heat"),
+    # Boss BGM (Against the Colossus): GamePage's BGM-selection effect checks
+    # every enemy in `combat.enemies` for this flag to pick the boss track
+    # instead of the ordinary 'battle' loop.
+    "is_boss": Read("GamePage.jsx", "enemy.is_boss"),
 }
 
 # The in-progress move hanging off a combatant (CombatantSerializer.
@@ -1129,6 +1133,16 @@ class TestCombatantWireContract:
         enemy = Slime()
         payload = CombatantSerializer.serialize_combatant(enemy, reference=player)
         _assert_contract(payload, COMBATANT_CONTRACT, "serialize_combatant(enemy)")
+
+    def test_is_boss_flag_reflects_the_engines_own_boss_flag(self):
+        """Boss BGM selection reads this flag off each enemy; it must mirror
+        the engine's real `is_boss` attribute for both boss NPCs currently in
+        the game and go False for an ordinary enemy, never a hardcoded True.
+        """
+        player = Player()
+        assert CombatantSerializer.serialize_combatant(Slime(), reference=player)["is_boss"] is False
+        assert CombatantSerializer.serialize_combatant(Lurker(), reference=player)["is_boss"] is True
+        assert CombatantSerializer.serialize_combatant(KingSlime(), reference=player)["is_boss"] is True
 
     def test_player_heat_is_a_float_multiplier_at_wire_precision(self):
         """HeatMeter renders this number directly, so its scaling is load-bearing.
