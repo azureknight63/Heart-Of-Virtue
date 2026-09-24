@@ -329,8 +329,9 @@ def test_the_layout_is_production_s(layout):
 def test_every_phase_is_fully_expanded_lf_only_bash(rendered):
     for phase in PHASES:
         script = rendered[phase]
-        # Whatever this checkout's line endings are; the next test renders
-        # both explicitly.
+        # Whatever this checkout's line endings are;
+        # test_the_rendering_does_not_depend_on_the_script_s_line_endings
+        # renders both explicitly.
         assert "\r" not in script, f"{phase} script contains a carriage return"
         assert re.search(r"__[A-Z0-9_]+__", script) is None, f"unexpanded placeholder in {phase}"
 
@@ -370,6 +371,7 @@ def test_expand_template_refuses_unsafe_values(pwsh):
         "@{ LIVE = '/var/www/../etc' }": "refused",
         "@{ LIVE = \"/var/www/x`n\" }": "refused",       # .NET's $ matches before a final newline
         "@{ SERVICE = \"x`r\" }": "refused",              # not a path: bash reads `\r` as part of the word
+        "@{ SERVICE = \"x`n\" }": "refused",              # not a path: a newline splits the command it lands in
         "@{ LIVE = '//var/www' }": "refused",
         "@{ LIVE = '/var/www/' }": "refused",            # a trailing slash nests .new inside live
     }
@@ -378,6 +380,25 @@ def test_expand_template_refuses_unsafe_values(pwsh):
         cases,
     )
     assert dict(zip(cases, outcomes)) == cases
+
+
+def test_a_control_character_is_refused_by_the_key_that_carries_it(pwsh):
+    # Every value is checked, so the operator is told which one, not left to
+    # bisect a rendered script.
+    proc = _pwsh(
+        DOT_SOURCE
+        + "try { Expand-Template -Template 'systemctl restart __SERVICE__' -Values @{ SERVICE = \"x`ny\" } | Out-Null; 'RESULT:rendered' }"
+        + " catch { \"RESULT:$($_.Exception.Message)\" }\n",
+        check=True,
+    )
+    assert "RESULT:Remote script value SERVICE " in proc.stdout, proc.stdout
+
+
+def test_a_lone_carriage_return_in_a_template_is_refused(pwsh):
+    # Only CRLF line endings are normalised. Any other `\r` in a template is
+    # not a line ending, and would reach bash inside a word; the values are
+    # checked separately, so this is the only guard on the template itself.
+    assert _render_outcomes("Expand-Template -Template \"echo __SERVICE__`rdone\" -Values $case", ["@{}"]) == ["refused"]
 
 
 def test_the_sha_reaching_git_reset_is_validated(pwsh):
@@ -849,6 +870,18 @@ class TestTheDeployStopsOnRed:
         assert code == 1, output
         assert NOT_RAISED_HEADLINE in output and RERUN in output, output
         assert LIFT not in output, output
+
+    def test_a_script_that_will_not_render_stops_the_deploy_before_the_upload(self):
+        # Both remote scripts are rendered before anything reaches the server,
+        # so a refusal from either one leaves production as it was.
+        for prelude in (
+            "$RemoteValues['CONTAINER'] = \"webserver`r\"\n",                          # the first render refuses
+            "function New-SwapAndLiftScript { param($Chunk) throw 'refused' }\n",      # only the second one does
+        ):
+            calls, output, code = _deploy(prelude=prelude)
+            assert code == 1, output
+            assert calls == LOCAL_STEPS[:-1], output
+            assert INTERRUPTED not in output, output
 
     def test_a_connection_that_never_ran_the_stage_changed_nothing(self):
         calls, output, code = _deploy(stage=PhaseAnswer(SSH_CONNECTION_LOST, []))
@@ -1397,10 +1430,11 @@ function Invoke-RemoteScript {
 }
 """
 
-    def _mode(self, setting, remote_exit=0, script=SCRIPT_COPY):
+    def _mode(self, setting, remote_exit=0, script=SCRIPT_COPY, prelude=""):
         proc = _pwsh(
-            f". {_ps_literal(script.as_posix())}\n" + self.HARNESS
+            _dot_source(script) + self.HARNESS
             + f"$global:RemoteExit = {remote_exit}\n"
+            + prelude
             + f'try {{ Invoke-MaintenanceMode -Setting {setting}; "RESULT:ok" }} catch {{ "RESULT:threw:$($_.Exception.Message)" }}\n',
             check=True,
         )
@@ -1410,6 +1444,11 @@ function Invoke-RemoteScript {
         calls, out = self._mode("On")
         assert calls == ["upload:frontend/public/maintenance.html", "maintenance-on"], out
         assert "RESULT:ok" in out, out
+
+    def test_on_renders_before_it_uploads(self):
+        # A raise that will not render leaves nothing on the server.
+        calls, out = self._mode("On", prelude="$RemoteValues['CONTAINER'] = \"webserver`r\"\n")
+        assert calls == [] and "RESULT:threw:" in out, out
 
     @pytest.mark.parametrize("setting, phase", [("On", "maintenance-on"), ("Off", "maintenance-off")])
     def test_a_failed_remote_step_is_not_reported_done(self, setting, phase):
@@ -1629,6 +1668,22 @@ $defaults = foreach ($p in $ast.ParamBlock.Parameters) {{ if ($p.DefaultValue) {
 
 class TestTheScriptText:
     """Guards that need no interpreter."""
+
+    def test_every_remote_script_is_a_phase_renderer_s_output(self, script_text):
+        # Expand-Template's guards -- the CRLF normalisation among them -- hold
+        # only for a script that went through it, and the all-phase tests only
+        # see the renderers PHASE_RENDERERS lists.
+        renderers = set(re.findall(r"^function (New-\w+Script)\b", script_text, re.M))
+        assert renderers == {call.split()[0] for call in PHASE_RENDERERS.values()}
+        assert len(re.findall(r"-Exe 'ssh'", script_text)) == 1, "ssh is reached other than through Invoke-RemoteScript"
+        uses = re.findall(r"(?<!function )Invoke-RemoteScript\b(.{0,9})", script_text)
+        assert uses and all(use == " -Script " for use in uses), uses
+        for argument in re.findall(r"Invoke-RemoteScript -Script (\S+)", script_text):
+            if argument.startswith("$"):
+                sources = re.findall(rf"^\s*{re.escape(argument)} = (\S+)", script_text, re.M)
+            else:
+                sources = [argument.strip("()")]
+            assert sources and all(source in renderers for source in sources), (argument, sources)
 
     @pytest.fixture(scope="class")
     def param_block(self, script_text):

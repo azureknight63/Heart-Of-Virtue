@@ -220,13 +220,14 @@ function Expand-Template {
         itself contain placeholders (__RAISE__ does), so replacement runs up
         to $maxPasses times, enough for one level of nesting and a pass that
         changes nothing. Refuses to render: an empty or whitespace value; a
-        single quote in any value (they are spliced into `sh -c '...'`); for a
-        key in $AbsolutePathKeys, anything but a plain absolute path; and a
-        carriage return anywhere in the result. `rm -rf ` on a truncated path
-        is not a script this function produces.
+        control character in any value (a newline splits the command it lands
+        in); a single quote in any value (they are spliced into
+        `sh -c '...'`); for a key in $AbsolutePathKeys, anything but a plain
+        absolute path; and a carriage return left in the template. `rm -rf `
+        on a truncated path is not a script this function produces.
 
-        CRLF line endings become LF first. A here-string keeps the line
-        endings of the file it is written in, and a Windows checkout
+        The template's CRLF line endings become LF first. A here-string keeps
+        the line endings of the file it is written in, and a Windows checkout
         (core.autocrlf=true) has this file in CRLF. ssh delivers every `\r`
         to the remote bash, and no phase survives one: `set -euo pipefail\r`
         is an invalid option, which stops a `set -e` phase before its first
@@ -242,6 +243,9 @@ function Expand-Template {
         $value = [string]$all[$key]
         if ([string]::IsNullOrWhiteSpace($value)) {
             throw "Remote script value $key is empty or whitespace"
+        }
+        if ($value -cmatch '[\x00-\x1F\x7F-\x9F]') {
+            throw "Remote script value $key contains a control character; a newline would split the command it lands in"
         }
         if ($value.Contains("'")) {
             throw "Remote script value $key contains a single quote; values are spliced into sh -c '...'"
@@ -267,8 +271,9 @@ function Expand-Template {
     if ($out -cmatch '__[A-Z0-9_]+__') {
         throw "Unexpanded placeholder in remote script: $($Matches[0])"
     }
+    # The values were checked above, so a `\r` here came from the template.
     if ($out.Contains("`r")) {
-        throw 'Remote script contains a carriage return; bash would read it as part of the word before it'
+        throw 'Remote script template contains a carriage return outside a CRLF line ending; bash would read it as part of a word'
     }
     return $out
 }
@@ -1344,6 +1349,9 @@ function Invoke-MaintenanceMode {
     param([Parameter(Mandatory = $true)][ValidateSet('On', 'Off')][string]$Setting)
 
     if ($Setting -eq 'On') {
+        # Rendered before the upload, so a script that will not render leaves
+        # nothing on the server.
+        $raiseScript = New-MaintenanceOnScript
         # The file is published at the site root: it must be the page, not a
         # link to something else (scp follows links).
         $relative = "$PublicDir/$MaintenancePageFile"
@@ -1355,7 +1363,7 @@ function Invoke-MaintenanceMode {
         Write-Step 'Uploading the maintenance page'
         Send-ToServer -RelativePath $relative -Destination $RemotePage
         Write-Step 'Raising it'
-        Invoke-RemoteScript -Script (New-MaintenanceOnScript) | Out-Null
+        Invoke-RemoteScript -Script $raiseScript | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'Could not raise the maintenance page' }
     } else {
         Write-Step 'Lifting the maintenance page'
