@@ -1975,6 +1975,62 @@ class TestGetBrushOffLine:
         ]
 
 
+class TestConsecutiveFallbackReplies:
+    """#674 item 5: the degraded-conversation cap has to see the lines a
+    generic nomad actually says, and survive a history row from a save."""
+
+    _PERSONALITY = {
+        "given_name": "Tal",
+        "speech_sample": "The river's cold this season.",
+        "knowledge": ["the salt road"],
+    }
+
+    def _nomad(self, personality):
+        return chat_npc(
+            name="GenericNomad",
+            _chat_char_config=None,
+            _chat_personality=personality,
+            _chat_history=[],
+            _get_chapter=lambda player: "1",
+        )
+
+    @pytest.mark.parametrize("personality", [_PERSONALITY, None])
+    def test_a_nomads_own_fallback_lines_are_counted(self, personality):
+        """A nomad's fallback lines come from its personality pool, not from
+        ``_fallback_reply_pool`` (a story persona's), so the run was always 0
+        and the cap never ended a nomad's degraded conversation. An NPC with
+        no personality at all says the last-resort line, which counts too."""
+        npc = self._nomad(personality)
+        for i in range(_MAX_CONSECUTIVE_FALLBACK_REPLIES):
+            line = npc._get_fallback_npc_line(is_opening=False, player=MagicMock())
+            npc._chat_history.append({"npc": line, "jean": f"Q{i}"})
+
+        assert npc._consecutive_fallback_replies() == _MAX_CONSECUTIVE_FALLBACK_REPLIES
+
+    def test_a_generated_line_still_breaks_a_nomads_run(self):
+        npc = self._nomad(self._PERSONALITY)
+        line = npc._get_fallback_npc_line(is_opening=False, player=MagicMock())
+        npc._chat_history.extend([
+            {"npc": line, "jean": "Q0"},
+            {"npc": "A line the model wrote.", "jean": "Q1"},
+        ])
+
+        assert npc._consecutive_fallback_replies() == 0
+
+    @pytest.mark.parametrize("row", ["a bare string", None, 7, ["npc", "x"]])
+    def test_a_non_dict_history_row_is_skipped_not_raised_on(self, row):
+        """History arrives from a save, and ``entry.get`` raised
+        AttributeError on anything that is not a dict -- mid-turn, inside the
+        fallback path that exists to be the thing that does not fail."""
+        npc = chat_npc(
+            name="Mara",
+            _chat_char_config={"fallback_replies": ["Only reply."]},
+            _chat_history=[{"npc": "Only reply.", "jean": "Q0"}, row],
+        )
+
+        assert npc._consecutive_fallback_replies() == 1
+
+
 class TestGetFallbackNpcLine:
     """Test _get_fallback_npc_line."""
 

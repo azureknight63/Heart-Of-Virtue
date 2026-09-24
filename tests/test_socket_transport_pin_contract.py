@@ -27,11 +27,22 @@ greenlets, a parked connection holds a greenlet rather than the worker, and on
 a non-sync worker ``--timeout`` is a liveness heartbeat, not a per-request
 deadline.
 
-So the pin is no longer load-bearing for the reason it carried. It STAYS until
-issue #653 re-derives it on the real process model --- which is what these
-tests now hold it to. They also hold the repo to the unit: the worker class
-production runs must be a declared dependency, because it was installed on the
-server by hand and pinned nowhere for the whole life of this file.
+So the pin is no longer load-bearing for the reason it carried. It STANDS
+(#653, maintainer decision "pin now, migrate later") for three reasons that do
+hold on the verified process model:
+
+(a) the reverse proxy's ``Upgrade``/``Connection`` handling is unverified ---
+    its config has never been read (``docs/development/deployment.md``);
+(b) ``async_mode="threading"`` (``src/api/app.py``) serving WebSockets under
+    an eventlet worker is an unsupported combination;
+(c) the worker class is due to migrate off eventlet, which gunicorn 26
+    removed --- ``requirements-api.txt`` holds gunicorn below 26 until then.
+
+These tests hold the pin and its rationale to that. They also hold the repo to
+the unit: the worker class production runs must be a declared dependency,
+because it was installed on the server by hand and pinned nowhere for the
+whole life of this file (and ``tests/test_npc_chat_turn_budget.py`` holds the
+gunicorn range to a release that still ships that worker).
 """
 
 import re
@@ -132,16 +143,17 @@ def test_the_client_does_not_claim_a_process_model_the_unit_contradicts():
 
 
 def test_the_transport_pin_stands_until_its_rationale_is_re_derived():
-    """Behaviour is unchanged on purpose: the reason died, not the decision.
+    """Behaviour is unchanged on purpose: the old reason died, not the decision.
 
-    Whether long-polling is right on the real deployment (proxy upgrade
-    headers, ``async_mode="threading"`` under an eventlet worker) is #653's
-    job. Until it lands, the client keeps polling and this says so.
+    The pin now rests on (a) an unverified proxy, (b) ``async_mode="threading"``
+    under an eventlet worker, and (c) the pending move off eventlet (#653).
+    Until all three are settled, the client keeps polling and this says so.
     """
     assert _client_transports() == ("polling",), (
-        "socketClient.js changed transports while #653 is still open: the "
-        "sync-worker rationale is void, but nothing has re-derived what the "
-        "real deployment serves. Close #653 first, then change this test."
+        "socketClient.js changed transports while #653's reasons still hold: "
+        "the proxy's Upgrade handling is unverified, async_mode=threading "
+        "under an eventlet worker is unsupported, and the worker is due to "
+        "migrate. Settle those first, then change this test."
     )
     assert 'async_mode="threading"' in _APP.read_text(encoding="utf-8"), (
         "src/api/app.py no longer pins async_mode=threading; under an "

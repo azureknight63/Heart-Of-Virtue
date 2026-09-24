@@ -30,6 +30,21 @@ the client sent — otherwise a client can spoof any IP and bypass the
 limiter. That confirmation requires reading the live container's web server
 config, which is not available from this repo.
 
+**gunicorn is held below 26 (issue #653).** gunicorn 26.0 removed the eventlet
+worker the unit runs, so `requirements-api.txt` says `gunicorn>=20.1,<26` and
+`eventlet>=0.40.3` (the floor gunicorn 24+ enforces when it starts that worker).
+The server's hand-installed eventlet 0.40.0 no longer satisfies that floor, so
+the next deploy's `pip install -r requirements-api.txt` **will upgrade eventlet**
+on the server (gunicorn is left alone if it is already inside the range). 0.40.0
+only boots under a gunicorn older than 24, and the server's gunicorn version has
+never been read — check `.venv/bin/gunicorn --version` and
+`.venv/bin/pip show eventlet` there before that deploy. The bound is a pin, not the fix: the pending
+migration moves the unit off `--worker-class eventlet` (and re-derives the
+client's polling-only Socket.IO transport, `frontend/src/api/socketClient.js`,
+on the new worker), after which the ceiling can lift.
+`tests/test_npc_chat_turn_budget.py` fails if the requirements admit a gunicorn
+without the worker class the unit names.
+
 Every build the script deploys carries the commit it was built from, in a
 `.hov-commit` file beside its `index.html`. That is how a rollback names the
 backend that matches the frontend it restores, and how `-Status` says whether

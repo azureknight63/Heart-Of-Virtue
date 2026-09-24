@@ -2129,6 +2129,40 @@ class TestConfigurationPrecedesDiscovery:
         assert NpcChatLLMAdapter.prewarm_in_flight() is False
         assert ("default" in NpcChatLLMAdapter._instances) is not build_fails
 
+    def test_a_hung_prewarm_stops_reading_as_in_flight(self, monkeypatch):
+        """#674: every chat turn serves its fallback while a prewarm is in
+        flight, so a prewarm that never returns (a stuck socket in discovery)
+        pinned every conversation to the fallback for the process's life.
+        Past a bound the build is reported stale, and turns build on demand."""
+        import ai.llm_client as llm
+
+        monkeypatch.setattr(NpcChatLLMAdapter, "_instances", {})
+        monkeypatch.setattr(NpcChatLLMAdapter, "_prewarm_attempted", False)
+        now = [5000.0]
+        monkeypatch.setattr(llm.time, "monotonic", lambda: now[0])
+        bound = llm._PREWARM_STALE_SECONDS
+        seen = []
+
+        def hung(self):
+            seen.append(NpcChatLLMAdapter.prewarm_in_flight())
+            now[0] += bound - 1.0
+            seen.append(NpcChatLLMAdapter.prewarm_in_flight())
+            now[0] += 2.0
+            seen.append(NpcChatLLMAdapter.prewarm_in_flight())
+
+        with patch.object(NpcChatLLMAdapter, "__init__", hung):
+            NpcChatLLMAdapter.prewarm()
+
+        assert seen == [True, True, False]
+        assert NpcChatLLMAdapter.prewarm_in_flight() is False
+
+    def test_the_prewarm_stale_bound_outlasts_discovery(self):
+        """The bound must not fire on a prewarm that is merely slow: it is
+        named against the discovery wait it has to outlast."""
+        import ai.llm_client as llm
+
+        assert llm._PREWARM_STALE_SECONDS >= 2 * llm._DISCOVERY_WAIT_SECONDS
+
 
 class TestWorldFactsBlock:
     def test_full_world_facts_block(self, monkeypatch):

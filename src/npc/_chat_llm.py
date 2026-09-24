@@ -1582,6 +1582,10 @@ _NEUTRAL_FALLBACK_REPLIES = (
 # run longer than it ever did. Three keeps the old ceiling.
 _MAX_CONSECUTIVE_FALLBACK_REPLIES = 3
 
+# What an NPC says when it has no authored or generated line to fall back on.
+# Named because the fallback-reply cap has to recognise it as a fallback too.
+_LAST_RESORT_FALLBACK_LINE = "Nothing to say right now."
+
 
 _DEFAULT_MAX_PERSONALITY_FIELD_CHARS = 200
 
@@ -4960,18 +4964,60 @@ class ConversationalNPCMixin:
         replies = (self._chat_char_config or {}).get("fallback_replies")
         return replies or _NEUTRAL_FALLBACK_REPLIES
 
+    def _nomad_fallback_pool(self) -> List[str]:
+        """Fallback lines for a generic nomad, from its generated personality.
+
+        A small rotation -- its speech sample, a pause, a nudge toward what it
+        knows -- so the same sample does not repeat verbatim on every fallback
+        turn. Empty when there is no personality to draw on. The one builder
+        for both the line said (:meth:`_get_fallback_npc_line`) and the run
+        counted (:meth:`_consecutive_fallback_replies`), which must agree.
+        """
+        pers = self._chat_personality or {}
+        speech = pers.get("speech_sample")
+        knowledge = pers.get("knowledge") or []
+        given_name = pers.get("given_name", "They")
+        return [
+            text
+            for text in (
+                speech,
+                (
+                    f"{given_name} falls quiet a moment, considering."
+                    if speech
+                    else None
+                ),
+                f"Ask again about {knowledge[0]}, maybe." if knowledge else None,
+            )
+            if text
+        ]
+
     def _consecutive_fallback_replies(self) -> int:
         """How many of the most recent NPC rows are fallback replies, in a row.
 
         Counted from the end of ``self._chat_history`` and stopped at the
-        first row that is not from :meth:`_fallback_reply_pool` -- an opener
-        or a generated line breaks the run, so an earlier conversation's
-        replies still in the persisted history never count against this one.
-        Rows with no NPC line (Jean spoke first) are skipped, not counted.
+        first row that is not a fallback line -- an opener or a generated line
+        breaks the run, so an earlier conversation's replies still in the
+        persisted history never count against this one. Rows with no NPC line
+        (Jean spoke first) are skipped, not counted, and so is a row that is
+        not a dict at all: history comes back from a save.
+
+        "A fallback line" is whatever :meth:`_get_fallback_npc_line` can say
+        mid-conversation: the persona's reply pool for a story NPC, the
+        personality pool for a generic nomad (#674, which the cap never saw),
+        and the last-resort line either can reach. A nomad's fallback OPENER
+        is drawn from that same pool, so unlike a story NPC's starter it does
+        not break the run: a fully degraded nomad conversation ends one reply
+        sooner, which is the direction a degraded conversation should err.
         """
-        pool = set(self._fallback_reply_pool())
+        if self._chat_char_config:
+            pool = set(self._fallback_reply_pool())
+        else:
+            pool = set(self._nomad_fallback_pool())
+        pool.add(_LAST_RESORT_FALLBACK_LINE)
         run = 0
         for entry in reversed(self._chat_history):
+            if not isinstance(entry, dict):
+                continue
             npc_line = entry.get("npc")
             if not npc_line:
                 continue
@@ -5028,31 +5074,12 @@ class ConversationalNPCMixin:
                 if line:
                     return line
         else:
-            # Generic nomad: rotate through a small pool derived from the
-            # generated personality so the same speech sample doesn't repeat
-            # verbatim on every fallback turn.
-            pers = self._chat_personality or {}
-            speech = pers.get("speech_sample")
-            knowledge = pers.get("knowledge") or []
-            given_name = pers.get("given_name", "They")
-            pool = [
-                text
-                for text in (
-                    speech,
-                    (
-                        f"{given_name} falls quiet a moment, considering."
-                        if speech
-                        else None
-                    ),
-                    f"Ask again about {knowledge[0]}, maybe." if knowledge else None,
-                )
-                if text
-            ]
-            line = self._next_from_pool(pool)
+            # Generic nomad: rotate through its personality pool.
+            line = self._next_from_pool(self._nomad_fallback_pool())
             if line:
                 return line
 
-        return "Nothing to say right now."
+        return _LAST_RESORT_FALLBACK_LINE
 
     def _get_fallback_jean_options(self) -> List[Dict[str, str]]:
         """Return fallback Jean options, cycling through the pool.

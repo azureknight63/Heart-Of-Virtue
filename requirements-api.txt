@@ -36,7 +36,14 @@ tzdata>=2024.1
 # `wsgi.input_terminated` in the environ, and gunicorn started setting it in
 # 20.1.0. Under an older one an oversized chunked body is silently truncated at
 # the cap and answered 400 -- the exact bug that branch exists to fix.
-gunicorn>=20.1
+#
+# The ceiling is not cosmetic either (#653, maintainer: "pin now, migrate
+# later"). gunicorn 26.0 REMOVED the eventlet worker the unit runs
+# (26.x's SUPPORTED_WORKERS has no `eventlet`; 25.x's geventlet.py announced
+# it), so an unbounded `>=20.1` made the next venv rebuild install a gunicorn
+# that refuses to boot production. Lift this only together with moving the
+# unit off `--worker-class eventlet` -- docs/development/deployment.md.
+gunicorn>=20.1,<26
 
 # The worker class production actually runs (deploy/heart-of-virtue.service:
 # `--worker-class eventlet`). Without it gunicorn refuses to boot, so the API
@@ -46,7 +53,15 @@ gunicorn>=20.1
 # locks in GameService green rather than blocking -- so this line is part of
 # the concurrency model, not just a runner. Held to the unit by
 # tests/test_npc_chat_turn_budget.py.
-eventlet>=0.40
+#
+# The floor is the one gunicorn itself enforces: from 24.0 on, its eventlet
+# worker raises "requires eventlet 0.40.3 or higher" at boot (and its
+# `[eventlet]` extra declares >=0.40.3). The server's hand-installed 0.40.0
+# therefore only boots under a gunicorn older than 24 (23.x wants >=0.24.1,
+# !=0.36.0) -- whichever gunicorn the server actually has has not been read
+# (#653); check `.venv/bin/gunicorn --version` there before rebuilding it, and
+# note a rebuild from this file moves both packages forward together.
+eventlet>=0.40.3
 
 # Pinned because _register_request_limits argues its correctness against a
 # specific Werkzeug rather than against a documented contract: that

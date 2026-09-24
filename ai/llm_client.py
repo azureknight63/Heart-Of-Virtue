@@ -9,7 +9,7 @@ import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, FrozenSet, List, Literal, Optional, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Literal, Optional, Tuple, Union
 try:
     import requests
 except ImportError:
@@ -662,6 +662,22 @@ _WINDOW_COUNTER_KEYS = ("requests", "successes", "rate_limited", "errors")
 # cadence so an auto-roll cannot cut a digest's span in half.
 _DEFAULT_USAGE_WINDOW_SECONDS = 24 * 60 * 60
 
+#: How long a caller waits on another thread's in-flight OpenRouter model
+#: discovery before giving up and carrying on without it.
+_DISCOVERY_WAIT_SECONDS = 20
+
+#: How long ``NpcChatLLMAdapter.prewarm_in_flight`` may keep answering True.
+#: Every chat turn serves its deterministic fallback while a prewarm is in
+#: flight, so a prewarm that never returns (a socket stuck without a timeout)
+#: would pin every conversation to the fallback for the life of the process
+#: (#674). Twice the discovery wait: a prewarm that is merely slow -- discovery
+#: plus a validation call or two -- finishes inside it, and one that has not
+#: finished by then is treated as hung, so turns go back to building on demand.
+#: A validation walk that runs all six "Say OK" candidates to their 5s timeout
+#: can outlast it; the cost then is one on-demand build racing the prewarm (the
+#: behaviour before #637), not a hang.
+_PREWARM_STALE_SECONDS = 2 * _DISCOVERY_WAIT_SECONDS
+
 
 #: The deadline (``time.monotonic()``) of the NPC chat turn this thread is
 #: serving, if any. Thread-local because adapter instances are shared across
@@ -680,11 +696,63 @@ def _turn_budget_left() -> Optional[float]:
     return None if deadline is None else deadline - time.monotonic()
 
 
+#: The most ``NPC_CHAT_LLM_TIMEOUT`` may raise one chat call's timeout to.
+#: The worst NPC chat turn is its budget ceiling (``_TURN_CEILING_SECONDS``,
+#: 21s, in src/npc/_chat_llm.py) plus one call, and the client gives up at
+#: ``NPC_CHAT_TIMEOUT_MS`` (28s, frontend/src/api/npcChat.js): 21 + 7 = 28.
+#: Past it the client abandons a turn the server still commits (#637).
+#: tests/test_npc_chat_turn_budget.py derives the relation from all three.
+_ROUND_TIMEOUT_CEILING_SECONDS = 7.0
+
+#: A ``requests`` timeout: one float applied to EACH phase, or a
+#: ``(connect, read)`` pair.
+_Timeout = Union[float, Tuple[float, float]]
+
+#: The connect phase's own cap inside a chat turn. Slightly over a multiple of
+#: 3s, as ``requests`` recommends -- TCP's initial retransmission window -- so
+#: one dropped SYN is retried rather than failed.
+_CONNECT_TIMEOUT_SECONDS = 3.05
+
+#: The share of what a turn has left that the connect phase may take when that
+#: is less than :data:`_CONNECT_TIMEOUT_SECONDS`. A TCP connect to a provider
+#: normally takes tens to hundreds of milliseconds; the read (generation) is
+#: where a call's time actually goes, so it gets the rest.
+_CONNECT_SHARE = 0.25
+
+
+def _fit_to_turn(read: float) -> _Timeout:
+    """A timeout for a call with ``read`` seconds to answer, held to the turn.
+
+    Outside a turn ``read`` is returned as is. Inside one, ``requests`` would
+    apply a float to the connect AND the read phase in turn, so ``timeout=left``
+    let one call run to twice what the turn had left (#637). The call gets a
+    ``(connect, read)`` pair whose sum fits instead: connect takes at most
+    :data:`_CONNECT_TIMEOUT_SECONDS` or :data:`_CONNECT_SHARE` of what is left,
+    and read keeps its nominal length when there is room for it.
+
+    ``read`` bounds the wait for each chunk, not the whole body, so a response
+    trickled a byte at a time can still outrun the pair. Chat completions are
+    not streamed here, so the body arrives in one piece once generated; the
+    turn-budget tests keep one whole call of margin for the rest.
+    """
+    left = _turn_budget_left()
+    if left is None:
+        return read
+    left = max(0.0, left)
+    connect = min(_CONNECT_TIMEOUT_SECONDS, left * _CONNECT_SHARE)
+    return (connect, max(0.0, min(read, left - connect)))
+
+
+def _read_timeout(timeout: _Timeout) -> float:
+    """The read phase of a ``requests`` timeout, float or pair."""
+    return timeout[1] if isinstance(timeout, tuple) else timeout
+
+
 def _post_chat_completion(
     url: str,
     payload: Dict[str, Any],
     headers: Dict[str, str],
-    timeout: float,
+    timeout: _Timeout,
     on_discarded: Optional[Callable[[Any], None]] = None,
 ) -> Any:
     """POST a chat completion, retrying once without the params a 400 blames.
@@ -741,7 +809,7 @@ def _post_chat_completion(
     if left is not None:
         if left < _MIN_CALL_SECONDS:
             return resp
-        timeout = min(timeout, left)
+        timeout = _fit_to_turn(_read_timeout(timeout))
 
     retry = {k: v for k, v in payload.items() if k not in drop}
     logger.info(
@@ -1272,7 +1340,7 @@ class GenericLLMClient:
         # If a discovery is already in-flight, wait for it then return.
         if not GenericLLMClient._discovery_event.is_set():
             logger.info("Discovery already in-flight, waiting...")
-            GenericLLMClient._discovery_event.wait(timeout=20)
+            GenericLLMClient._discovery_event.wait(timeout=_DISCOVERY_WAIT_SECONDS)
             return
 
         # We're the first caller — take the lock.
@@ -2288,7 +2356,7 @@ class GenericLLMClient:
         model_id: str,
         payload: Dict[str, Any],
         headers: Dict[str, str],
-        timeout: float,
+        timeout: _Timeout,
         bench_on_timeout: bool = True,
     ) -> Optional[str]:
         """One model attempt against OpenRouter: POST, classify, meter, bench.
@@ -2363,7 +2431,7 @@ class GenericLLMClient:
                 and isinstance(e, requests.exceptions.Timeout)
             ):
                 logger.info(
-                    "OpenRouter model %s ran out of a clipped timeout (%.1fs); "
+                    "OpenRouter model %s ran out of a clipped timeout (%s); "
                     "not benched.", model_id, timeout,
                 )
                 return None
@@ -3266,6 +3334,9 @@ class NpcChatLLMAdapter(GenericLLMClient):
     # a chat turn can tell "being built right now" from "tried and failed"
     # (prewarm_in_flight, #637).
     _prewarm_in_flight = False
+    # time.monotonic() when the in-flight prewarm started, so a hung one can be
+    # told from a slow one (_PREWARM_STALE_SECONDS, #674).
+    _prewarm_started_at = 0.0
     _instances_lock = threading.Lock()
 
     # NPC chat's own env vars, ahead of the Mynx pair the base class reads
@@ -3409,6 +3480,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             # get_instance()/is_prewarmed() caller for the duration.
             cls._prewarm_attempted = True
             cls._prewarm_in_flight = True
+            cls._prewarm_started_at = time.monotonic()
         try:
             logger.info("NpcChatLLMAdapter prewarm: initializing adapter...")
             instance = cls()
@@ -3432,9 +3504,15 @@ class NpcChatLLMAdapter(GenericLLMClient):
         in-flight discovery, then runs validation calls of its own -- instead
         of the one already on its way (#637). The caller serves its
         deterministic fallback for that turn instead.
+
+        Only for :data:`_PREWARM_STALE_SECONDS`: a prewarm still building after
+        that is taken to be hung, and reads as not in flight so turns build on
+        demand rather than serving the fallback for good (#674).
         """
         with cls._instances_lock:
-            return cls._prewarm_in_flight and "default" not in cls._instances
+            if not cls._prewarm_in_flight or "default" in cls._instances:
+                return False
+            return time.monotonic() - cls._prewarm_started_at < _PREWARM_STALE_SECONDS
 
     @classmethod
     def is_prewarmed(cls) -> bool:
@@ -4107,12 +4185,16 @@ class NpcChatLLMAdapter(GenericLLMClient):
         model returns in ~2-4s, so this ceiling (default 6s) covers the "slow but
         fine" tail while a genuinely stuck call aborts into the deterministic
         fallback pools rather than leaving the player waiting. Tunable via
-        ``NPC_CHAT_LLM_TIMEOUT``.
+        ``NPC_CHAT_LLM_TIMEOUT``, up to :data:`_ROUND_TIMEOUT_CEILING_SECONDS`
+        (#637); a value that is not a positive number reads as the default.
         """
         try:
-            return float(os.getenv("NPC_CHAT_LLM_TIMEOUT", "6.0"))
+            value = float(os.getenv("NPC_CHAT_LLM_TIMEOUT", "6.0"))
         except (TypeError, ValueError):
             return 6.0
+        if math.isnan(value) or value <= 0:
+            return 6.0
+        return min(value, _ROUND_TIMEOUT_CEILING_SECONDS)
 
     @contextlib.contextmanager
     def bounded_by(self, deadline: Optional[float]):
@@ -4136,16 +4218,16 @@ class NpcChatLLMAdapter(GenericLLMClient):
         finally:
             _TURN_BUDGET.deadline = previous
 
-    def _call_timeout(self) -> float:
-        """The network timeout for the call about to be made.
+    def _call_timeout(self) -> _Timeout:
+        """The ``requests`` timeout for the call about to be made.
 
-        :meth:`_round_timeout` clipped to what the turn has left. The nominal
-        value stays what the engine's stage gate measures a stage by -- a
-        clipped one would make every remaining stage look unaffordable.
+        :meth:`_round_timeout` outside a turn; inside one, a
+        ``(connect, read)`` pair that together fit what the turn has left
+        (:func:`_fit_to_turn`). The nominal value stays what the engine's
+        stage gate measures a stage by -- a clipped one would make every
+        remaining stage look unaffordable.
         """
-        nominal = self._round_timeout()
-        left = _turn_budget_left()
-        return nominal if left is None else max(0.0, min(nominal, left))
+        return _fit_to_turn(self._round_timeout())
 
     @staticmethod
     def _turn_budget_spent() -> bool:
@@ -4641,7 +4723,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             timeout = self._call_timeout()
             return self._openrouter_attempt(
                 model_id, payload, headers, timeout,
-                bench_on_timeout=timeout >= self._round_timeout(),
+                bench_on_timeout=_read_timeout(timeout) >= self._round_timeout(),
             )
 
         content = self._rotate_openrouter(models_to_try, max_attempts, attempt)
