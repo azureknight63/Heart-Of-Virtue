@@ -69,7 +69,8 @@ ENEMY_GROWTH_PROFILES = {
     "Slime": {"maxhp": 6, "damage": 3},
     "CaveBat": {"maxhp": 4, "damage": 5},
     # ElderSlime/CorruptedStoneCreature are the pools' tougher single
-    # spawns -- more growth so they read as a step up from Slime/CaveBat.
+    # spawns -- they read as a step up from Slime/CaveBat through HP and
+    # protection growth (ElderSlime's damage no longer grows; see below).
     #
     # ElderSlime damage 6 -> 2 (#655): its 2.2x Slime Volley at 46-52 damage
     # (up to ~114 landed) was the killing blow in the (3,4) pack -- 6/40
@@ -137,8 +138,11 @@ REGION_ENEMY_LEVELS = {
     # with Gorran along, but Jean fights the Pools alone (see Slime above).
     # KingSlime 6 -> 5, paired with his growth retune: at 6 (even with maxhp
     # growth 50) he still killed Jean 4/20 at L4; at 5 there were 0 deaths in
-    # 80 fights across Jean L4/L5, dodging or not -- also with Gorran along,
-    # so it too awaits the solo retune.
+    # 80 fights across Jean L4/L5, dodging or not -- also with Gorran along.
+    # Solo he is potion-gated rather than surge-gated: the solo retune left
+    # his numbers alone and placed 2 Restoratives at (3,4) instead, after
+    # which a careful solo full clear went 0/40 (baseline doc, "Solo Pools
+    # retune" / "Applied").
     "grondelith-mineral-pools": {
         "default": 3,
         "Slime": 2,

@@ -1084,7 +1084,7 @@ class CrusaderOath(Move):
     def viable(self):
         if not getattr(self.user, "in_combat", False):
             return False
-        if any(getattr(s, "statustype", "") == states.APATHY_STATUSTYPE for s in self.user.states):
+        if any(states.is_apathy(s) for s in self.user.states):
             return False
         if any(isinstance(s, states.Fervent) for s in self.user.states):
             return False
@@ -1096,7 +1096,7 @@ class CrusaderOath(Move):
     def _unavailability_code(self):
         if not getattr(self.user, "in_combat", False):
             return UnavailableReason.NOT_IN_COMBAT
-        if any(getattr(s, "statustype", "") == states.APATHY_STATUSTYPE for s in self.user.states):
+        if any(states.is_apathy(s) for s in self.user.states):
             return UnavailableReason.APATHY
         if any(isinstance(s, states.Fervent) for s in self.user.states):
             return UnavailableReason.ALREADY_ACTIVE

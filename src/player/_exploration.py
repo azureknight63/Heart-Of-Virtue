@@ -14,12 +14,12 @@ import src.states as states
 from src.narration import narrate
 
 
-def _prayer_outcome(prayed, cleared=(), cost=0, refusal=None):
+def _prayer_outcome(prayed, cleared=(), fatigue_cost=0, refusal=None):
     """The dict ``Player.pray`` returns; see its docstring for the fields."""
     return {
         "prayed": prayed,
         "cleared": [getattr(s, "name", type(s).__name__) for s in cleared],
-        "fatigue_cost": cost,
+        "fatigue_cost": fatigue_cost,
         "refusal": refusal,
     }
 
@@ -36,17 +36,13 @@ class PlayerExplorationMixin:
     #: nothing to lift costs nothing -- see ``pray``.
     PRAYER_FATIGUE_COST_PCT = 0.25
 
-    #: The status family prayer lifts: ``states.APATHY_STATUSTYPE``, the one
-    #: constant Hollowed declares and the Oath lock (``src/moves/_utility.py``)
-    #: also reads.
-    _PRAYER_CURES_STATUSTYPE = states.APATHY_STATUSTYPE
-
     def prayer_fatigue_cost(self):
         """Fatigue a prayer that lifts Hollowed costs right now (at least 1)."""
         return max(1, int(self.maxfatigue * self.PRAYER_FATIGUE_COST_PCT))
 
     def _prayer_cures(self, state):
-        return getattr(state, "statustype", "") == self._PRAYER_CURES_STATUSTYPE
+        """True for a state prayer lifts: the apathy family (``states.is_apathy``)."""
+        return states.is_apathy(state)
 
     def pray(self):
         """Kneel and pray. Lifts every apathy state (Hollowed) for fatigue.
@@ -89,4 +85,4 @@ class PlayerExplorationMixin:
         self.fatigue -= cost
         cleared = functions.remove_states(self, self._prayer_cures)
         narrate(f"The prayer cost {self.name} {cost} fatigue.")
-        return _prayer_outcome(True, cleared, cost)
+        return _prayer_outcome(True, cleared=cleared, fatigue_cost=cost)

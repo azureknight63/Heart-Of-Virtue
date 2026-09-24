@@ -132,15 +132,27 @@ _CHAT_TURN_IN_FLIGHT = {
 }
 
 
-#: The ``turn_id`` of the turn each player has in flight, if it carried one
-#: (#636). A Retry of THAT turn which lands while it is still running is told
-#: so (``pending``) and re-sends until the commit lands, then gets it replayed
-#: from ``npc_chat_histories[npc_key]["last_turn"]``. Beside the locks and
+#: The ``(npc_key, turn_id)`` of the turn each player has in flight, if it
+#: carried an id (#636). A Retry of THAT turn -- same id, same NPC -- which
+#: lands while it is still running is told so (``pending``) and re-sends until
+#: the commit lands, then gets it replayed from
+#: ``npc_chat_histories[npc_key]["last_turn"]``. Beside the locks and
 #: weak-keyed for the same reason: in-flight state is not saved.
 _CHAT_TURN_PENDING: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
 #: The refusal for a Retry of the very turn that is still running.
 _CHAT_TURN_PENDING_REFUSAL = dict(_CHAT_TURN_IN_FLIGHT, pending=True)
+
+#: The refusal for a turn over the chat rate limit; the route answers 429.
+_CHAT_TURN_RATE_LIMITED = {
+    "success": False,
+    "rate_limited": True,
+    "error": "Slow down — too many messages.",
+}
+
+#: The refusal for a /respond that does not name the conversation /open
+#: started: the UI only ever answers the chat it opened.
+_CHAT_NOT_OPEN = {"success": False, "error": "No open conversation with that NPC."}
 
 
 def _chat_turn_lock_locked(player):
@@ -152,8 +164,8 @@ def _chat_turn_lock_locked(player):
     return lock
 
 
-def _begin_chat_turn(player, turn_id):
-    """Take ``player``'s turn lock and record ``turn_id`` as pending, atomically.
+def _begin_chat_turn(player, turn_id, npc_key=None):
+    """Take ``player``'s turn lock and record the turn as pending, atomically.
 
     Returns ``(lock, None)`` with the lock held, or ``(None, refusal)`` when a
     turn is already in flight -- the 409 body, saying whether the running turn
@@ -166,11 +178,11 @@ def _begin_chat_turn(player, turn_id):
     with _CHAT_TURN_LOCKS_GUARD:
         lock = _chat_turn_lock_locked(player)
         if not lock.acquire(blocking=False):
-            if turn_id and _CHAT_TURN_PENDING.get(player) == turn_id:
+            if turn_id and _CHAT_TURN_PENDING.get(player) == (npc_key, turn_id):
                 return None, dict(_CHAT_TURN_PENDING_REFUSAL)
             return None, dict(_CHAT_TURN_IN_FLIGHT)
         if turn_id:
-            _CHAT_TURN_PENDING[player] = turn_id
+            _CHAT_TURN_PENDING[player] = (npc_key, turn_id)
         return lock, None
 
 
@@ -179,12 +191,6 @@ def _end_chat_turn(player, lock):
     with _CHAT_TURN_LOCKS_GUARD:
         _CHAT_TURN_PENDING.pop(player, None)
         lock.release()
-
-
-def _chat_turn_pending(player, turn_id):
-    """True when ``turn_id`` is the turn ``player`` has in flight right now."""
-    with _CHAT_TURN_LOCKS_GUARD:
-        return bool(turn_id) and _CHAT_TURN_PENDING.get(player) == turn_id
 
 
 def _chat_history_entry(player, npc_key):
@@ -213,7 +219,8 @@ def _replayed_chat_turn(player, npc_key, turn_id):
 
 
 def _remember_chat_turn(player, npc_key, turn_id, result):
-    """Record a committed turn so a Retry of it replays instead of re-running.
+    """Record -- or, for a turn without an id, clear -- ``npc_key``'s replay
+    record, so a Retry of the click on screen replays instead of re-running.
 
     One record per NPC (the latest turn only -- a Retry only ever names the
     click still on screen), stored in the history entry the commit itself just
@@ -239,6 +246,16 @@ def _forget_chat_turn(player, npc_key):
     entry = _chat_history_entry(player, npc_key)
     if entry is not None:
         entry.pop("last_turn", None)
+
+
+def _forget_every_chat_turn(player):
+    """Drop every NPC's replay record: a new conversation is on screen, so no
+    late Retry from any earlier one -- this NPC's or another's -- may replay
+    its reply into it."""
+    hists = getattr(player, "npc_chat_histories", None)
+    if isinstance(hists, dict):
+        for npc_key in list(hists):
+            _forget_chat_turn(player, npc_key)
 
 
 def _warn(message):
@@ -5339,7 +5356,9 @@ class GameService:
             _log.warning("loquacity recovery skipped", exc_info=True)
 
     @staticmethod
-    def _one_chat_turn(player, turn, *args, turn_id=None, npc_key=None) -> Dict[str, Any]:
+    def _one_chat_turn(
+        player, turn, *args, turn_id=None, npc_key=None, charge=None, precondition=None,
+    ) -> Dict[str, Any]:
         """Run ``turn(*args)`` unless this player already has one in flight.
 
         With a ``turn_id`` (and the ``npc_key`` whose history records it) the
@@ -5348,40 +5367,41 @@ class GameService:
         still-running turn is refused as ``pending`` rather than plain busy.
         The replay check sits INSIDE the lock, so a turn that commits between
         a check and an acquire can never be run a second time.
+
+        ``charge`` is the caller's rate limit: a no-argument callable that
+        records one request and is truthy when that request is over the limit.
+        It is taken HERE, under the lock, for every request but a replay and a
+        ``pending`` refusal -- neither costs a provider call, so both go free.
+        Deciding that before the lock (an advisory "is this turn known?" at
+        the route) let a re-send whose turn finished in the gap run a real turn
+        uncharged, and chain (round-2 scrub, S1). ``precondition`` returns a
+        refusal or ``None`` and runs after the replay check, so a Retry can
+        still collect a committed reply.
         """
-        lock, refusal = _begin_chat_turn(player, turn_id)
+        over_limit = charge or (lambda: False)
+        lock, refusal = _begin_chat_turn(player, turn_id, npc_key)
         if lock is None:
+            if not refusal.get("pending") and over_limit():
+                return dict(_CHAT_TURN_RATE_LIMITED)
             return refusal
         try:
             if turn_id:
                 replayed = _replayed_chat_turn(player, npc_key, turn_id)
                 if replayed is not None:
                     return replayed
+            refused = precondition() if precondition is not None else None
+            # Charged before a precondition refusal returns: only a replay
+            # and a ``pending`` answer go free.
+            if over_limit():
+                return dict(_CHAT_TURN_RATE_LIMITED)
+            if refused is not None:
+                return refused
             result = turn(*args)
             if npc_key:
                 _remember_chat_turn(player, npc_key, turn_id, result)
             return result
         finally:
             _end_chat_turn(player, lock)
-
-    @staticmethod
-    def chat_turn_is_known(player, npc_key, turn_id) -> bool:
-        """Whether ``turn_id`` is already running or already committed.
-
-        A request naming such a turn costs no provider call -- it is answered
-        ``pending`` or replayed -- so the route does not charge it against the
-        chat rate limit. Otherwise the client's once-a-second re-send of a
-        pending turn spent the whole budget and 429'd the player (#636).
-        Advisory only: ``_one_chat_turn`` makes the real decision under the
-        turn lock.
-        """
-        if not turn_id:
-            return False
-        if _chat_turn_pending(player, turn_id):
-            return True
-        entry = _chat_history_entry(player, npc_key)
-        last = entry.get("last_turn") if entry else None
-        return isinstance(last, dict) and last.get("turn_id") == turn_id
 
     def npc_chat_open(
         self, player: "player_module.Player", npc_id: str
@@ -5455,9 +5475,9 @@ class GameService:
             self._clear_active_chat(player)
         elif result.get("npc_key"):
             player.__dict__["_active_chat_npc_key"] = result["npc_key"]
-            # A new conversation: a late Retry from the last one must run (or
-            # be refused) rather than replay that conversation's reply here.
-            _forget_chat_turn(player, result["npc_key"])
+            # A new conversation: a late Retry from any earlier one must run
+            # (or be refused) rather than replay that conversation's reply here.
+            _forget_every_chat_turn(player)
             # One token per open (#674): a late /end from a closed panel for
             # this SAME npc_key must not clear a quick re-open's marker, and
             # the key alone cannot tell the two conversations apart.
@@ -5477,19 +5497,39 @@ class GameService:
         jean_text: str,
         jean_tone: str = "neutral",
         turn_id: Optional[str] = None,
+        charge=None,
     ) -> Dict[str, Any]:
         """Jean's choice, one turn per player at a time (``_npc_chat_respond``).
 
-        ``turn_id`` makes the turn idempotent -- see ``_one_chat_turn``. The
-        route validates it; ``None`` keeps the pre-#636 behaviour.
+        ``turn_id`` makes the turn idempotent and ``charge`` is the route's
+        rate limit -- see ``_one_chat_turn``. A mid-fight refusal is a
+        game-state answer decided before the turn, and is not charged. The route validates the id;
+        ``None`` keeps the pre-#636 behaviour.
         """
         refused = _refused_mid_fight(player)
         if refused is not None:
             return refused
         return self._one_chat_turn(
             player, self._npc_chat_respond, player, npc_key, jean_text, jean_tone,
-            turn_id=turn_id, npc_key=npc_key,
+            turn_id=turn_id, npc_key=npc_key, charge=charge,
+            precondition=lambda: self._chat_not_open(player, npc_key),
         )
+
+    @staticmethod
+    def _chat_not_open(player, npc_key) -> Optional[Dict[str, Any]]:
+        """A refusal unless ``npc_key`` names the conversation /open started.
+
+        The UI only answers the chat it opened, so neither may the API. Without
+        this a /respond reached any NPC on the tile whose class name prefixes
+        the key (``_find_chat_npc``) with no /open at all, and a made-up key
+        also kept its turns out of the replay record (round-2 scrub, S1). An
+        open whose result carried no key gives the UI nothing to answer with,
+        so it answers nothing here either.
+        """
+        opened_key = player.__dict__.get("_active_chat_npc_key")
+        if npc_key and opened_key == npc_key:
+            return None
+        return dict(_CHAT_NOT_OPEN)
 
     def _npc_chat_respond(
         self,

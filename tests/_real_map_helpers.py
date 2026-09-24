@@ -9,12 +9,12 @@ their crossings run the real ``Passageway.enter`` / ``Player.teleport`` code.
 Importing this module builds no universe: every helper is called per test.
 """
 
-from pathlib import Path
 
 from src.player._movement import PlayerMovementMixin
 from src.universe import Universe
+from tests._source_scan import MAP_DIR
 
-MAPS_DIR = Path(__file__).resolve().parent.parent / "src" / "resources" / "maps"
+MAPS_DIR = MAP_DIR  # the one spelling of the repo layout (tests/_source_scan.py)
 
 
 class MinPlayer(PlayerMovementMixin):

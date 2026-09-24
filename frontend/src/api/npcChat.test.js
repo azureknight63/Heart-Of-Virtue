@@ -55,7 +55,7 @@ describe('npcChat', () => {
   });
 
   it('sends the turn_id that makes a retried turn idempotent (#636)', () => {
-    npcChat.respond('npc_session_123', 'Back off', 'guarded', 'turn_0123456789');
+    npcChat.respond('npc_session_123', 'Back off', 'guarded', { turnId: 'turn_0123456789' });
     expect(apiClient.post).toHaveBeenCalledWith(
       '/npc/chat/respond',
       {
@@ -69,7 +69,7 @@ describe('npcChat', () => {
   });
 
   it('bounds a re-send by the deadline the caller has left (#636)', () => {
-    npcChat.respond('npc_session_123', 'Back off', 'guarded', 'turn_0123456789', 4200);
+    npcChat.respond('npc_session_123', 'Back off', 'guarded', { turnId: 'turn_0123456789', timeoutMs: 4200 });
     expect(apiClient.post).toHaveBeenCalledWith(
       '/npc/chat/respond',
       expect.objectContaining({ turn_id: 'turn_0123456789' }),

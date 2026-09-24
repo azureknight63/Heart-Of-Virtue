@@ -9,6 +9,14 @@ import usePrayer from '../hooks/usePrayer'
 import { apiErrorMessage } from '../utils/apiError'
 import { lookupOr } from '../utils/lookup'
 
+// The prayer command's name, as the server lists it: it is matched in three
+// places (the command list, the handler table, the busy check).
+const PRAY = 'Pray'
+
+// How long prayer narration stays up. Longer than the other toasts: it is
+// prose to read, not a status blip.
+const PRAYER_MESSAGE_MS = 8000
+
 /**
  * The commands this panel knows about — one entry per command, carrying both
  * its tooltip and whether it is a debug command.
@@ -21,14 +29,6 @@ import { lookupOr } from '../utils/lookup'
  * the drift but made prose load-bearing — rewording a tooltip would have
  * changed behaviour. The `debug` field says what it means.
  */
-// The prayer command's name, as the server lists it: it is matched in three
-// places (the command list, the handler table, the busy check).
-const PRAY = 'Pray'
-
-// How long prayer narration stays up. Longer than the other toasts: it is
-// prose to read, not a status blip.
-const PRAYER_MESSAGE_MS = 8000
-
 const COMMANDS = [
   { name: 'Menu', tooltip: 'Open the main menu' },
   { name: 'Save', tooltip: 'Save your game progress' },
@@ -153,7 +153,9 @@ export default function ActionsPanel({ location, onClose, onRefetch }) {
   // Prayer (issue #646) changes fatigue and can lift Hollowed, so a success
   // refetches the player to redraw the fatigue bar and the status icons.
   const handlePray = async () => {
-    const { ok, message } = await pray()
+    const { ok, message, joined } = await pray()
+    // A double click joins the first prayer: its toast and refetch already ran.
+    if (joined) return
     setTimedMessage(message, PRAYER_MESSAGE_MS)
     if (ok && onRefetch) onRefetch()
   }

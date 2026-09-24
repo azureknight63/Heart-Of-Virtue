@@ -98,7 +98,8 @@ describe('usePrayer (issue #646)', () => {
     })
 
     expect(playerApi.pray).toHaveBeenCalledTimes(1)
-    expect(await second).toEqual(await first)
+    expect((await first).joined).toBeUndefined()
+    expect(await second).toEqual({ ...(await first), joined: true })
 
     // The latch belongs to one prayer: the next click sends again.
     playerApi.pray.mockResolvedValue({ data: { success: true, message: 'Again.' } })
@@ -107,4 +108,17 @@ describe('usePrayer (issue #646)', () => {
     expect(playerApi.pray).toHaveBeenCalledTimes(2)
     expect(third).toEqual({ ok: true, message: 'Again.' })
   })
+
+  it('recovers when the request throws synchronously', async () => {
+    playerApi.pray.mockImplementationOnce(() => { throw new Error('boom') })
+    const { result } = renderHook(() => usePrayer())
+    await act(async () => { await result.current.pray() })
+
+    playerApi.pray.mockResolvedValue({ data: { success: true, message: 'Again.' } })
+    let second
+    await act(async () => { second = await result.current.pray() })
+    expect(playerApi.pray).toHaveBeenCalledTimes(2)
+    expect(second).toEqual({ ok: true, message: 'Again.' })
+  })
+
 })

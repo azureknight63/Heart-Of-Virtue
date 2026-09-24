@@ -192,7 +192,6 @@ def test_hostile_idempotency_tokens_are_refused_never_forwarded(seed):
     """``turn_id`` (#636) and ``open_token`` (#674) are keys the server stores
     and compares, so a malformed one is a 400 -- never truncated, coerced or
     forwarded, since a clipped key would name a different turn."""
-    shape = _OPAQUE_TOKEN_RE
     rng = random.Random(seed)
     app = _app()
     gs = app.game_service
@@ -200,7 +199,7 @@ def test_hostile_idempotency_tokens_are_refused_never_forwarded(seed):
     with _patched_auth():
         for _ in range(150):
             token = _hostile_field(rng)
-            if token is None or (isinstance(token, str) and shape.fullmatch(token)):
+            if token is None or (isinstance(token, str) and _OPAQUE_TOKEN_RE.fullmatch(token)):
                 continue
             gs.reset_mock()
             r = client.post("/npc/respond", json={

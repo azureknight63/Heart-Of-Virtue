@@ -51,6 +51,12 @@ _BASE_NOT_CAPTURED = object()
 APATHY_STATUSTYPE = "apathy"
 
 
+def is_apathy(state):
+    """True for a state of the apathy family -- the one rule the Oath lock and
+    prayer both ask, so it lives in one place."""
+    return getattr(state, "statustype", "") == APATHY_STATUSTYPE
+
+
 class State:  # master class for all states
     """
     If beats_max is 0 (default), the state will not expire after n beats.
@@ -1126,7 +1132,7 @@ class Fervent(State):
                 f"Strength +{_pct(self._STRENGTH_BONUS_PCT)}, "
                 f"Finesse +{_pct(self._FINESSE_BONUS_PCT)}. "
                 f"Endurance -{self._ENDURANCE_PENALTY_POINTS}. "
-                "Drains HP and Fatigue every few beats."
+                "Drains HP and Fatigue every few beats. Fades with time."
             ),
             # Rendered live below: compound() raises strength and deepens the
             # endurance cost.

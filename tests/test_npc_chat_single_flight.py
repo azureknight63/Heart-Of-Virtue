@@ -9,6 +9,7 @@ while one is in flight is now refused (409) before it reaches the NPC.
 """
 
 import threading
+from unittest.mock import ANY
 
 import pytest
 
@@ -37,11 +38,19 @@ class _ChatNpc:
         return {"success": True, "conversation_ended": False}
 
 
+def _opened(player, npc_key):
+    """Mark ``npc_key`` as the conversation /open started, as the UI always
+    does before its first /respond (round-2 scrub: /respond requires it)."""
+    player.__dict__["_active_chat_npc_id"] = npc_key
+    player.__dict__["_active_chat_npc_key"] = npc_key
+
+
 @pytest.fixture
 def world():
     player, game_map = live_world()
     npc = _ChatNpc()
     game_map[(0, 0)].npcs_here = [npc]
+    _opened(player, "Tal")
     return GameService(), player, npc
 
 
@@ -183,6 +192,7 @@ def committing_world():
     player.npc_chat_histories = {}
     npc = _CommittingNpc()
     game_map[(0, 0)].npcs_here = [npc]
+    _opened(player, "Tal")
     return GameService(), player, npc
 
 
@@ -364,14 +374,18 @@ def test_the_route_forwards_a_valid_turn_id(route, good):
     client, gs, player = route
     response = client.post("/npc/respond", json=dict(_BODY, turn_id=good))
     assert response.status_code == 200
-    gs.npc_chat_respond.assert_called_once_with(player, "Tal", "Hello?", "neutral", turn_id=good)
+    gs.npc_chat_respond.assert_called_once_with(
+        player, "Tal", "Hello?", "neutral", turn_id=good, charge=ANY
+    )
 
 
 @pytest.mark.parametrize("body", [_BODY, dict(_BODY, turn_id=None)])
 def test_the_route_without_a_turn_id_forwards_none(route, body):
     client, gs, player = route
     assert client.post("/npc/respond", json=body).status_code == 200
-    gs.npc_chat_respond.assert_called_once_with(player, "Tal", "Hello?", "neutral", turn_id=None)
+    gs.npc_chat_respond.assert_called_once_with(
+        player, "Tal", "Hello?", "neutral", turn_id=None, charge=ANY
+    )
 
 
 def test_the_route_answers_409_for_a_pending_turn():
@@ -529,24 +543,6 @@ def test_a_turn_without_an_id_forgets_the_last_turn(committing_world):
     assert npc.commits == 3
 
 
-def test_chat_turn_is_known_names_pending_and_replayable_turns(committing_world):
-    game_service, player, _npc = committing_world
-    assert game_service.chat_turn_is_known(player, "Tal", _TURN) is False
-    assert game_service.chat_turn_is_known(player, "Tal", None) is False
-
-    _respond(game_service, player, _TURN)
-    assert game_service.chat_turn_is_known(player, "Tal", _TURN) is True
-    assert game_service.chat_turn_is_known(player, "Tal", "turn-0002-abcdef") is False
-    assert game_service.chat_turn_is_known(player, "Other", _TURN) is False
-
-    held, _refusal = gs_module._begin_chat_turn(player, "turn-0003-abcdef")
-    try:
-        assert game_service.chat_turn_is_known(player, "Tal", "turn-0003-abcdef") is True
-    finally:
-        gs_module._end_chat_turn(player, held)
-    assert game_service.chat_turn_is_known(player, "Tal", "turn-0003-abcdef") is False
-
-
 @pytest.fixture
 def limited_route(monkeypatch, committing_world):
     """The /respond route over a real GameService and a REAL identity limiter
@@ -579,10 +575,10 @@ def _post(client, turn_id):
 
 
 def test_resending_a_known_turn_is_not_charged_by_the_rate_limiter(limited_route):
-    """#636 follow-up: the client re-sends a pending turn every second until
-    it commits, then replays it. Those re-sends cost no LLM call, but the
-    limiter ran before the service and charged every one, so one slow turn
-    could spend the whole 10/minute budget and 429 the player."""
+    """#636 follow-up: the client re-sends a pending turn (with backoff) until
+    it commits, then replays it. Those re-sends cost no LLM call, so the
+    service charges neither them nor the replays; charged before the service,
+    one slow turn could spend the whole 10/minute budget and 429 the player."""
     client, player, npc = limited_route
     assert _post(client, _TURN).status_code == 200  # the one charged turn
 
@@ -592,7 +588,7 @@ def test_resending_a_known_turn_is_not_charged_by_the_rate_limiter(limited_route
         assert replay.get_json()["replayed"] is True
 
     pending_id = "turn-pend-0001"
-    held, _refusal = gs_module._begin_chat_turn(player, pending_id)
+    held, _refusal = gs_module._begin_chat_turn(player, pending_id, "Tal")
     try:
         for _ in range(12):
             pending = _post(client, pending_id)
@@ -610,3 +606,120 @@ def test_fresh_turns_are_still_rate_limited(limited_route):
     codes = [_post(client, "turn-%04d-fresh" % i).status_code for i in range(12)]
     assert codes[:10] == [200] * 10
     assert codes[10:] == [429, 429]
+
+
+# ---------------------------------------------------------------------------
+# Round-2 scrub (S1, maintainer-approved fix): the rate-limit charge is taken
+# where a provider turn actually runs, not decided by an advisory pre-check.
+# ---------------------------------------------------------------------------
+
+
+def _released_in_the_window(monkeypatch, player, held):
+    """Make the NEXT ``_begin_chat_turn`` first release ``held`` -- the running
+    turn finishing between a route's pre-check and the turn lock."""
+    real = gs_module._begin_chat_turn
+
+    def begin(p, *args, **kwargs):
+        if held[0] is not None:
+            gs_module._end_chat_turn(player, held[0])
+            held[0] = None
+        return real(p, *args, **kwargs)
+
+    monkeypatch.setattr(gs_module, "_begin_chat_turn", begin)
+
+
+def test_no_request_runs_an_uncharged_provider_turn(limited_route, monkeypatch):
+    """S1 reproduction: a re-send judged "known" (its turn pending) at the
+    route, whose turn then finishes before the re-send reaches the lock, used
+    to run a real turn with no charge. Repeated, that is unlimited provider
+    turns from nothing. Whatever the timing, every turn that reaches the NPC
+    is charged, so the 10/minute budget caps commits at 10."""
+    client, player, npc = limited_route
+    codes = []
+    for i in range(15):
+        turn_id = "turn-%04d-race" % i
+        lock, _refusal = gs_module._begin_chat_turn(player, turn_id, "Tal")
+        held = [lock]
+        _released_in_the_window(monkeypatch, player, held)
+        codes.append(_post(client, turn_id).status_code)
+    assert npc.commits <= 10, (npc.commits, codes)
+    assert 429 in codes, codes
+
+
+def test_respond_needs_the_conversation_the_player_opened(committing_world):
+    """No /open, or a key other than the one /open returned (the route used to
+    reach any NPC whose class name prefixes the key): refused before the NPC
+    sees it."""
+    game_service, player, npc = committing_world
+    game_service._clear_active_chat(player)  # the fixture opened it
+    unopened = _respond(game_service, player, _TURN)
+    assert unopened["success"] is False and npc.commits == 0, unopened
+
+    game_service.npc_chat_open(player, "Tal")
+    alias = game_service.npc_chat_respond(
+        player, "_CommittingNpcAlias", "Hi", "neutral", turn_id="turn-alias-0001"
+    )
+    assert alias["success"] is False and npc.commits == 0, alias
+
+    opened = _respond(game_service, player, "turn-open-0001")
+    assert opened["success"] is True and npc.commits == 1, opened
+
+
+def test_an_open_that_named_no_key_answers_no_respond(committing_world):
+    """An /open whose result carried no ``npc_key`` gives the UI nothing to
+    answer with (useNpcChat sends only the key /open returned), so the API
+    answers nothing either -- not any key at all (round-2 scrub, iteration 2)."""
+    game_service, player, npc = committing_world
+    game_service._clear_active_chat(player)
+    player.__dict__["_active_chat_npc_id"] = "Tal"
+    refused = _respond(game_service, player, _TURN)
+    assert refused["success"] is False and npc.commits == 0, refused
+
+
+def test_a_not_open_refusal_is_charged(committing_world):
+    """Every refusal but a replay and a ``pending`` answer costs the identity
+    tier, the service's precondition refusal included, as the route's own
+    400s are (round-2 scrub, iteration 2)."""
+    game_service, player, npc = committing_world
+    game_service._clear_active_chat(player)
+    charges = []
+    refused = game_service.npc_chat_respond(
+        player, "Tal", "Hi", "neutral", turn_id=_TURN,
+        charge=lambda: charges.append(1) or False,
+    )
+    assert refused["success"] is False and npc.commits == 0, refused
+    assert charges == [1]
+    over = game_service.npc_chat_respond(
+        player, "Tal", "Hi", "neutral", turn_id=_TURN, charge=lambda: True,
+    )
+    assert over.get("rate_limited") is True, over
+
+
+def test_free_re_sends_still_count_against_the_ip_tier(limited_route, monkeypatch):
+    """S3: a replay costs no provider call, so the identity tier leaves it
+    alone -- but every /respond records the IP tier, so a flood of free
+    re-sends from one source is still capped."""
+    from src.api.rate_limiter import RateLimiter
+    from src.api.routes import npc_chat as routes
+
+    client, _player, npc = limited_route
+    per_minute = routes._IP_RATE_LIMIT_DEFAULT_PER_MINUTE
+    monkeypatch.setattr(
+        routes, "_chat_ip_limiter",
+        RateLimiter(per_minute, routes._RATE_WINDOW_SECONDS),
+    )
+    codes = [_post(client, _TURN).status_code for _ in range(per_minute + 5)]
+    assert codes[:per_minute] == [200] * per_minute
+    assert set(codes[per_minute:]) == {429}
+    assert npc.commits == 1
+
+
+def test_opening_forgets_every_npcs_replay_record(committing_world):
+    """A late Retry naming a DIFFERENT, earlier conversation must not replay
+    that NPC's old reply while this new one is on screen."""
+    game_service, player, _npc = committing_world
+    player.npc_chat_histories["Other"] = {
+        "exchanges": [], "last_turn": {"turn_id": _TURN, "result": {"success": True}},
+    }
+    assert game_service.npc_chat_open(player, "Tal")["success"] is True
+    assert "last_turn" not in player.npc_chat_histories["Other"]

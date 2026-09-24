@@ -1867,6 +1867,8 @@ class ConversationalNPCMixin:
                 # latched, so the next turn picks up the warm adapter.
                 return None
             if module is not None:
+                # None while another build holds the one build claim: also
+                # unlatched, so this turn falls back and the next retries.
                 self._chat_adapter = module.NpcChatLLMAdapter.get_instance()
             else:
                 self._chat_adapter = self._ADAPTER_FAILED
@@ -5011,7 +5013,7 @@ class ConversationalNPCMixin:
         not break the run: a fully degraded nomad conversation ends one reply
         sooner, which is the direction a degraded conversation should err.
         """
-        pool = set(self._mid_conversation_fallback_pool())
+        pool = set(self._reply_fallback_pool())
         pool.add(_LAST_RESORT_FALLBACK_LINE)
         run = 0
         for entry in reversed(self._chat_history):
@@ -5025,7 +5027,7 @@ class ConversationalNPCMixin:
             run += 1
         return run
 
-    def _mid_conversation_fallback_pool(self) -> List[str]:
+    def _reply_fallback_pool(self) -> List[str]:
         """The lines :meth:`_get_fallback_npc_line` rotates through mid-conversation.
 
         The persona's reply pool for a story NPC, the personality pool for a
@@ -5077,7 +5079,7 @@ class ConversationalNPCMixin:
             # #628) -- and never a closing line, which would claim the NPC is
             # done while the conversation carries on. A generic nomad draws
             # every line from its personality pool.
-            line = self._next_from_pool(self._mid_conversation_fallback_pool())
+            line = self._next_from_pool(self._reply_fallback_pool())
 
         return line or _LAST_RESORT_FALLBACK_LINE
 

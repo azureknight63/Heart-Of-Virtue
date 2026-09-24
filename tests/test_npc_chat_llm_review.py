@@ -347,10 +347,12 @@ class TestLoquacityRecovery:
         player = MagicMock()
         player.in_combat = False  # chat is exploration-only
         player.__dict__["_active_chat_npc_id"] = "Mara"
+        player.__dict__["_active_chat_npc_key"] = "Mara"  # as /open leaves it
         svc._find_chat_npc = MagicMock(return_value=npc)
         svc._enrich_chat_result_with_relationship = lambda result, n: result
 
         svc.npc_chat_respond(player, "Mara", "goodbye", "direct")
+        npc.chat_respond.assert_called_once()
 
         assert "_active_chat_npc_id" not in player.__dict__
 
@@ -365,10 +367,12 @@ class TestLoquacityRecovery:
         player = MagicMock()
         player.in_combat = False  # chat is exploration-only
         player.__dict__["_active_chat_npc_id"] = "Mara"
+        player.__dict__["_active_chat_npc_key"] = "Mara"  # as /open leaves it
         svc._find_chat_npc = MagicMock(return_value=npc)
         svc._enrich_chat_result_with_relationship = lambda result, n: result
 
         svc.npc_chat_respond(player, "Mara", "more", "direct")
+        npc.chat_respond.assert_called_once()
 
         assert player.__dict__["_active_chat_npc_id"] == "Mara"
 

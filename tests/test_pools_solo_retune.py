@@ -30,6 +30,9 @@ def flooded_pass():
 
 
 def _spawn_counts(tile):
+    """Enemies a tile's spawner events field, by class name. These two are
+    the only spawner event types the Mineral Pools map uses (the gland
+    spawns on a pulse, the spawner once)."""
     counts = Counter()
     for event in tile.events_here:
         if type(event).__name__ in ("NPCSpawnerEvent", "PulsingGlandEvent"):

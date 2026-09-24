@@ -269,8 +269,6 @@ def test_remove_states_takes_the_matching_states_off_the_engine_way():
     ``end_combat_cleanup`` and ``Player.pray`` both use."""
     from unittest.mock import MagicMock, patch
 
-    from src import functions
-
     keep, drop = MagicMock(tag="keep"), MagicMock(tag="drop")
     drop.on_removal.side_effect = RuntimeError("boom")
     target = MagicMock(states=[keep, drop])

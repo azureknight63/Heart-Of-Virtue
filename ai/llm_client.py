@@ -761,6 +761,12 @@ def _timeout_was_clipped(timeout: _Timeout, nominal: float) -> bool:
     the connect phase is clipped below :data:`_CONNECT_TIMEOUT_SECONDS` and the
     read below ``nominal``. Checking the read alone let a ConnectTimeout on a
     clipped connect bench a healthy model as slow.
+
+    Trade-off: :func:`_fit_to_turn` clips connect whenever less than
+    ``_CONNECT_TIMEOUT_SECONDS / _CONNECT_SHARE`` of the turn remains, so a
+    ConnectTimeout in the back half of a turn never benches -- even the dead
+    host it usually means. A model that fails there is still marked failed
+    for the round; it is only not benched.
     """
     if isinstance(timeout, tuple):
         connect, read = timeout
@@ -3357,6 +3363,13 @@ class NpcChatLLMAdapter(GenericLLMClient):
     # time.monotonic() when the in-flight prewarm started, so a hung one can be
     # told from a slow one (_PREWARM_STALE_SECONDS, #674).
     _prewarm_started_at = 0.0
+    # True while ANY build (prewarm or get_instance) is constructing the
+    # adapter, and when it started: one build at a time, since each one spends
+    # metered OpenRouter validation calls (round-2 scrub, S2). Stale after
+    # _PREWARM_STALE_SECONDS, like the prewarm flag, so a hung build cannot
+    # strand every turn on the fallback.
+    _build_in_flight = False
+    _build_started_at = 0.0
     _instances_lock = threading.Lock()
 
     # NPC chat's own env vars, ahead of the Mynx pair the base class reads
@@ -3474,24 +3487,59 @@ class NpcChatLLMAdapter(GenericLLMClient):
         return bool(_provider_credential(name))
 
     @classmethod
-    def get_instance(cls) -> "NpcChatLLMAdapter":
+    def get_instance(cls) -> "Optional[NpcChatLLMAdapter]":
         """Return the shared adapter instance, creating it on first call.
 
         Built OUTSIDE ``_instances_lock``, as :meth:`prewarm` does: the
         constructor runs network discovery and validation (seconds), and once
         a prewarm reads stale every chat turn lands here -- holding the lock
         for the build queued every other turn's :meth:`prewarm_in_flight` and
-        :meth:`is_prewarmed` behind it. Two cold callers may therefore both
-        build; ``setdefault`` publishes whichever finishes first and both get
-        that one.
+        :meth:`is_prewarmed` behind it.
+
+        One build at a time: each spends metered validation calls against an
+        account-wide quota, so a caller that finds another build in flight
+        gets ``None`` -- its turn serves the deterministic fallback, nothing is
+        latched, and the next turn picks up the published adapter. A claim
+        older than :data:`_PREWARM_STALE_SECONDS` is taken to be hung and
+        built past (round-2 scrub, S2).
         """
         with cls._instances_lock:
             instance = cls._instances.get("default")
-        if instance is not None:
-            return instance
-        built = cls()
-        with cls._instances_lock:
-            return cls._instances.setdefault("default", built)
+            if instance is not None:
+                return instance
+            claim = cls._claim_build_locked()
+            if claim is None:
+                return None
+        return cls._build_and_publish(claim)
+
+    @classmethod
+    def _claim_build_locked(cls) -> "Optional[float]":
+        """Claim the one build; the caller holds ``_instances_lock``.
+
+        Returns the claim's token (its start time), or None while another
+        build is in flight and not yet stale.
+        """
+        now = time.monotonic()
+        if cls._build_in_flight and now - cls._build_started_at < _PREWARM_STALE_SECONDS:
+            return None
+        cls._build_in_flight = True
+        cls._build_started_at = now
+        return now
+
+    @classmethod
+    def _build_and_publish(cls, claim: float) -> "NpcChatLLMAdapter":
+        """Construct outside the lock and publish first-wins, then drop the
+        build claim whether or not construction succeeded -- but only while
+        it is still ``claim``: a build that went stale and was taken over must
+        not release its successor's claim."""
+        try:
+            built = cls()
+            with cls._instances_lock:
+                return cls._instances.setdefault("default", built)
+        finally:
+            with cls._instances_lock:
+                if cls._build_started_at == claim:
+                    cls._build_in_flight = False
 
     @classmethod
     def prewarm(cls) -> None:
@@ -3510,16 +3558,16 @@ class NpcChatLLMAdapter(GenericLLMClient):
             # constructor does network discovery/validation (seconds), and
             # holding _instances_lock for that starved every concurrent
             # get_instance()/is_prewarmed() caller for the duration.
+            claim = cls._claim_build_locked()
+            if claim is None:
+                logger.debug("NpcChatLLMAdapter prewarm skipped: a build is in flight.")
+                return
             cls._prewarm_attempted = True
             cls._prewarm_in_flight = True
-            cls._prewarm_started_at = time.monotonic()
+            cls._prewarm_started_at = claim
         try:
             logger.info("NpcChatLLMAdapter prewarm: initializing adapter...")
-            instance = cls()
-            with cls._instances_lock:
-                # setdefault: a get_instance() racing the warm-up may have
-                # published its own — keep whichever landed first.
-                cls._instances.setdefault("default", instance)
+            cls._build_and_publish(claim)
             logger.info("NpcChatLLMAdapter prewarm: complete.")
         except Exception as e:
             logger.warning("NpcChatLLMAdapter prewarm failed: %s", e)
@@ -4221,7 +4269,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
         (#637); a value that is not a positive number reads as the default.
         """
         try:
-            value = float(os.getenv("NPC_CHAT_LLM_TIMEOUT", _DEFAULT_ROUND_TIMEOUT_SECONDS))
+            value = float(os.getenv("NPC_CHAT_LLM_TIMEOUT", str(_DEFAULT_ROUND_TIMEOUT_SECONDS)))
         except (TypeError, ValueError):
             return _DEFAULT_ROUND_TIMEOUT_SECONDS
         if math.isnan(value) or value <= 0:

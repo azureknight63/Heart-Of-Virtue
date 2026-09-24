@@ -45,11 +45,12 @@ from src.items import Book
 from src.universe import Universe
 from tests import _map_scan
 from tests._source_scan import ROOT
+import src.items as items
 
 #: What ``Book.text`` returns when the open fails -- and also what a book
 #: authored with neither text nor a path returns. Any authored
 #: ``text_file_path`` reaching it means the file did not load.
-BLANK_BOOK = "This book is mysteriously blank."
+BLANK_BOOK = items.BLANK_BOOK_TEXT
 
 #: Authored paths whose target file is not written yet. Exempt entries are
 #: SUBTRACTED from the offenders rather than asserted to BE offenders, so an

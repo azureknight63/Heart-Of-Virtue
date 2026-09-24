@@ -258,21 +258,38 @@ def test_only_states_prayer_cures_tell_the_player_to_pray():
     assert any(isinstance(s, states.Hollowed) for s in mentions)  # non-vacuous
     wrong = [
         type(s).__name__ for s in mentions
-        if s.statustype != Player._PRAYER_CURES_STATUSTYPE
+        if not player._prayer_cures(s)
     ]
     assert not wrong, wrong
 
 
 def test_apathy_statustype_is_one_constant():
-    """Hollowed, the Oath lock and prayer key on one named statustype."""
-    from pathlib import Path
-
+    """Hollowed declares the statustype prayer lifts."""
     assert states.Hollowed(Player()).statustype == states.APATHY_STATUSTYPE
-    assert Player._PRAYER_CURES_STATUSTYPE == states.APATHY_STATUSTYPE
-    root = Path(__file__).resolve().parent.parent / "src"
-    for rel in ("moves/_utility.py", "player/_exploration.py"):
-        text = (root / rel).read_text(encoding="utf-8")
-        assert '"apathy"' not in text, rel
+    assert Player()._prayer_cures(states.Hollowed(Player()))
+
+
+def test_the_oath_lock_and_prayer_share_one_apathy_rule(monkeypatch):
+    """Both sites ask ``states.is_apathy`` rather than restating the match:
+    change the rule once and both follow it (round-2 scrub). Checked by
+    behaviour, not by grepping the source for a spelling."""
+    from src.moves._base import UnavailableReason
+    from src.moves._utility import CrusaderOath
+
+    player = Player()
+    player.in_combat = True
+    marker = type("Marker", (), {"statustype": "other"})()  # the real rule says no
+    player.states = [marker]
+    player.faith = 99
+    oath = CrusaderOath(player)
+    assert states.is_apathy(marker) is False
+    assert player._prayer_cures(marker) is False
+    assert oath.viable() is True  # non-vacuous: nothing else locks the Oath
+
+    monkeypatch.setattr(states, "is_apathy", lambda state: state is marker)
+    assert player._prayer_cures(marker) is True
+    assert oath._unavailability_code() is UnavailableReason.APATHY
+    assert oath.viable() is False
 
 
 def test_a_raising_on_removal_does_not_abort_a_paid_prayer():
@@ -296,3 +313,11 @@ def test_a_raising_on_removal_does_not_abort_a_paid_prayer():
     assert player.fatigue == before - cost
     assert not _is_hollowed(player)
     assert player.faith == player.healthy_faith
+
+
+def test_fervent_still_says_it_fades():
+    """Dropping the prayer claim from Fervent's tooltip must not drop the true
+    half: it runs out on its own (``beats_max``)."""
+    fervent = states.Fervent(Player())
+    assert fervent.beats_max > 0
+    assert "fades with time" in fervent.description.lower()

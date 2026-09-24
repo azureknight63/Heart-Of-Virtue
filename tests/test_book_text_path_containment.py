@@ -15,7 +15,7 @@ import pytest
 import src.items as items
 from src.items import Book
 
-BLANK_BOOK = "This book is mysteriously blank."
+BLANK_BOOK = items.BLANK_BOOK_TEXT
 SHIPPED = "src/resources/books/jambos-book-of-business-wisdom.txt"
 
 
@@ -114,5 +114,7 @@ def test_a_refused_path_is_resolved_and_logged_once(secret, caplog):
 
 
 def test_blank_book_text_is_one_constant():
-    assert items.BLANK_BOOK_TEXT == BLANK_BOOK
+    # The literal is spelled once, here, as the independent authority for the
+    # player-facing text; everything else reads BLANK_BOOK_TEXT.
+    assert items.BLANK_BOOK_TEXT == "This book is mysteriously blank."
     assert Book(name="Empty").text == items.BLANK_BOOK_TEXT

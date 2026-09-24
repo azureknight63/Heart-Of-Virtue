@@ -48,7 +48,6 @@ import { lookupOr } from '../utils/lookup';
 // 500-1050ms), so a faster beat stream accumulates without this.
 const MAX_ANIMATION_QUEUE = 200;
 
-
 /**
  * Split the head of the animation queue into the layers that play together and
  * the ones that wait. Returns `[batch, rest]` (`[[], []]` for an empty queue).

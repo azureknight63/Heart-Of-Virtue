@@ -109,7 +109,10 @@ export default function useTokenMoveTween(pos, maxCells, combatSpeed = 1) {
     // the previous cell is one row DOWN from the new one. Read the in-flight
     // offset BEFORE touching the style: setting transition to none would
     // freeze the computed value at the target.
-    const from = heldRef.current ?? (glideMayBeRunning(glideRef.current) ? liveOffsetPct(el) : NO_OFFSET);
+    // The live offset costs a forced layout, so it is read only while a
+    // released glide may still be easing.
+    const liveFrom = () => (glideMayBeRunning(glideRef.current) ? liveOffsetPct(el) : NO_OFFSET);
+    const from = heldRef.current ?? liveFrom();
     const start = { x: -dx * 100 + from.x, y: dy * 100 + from.y };
     const maxPct = maxCells * 100;
     if (Math.abs(start.x) > maxPct || Math.abs(start.y) > maxPct) {

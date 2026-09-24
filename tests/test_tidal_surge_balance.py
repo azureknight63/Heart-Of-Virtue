@@ -152,7 +152,7 @@ def test_tidal_surge_stays_deadly_after_the_retune():
 # table edit that brings the one-shot back fails here.
 
 #: The config production ships (beta 2): Jean starts at level 4 with the
-#: chapter-1 kit and Gorran in the party.
+#: chapter-1 kit (Jean alone, as in the Pools).
 _PROD_CONFIG_NAME = "config_prod.ini"
 
 #: King Slime's home region -- the map his placement lives on.
@@ -210,8 +210,8 @@ def test_region_king_slime_is_built_at_its_table_level(monkeypatch, jean_level):
     expected = REGION_ENEMY_LEVELS[_KING_SLIME_REGION]["KingSlime"]
     assert jean.level == jean_level
     assert slime.level == expected
-    if expected > 1:
-        assert slime.damage > KingSlime().damage
+    assert expected > 1, "the table stopped levelling King Slime; this control needs one"
+    assert slime.damage > KingSlime().damage
 
 
 @pytest.mark.parametrize("jean_level", _KING_SLIME_JEAN_LEVELS)

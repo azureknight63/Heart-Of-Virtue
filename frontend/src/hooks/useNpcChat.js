@@ -184,6 +184,8 @@ const STILL_COMPOSING_MESSAGE = 'Still composing a reply — give it a moment.'
 // the way belongs to a conversation Jean just walked out of. This panel has
 // asked nothing yet, so "still composing a reply" would be false here.
 const STILL_TALKING_MESSAGE = 'Jean is still finishing another conversation — give it a moment.'
+/** Shown when this browser has no Web Crypto to mint a turn id with. */
+export const NO_WEB_CRYPTO_MESSAGE = "This browser can't send dialogue safely — try a current browser."
 
 // How long to wait before the first re-send of a turn the server says is
 // still running under this very `turn_id` (a 409 carrying `pending: true`,
@@ -407,7 +409,7 @@ export function useNpcChat(npcId, npcName, onClose) {
   // SECOND real request for the same npcId. The `cancelled` closure variable
   // only gates which invocation APPLIES the response; it never stopped the
   // network call itself. Two real requests for one player race the server's
-  // per-player `_chat_turn_lock` (game_service.py) -- itself correct and not
+  // per-player turn lock (`_begin_chat_turn`, game_service.py) -- itself correct and not
   // to be touched -- and the loser comes back 409, which the non-cancelled
   // invocation then rendered as STILL_TALKING_MESSAGE even though Jean never
   // actually had a prior conversation open (issue #661). A second call for the
@@ -614,13 +616,14 @@ export function useNpcChat(npcId, npcName, onClose) {
         //               `/open` has already claimed the marker, and
         //               `npc_chat_end` pops it unconditionally — so ending the
         //               superseded conversation would clear the NEW one's.
+        const openToken = data?.open_token || null
         if (!isMountedRef.current) {
-          endAbandonedConversation(data?.npc_key, data?.open_token || null)
+          endAbandonedConversation(data?.npc_key, openToken)
           return
         }
         if (cancelled) return
 
-        openConversationRef.current = { key: data.npc_key, token: data.open_token || null }
+        openConversationRef.current = { key: data.npc_key, token: openToken }
         setNpcKey(data.npc_key)
         setDisplayName(data.npc_name || npcName)
         setConversationCast(npcCast(npcId, data.npc_name || npcName))
@@ -677,19 +680,38 @@ export function useNpcChat(npcId, npcName, onClose) {
     let timeoutMs
     for (;;) {
       try {
-        return await npcChat.respond(npcKey, option.text, option.tone, turnId, timeoutMs)
+        return await npcChat.respond(npcKey, option.text, option.tone, { turnId, timeoutMs })
       } catch (err) {
-        if (!isPendingTurn(err) || giveUpAt - Date.now() - delay < PENDING_RESEND_MIN_BUDGET_MS) throw err
+        const budgetAfterWait = giveUpAt - Date.now() - delay
+        if (!isPendingTurn(err) || budgetAfterWait < PENDING_RESEND_MIN_BUDGET_MS) throw err
         await wait(delay)
         if (!isCurrentTurn(seq)) throw err
+        // Floored so a wait that overshot still sends a usable request: at
+        // worst that re-send ends PENDING_RESEND_MIN_BUDGET_MS past giveUpAt.
         timeoutMs = Math.max(giveUpAt - Date.now(), PENDING_RESEND_MIN_BUDGET_MS)
         delay = Math.min(delay * PENDING_RESEND_BACKOFF, PENDING_RESEND_MAX_MS)
       }
     }
   }
 
-  /** Jean picks an option: a new turn, with its own idempotency key. */
-  const handleOptionClick = (option) => sendOption(option, mintTurnId())
+  /**
+   * Jean picks an option: a new turn, with its own idempotency key. A browser
+   * with no Web Crypto cannot mint one; that is told to the player rather
+   * than thrown out of the click handler.
+   */
+  const handleOptionClick = (option) => {
+    let turnId
+    try {
+      turnId = mintTurnId()
+    } catch (err) {
+      console.error('[npcChat] cannot mint a turn id:', err)
+      // A deliberate dead end: no retry is offered, because this browser can
+      // never send a turn; the panel keeps only End Conversation.
+      setError(NO_WEB_CRYPTO_MESSAGE)
+      return undefined
+    }
+    return sendOption(option, turnId)
+  }
 
   /**
    * Stage Jean's line and send it as turn `turnId`. A Retry calls this again

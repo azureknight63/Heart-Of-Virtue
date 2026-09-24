@@ -2209,6 +2209,7 @@ class TestNpcChat:
 
     def test_npc_chat_respond_npc_not_found(self, game_service, mock_player):
         mock_player.current_room.npcs_here = []
+        mock_player.__dict__["_active_chat_npc_key"] = "Gorran"  # the UI opens first
         result = game_service.npc_chat_respond(mock_player, "Gorran", "hello")
         assert result["success"] is False
 
@@ -2216,6 +2217,7 @@ class TestNpcChat:
         npc = MagicMock(spec=["name"])
         npc.name = "Gorran"
         mock_player.current_room.npcs_here = [npc]
+        mock_player.__dict__["_active_chat_npc_key"] = "Gorran"  # the UI opens first
         result = game_service.npc_chat_respond(mock_player, "Gorran", "hello")
         assert result["success"] is False
         assert "does not support respond" in result["error"]
@@ -2229,6 +2231,7 @@ class TestNpcChat:
             "src.api.serializers.reputation.NPCRelationshipSerializer.serialize_relationship",
             return_value={"attitude": "neutral"},
         ):
+            mock_player.__dict__["_active_chat_npc_key"] = "Gorran"  # the UI opens first
             result = game_service.npc_chat_respond(mock_player, "Gorran", "hi", "open")
         assert result["success"] is True
 
@@ -2237,6 +2240,7 @@ class TestNpcChat:
         npc.name = "Gorran"
         npc.chat_respond = MagicMock(side_effect=ValueError("bad"))
         mock_player.current_room.npcs_here = [npc]
+        mock_player.__dict__["_active_chat_npc_key"] = "Gorran"  # the UI opens first
         result = game_service.npc_chat_respond(mock_player, "Gorran", "hi")
         assert result["success"] is False
         assert result["error"] == "Could not deliver that reply."

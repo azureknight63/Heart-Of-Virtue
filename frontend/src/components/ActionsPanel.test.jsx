@@ -336,6 +336,17 @@ describe('ActionsPanel PRAY (issue #646)', () => {
     expect(screen.getByText(/Lifts Hollowed/i)).toBeDefined();
   });
 
+  it('does nothing more for a click that joined a prayer already running', async () => {
+    prayerMock.pray.mockResolvedValue({ ok: true, message: 'Joined.', joined: true });
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Pray$/i }));
+
+    await waitFor(() => expect(prayerMock.pray).toHaveBeenCalled());
+    expect(onRefetch).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Joined\./)).toBeNull();
+  });
+
   it('prays through the hook, shows the narration, and refreshes the HUD', async () => {
     prayerMock.pray.mockResolvedValue({ ok: true, message: 'Jean kneels where he stands.' });
     renderPanel();

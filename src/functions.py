@@ -1427,8 +1427,8 @@ def remove_states(target, predicate):
     The three steps ``end_combat_cleanup`` documents: rebind ``target.states``
     without them, recompute stat bonuses once, then run each removed state's
     ``on_removal``. A raising ``on_removal`` is logged and skipped, so one
-    state's broken teardown never strands the rest or aborts the caller
-    mid-action (``Player.pray`` has already charged fatigue by then).
+    state's broken teardown never strands the rest or aborts a caller that
+    has already committed a cost mid-action.
 
     Returns the removed states, in their original order.
     """

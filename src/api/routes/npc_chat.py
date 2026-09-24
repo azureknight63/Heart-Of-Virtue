@@ -123,14 +123,29 @@ def _check_chat_rate_limit(session):
     Its bucket is therefore charged even when the identity tier already
     rejected — a caller being throttled has still cost this worker a request.
     """
-    limited = RateLimiter.check(_chat_limiter, _chat_rate_limit_key(session))
+    limited = _identity_over_limit(session)
     # Not `or`-short-circuited: `RateLimiter.check` records, and a
     # short-circuit would leave the IP tier uncounted whenever the identity
     # tier tripped -- see the paragraph above on charging both buckets.
-    limited = RateLimiter.check(_chat_ip_limiter, client_ip()) or limited
+    limited = _ip_over_limit() or limited
     if limited:
-        return rate_limited_response("Slow down — too many messages.")
+        return _chat_rate_limited()
     return None
+
+
+def _chat_rate_limited():
+    """The chat routes' one 429 response."""
+    return rate_limited_response("Slow down — too many messages.")
+
+
+def _identity_over_limit(session) -> bool:
+    """Charge the identity tier; True when this call is over it."""
+    return bool(RateLimiter.check(_chat_limiter, _chat_rate_limit_key(session)))
+
+
+def _ip_over_limit() -> bool:
+    """Charge the IP tier; True when this call is over it."""
+    return bool(RateLimiter.check(_chat_ip_limiter, client_ip()))
 
 
 def _string_field(data, key, default=""):
@@ -181,40 +196,20 @@ def _token_field(data, key):
     return _INVALID
 
 
-def _resends_a_known_turn(player, data):
-    """True when this /respond names a turn already running or committed.
-
-    Such a request is answered ``pending`` (409) or replayed and costs no
-    provider call, while the client re-sends a pending turn every second
-    until it commits (useNpcChat.js). Charging those against the rate limit
-    let one slow turn spend the whole budget and 429 the player (#636). The
-    service answers the question -- routes do not read chat state off the
-    player -- and anything malformed, or any answer but a literal ``True``,
-    reads as "not known", i.e. charged.
-
-    Advisory: a known turn can stop being known before the service runs it (a
-    concurrent /open forgets the replay record), and that one turn then runs
-    uncharged. The /open that caused it was itself charged, so the leak is
-    bounded at one turn per charged request.
-    """
-    turn_id = _token_field(data, "turn_id")
-    if not isinstance(turn_id, str):
-        return False
-    game_service, gs_error = require_game_service()
-    if gs_error:
-        return False
-    known = game_service.chat_turn_is_known(
-        player, _string_field(data, "npc_key"), turn_id
-    )
-    return known is True
-
-
 def _chat_status(result):
     """200, or 409 for a turn refused because one is already in flight
     (``GameService._one_chat_turn``), or 400 for any other failure."""
     if result.get("success"):
         return 200
     return 409 if result.get("in_flight") else 400
+
+
+def _chat_response(result):
+    """The response for a chat service result: the chat 429 when the turn was
+    rate limited, else the result at :func:`_chat_status`."""
+    if result.get("rate_limited"):
+        return _chat_rate_limited()
+    return jsonify(result), _chat_status(result)
 
 
 @npc_chat_bp.route("/open", methods=["POST"])
@@ -258,8 +253,7 @@ def npc_chat_open():
     # Save session
     session_manager.save_session(session.session_id)
 
-    status_code = _chat_status(result)
-    return jsonify(result), status_code
+    return _chat_response(result)
 
 
 @npc_chat_bp.route("/respond", methods=["POST"])
@@ -286,19 +280,27 @@ def npc_chat_respond():
     if error:
         return error
 
+    # Every /respond records the IP tier, free re-sends included: it caps a
+    # flood from one source. The identity tier -- the per-player budget that
+    # protects the provider quota -- is charged for a request refused here or,
+    # below, by the service under the turn lock for every request but a
+    # replay, a ``pending`` answer, or a mid-fight refusal (a game-state
+    # answer decided before the turn) -- round-2 scrub, S1/S3.
+    if _ip_over_limit():
+        return _chat_rate_limited()
+
+    def charged_bad_request(message):
+        """A 400 that still charges the identity tier (it cost this worker a
+        request) -- or the chat 429 when that charge is over the limit."""
+        if _identity_over_limit(session):
+            return _chat_rate_limited()
+        return jsonify({"success": False, "error": message}), 400
+
     # Get request body
     try:
         data = request.get_json() or {}
     except Exception:
-        data = None
-
-    if not _resends_a_known_turn(player, data):
-        limited = _check_chat_rate_limit(session)
-        if limited:
-            return limited
-
-    if data is None:
-        return jsonify({"success": False, "error": "Invalid JSON"}), 400
+        return charged_bad_request("Invalid JSON")
 
     npc_key = _string_field(data, "npc_key")
     jean_text = _string_field(data, "jean_text")
@@ -306,27 +308,30 @@ def npc_chat_respond():
     jean_tone = _string_field(data, "jean_tone", "neutral") or "neutral"
 
     if not npc_key:
-        return jsonify({"success": False, "error": "npc_key is required"}), 400
+        return charged_bad_request("npc_key is required")
     if not jean_text:
-        return jsonify({"success": False, "error": "jean_text is required"}), 400
+        return charged_bad_request("jean_text is required")
     turn_id = _token_field(data, "turn_id")
     if turn_id is _INVALID:
-        return jsonify({"success": False, "error": "turn_id is malformed"}), 400
+        return charged_bad_request("turn_id is malformed")
 
     # Call game service
     game_service, gs_error = require_game_service()
     if gs_error:
         return gs_error
 
+    # The identity tier is charged by the service, under the turn lock, for
+    # every request but a replay or a ``pending`` answer, which cost no
+    # provider call (#636, round-2 scrub S1).
     result = game_service.npc_chat_respond(
-        player, npc_key, jean_text, jean_tone, turn_id=turn_id
+        player, npc_key, jean_text, jean_tone, turn_id=turn_id,
+        charge=lambda: _identity_over_limit(session),
     )
 
     # Save session
     session_manager.save_session(session.session_id)
 
-    status_code = _chat_status(result)
-    return jsonify(result), status_code
+    return _chat_response(result)
 
 
 @npc_chat_bp.route("/end", methods=["POST"])

@@ -10,8 +10,6 @@ import useDoubleRaf from '../hooks/useDoubleRaf';
 import useBattlefieldPan from '../hooks/useBattlefieldPan';
 import useTokenMoveTween from '../hooks/useTokenMoveTween';
 import useFloatingCombatText from '../hooks/useFloatingCombatText';
-// Re-exported below so existing import sites (and their tests) keep resolving
-// these pure helpers through BattlefieldGrid, where they used to live.
 import useBattlefieldAnimations, {
   takeAnimationBatch,
   removeBatchByIdentity,
@@ -29,6 +27,8 @@ import { useFeatureFlag } from '../utils/featureFlags';
 import { isLiving } from '../utils/combatEntities';
 import LevelChip from './LevelChip';
 
+// Re-exported so existing import sites (and their tests) keep resolving these
+// pure helpers through BattlefieldGrid, where they used to live.
 export { revealedLogEntries, takeAnimationBatch, removeBatchByIdentity };
 
 // Fragment definitions for the death burst — module-level, never recreated

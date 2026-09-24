@@ -167,6 +167,7 @@ class TestNpcChatRespond:
         npc = ChattyNPC(name="Gorran")
         tile.npcs_here = [npc]
 
+        player.__dict__["_active_chat_npc_key"] = "Gorran"  # the UI opens first
         result = game_service.npc_chat_respond(player, "Gorran", "Well met.", "open")
 
         assert result["success"] is True
@@ -177,6 +178,7 @@ class TestNpcChatRespond:
         neutral portrait rather than the retired "direct" register."""
         npc = ChattyNPC(name="Gorran")
         tile.npcs_here = [npc]
+        player.__dict__["_active_chat_npc_key"] = "Gorran"  # the UI opens first
         game_service.npc_chat_respond(player, "Gorran", "Hello")
         assert npc.responded_with[2] == "neutral"
 
@@ -189,12 +191,14 @@ class TestNpcChatRespond:
         ]
         player.__dict__["_active_chat_npc_id"] = "Gorran"
 
+        player.__dict__["_active_chat_npc_key"] = "Gorran"  # the UI opens first
         game_service.npc_chat_respond(player, "Gorran", "Farewell.")
 
         assert "_active_chat_npc_id" not in player.__dict__
 
     def test_missing_npc_is_an_error(self, game_service, player, tile):
         tile.npcs_here = []
+        player.__dict__["_active_chat_npc_key"] = "Gorran"  # the UI opens first
         assert game_service.npc_chat_respond(player, "Gorran", "Hi") == {
             "success": False,
             "error": "Active chat NPC not found",
@@ -206,6 +210,7 @@ class TestNpcChatRespond:
                 raise RuntimeError("llm down")
 
         tile.npcs_here = [ExplodingNPC(name="Gorran")]
+        player.__dict__["_active_chat_npc_key"] = "Gorran"  # the UI opens first
         result = game_service.npc_chat_respond(player, "Gorran", "Hi")
         assert result["success"] is False
         assert result["error"] == "Could not deliver that reply."

@@ -27,7 +27,16 @@ def _make_gs():
     gs = MagicMock()
     # npc_chat
     gs.npc_chat_open.return_value = {"success": True, "conversation": {}}
-    gs.npc_chat_respond.return_value = {"success": True, "npc_reply": "Hello!"}
+    def _respond(*_args, charge=None, **_kwargs):
+        # The real service charges the route's rate limit under the turn lock
+        # for a turn it runs (round-2 scrub, S1); honour that contract here.
+        from src.api.services.game_service import _CHAT_TURN_RATE_LIMITED
+
+        if charge is not None and charge():
+            return dict(_CHAT_TURN_RATE_LIMITED)
+        return {"success": True, "npc_reply": "Hello!"}
+
+    gs.npc_chat_respond.side_effect = _respond
     gs.npc_chat_end.return_value = {"success": True, "summary": "Conversation ended"}
     gs.npc_chat_history.return_value = {"success": True, "exchanges": []}
     return gs
@@ -187,6 +196,7 @@ class TestNpcChat:
         assert rv.status_code == 200
 
     def test_chat_respond_service_failure(self, app):
+        app._test_gs.npc_chat_respond.side_effect = None
         app._test_gs.npc_chat_respond.return_value = {
             "success": False,
             "error": "Chat not open",
