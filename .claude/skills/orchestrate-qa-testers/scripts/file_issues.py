@@ -32,7 +32,8 @@ def load_spec(path: Path):
 def repo_labels():
     r = subprocess.run(["gh", "label", "list", "--limit", "100", "--json", "name", "-q", ".[].name"],
                        cwd=str(ROOT), capture_output=True, text=True)
-    return set(r.stdout.split()) if r.returncode == 0 else None
+    # One label per line: labels may contain spaces ("map editor").
+    return {ln.strip() for ln in r.stdout.splitlines() if ln.strip()} if r.returncode == 0 else None
 
 
 def main():

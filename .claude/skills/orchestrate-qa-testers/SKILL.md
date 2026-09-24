@@ -37,6 +37,7 @@ Bundled with this skill:
 | `scripts/preflight.py` | venv, Playwright + Chromium launch, accepted Vite origins, free ports, `.env` facts, memory, stray Chromiums, `gh` auth |
 | `scripts/start_stack.py` | one backend (reloader-free, `GITHUB_TOKEN` blanked, `FLASK_ENV=testing`) + one Vite on an accepted port, per start config; refuses ports Socket.IO would reject |
 | `scripts/qa_driver.py` / `scripts/qa.py` | a persistent Playwright browser per tester behind a local HTTP port, with `where()`, `aria()`, `shot()`, `hit_test()`, `raw_click()` and automatic console/network capture |
+| `scripts/qa_api_client.py` | REST tester client (no browser): `login PORT`, `where`, `get`, `post`, `exec` with a persisted session and a JSONL request log under `logs/qa/api-runs/` (`HOV_QA_RUNS` overrides). API testers need no Vite port, so any number can share one backend; extra backends run `qa_api.py` directly |
 | `scripts/file_issues.py` | idempotent `gh issue create` from a spec module, label and title checks |
 | `assets/TESTER_PRIMER.template.md` | the primer every tester reads first — fill the `{{…}}` slots |
 | `assets/issues_spec_template.py` | issue body template |
@@ -46,14 +47,15 @@ Bundled with this skill:
 
 Scripts resolve the worktree root from their own location (`.claude/skills/…/scripts` → four parents up) or `HOV_QA_ROOT`. Run them with the repo venv's Python and `PYTHONIOENCODING=utf-8`.
 
-## Phase 0 — scope with the user (one AskUserQuestion, four questions)
+## Phase 0 — scope with the user (five questions)
 
-Read the map JSON, the story module and any test plan for the arc first so the questions are concrete. Then ask, in one call:
+Read the map JSON, the story module and any test plan for the arc first so the questions are concrete. Then ask questions 1–4 in one AskUserQuestion call and question 5 in a second call (the tool takes at most four per call):
 
 1. **Browser surface** — Playwright per agent (parallel, recommended), the in-app Browser pane (one shared pane, sequential), or Claude in Chrome (needs the extension; check `list_connected_browsers`).
 2. **Where the scope ends and what counts** — which scripted scenes, whether free-form LLM talk is in (it costs real tokens), which NPCs.
 3. **What to do with bugs** — report only, report + file issues, or fix as they go.
 4. **How to handle the hard section** (a boss fight, a long combat gauntlet) — one full-route tester plus split legs with pre-seeded flags is the default that worked.
+5. **Audio for visible browser testers** (the in-app pane or Claude in Chrome play through the user's speakers) — **muted (default, recommended)**, or sound on when audio is itself under test. Muting is `audioPreferences.isMusicMuted`/`isSfxMuted` in localStorage, set in the login step before the reload (recipe in `references/gotchas.md`). Headless Playwright drivers make no sound, so this does not apply to them.
 
 State the defaults you'll assume for everything else (branch, ports, models, tester count, safety: blank GitHub token, no account registration, test-session login) in the same message.
 
