@@ -563,6 +563,15 @@ def test_reap_ignores_a_living_ally():
     assert move.viable() is True
 
 
+def test_reapers_mark_ignores_a_living_ally():
+    player, enemy, _ = _jean_with_ally("Scythe", enemy_distance=3, ally_distance=1)
+    enemy.hp = 0
+    move = moves.ReapersMark(player)
+    assert move.viable() is False
+    enemy.hp = 10
+    assert move.viable() is True
+
+
 def test_shoot_bow_ignores_an_ally_in_range():
     player, enemy, ally = _jean_with_ally("Bow", enemy_distance=500, ally_distance=20)
     move = moves.ShootBow(player)

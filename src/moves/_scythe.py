@@ -265,7 +265,8 @@ class ReapersMark(Move):
             return False
         if not hasattr(self.user, "combat_proximity"):
             return False
-        return any(e.is_alive() for e in self.user.combat_proximity)
+        # An ally is not an opponent to mark (#674, as Reap above).
+        return any(e.is_alive() for e, _distance in self._hostiles_in_proximity())
 
     def evaluate(self):
         pass
