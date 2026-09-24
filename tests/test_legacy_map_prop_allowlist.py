@@ -410,3 +410,29 @@ def test_a_forced_constructor_fallback_cannot_set_back_references():
 
     assert not isinstance(getattr(way, "player", None), Slime)
     assert not isinstance(getattr(way, "tile", None), Slime)
+
+
+def test_constructed_is_keyword_only():
+    """A bare positional True/False at a call site reads as nothing; the
+    loader's constructor-fallback flag must be named (#674)."""
+    with pytest.raises(TypeError):
+        map_placeholders.legacy_prop_allowed(Passageway, "name", False)
+
+
+@pytest.mark.parametrize("helper", [
+    map_placeholders.authored_param_names,
+    map_placeholders.authored_override_names,
+    map_placeholders.authored_attr_aliases,
+    map_placeholders._init_param_names,
+])
+def test_per_class_metadata_is_computed_once_and_immutable(helper):
+    """Each helper is a pure function of the class, asked once per prop per
+    placement on every map load -- so it is cached per class, and the shared
+    cached value cannot be mutated by one caller under another (#674)."""
+    first = helper(Passageway)
+    assert helper(Passageway) is first
+    if hasattr(first, "keys"):
+        with pytest.raises(TypeError):
+            first["x"] = "y"
+    else:
+        assert isinstance(first, frozenset)

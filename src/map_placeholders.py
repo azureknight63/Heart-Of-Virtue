@@ -38,9 +38,11 @@ Both real map-JSON readers (the game's own boot loader,
 module, so they can't silently diverge on which classes are trusted.
 """
 
+import functools
 import importlib
 import inspect
 import logging
+import types
 from typing import Final
 
 import src.functions as functions
@@ -229,6 +231,9 @@ def _collect_class_attr(cls, attr_name, *, as_set):
     Subclasses only need to declare what they add beyond their parent --
     this walks every ancestor so a leaf class automatically inherits its
     family base's authored surface.
+
+    Returns a ``frozenset`` or a read-only mapping: the public wrappers below
+    cache the result per class, so every caller shares one value.
     """
     merged = set() if as_set else {}
     for klass in reversed(cls.__mro__):
@@ -239,14 +244,21 @@ def _collect_class_attr(cls, attr_name, *, as_set):
             merged |= set(value)
         else:
             merged.update(value)
-    return merged
+    return frozenset(merged) if as_set else types.MappingProxyType(merged)
 
 
+# The per-class helpers below are pure functions of the class (its MRO's
+# declarations and its ``__init__`` signature, neither of which the engine
+# rewrites at runtime) and are asked once per prop per placement on every map
+# load, so they are cached per class (#674).
+
+@functools.lru_cache(maxsize=None)
 def authored_param_names(cls):
     """Return the set of constructor kwarg names declared authored for ``cls``."""
     return _collect_class_attr(cls, "MAP_AUTHORED_PARAMS", as_set=True)
 
 
+@functools.lru_cache(maxsize=None)
 def authored_override_names(cls):
     """Return the set of post-construction attribute names declared authored
     (overridable) for ``cls``."""
@@ -277,7 +289,7 @@ def legacy_init_kwarg_allowed(cls, key):
     )
 
 
-def legacy_prop_allowed(cls, key, constructed=True):
+def legacy_prop_allowed(cls, key, *, constructed=True):
     """True when a legacy full-dump prop ``key`` may be ``setattr``'d onto a
     freshly built ``cls`` instance (issue #651).
 
@@ -315,6 +327,7 @@ def legacy_prop_allowed(cls, key, constructed=True):
     return not constructed and key in signature
 
 
+@functools.lru_cache(maxsize=None)
 def authored_attr_aliases(cls):
     """Return the ``{authored_name: actual_attribute_name}`` map for ``cls``.
 
@@ -353,6 +366,7 @@ def is_class_type_marker(payload):
     return isinstance(payload, dict) and "__class_type__" in payload and len(payload) == 1
 
 
+@functools.lru_cache(maxsize=None)
 def _init_param_names(cls):
     try:
         sig = inspect.signature(cls.__init__)
