@@ -778,8 +778,8 @@ const EntityTooltip = React.memo(({ entity, showDistance }) => {
 // its own so the camera's instant re-index (the wrapper's cell translate) and
 // the attack motion (the inner div) never share an element with it.
 // ---------------------------------------------------------------------------
-const TokenMoveTween = ({ pos, children }) => {
-  const ref = useTokenMoveTween(pos, HALF_VIEW);
+const TokenMoveTween = ({ pos, combatSpeed, children }) => {
+  const ref = useTokenMoveTween(pos, HALF_VIEW, combatSpeed);
   return (
     <div ref={ref} data-testid="token-move-tween" style={{ width: '100%', height: '100%' }}>
       {children}
@@ -800,6 +800,7 @@ const EntityLayer = React.memo(({
   onHoverEntity,
   onClearHover,
   onSelectEntity,
+  combatSpeed,
 }) => (
   <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none' }}>
     {entitiesToRender.map((item, idx) => {
@@ -902,7 +903,7 @@ const EntityLayer = React.memo(({
             zIndex: animStates.length ? 100 : (isHighlighted ? 50 : (item.style.zIndex || 20))
           }}
         >
-          <TokenMoveTween pos={item.pos}>
+          <TokenMoveTween pos={item.pos} combatSpeed={combatSpeed}>
           <div style={{
             width: '100%',
             height: '100%',
@@ -1840,7 +1841,8 @@ function BattlefieldGrid({
   // log-spooler animation path is bypassed: pre-built animations arrive via
   // `streamedAnimations` (each may carry the source `beat` so its 75% SFX chain
   // fires at animation start, or `suppressSfx` to stay silent). `combatSpeed`
-  // scales SFX timing (issue #460). Off by default — production is unchanged.
+  // scales SFX timing (issue #460) and the token move glide (#674). Off by
+  // default — production is unchanged.
   streaming = false,
   streamedAnimations = [],
   combatSpeed = 1,
@@ -2511,6 +2513,7 @@ function BattlefieldGrid({
           onHoverEntity={setHoveredEntity}
           onClearHover={handleClearHover}
           onSelectEntity={toggleSelectedEntity}
+          combatSpeed={combatSpeed}
         />
 
         <EffectsLayer
