@@ -479,71 +479,27 @@ STREAMED_BEAT_RESULTS_CONTRACT = {
 }
 
 
-class _ResultsScriptMove:
-    """A player move whose one beat hits, staggers and whiffs (#667).
+def _hit_stagger_and_whiff(user, target):
+    """One beat that hits, staggers and whiffs (#667), so the contract is read
+    off known results of every kind."""
+    from src.moves._base import OUTCOME_MISS, publish_outcome
+    from src.narration import narrate
 
-    Every attribute the adapter reads while casting and serializing is
-    present; the effects are exact so the contract is read off known results.
-    """
-
-    passive = False
-    targeted = True
-    instant = False
-    needs_duration = False
-    accepts_ally_target = False
-    web_animation = "attack"
-    category = "Attack"
-    description = ""
-    fatigue_cost = 0
-    beats_left = 0
-    stage_beat = (0, 0, 0, 0)
-
-    def __init__(self, target):
-        self.name = "Scripted"
-        self.display_name = "Scripted"
-        self.current_stage = 0
-        self.target = target
-        self.user = None
-        self._done = False
-
-    def advance(self, user):
-        from src.moves._base import OUTCOME_MISS, publish_outcome
-        from src.narration import narrate
-
-        if self._done:
-            return
-        self._done = True
-        self.target.hp -= 7
-        self.target.states.append(states.Staggered(self.target))
-        publish_outcome(user, OUTCOME_MISS, self.target)
-        narrate("Jean's attack just missed!")
-
-    def viable(self):
-        return True
-
-    def cast(self):
-        pass
+    target.hp -= 7
+    target.states.append(states.Staggered(target))
+    publish_outcome(user, OUTCOME_MISS, target)
+    narrate("Jean's attack just missed!")
 
 
 class TestBeatResultsWireContract:
     @pytest.fixture
     def beat(self):
         """A real beat's state, run through the real adapter beat loop."""
-        from tests._combat_fixtures import engage, seeded
+        from tests._combat_fixtures import run_scripted_beat
 
-        player = Player()
-        slime = Slime()
-        slime.hp = slime.maxhp = 9999
-        slime.damage = 0
-        engage(player, [slime])
+        # CombatStrategist is only built in the adapter's __init__.
         with patch("src.api.combat_adapter.CombatStrategist"):
-            adapter = ApiCombatAdapter(player)
-            adapter.initialize_combat([slime])
-        move = _ResultsScriptMove(slime)
-        player.known_moves = [move]
-        player.current_move = None
-        with seeded():
-            result = adapter._execute_move_inner(move)
+            result, _ = run_scripted_beat(_hit_stagger_and_whiff)
         return result["beat_states"][0]
 
     @staticmethod

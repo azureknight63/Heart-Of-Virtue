@@ -277,3 +277,76 @@ def forced_roll(value, module="src.moves._base"):
 
     with patch(f"{module}.random.randint", side_effect=_roll) as patched:
         yield patched
+
+
+class ScriptedMove:
+    """A player move whose single beat runs ``effect(user)`` once.
+
+    Hand-rolled like tests/test_cooldown_drain_logic.py's stub so the beat's
+    effects are exact; every attribute the adapter reads while casting and
+    serializing is present, so nothing about the beat loop is faked.
+    """
+
+    passive = False
+    targeted = True
+    instant = False
+    needs_duration = False
+    accepts_ally_target = False
+    web_animation = "attack"
+    category = "Attack"
+    description = ""
+    fatigue_cost = 0
+    beats_left = 0
+    stage_beat = (0, 0, 0, 0)
+
+    def __init__(self, target, effect):
+        self.name = "Scripted"
+        self.display_name = "Scripted"
+        self.current_stage = 0
+        self.target = target
+        self.user = None
+        self._effect = effect
+
+    def advance(self, user):
+        if self._effect is not None:
+            effect, self._effect = self._effect, None
+            effect(user)
+
+    def viable(self):
+        return True
+
+    def cast(self):
+        pass
+
+
+def run_scripted_beat(effect, slime_hp=9999, prepare=None):
+    """One real beat over a real Player + Slime; return ``(result, slime)``.
+
+    ``effect(player, slime)`` is the beat. ``prepare(player)`` runs after the
+    fight is set up and before the beat, so it defines the baseline the beat's
+    changes are measured against. The Slime deals no damage, so its own turn
+    cannot muddy Jean's HP.
+    """
+    from types import SimpleNamespace
+
+    from src.api.combat_adapter import ApiCombatAdapter
+    from src.npc import Slime
+
+    player = Player()
+    slime = Slime()
+    slime.hp = slime.maxhp = slime_hp
+    slime.damage = 0
+    engage(player, [slime])
+    # The death path removes the corpse from the room; a real tile is not
+    # what is under test, only somewhere for that removal to land.
+    player.current_room = SimpleNamespace(npcs_here=[slime])
+    adapter = ApiCombatAdapter(player)
+    adapter.initialize_combat([slime])
+    if prepare is not None:
+        prepare(player)
+    move = ScriptedMove(slime, lambda user: effect(user, slime))
+    player.known_moves = [move]
+    player.current_move = None
+    with seeded():
+        result = adapter._execute_move_inner(move)
+    return result, slime
