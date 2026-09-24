@@ -386,7 +386,7 @@ function StageDialogueCard({
                 </span>
             )}
             {autoAdvanceMs !== null && (
-                <AutoAdvanceBar key={beatKey} durationMs={autoAdvanceMs} />
+                <AutoAdvanceBar key={`${beatKey}:${autoAdvanceMs}`} durationMs={autoAdvanceMs} />
             )}
         </div>
     )
@@ -397,7 +397,9 @@ function StageDialogueCard({
  *
  * A single CSS animation over `durationMs`, which the stage passes as the SAME
  * number it arms its timer with, so the bar and the timer cannot disagree. The
- * parent remounts it per beat (`key`) to restart the fill. Pure CSS rather than
+ * parent remounts it per beat AND per dwell (`key` = beat:ms) to restart the
+ * fill whenever the timer re-arms — a changed animation-duration alone does
+ * not restart a running CSS animation (issue #674). Pure CSS rather than
  * a requestAnimationFrame loop: no re-render per frame, and the app-wide
  * `.reduced-motion` rule (styles/index.css) already collapses animations, which
  * leaves a static full bar — still saying "this will advance on its own",

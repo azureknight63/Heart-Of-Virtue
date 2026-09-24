@@ -255,6 +255,33 @@ describe('AUTO-ADVANCE progress bar (issue #658)', () => {
             .toBe(`${autoAdvanceDelay(line, fast)}ms`);
     });
 
+    it('restarts the fill when TEXT SPEED changes mid-dwell, as the timer re-arms (#674)', () => {
+        // The timer effect re-arms on `autoAdvanceMs`; the bar was keyed on the
+        // beat alone, so a mid-dwell speed change kept the old element — and a
+        // changed animation-duration does not restart a running CSS animation —
+        // leaving the bar out of step with the timer it depicts. INSTANT is
+        // the step that exposes it: the typewriter re-shows the whole beat in
+        // the same commit, so the beat stays complete and the bar stays
+        // mounted while its dwell drops to the floor.
+        const line = 'The camp fires burn low, and the wind carries ash off the ridge.';
+        const fast = INSTANT_TEXT_SPEED;
+        expect(autoAdvanceDelay(line, fast)).toBe(AUTO_ADVANCE_MIN_MS);
+        expect(autoAdvanceDelay(line, DEFAULT_TEXT_SPEED)).toBeGreaterThan(AUTO_ADVANCE_MIN_MS);
+        usePreferences.mockReturnValue(prefs({ autoAdvance: true }));
+        const segments = [{ text: line, in_conversation: false }, ...SEGMENTS];
+        const { rerender } = render(<ConversationStage segments={segments} onComplete={vi.fn()} />);
+        tick(BASE_MS_PER_CHAR * 80);
+        const before = screen.getByTestId('auto-advance-fill');
+
+        tick(300); // part-way through the dwell
+        usePreferences.mockReturnValue(prefs({ autoAdvance: true, textSpeed: fast }));
+        rerender(<ConversationStage segments={segments} onComplete={vi.fn()} />);
+
+        const after = screen.getByTestId('auto-advance-fill');
+        expect(after.style.animationDuration).toBe(`${autoAdvanceDelay(line, fast)}ms`);
+        expect(after).not.toBe(before);
+    });
+
     it('disappears once the scene is complete, and never shows in live mode', () => {
         usePreferences.mockReturnValue(prefs({ autoAdvance: true }));
         const onComplete = vi.fn();
