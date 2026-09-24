@@ -220,9 +220,17 @@ function Expand-Template {
         itself contain placeholders (__RAISE__ does), so replacement runs up
         to $maxPasses times, enough for one level of nesting and a pass that
         changes nothing. Refuses to render: an empty or whitespace value; a
-        single quote in any value (they are spliced into `sh -c '...'`); and,
-        for a key in $AbsolutePathKeys, anything but a plain absolute path.
-        `rm -rf ` on a truncated path is not a script this function produces.
+        single quote in any value (they are spliced into `sh -c '...'`); for a
+        key in $AbsolutePathKeys, anything but a plain absolute path; and a
+        carriage return anywhere in the result. `rm -rf ` on a truncated path
+        is not a script this function produces.
+
+        CRLF line endings become LF first. A here-string keeps the line
+        endings of the file it is written in, and a Windows checkout
+        (core.autocrlf=true) has this file in CRLF. ssh delivers every `\r`
+        to the remote bash, and no phase survives one: `set -euo pipefail\r`
+        is an invalid option, which stops a `set -e` phase before its first
+        command, and `then\r` is not `then`, a syntax error for the rest.
     #>
     param(
         [Parameter(Mandatory = $true)][string]$Template,
@@ -246,7 +254,7 @@ function Expand-Template {
     }
 
     $maxPasses = 3
-    $out = $Template
+    $out = $Template.Replace("`r`n", "`n")
     $settled = $false
     for ($pass = 0; $pass -lt $maxPasses; $pass++) {
         $before = $out
@@ -258,6 +266,9 @@ function Expand-Template {
     }
     if ($out -cmatch '__[A-Z0-9_]+__') {
         throw "Unexpanded placeholder in remote script: $($Matches[0])"
+    }
+    if ($out.Contains("`r")) {
+        throw 'Remote script contains a carriage return; bash would read it as part of the word before it'
     }
     return $out
 }

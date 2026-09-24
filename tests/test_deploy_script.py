@@ -186,7 +186,22 @@ shutil.copy(VERSION_FILE, SCRIPT_COPY_DIR / "VERSION")
 (SCRIPT_COPY_DIR / "frontend" / "public").mkdir(parents=True)
 shutil.copy(MAINTENANCE_HTML, SCRIPT_COPY_DIR / "frontend" / "public" / "maintenance.html")
 SCRIPT_COPY = SCRIPT_COPY_DIR / "deploy.ps1"
-DOT_SOURCE = f". {_ps_literal(SCRIPT_COPY.as_posix())}\n"
+
+
+def _dot_source(script):
+    return f". {_ps_literal(script.as_posix())}\n"
+
+
+DOT_SOURCE = _dot_source(SCRIPT_COPY)
+
+
+def _script_copy_with_line_endings(eol):
+    """A copy of the script beside SCRIPT_COPY (so it finds VERSION) with every
+    line ending in ``eol``, whatever this checkout's own endings are."""
+    path = SCRIPT_COPY_DIR / f"deploy-{eol.hex()}.ps1"
+    path.write_bytes(DEPLOY_PS1.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", eol))
+    return path
+
 
 #: Environment names a child pwsh must not inherit: git's (a hook or `bisect
 #: run` exports ones that point at the developer's repository), the deploy
@@ -265,13 +280,13 @@ PHASES = tuple(PHASE_RENDERERS)
 NON_STOPPING_PHASES = {"status"}
 
 
-@pytest.fixture(scope="module")
-def rendered(pwsh):
-    """Every remote script the deploy can run, rendered once, as strings,
-    plus the script's $RemoteValues (``layout``) and default $Version."""
+def _render_all(script):
+    """Every remote script the deploy can run, rendered by dot-sourcing
+    ``script``, as strings, plus its $RemoteValues (``layout``) and default
+    $Version."""
     renders = "".join(f"    {name} = {call}\n" for name, call in PHASE_RENDERERS.items())
     proc = _pwsh(
-        DOT_SOURCE
+        _dot_source(script)
         + "[ordered]@{\n    layout = $RemoteValues\n    version = $Version\n"
         + renders
         + "} | ConvertTo-Json -Depth 3\n",
@@ -279,6 +294,12 @@ def rendered(pwsh):
     )
     assert proc.stdout.strip(), f"pwsh rendered nothing; stderr:\n{proc.stderr}"
     return json.loads(proc.stdout)
+
+
+@pytest.fixture(scope="module")
+def rendered(pwsh):
+    """``_render_all`` of this checkout's script, once."""
+    return _render_all(SCRIPT_COPY)
 
 
 @pytest.fixture(scope="module")
@@ -308,11 +329,21 @@ def test_the_layout_is_production_s(layout):
 def test_every_phase_is_fully_expanded_lf_only_bash(rendered):
     for phase in PHASES:
         script = rendered[phase]
-        # PowerShell here-strings could carry the file's CRLF line endings;
-        # bash does not forgive a `\r`. pwsh normalises today -- this is what
-        # notices if that ever stops.
+        # Whatever this checkout's line endings are; the next test renders
+        # both explicitly.
         assert "\r" not in script, f"{phase} script contains a carriage return"
         assert re.search(r"__[A-Z0-9_]+__", script) is None, f"unexpanded placeholder in {phase}"
+
+
+def test_the_rendering_does_not_depend_on_the_script_s_line_endings(pwsh):
+    # pwsh does NOT normalise a here-string's line endings, and a Windows
+    # checkout with core.autocrlf=true has this script in CRLF; what a `\r`
+    # does on the server is in Expand-Template's docstring. CI checks out LF,
+    # so this renders both endings rather than trusting the checkout.
+    lf, crlf = (_render_all(_script_copy_with_line_endings(eol)) for eol in (b"\n", b"\r\n"))
+    for phase in PHASES:
+        assert "\r" not in crlf[phase], f"{phase} rendered from a CRLF script carries a carriage return"
+        assert crlf[phase] == lf[phase], phase
 
 
 def _render_outcomes(call, cases):
@@ -338,6 +369,7 @@ def test_expand_template_refuses_unsafe_values(pwsh):
         "@{ SERVICE = \"x'; rm -rf / #\" }": "refused",
         "@{ LIVE = '/var/www/../etc' }": "refused",
         "@{ LIVE = \"/var/www/x`n\" }": "refused",       # .NET's $ matches before a final newline
+        "@{ SERVICE = \"x`r\" }": "refused",              # not a path: bash reads `\r` as part of the word
         "@{ LIVE = '//var/www' }": "refused",
         "@{ LIVE = '/var/www/' }": "refused",            # a trailing slash nests .new inside live
     }
