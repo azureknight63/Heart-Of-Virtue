@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 import { player as playerApi } from '../api/endpoints'
 import { apiErrorMessage } from '../utils/apiError'
@@ -12,27 +12,38 @@ export const PRAYER_FAILED = 'Jean could not pray just now. Please try again.'
  *
  * Never rejects: a refusal (mid-fight, too spent) arrives as a 400 whose
  * `error` is the engine's own sentence, and it is returned the same way a
- * success is, so the caller has one shape to render.
+ * success is, so the caller has one shape to render. One prayer at a time: a
+ * call while one is in flight returns that same promise.
  *
  * @returns {{pray: () => Promise<{ok: boolean, message: string}>, isPraying: boolean}}
  */
 export default function usePrayer() {
   const [isPraying, setIsPraying] = useState(false)
+  // The prayer in flight, if any. `isPraying` disables the button only after a
+  // re-render, so a double click that lands before it would send two POSTs;
+  // a second call while one is running shares the first one's answer instead.
+  const inFlightRef = useRef(null)
 
-  const pray = useCallback(async () => {
-    setIsPraying(true)
-    try {
-      const response = await playerApi.pray()
-      const data = response?.data
-      if (data?.success) {
-        return { ok: true, message: data.message }
+  const pray = useCallback(() => {
+    if (inFlightRef.current) return inFlightRef.current
+    const request = (async () => {
+      setIsPraying(true)
+      try {
+        const response = await playerApi.pray()
+        const data = response?.data
+        if (data?.success) {
+          return { ok: true, message: data.message }
+        }
+        return { ok: false, message: apiErrorMessage(data, PRAYER_FAILED) }
+      } catch (err) {
+        return { ok: false, message: apiErrorMessage(err, PRAYER_FAILED) }
+      } finally {
+        inFlightRef.current = null
+        setIsPraying(false)
       }
-      return { ok: false, message: apiErrorMessage(data, PRAYER_FAILED) }
-    } catch (err) {
-      return { ok: false, message: apiErrorMessage(err, PRAYER_FAILED) }
-    } finally {
-      setIsPraying(false)
-    }
+    })()
+    inFlightRef.current = request
+    return request
   }, [])
 
   return { pray, isPraying }

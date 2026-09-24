@@ -21,10 +21,18 @@ import { lookupOr } from '../utils/lookup'
  * the drift but made prose load-bearing — rewording a tooltip would have
  * changed behaviour. The `debug` field says what it means.
  */
+// The prayer command's name, as the server lists it: it is matched in three
+// places (the command list, the handler table, the busy check).
+const PRAY = 'Pray'
+
+// How long prayer narration stays up. Longer than the other toasts: it is
+// prose to read, not a status blip.
+const PRAYER_MESSAGE_MS = 8000
+
 const COMMANDS = [
   { name: 'Menu', tooltip: 'Open the main menu' },
   { name: 'Save', tooltip: 'Save your game progress' },
-  { name: 'Pray', tooltip: 'Kneel and pray. Lifts Hollowed at a fatigue cost; free otherwise.' },
+  { name: PRAY, tooltip: 'Kneel and pray. Lifts Hollowed at a fatigue cost; free otherwise.' },
   { name: 'Teleport', tooltip: 'Teleport to a specific location', debug: true },
   { name: 'Alter', tooltip: 'Change game variables and switches', debug: true },
   { name: 'Showvar', tooltip: 'Display all game variables', debug: true },
@@ -143,18 +151,17 @@ export default function ActionsPanel({ location, onClose, onRefetch }) {
   }
 
   // Prayer (issue #646) changes fatigue and can lift Hollowed, so a success
-  // refetches the player to redraw the fatigue bar and the status icons. The
-  // narration stays up longer than the other toasts: it is prose to read.
+  // refetches the player to redraw the fatigue bar and the status icons.
   const handlePray = async () => {
     const { ok, message } = await pray()
-    setTimedMessage(message, 8000)
+    setTimedMessage(message, PRAYER_MESSAGE_MS)
     if (ok && onRefetch) onRefetch()
   }
 
   const COMMAND_HANDLERS = {
     'Menu': handleMenu,
     'Save': handleSave,
-    'Pray': handlePray,
+    [PRAY]: handlePray,
   }
 
   const handleAction = async (command) => {
@@ -263,7 +270,7 @@ export default function ActionsPanel({ location, onClose, onRefetch }) {
                 .filter(cmd => cmd.name !== 'Search' && !isInertDebugCommand(cmd))
                 .map((command, idx) => {
                 const isHovered = hoveredCommand === idx
-                const isBusy = command.name === 'Pray' && isPraying
+                const isBusy = command.name === PRAY && isPraying
 
                 return (
                   <div key={command.name} style={{ position: 'relative' }}>
