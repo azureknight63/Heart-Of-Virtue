@@ -53,10 +53,13 @@ const npcChat = {
    * @param {string} [turnId] - Idempotency key for this turn (#636): one per
    *   option click, reused by that click's Retry, so a turn the server already
    *   committed is replayed instead of run twice. Omitted, the field is not sent.
+   * @param {number} [timeoutMs] - This request's own deadline, for a re-send
+   *   that must end with the turn's first deadline rather than start a fresh
+   *   one. Omitted, the full `NPC_CHAT_TIMEOUT_MS` applies.
    * @returns {Promise} Response with { npc_response, jean_options, loquacity_current,
    *   loquacity_max, conversation_ended, reputation, reputation_delta, relationship }
    */
-  respond: (npcKey, jeanText, jeanTone = 'direct', turnId) =>
+  respond: (npcKey, jeanText, jeanTone = 'direct', turnId, timeoutMs) =>
     apiClient.post(
       `${BASE}/respond`,
       {
@@ -65,7 +68,7 @@ const npcChat = {
         jean_tone: jeanTone,
         ...(turnId ? { turn_id: turnId } : {}),
       },
-      TURN_CONFIG
+      timeoutMs ? { timeout: timeoutMs } : TURN_CONFIG
     ),
 
   /**

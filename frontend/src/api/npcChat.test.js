@@ -68,6 +68,15 @@ describe('npcChat', () => {
     );
   });
 
+  it('bounds a re-send by the deadline the caller has left (#636)', () => {
+    npcChat.respond('npc_session_123', 'Back off', 'guarded', 'turn_0123456789', 4200);
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/npc/chat/respond',
+      expect.objectContaining({ turn_id: 'turn_0123456789' }),
+      { timeout: 4200 }
+    );
+  });
+
   it('ends a conversation with its open token (#674)', () => {
     npcChat.end('npc_session_123', 'tok_0123456789');
     expect(apiClient.post).toHaveBeenCalledWith(

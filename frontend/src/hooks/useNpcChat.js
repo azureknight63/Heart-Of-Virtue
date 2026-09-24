@@ -185,12 +185,22 @@ const STILL_COMPOSING_MESSAGE = 'Still composing a reply — give it a moment.'
 // asked nothing yet, so "still composing a reply" would be false here.
 const STILL_TALKING_MESSAGE = 'Jean is still finishing another conversation — give it a moment.'
 
-// How long to wait before re-sending a turn the server says is still running
-// under this very `turn_id` (a 409 carrying `pending: true`, #636). The server
-// never blocks a request waiting on another, so the client polls instead: each
-// re-send either meets the same 409 or, once the turn commits, its replay.
-// Bounded overall by `NPC_CHAT_TIMEOUT_MS` from the first send.
+// How long to wait before the first re-send of a turn the server says is
+// still running under this very `turn_id` (a 409 carrying `pending: true`,
+// #636). The server never blocks a request waiting on another, so the client
+// polls instead: each re-send either meets the same 409 or, once the turn
+// commits, its replay. Each later wait grows by `PENDING_RESEND_BACKOFF`, up to
+// `PENDING_RESEND_MAX_MS`, so a long turn costs a handful of requests rather
+// than one a second.
+//
+// The whole exchange ends at the deadline the FIRST send set
+// (`NPC_CHAT_TIMEOUT_MS` from the click): every re-send carries only what is
+// left of it as its own timeout, and none is sent with less than
+// `PENDING_RESEND_MIN_BUDGET_MS` left — too little to be answered.
 export const PENDING_RESEND_MS = 1000
+export const PENDING_RESEND_BACKOFF = 1.5
+export const PENDING_RESEND_MAX_MS = 4000
+const PENDING_RESEND_MIN_BUDGET_MS = 1000
 
 /**
  * A fresh idempotency key for one option click (#636).
@@ -198,11 +208,15 @@ export const PENDING_RESEND_MS = 1000
  * `crypto.randomUUID` exists only in secure contexts, and a dev build opened
  * over a LAN address for phone testing is plain http, where it is undefined;
  * `getRandomValues` is available everywhere. Both shapes match the server's
- * `^[A-Za-z0-9_-]{8,64}$`.
+ * `^[A-Za-z0-9_-]{8,64}$`. With no Web Crypto at all this throws rather than
+ * fall back to `Math.random`: a guessable key is one another turn can replay.
  */
 function mintTurnId() {
   const { crypto } = globalThis
-  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID()
+  if (typeof crypto?.getRandomValues !== 'function') {
+    throw new Error('NPC chat needs Web Crypto (crypto.getRandomValues) to mint a turn id')
+  }
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
@@ -648,18 +662,24 @@ export function useNpcChat(npcId, npcName, onClose) {
 
   /**
    * Send one turn, re-sending while the server reports that same `turnId` is
-   * still running (a pending 409, #636), up to the client deadline. Each
-   * re-send is gated on the turn still being the one on screen.
+   * still running (a pending 409, #636), with backoff, until the deadline the
+   * first send set. Each re-send is gated on the turn still being the one on
+   * screen, and carries only the time left as its own timeout.
    */
   const sendTurn = async (option, turnId, seq) => {
     const giveUpAt = Date.now() + NPC_CHAT_TIMEOUT_MS
+    let delay = PENDING_RESEND_MS
+    // The first send runs on the client's default deadline — the full budget.
+    let timeoutMs
     for (;;) {
       try {
-        return await npcChat.respond(npcKey, option.text, option.tone, turnId)
+        return await npcChat.respond(npcKey, option.text, option.tone, turnId, timeoutMs)
       } catch (err) {
-        if (!isPendingTurn(err) || Date.now() + PENDING_RESEND_MS > giveUpAt) throw err
-        await wait(PENDING_RESEND_MS)
+        if (!isPendingTurn(err) || giveUpAt - Date.now() - delay < PENDING_RESEND_MIN_BUDGET_MS) throw err
+        await wait(delay)
         if (!isCurrentTurn(seq)) throw err
+        timeoutMs = Math.max(giveUpAt - Date.now(), PENDING_RESEND_MIN_BUDGET_MS)
+        delay = Math.min(delay * PENDING_RESEND_BACKOFF, PENDING_RESEND_MAX_MS)
       }
     }
   }
