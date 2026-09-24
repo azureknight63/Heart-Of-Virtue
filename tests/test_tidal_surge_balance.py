@@ -24,6 +24,7 @@ import src.functions as functions
 from src.api.services.session_manager import SessionManager
 from src.moves import TidalSurge
 from src.npc._enemies import KingSlime
+from src.npc_level_tables import REGION_ENEMY_LEVELS, apply_enemy_level
 from src.player import Player
 from tests._combat_fixtures import seeded
 
@@ -138,3 +139,99 @@ def test_tidal_surge_stays_deadly_after_the_retune():
     """The retune changes the number, not the warning: the wind-up still
     telegraphs as the game's one "deadly" move (part A of #586)."""
     assert TidalSurge.telegraph_severity == "deadly"
+
+
+# --- #655: the guard above at the level the table actually spawns him at ----
+#
+# The tests above build a level-1 King Slime (50 damage), which is the fight
+# #586 tuned the 1.8x multiplier against. #617 then gave him a region level
+# and a growth profile, and at the draft level 6 (100 damage) a max-roll
+# surge was 216 raw -- more than Jean's whole bar (docs/qa/
+# 2026-09-24-balance-baseline.md). These rebuild the boss through the real
+# spawn path at whatever level REGION_ENEMY_LEVELS gives him, so a future
+# table edit that brings the one-shot back fails here.
+
+#: The config production ships (beta 2): Jean starts at level 4 with the
+#: chapter-1 kit and Gorran in the party.
+_PROD_CONFIG_NAME = "config_prod.ini"
+
+#: King Slime's home region -- the map his placement lives on.
+_KING_SLIME_REGION = "grondelith-mineral-pools"
+
+#: The levels Jean realistically fights King Slime at: prod starts him at 4,
+#: and the Pools' spawns pay roughly 1,000 exp before the boss, so he usually
+#: arrives at 5 (the baseline report's "Assumptions" table).
+_KING_SLIME_JEAN_LEVELS = (4, 5)
+
+
+def _prod_jean_at(monkeypatch, level):
+    """A full-HP Jean as production fields him at ``level``.
+
+    Dressed by ``SessionManager`` from ``config_prod.ini`` and climbed through
+    ``apply_starting_level`` (seeded) with the ``even`` allocation -- the
+    baseline report's model of a player who has spent the LEVEL UP points
+    the prod start hands him before he reaches the Pools.
+    """
+    monkeypatch.setenv("CONFIG_FILE", _PROD_CONFIG_NAME)
+    with patch("builtins.print"):
+        manager = SessionManager()
+        jean = Player()
+        manager._apply_starting_equipment(jean)
+        with seeded():
+            jean.apply_starting_level(level, allocation="even")
+        functions.refresh_stat_bonuses(jean)
+    jean.hp = jean.maxhp
+    jean.combat_list = []
+    jean.combat_list_allies = [jean]
+    jean.combat_proximity = {}
+    return jean
+
+
+def _region_king_slime(jean):
+    """King Slime built by the real spawn path for his home region.
+
+    ``apply_enemy_level`` resolves the level from ``REGION_ENEMY_LEVELS`` and,
+    since he is a boss, never rolls it -- so this is exactly the King Slime
+    the map places, not a literal level typed into the test.
+    """
+    slime = _engaged_king_slime(jean)
+    with seeded():
+        apply_enemy_level(slime, _KING_SLIME_REGION)
+    return slime
+
+
+@pytest.mark.parametrize("jean_level", _KING_SLIME_JEAN_LEVELS)
+def test_region_king_slime_is_built_at_its_table_level(monkeypatch, jean_level):
+    """Positive control: the boss below really is the table's King Slime,
+    levelled and grown, not a level-1 stand-in."""
+    jean = _prod_jean_at(monkeypatch, jean_level)
+    slime = _region_king_slime(jean)
+
+    expected = REGION_ENEMY_LEVELS[_KING_SLIME_REGION]["KingSlime"]
+    assert jean.level == jean_level
+    assert slime.level == expected
+    if expected > 1:
+        assert slime.damage > KingSlime().damage
+
+
+@pytest.mark.parametrize("jean_level", _KING_SLIME_JEAN_LEVELS)
+def test_max_roll_surge_from_region_king_slime_leaves_full_hp_jean_standing(
+    monkeypatch, jean_level
+):
+    """#586's promise at the level the map spawns him: the worst Tidal
+    Surge, landing clean, does not take a full-HP Jean at a realistic level
+    to 0."""
+    jean = _prod_jean_at(monkeypatch, jean_level)
+    slime = _region_king_slime(jean)
+    surge = _max_roll_surge(slime)
+
+    with patch("builtins.print"), seeded(), patch("random.randint", return_value=0):
+        surge.execute(slime)
+
+    assert jean.hp > 0, (
+        f"max-roll Tidal Surge from a level-{slime.level} King Slime "
+        f"({slime.damage} damage, {surge.power:.0f} raw) took a full-HP "
+        f"level-{jean.level} Jean ({jean.maxhp} HP, "
+        f"{jean.protection:.1f} protection) to {jean.hp}"
+    )
+    assert jean.hp < jean.maxhp

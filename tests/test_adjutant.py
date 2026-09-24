@@ -7,9 +7,11 @@ directly.
 
 from unittest.mock import MagicMock, patch
 
-from src.npc._adjutant import TheAdjutant
-from src.npc._enemies import CaveBat, Slime
-from src.npc_level_tables import ENEMY_GROWTH_PROFILES
+import pytest
+
+from src.npc._adjutant import ADD_COMBATANT_ALLOWED_CLASSES, TheAdjutant
+from src.npc._enemies import Slime, StatusDummy
+from src.npc_level_tables import ENEMY_GROWTH_PROFILES, apply_enemy_level
 
 
 class MockPlayer:
@@ -302,8 +304,10 @@ def test_set_combatant_stats_level_rescales_via_sync_level():
     so growth_profile deltas actually rescale HP/damage, matching a real
     spawn-time level assignment (src/npc_level_tables.py)."""
     npc = Slime()
-    npc.growth_profile = ENEMY_GROWTH_PROFILES["Slime"]  # {"maxhp": 6, "damage": 3}
-    assert npc.level == 1 and npc.maxhp == 20 and npc.damage == 26
+    profile = ENEMY_GROWTH_PROFILES["Slime"]
+    npc.growth_profile = profile
+    base_maxhp, base_damage = npc.maxhp, npc.damage
+    assert npc.level == 1
 
     player, _ = _arena_player(npcs=[npc])
     adj = TheAdjutant()
@@ -312,17 +316,19 @@ def test_set_combatant_stats_level_rescales_via_sync_level():
     assert result["success"] is True
     assert npc.level == 3
     # Not just the level number -- the growth_profile deltas actually applied.
-    assert npc.maxhp == 20 + 6 * 2  # 32
-    assert npc.damage == 26 + 3 * 2  # 32
+    assert npc.maxhp == base_maxhp + profile["maxhp"] * 2
+    assert npc.damage == base_damage + profile["damage"] * 2
     assert npc.hp == npc.maxhp  # pool grew, current hp kept full
     assert result["updated"]["level"] == 3
 
 
 def test_set_combatant_stats_level_noop_without_growth_profile():
-    """CaveBat has no ENEMY_GROWTH_PROFILES entry yet (Phase 1 placeholder
-    scope) -- a level edit is an intentional no-op, exactly like sync_level
-    already behaves elsewhere (set_ally_progression, apply_enemy_level)."""
-    npc = CaveBat()
+    """A class with no ENEMY_GROWTH_PROFILES entry (StatusDummy, the arena's
+    Pell) has nothing to level by -- a level edit is an intentional no-op,
+    exactly like sync_level behaves elsewhere (set_ally_progression,
+    apply_enemy_level)."""
+    assert "StatusDummy" not in ENEMY_GROWTH_PROFILES
+    npc = StatusDummy()
     assert npc.growth_profile is None
 
     player, _ = _arena_player(npcs=[npc])
@@ -332,6 +338,71 @@ def test_set_combatant_stats_level_noop_without_growth_profile():
     assert result["success"] is True
     assert npc.level == 1  # unchanged -- sync_level no-ops with no profile
     assert result["updated"]["level"] == 1
+
+
+# --- #655: the level op on an arena-added enemy uses its growth profile ------
+
+def test_level_op_on_added_enemy_applies_its_enemy_growth_profile():
+    """#655's baseline found ``POST /api/debug/arena/stats {level}`` reported
+    success on an arena-added King Slime but left him at level 1 with his
+    stats unchanged: ``add_combatant`` builds a bare ``cls()``, so there is
+    no growth profile and ``sync_level`` returns early. The op must level
+    the enemy by its ``ENEMY_GROWTH_PROFILES`` entry, as a real spawn does."""
+    player, tile = _arena_player()
+    adj = TheAdjutant()
+    assert adj.add_combatant(player, "Fodder Pit", "KingSlime")["success"]
+    npc = tile.npcs_here[0]
+    base_maxhp, base_damage, base_prot = npc.maxhp, npc.damage, npc.protection
+    profile = ENEMY_GROWTH_PROFILES["KingSlime"]
+
+    result = adj.set_combatant_stats(player, "Fodder Pit", 0, {"level": 5})
+
+    assert result["success"] is True
+    assert result["updated"]["level"] == 5
+    assert npc.level == 5
+    assert npc.maxhp == base_maxhp + profile["maxhp"] * 4
+    assert npc.damage == base_damage + profile["damage"] * 4
+    assert npc.protection == base_prot + profile["protection"] * 4
+
+
+def test_level_op_matches_the_real_spawn_path():
+    """The arena op and ``apply_enemy_level`` (the map/runtime spawn hook)
+    produce the same enemy for the same level -- one growth rule, not two."""
+    player, tile = _arena_player()
+    adj = TheAdjutant()
+    adj.add_combatant(player, "Fodder Pit", "Slime")
+    staged = tile.npcs_here[0]
+    adj.set_combatant_stats(player, "Fodder Pit", 0, {"level": 4})
+
+    spawned = Slime()
+    with patch("src.npc_level_tables.roll_spawn_level", return_value=4):
+        apply_enemy_level(spawned, "combat-testing-arena")
+
+    assert (staged.level, staged.maxhp, staged.damage, staged.protection) == (
+        spawned.level, spawned.maxhp, spawned.damage, spawned.protection
+    )
+
+
+@pytest.mark.parametrize(
+    "cls_name", ["TalusHound", "ScarpAdder", "CorruptedStoneCreature"]
+)
+def test_tuned_eastern_descent_and_pools_enemies_can_be_staged(cls_name):
+    """#655: three of the eight enemies the level tables tune were missing
+    from the Adjutant's allow-list, so the debug API could not stage them."""
+    player, tile = _arena_player()
+    adj = TheAdjutant()
+
+    result = adj.add_combatant(player, "Fodder Pit", cls_name)
+
+    assert result["success"] is True, result
+    assert tile.npcs_here[0].__class__.__name__ == cls_name
+
+
+def test_every_level_tuned_enemy_is_stageable():
+    """Every class the growth tables tune can be put in the arena, so a
+    future table entry can't silently fall outside the debug API again."""
+    missing = set(ENEMY_GROWTH_PROFILES) - set(ADD_COMBATANT_ALLOWED_CLASSES)
+    assert not missing
 
 
 # --- pin_combatant_loot: a fight's drop made deterministic (#642) -----------
