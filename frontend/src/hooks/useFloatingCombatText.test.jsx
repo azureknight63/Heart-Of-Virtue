@@ -177,6 +177,42 @@ describe('useFloatingCombatText — default (log) path', () => {
     });
     expect(texts(result)).toEqual(['-33 HP']);
   });
+
+  it('does not re-walk an unchanged log on an idle poll (#674)', () => {
+    // Every poll deserializes a fresh log array, so the effect re-runs on each
+    // one. The walk reads each revealed entry's `results`; count those reads
+    // on a mid-log entry the signature never looks at.
+    let reads = 0;
+    const watched = entry('b');
+    Object.defineProperty(watched, 'results', { enumerable: true, get: () => { reads += 1; return [HIT]; } });
+    const log = [entry('a'), watched, entry('c')];
+    const props = { streaming: false, displayedLogCount: 3, combat, combatId: 'fight-1', combatSpeed: 1 };
+    const { result, rerender } = renderText({ ...props, combatLog: log });
+    expect(texts(result)).toEqual(['-33 HP']);
+    const walked = reads;
+    expect(walked).toBeGreaterThan(0);
+
+    rerender({ ...props, combatLog: [...log] }); // idle poll: same entries, new array
+    rerender({ ...props, combatLog: [...log] });
+    expect(reads).toBe(walked);
+    expect(texts(result)).toEqual(['-33 HP']);
+
+    // A real change still walks: one more entry revealed.
+    rerender({ ...props, combatLog: [...log, entry('d', [MISS])], displayedLogCount: 4 });
+    expect(reads).toBeGreaterThan(walked);
+    expect(texts(result)).toEqual(['-33 HP', 'Miss!']);
+  });
+
+  it('walks again after a fight change even when the new log looks identical (#674)', () => {
+    const log = [entry('a', [HIT])];
+    const props = { streaming: false, displayedLogCount: 1, combat, combatSpeed: 1 };
+    const { result, rerender } = renderText({ ...props, combatLog: log, combatId: 'fight-1' });
+    act(() => vi.advanceTimersByTime(FLOAT_TEXT_MS));
+    expect(result.current).toEqual([]);
+
+    rerender({ ...props, combatLog: [...log], combatId: 'fight-2' });
+    expect(texts(result)).toEqual(['-33 HP']);
+  });
 });
 
 describe('useFloatingCombatText — streaming path', () => {
