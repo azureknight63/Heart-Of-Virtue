@@ -2722,7 +2722,7 @@ class TestWireIdRoundTrip:
 
 # The /open body useNpcChat keeps for the matching /end.
 NPC_CHAT_OPEN_CONTRACT = {
-    "open_token": Read("useNpcChat.js", "openTokenRef.current = data.open_token"),
+    "open_token": Read("useNpcChat.js", "token: data.open_token"),
 }
 
 # The 409 body for a Retry of a turn that is still running: the hook re-sends

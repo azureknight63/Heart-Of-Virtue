@@ -32,6 +32,11 @@ function liveOffsetPct(el) {
   };
 }
 
+/** True while a glide released at `glide.releasedAt` may still be easing. */
+function glideMayBeRunning(glide) {
+  return Boolean(glide) && performance.now() < glide.releasedAt + glide.ms;
+}
+
 /**
  * Tween a battlefield token across its own WORLD move, and nothing else.
  *
@@ -64,11 +69,6 @@ function liveOffsetPct(el) {
  *   takes `TOKEN_MOVE_MS / combatSpeed`, like every other combat animation
  * @returns {React.RefObject} attach to the element that should tween
  */
-/** True while a glide released at `glide.releasedAt` may still be easing. */
-function glideMayBeRunning(glide) {
-  return Boolean(glide) && performance.now() < glide.releasedAt + glide.ms;
-}
-
 export default function useTokenMoveTween(pos, maxCells, combatSpeed = 1) {
   const ref = useRef(null);
   const prevRef = useRef(pos ? { x: pos.x, y: pos.y } : null);
