@@ -10,13 +10,13 @@ import useDoubleRaf from '../hooks/useDoubleRaf';
 import useBattlefieldPan from '../hooks/useBattlefieldPan';
 import useTokenMoveTween from '../hooks/useTokenMoveTween';
 import useFloatingCombatText from '../hooks/useFloatingCombatText';
+// Re-exported below so existing import sites (and their tests) keep resolving
+// these pure helpers through BattlefieldGrid, where they used to live.
 import useBattlefieldAnimations, {
-  // Re-exported below so existing import sites (and their tests) keep resolving
-  // these pure helpers through BattlefieldGrid, where they used to live.
-  revealedLogEntries,
   takeAnimationBatch,
   removeBatchByIdentity,
 } from '../hooks/useBattlefieldAnimations';
+import { revealedLogEntries } from '../utils/revealedLog';
 import {
   formatCombatMoveStatus,
   isMovePending,
