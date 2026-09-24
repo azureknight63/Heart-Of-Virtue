@@ -2754,10 +2754,11 @@ class TestNpcChatWireContract:
         from src.api.services import game_service as gs_module
 
         player = self._world()
-        lock = gs_module._begin_chat_turn(player, "turn-0001-abcdef")
+        turn_id = "turn-0001-abcdef"
+        lock, _refusal = gs_module._begin_chat_turn(player, turn_id)
         try:
             refused = GameService().npc_chat_respond(
-                player, "Tal_0", "Hello?", "neutral", turn_id="turn-0001-abcdef"
+                player, "Tal_0", "Hello?", "neutral", turn_id=turn_id
             )
         finally:
             gs_module._end_chat_turn(player, lock)

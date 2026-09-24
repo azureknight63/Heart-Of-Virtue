@@ -76,7 +76,7 @@ GAME_SERVICE_PUBLIC_API = {
     # Added with the combat abort control (master).
     "abort_move",
     "allocate_level_up_points", "apply_tile_modifications",
-    "capture_tile_object_baseline", "collect_combat_loot", "delete_save",
+    "capture_tile_object_baseline", "chat_turn_is_known", "collect_combat_loot", "delete_save",
     "drop_item", "equip_item", "execute_move", "flee_combat",
     "get_available_commands", "get_available_moves", "get_combat_state",
     "get_combat_status", "get_current_room", "get_current_tile",

@@ -313,6 +313,26 @@ def test_requirements_cannot_install_a_gunicorn_without_the_units_worker():
         )
 
 
+#: The oldest gunicorn without a known HTTP request-smuggling advisory:
+#: 22.0 fixed CVE-2024-1135 (Transfer-Encoding validation) and 23.0 fixed
+#: CVE-2024-6827 (TE.CL smuggling). Production binds gunicorn to a public
+#: listener, so the requirements must not admit anything older.
+_GUNICORN_SECURITY_FLOOR = "23.0"
+
+
+def test_requirements_cannot_install_a_gunicorn_with_known_smuggling_bugs():
+    from packaging.version import Version
+
+    spec = _requirement("gunicorn").specifier
+    floor = Version(_GUNICORN_SECURITY_FLOOR)
+    for probe in ("20.1.0", "22.0.0", f"{floor.major - 1}.99"):
+        assert not spec.contains(probe), (
+            f"requirements-api.txt admits gunicorn {probe}, below the "
+            f"{_GUNICORN_SECURITY_FLOOR} security floor"
+        )
+    assert spec.contains(_GUNICORN_SECURITY_FLOOR), "the floor itself must install"
+
+
 def test_the_worker_dependency_meets_the_floor_gunicorn_enforces():
     """``eventlet>=0.40`` admitted 0.40.0-0.40.2, which every gunicorn from
     24.0 on refuses to start its eventlet worker with."""
@@ -460,6 +480,40 @@ def test_a_full_length_timeout_still_benches_the_model(
     assert adapter._call_openrouter("system", "user", 64, 0.5) is None
 
     assert adapter._is_model_failed("vendor/model:free")
+
+
+@pytest.mark.parametrize(
+    "left, benched",
+    [
+        # 10s left: read keeps its nominal 6s, but connect is cut to 2.5s.
+        (10.0, False),
+        # 21s left: neither phase is clipped, so a connect timeout is real.
+        (21.0, True),
+    ],
+)
+def test_a_connect_timeout_benches_only_when_connect_was_not_clipped(
+    clock, monkeypatch, fresh_bench, left, benched
+):
+    """``bench_on_timeout`` compared only the read phase, so a ConnectTimeout
+    on a connect the TURN had clipped benched a healthy model as slow."""
+    import requests
+    import ai.llm_client as llm
+
+    monkeypatch.setenv("NPC_CHAT_LLM_TIMEOUT", "6")
+    adapter = _adapter(["openrouter"])
+    with adapter.bounded_by(clock.now + left):
+        connect, read = adapter._call_timeout()
+    assert read == 6.0
+    assert (connect < llm._CONNECT_TIMEOUT_SECONDS) is not benched
+
+    def connect_out(*_args, **_kwargs):
+        raise requests.exceptions.ConnectTimeout("connect timed out")
+
+    _openrouter_ready(adapter, monkeypatch, connect_out)
+    with adapter.bounded_by(clock.now + left):
+        assert adapter._call_openrouter("system", "user", 64, 0.5) is None
+
+    assert adapter._is_model_failed("vendor/model:free") is benched
 
 
 class _Response:

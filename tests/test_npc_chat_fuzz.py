@@ -23,7 +23,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from flask import Flask
 
-from src.api.routes.npc_chat import npc_chat_bp
+from src.api.routes.npc_chat import _OPAQUE_TOKEN_RE, npc_chat_bp
 from tests.llm_doubles import make_chat_adapter
 
 
@@ -192,9 +192,7 @@ def test_hostile_idempotency_tokens_are_refused_never_forwarded(seed):
     """``turn_id`` (#636) and ``open_token`` (#674) are keys the server stores
     and compares, so a malformed one is a 400 -- never truncated, coerced or
     forwarded, since a clipped key would name a different turn."""
-    import re
-
-    shape = re.compile(r"[A-Za-z0-9_-]{8,64}")
+    shape = _OPAQUE_TOKEN_RE
     rng = random.Random(seed)
     app = _app()
     gs = app.game_service
