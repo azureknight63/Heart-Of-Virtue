@@ -75,6 +75,8 @@ New paragraph."""
 
 def test_book_from_file_preserves_newlines(tmp_path, monkeypatch, capsys):
     """Test that newlines are preserved when loading from a file."""
+    # Issue #674 item 11: Book reads only under BOOKS_DIR; a tmp book needs it moved.
+    monkeypatch.setattr("src.items.BOOKS_DIR", tmp_path)
     # Create a file with paragraphs
     book_file = tmp_path / "test_book_newlines.txt"
     file_content = """TITLE

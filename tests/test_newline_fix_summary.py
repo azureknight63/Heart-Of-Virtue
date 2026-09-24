@@ -116,7 +116,9 @@ def test_read_emits_every_page_in_order(single_page_book):
     assert _MULTI_SECTION_TEXT in texts
 
 
-def test_book_loaded_from_a_file_keeps_its_paragraph_breaks(tmp_path):
+def test_book_loaded_from_a_file_keeps_its_paragraph_breaks(tmp_path, monkeypatch):
+    # Issue #674 item 11: Book reads only under BOOKS_DIR; a tmp book needs it moved.
+    monkeypatch.setattr("src.items.BOOKS_DIR", tmp_path)
     realistic_content = (
         "MERCHANT'S GUIDE\n"
         "(A Short Manual)\n"
