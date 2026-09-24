@@ -224,6 +224,12 @@ def test_a_listed_move_never_falls_back_to_the_generic_code(cls):
     for player in _spread():
         move = cls(player)
         if not move.viable():
+            if cls.__name__ == "Advance" and not player.combat_proximity:
+                # #691: an empty/not-yet-built combat_proximity (the first
+                # status poll right after a fight is joined) is genuinely
+                # unmeasured, not a specific blocker -- the generic code is
+                # the honest answer, not a gap in Advance's diagnosis.
+                continue
             assert move.unavailability_reason() is not R.UNAVAILABLE, (
                 f"{cls.__name__} refused in a state its diagnosis cannot name"
             )
@@ -467,6 +473,35 @@ def test_shoot_bow_is_simply_unviable_with_another_weapon_and_arrows():
 def test_advance_with_everyone_adjacent():
     player, _ = _jean(distance=1)
     assert _reason(moves.Advance, player) is R.ALREADY_ADJACENT
+
+
+def test_advance_stale_target_adjacent_but_others_far():
+    """#691: Advance.target is only reassigned after a completed cast
+    (combat_adapter.py) and is never reset between fights, so a fresh fight
+    can start with a stale target sitting at distance 1 while the real
+    enemies are 8-10 ft away. Advance must not claim ALREADY_ADJACENT (nor
+    should viable() disagree) while some OTHER live combatant is farther
+    than 1 ft."""
+    player, stale_target = _jean(distance=1)
+    enemy1 = make_npc(Slime)
+    enemy2 = make_npc(Slime)
+    player.combat_proximity = {stale_target: 1, enemy1: 8, enemy2: 10}
+    move = moves.Advance(player)
+    move.target = stale_target
+    assert move.viable() is True
+    assert move.unavailability_reason() is None
+
+
+def test_advance_empty_proximity_is_not_already_adjacent():
+    """#691 secondary: an empty/not-yet-built combat_proximity (as seen on
+    the first /api/combat/status poll right after a fight is joined) is
+    "not yet known", not "everyone is adjacent" -- it must not report
+    ALREADY_ADJACENT."""
+    player, _ = _jean()
+    player.combat_proximity = {}
+    move = moves.Advance(player)
+    assert move.viable() is False
+    assert move.unavailability_reason() is not R.ALREADY_ADJACENT
 
 
 def test_quick_swap_with_no_ally():

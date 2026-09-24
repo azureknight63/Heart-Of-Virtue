@@ -196,33 +196,49 @@ class Advance(Move):
         self.stage_announce = [f"{user.name} begins advancing...", "", "", ""]
 
     def viable(self):
-        """Advance is viable when the target is beyond adjacent range.
+        """Advance is viable when anyone is beyond adjacent range.
 
         Targeting an ally closes distance for healing (no damage is dealt to
-        friendlies); targeting an enemy closes distance to attack.
+        friendlies); targeting an enemy closes distance to attack. ``target``
+        is only reassigned once a cast completes (combat_adapter.py) and is
+        never reset between fights, so it can still be pointing at a stale
+        combatant from a previous cast/fight. A stale-but-adjacent (or dead)
+        target must not mask a real target elsewhere: fall through and check
+        every other live combatant rather than refusing outright (#691).
         """
         if not hasattr(self.user, "combat_proximity"):
             return False
+        proximity = self.user.combat_proximity
 
-        if self.target and self.target in self.user.combat_proximity:
-            target_distance = self.user.combat_proximity[self.target]
+        if self.target and self.target in proximity:
+            target_distance = proximity[self.target]
             if self.target.is_alive() and target_distance > 1:
                 return True
-            return False
 
-        # Check for any combatant (enemy or ally) farther than adjacent
-        for combatant, distance in self.user.combat_proximity.items():
+        # Check for any combatant (enemy or ally) farther than adjacent --
+        # the primary path when no target is set/adjacent, and the fallback
+        # when the current target is stale.
+        for combatant, distance in proximity.items():
             if combatant.is_alive() and distance > 1:
                 return True
         return False
 
     def _unavailability_code(self):
+        """Mirror ``viable()``'s "anyone farther than adjacent?" check.
+
+        ``self.target`` is deliberately not consulted here (unlike
+        ``viable()``'s fast path): a stale/adjacent/dead target never changes
+        the verdict once every live combatant is examined, and consulting it
+        here too was exactly how a stale target could out-vote real,
+        farther-away enemies and produce a false ALREADY_ADJACENT (#691).
+        An empty ``combat_proximity`` (the first status poll right after a
+        fight is joined, before positions are computed) means "not measured
+        yet", not "everyone is adjacent".
+        """
         if not hasattr(self.user, "combat_proximity"):
             return None
         proximity = self.user.combat_proximity
-        if self.target and self.target in proximity:
-            if self.target.is_alive() and proximity[self.target] <= 1:
-                return UnavailableReason.ALREADY_ADJACENT
+        if not proximity:
             return None
         if any(c.is_alive() and d > 1 for c, d in proximity.items()):
             return None
