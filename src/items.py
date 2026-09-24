@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 #: Authored book paths are repo-relative (``src/resources/books/...``).
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+#: The only directory ``Book.text`` reads from (issue #674 item 11): a book's
+#: path arrives from map JSON and saves, so it is confined here.
+BOOKS_DIR = _REPO_ROOT / "src" / "resources" / "books"
 
 item_types: Dict[str, Dict[str, Any]] = {
     "weapons": {
@@ -3542,6 +3545,8 @@ class Book(Special):
         """
         if not self._text and self.text_file_path:
             path = self._resolve_text_path()
+            if path is None:
+                return "This book is mysteriously blank."
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     self._text = f.read()
@@ -3550,19 +3555,36 @@ class Book(Special):
                 self._text = "This book is mysteriously blank."
         return self._text if self._text else "This book is mysteriously blank."
 
-    def _resolve_text_path(self) -> Path:
-        """The file ``text_file_path`` names, as the engine opens it.
+    def _resolve_text_path(self) -> Optional[Path]:
+        """The file ``text_file_path`` names, as the engine opens it, or
+        ``None`` when it lies outside :data:`BOOKS_DIR`.
 
         Issue #648: a backslash is read as a separator. Maps are authored on
         Windows, where ``src\\resources\\books\\x.txt`` opens; on Linux --
         production -- the same string is one filename with no directory, and
         the book read blank. A relative path is anchored at the repo root
         (#611), never at the process's working directory.
+
+        Issue #674 item 11: the path comes from map JSON and saves, so it is
+        fully resolved -- ``..`` and symlinks included -- and must land
+        inside the books directory. Anything else reads as a missing book.
         """
         path = Path(self.text_file_path.replace("\\", "/"))
         if not path.is_absolute():
             path = _REPO_ROOT / path
-        return path
+        try:
+            resolved = path.resolve()
+            books = Path(BOOKS_DIR).resolve()
+        except (OSError, RuntimeError, ValueError) as e:
+            logger.warning("Could not resolve book path %r: %s", self.text_file_path, e)
+            return None
+        if not resolved.is_relative_to(books):
+            logger.warning(
+                "Refusing book text path %r: resolves outside %s",
+                self.text_file_path, books,
+            )
+            return None
+        return resolved
 
     @text.setter
     def text(self, value: Optional[str]) -> None:

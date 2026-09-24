@@ -42,8 +42,11 @@ import hashlib
 import pickle
 import logging
 import re
+import enum
+import copyreg
 import importlib
 import pkgutil
+import _compat_pickle
 from collections import Counter
 
 logger = logging.getLogger(__name__)
@@ -324,15 +327,22 @@ def _resolved_global_is_trusted(obj):
     trusted owner, while ``os.system`` reports ``posix``/``nt`` and is
     rejected. Module objects are rejected outright -- a save has no legitimate
     reason to embed one, and admitting them would re-open the traversal.
+
+    Only a class or a plain function is ever a legitimate global (issue #638).
+    Everything else a dotted path can reach -- a module-level engine
+    *instance* (``src.npc._loot:loot``), an enum member, a bound method -- is
+    shared process state, and ``__module__`` does not tell it apart: an
+    instance inherits its class's ``__module__``. Handing one back let BUILD
+    rewrite it for every session in the process.
     """
-    if isinstance(obj, types.ModuleType):
+    if not isinstance(obj, (type, types.FunctionType)):
         return False
     owner = getattr(obj, "__module__", None)
     if not isinstance(owner, str):
-        # Objects with no declaring module (e.g. slot/method descriptors) are
-        # not part of any save this engine writes; refuse rather than guess.
+        # Objects with no declaring module are not part of any save this
+        # engine writes; refuse rather than guess.
         return False
-    return _is_allowed(owner, getattr(obj, "__name__", "") or "")
+    return _is_allowed(owner, obj.__name__)
 
 
 def is_trusted_engine_class(obj):
@@ -496,6 +506,132 @@ _UNBUILDABLE = (
     types.CodeType,
 )
 
+# --- Allocation tracking and the REDUCE policy (issue #638) -----------------
+#
+# Every opcode that writes into an object (BUILD, APPEND(S), SETITEM(S),
+# ADDITEMS) may only write into one THIS load allocated. Every opcode that
+# calls something (REDUCE, OBJ, INST) may, in strict mode, only call a class
+# whose construction is known or one of three stdlib reconstruction helpers.
+# Both are positive rules: they do not enumerate what an attacker might reach,
+# they enumerate what a genuine save needs.
+
+#: Stdlib functions pickle's own reconstruction machinery emits as REDUCE
+#: targets: ``Pattern.__reduce__`` names ``re._compile``; protocol 0/1
+#: ``object.__reduce_ex__`` names ``copyreg._reconstructor``; a hand-written
+#: ``__reduce__`` may name ``copyreg.__newobj__``.
+_REDUCE_HELPERS = frozenset({re._compile, copyreg._reconstructor,
+                             copyreg.__newobj__})
+
+#: Exact builtin types whose constructor may hand back a cached, shared
+#: instance (``()``, ``frozenset()``, small ints, interned strings). Their
+#: subclasses always allocate.
+_CACHED_IMMUTABLES = frozenset({int, float, complex, str, bytes, tuple,
+                                frozenset, bool})
+
+#: ``Py_TPFLAGS_HEAPTYPE``: set on classes defined in Python, clear on C types.
+_HEAPTYPE_FLAG = 1 << 9
+
+_safe_stdlib_classes_cache = None
+
+
+def _safe_stdlib_classes():
+    """The class objects named by ``_SAFE_STDLIB`` (resolved once)."""
+    global _safe_stdlib_classes_cache
+    if _safe_stdlib_classes_cache is None:
+        found = set()
+        for module, name in _SAFE_STDLIB:
+            try:
+                obj = getattr(importlib.import_module(module), name)
+            except (ImportError, AttributeError):  # pragma: no cover - stdlib
+                continue
+            if isinstance(obj, type):
+                found.add(obj)
+        _safe_stdlib_classes_cache = frozenset(found)
+    return _safe_stdlib_classes_cache
+
+
+def _new_allocates(cls):
+    """True when ``cls.__new__(cls, ...)`` always returns a NEW object.
+
+    That holds when the ``__new__`` the MRO resolves is a C slot
+    (``object.__new__``, ``dict.__new__``, ``BaseException.__new__``...) and
+    ``cls`` is not a builtin that caches instances. A Python-level ``__new__``
+    may return anything -- ``Enum.__new__`` returns the existing member -- so
+    it never counts. No engine class defines ``__new__``.
+    """
+    if not isinstance(cls, type) or cls in _CACHED_IMMUTABLES:
+        return False
+    for klass in cls.__mro__:
+        if "__new__" in vars(klass):
+            raw = vars(klass)["__new__"]
+            if isinstance(raw, staticmethod):
+                raw = raw.__func__
+            return not isinstance(raw, types.FunctionType)
+    return False  # pragma: no cover - object always defines __new__
+
+
+def _is_c_type(cls):
+    return isinstance(cls, type) and not cls.__flags__ & _HEAPTYPE_FLAG
+
+
+def _call_allocates(func, args):
+    """True when ``func(*args)`` is known to return a NEW object."""
+    if not isinstance(args, tuple):
+        return False
+    if func is copyreg._reconstructor:
+        # base.__new__(cls, state) -- fresh when base is a C type cls derives
+        # from, which is the only shape copyreg itself ever writes.
+        return (len(args) == 3 and isinstance(args[0], type)
+                and _is_c_type(args[1]) and issubclass(args[0], args[1])
+                and args[0] not in _CACHED_IMMUTABLES)
+    if func is copyreg.__newobj__:
+        return bool(args) and _new_allocates(args[0])
+    if isinstance(func, type):
+        # A metaclass __call__ (EnumType's) can return anything.
+        return type(func).__call__ is type.__call__ and _new_allocates(func)
+    return False
+
+
+def _reduce_refusal(func, args):
+    """Why strict mode refuses to call ``func(*args)`` at load time, or None.
+
+    REDUCE, OBJ and INST each call an object from the stream. A genuine save
+    only ever calls:
+
+    * a class named in ``_SAFE_STDLIB`` (datetime, Decimal, OrderedDict,
+      defaultdict, functools.partial, ...);
+    * an engine ``Enum`` subclass with one argument -- value lookup, which is
+      how a combat save restores ``Direction``;
+    * an engine exception class;
+    * one of ``_REDUCE_HELPERS``, with arguments of the shape pickle writes.
+
+    Everything else -- an engine function or method (``write_v2_file`` opens a
+    path for writing; ``seek_class`` walks modules), an ordinary engine class
+    (its ``__init__`` runs with attacker arguments and may register itself in
+    a module-level table) -- is refused. Engine functions still load as
+    *values*; only calling them during a load is refused.
+    """
+    if not isinstance(args, tuple):
+        return "call arguments are not a tuple"
+    if func in _REDUCE_HELPERS:
+        if func is re._compile:
+            return None
+        if func is copyreg._reconstructor and not _call_allocates(func, args):
+            return "copyreg._reconstructor with a non-C base type"
+        if func is copyreg.__newobj__ and not (args and isinstance(args[0], type)):
+            return "copyreg.__newobj__ without a class"
+        return None
+    if not isinstance(func, type):
+        return "not a class or a pickle reconstruction helper"
+    if func in _safe_stdlib_classes():
+        return None
+    if _is_engine_module(getattr(func, "__module__", "") or ""):
+        if issubclass(func, enum.Enum):
+            return None if len(args) == 1 else "enum call is not a value lookup"
+        if issubclass(func, BaseException):
+            return None
+    return "engine classes are restored with NEWOBJ, never called"
+
 
 class SafeUnpickler(pickle._Unpickler):
     """Unpickler that redirects legacy modules and gates class resolution.
@@ -513,6 +649,10 @@ class SafeUnpickler(pickle._Unpickler):
          function or module, and drop any restored instance attribute that
          would shadow behaviour its class declares
          (:func:`shadows_class_behaviour`).
+      6. In every mode, write only into objects this load allocated
+         (issue #638): BUILD and the container opcodes refuse any target not
+         in ``self._fresh``. In strict mode, call only what
+         :func:`_reduce_refusal` admits (REDUCE, OBJ, INST).
 
     Built on the pure-Python ``pickle._Unpickler`` because step 5 needs the
     BUILD opcode, which the C unpickler gives no hook for. Measured on a full
@@ -534,6 +674,7 @@ class SafeUnpickler(pickle._Unpickler):
         super().__init__(file)
         self.strict = strict_mode_enabled() if strict is None else bool(strict)
         self.events = events if events is not None else []
+        self._fresh = {}
 
     def load(self):
         """Unpickle, keeping the loader's documented failure contract.
@@ -544,6 +685,7 @@ class SafeUnpickler(pickle._Unpickler):
         catch the documented types, so the rest are re-raised as
         ``UnpicklingError``.
         """
+        self._fresh = {}
         try:
             return super().load()
         except (pickle.UnpicklingError, EOFError, MemoryError, RecursionError):
@@ -552,6 +694,8 @@ class SafeUnpickler(pickle._Unpickler):
             raise pickle.UnpicklingError(
                 f"Corrupt save payload ({type(exc).__name__}: {exc})"
             ) from exc
+        finally:
+            self._fresh = {}
 
     def load_build(self):
         """BUILD, gated (issue #620): never onto a class, function or module,
@@ -570,11 +714,140 @@ class SafeUnpickler(pickle._Unpickler):
                     f"Refusing to restore state onto {label!r}: saves restore "
                     "instances, never classes, functions or modules"
                 )
+            self._require_fresh(inst, "BUILD")
             stack[-1] = self._without_shadowing(type(inst), stack[-1])
         pickle._Unpickler.load_build(self)
 
+    # -- allocation tracking (issue #638) ----------------------------------
+    #
+    # ``_fresh`` maps id -> object for everything this load allocated. It
+    # holds a strong reference, so an id can never be recycled onto a shared
+    # object mid-load and pass the check by coincidence.
+
+    def _mark_fresh(self, obj):
+        fresh = getattr(self, "_fresh", None)
+        if fresh is None:
+            fresh = self._fresh = {}
+        fresh[id(obj)] = obj
+
+    def _require_fresh(self, target, opcode):
+        """Refuse ``opcode`` writing into anything this load did not
+        allocate: a shared engine singleton, an enum member, a cached regex."""
+        if getattr(self, "_fresh", {}).get(id(target)) is target:
+            return
+        cls = type(target)
+        self._record("rejected", cls.__module__, cls.__qualname__,
+                     reason=f"{opcode} on an object this load did not create")
+        raise RestrictedUnpicklingError(
+            f"Refusing {opcode} onto a {cls.__qualname__!r} this save did not "
+            "create: a load may only fill in objects it allocated"
+        )
+
+    def _refuse_call(self, func, args):
+        """Strict-mode gate for every opcode that calls a stream object."""
+        if not getattr(self, "strict", True):
+            return
+        reason = _reduce_refusal(func, args)
+        if reason is None:
+            return
+        label = getattr(func, "__qualname__", type(func).__qualname__)
+        self._record("rejected", getattr(func, "__module__", "?"), label,
+                     reason=f"call refused: {reason}")
+        raise RestrictedUnpicklingError(
+            f"Refusing to call {label!r} while loading a save: {reason}"
+        )
+
+    def load_reduce(self):
+        stack = self.stack
+        if len(stack) >= 2:
+            func, args = stack[-2], stack[-1]
+            self._refuse_call(func, args)
+            fresh = _call_allocates(func, args)
+        else:
+            fresh = False
+        pickle._Unpickler.load_reduce(self)
+        if fresh:
+            self._mark_fresh(stack[-1])
+
+    def _instantiate(self, klass, args):
+        """OBJ / INST: a call when there are arguments (or ``klass`` is not a
+        class), else ``klass.__new__(klass)`` -- gated like REDUCE / NEWOBJ."""
+        if args or not isinstance(klass, type) or hasattr(klass, "__getinitargs__"):
+            self._refuse_call(klass, tuple(args))
+            fresh = _call_allocates(klass, tuple(args))
+        else:
+            fresh = _new_allocates(klass)
+        pickle._Unpickler._instantiate(self, klass, args)
+        if fresh:
+            self._mark_fresh(self.stack[-1])
+
+    def _newobj(self, depth, opcode_loader):
+        stack = self.stack
+        cls = stack[-depth] if len(stack) >= depth else None
+        if cls is not None and not isinstance(cls, type):
+            # The C unpickler refuses this too; __new__ lookup on a
+            # non-class would reach an arbitrary object's attribute.
+            label = type(cls).__qualname__
+            self._record("rejected", type(cls).__module__, label,
+                         reason="NEWOBJ on a non-class")
+            raise RestrictedUnpicklingError(
+                f"Refusing NEWOBJ on a {label!r}: it is not a class")
+        opcode_loader(self)
+        if cls is not None and _new_allocates(cls):
+            self._mark_fresh(stack[-1])
+
+    def load_newobj(self):
+        self._newobj(2, pickle._Unpickler.load_newobj)
+
+    def load_newobj_ex(self):
+        self._newobj(3, pickle._Unpickler.load_newobj_ex)
+
+    def _allocating(loader):
+        """Wrap an opcode that pushes a brand-new container."""
+        def load(self):
+            loader(self)
+            self._mark_fresh(self.stack[-1])
+        return load
+
+    def _writing(loader, locate):
+        """Wrap an opcode that writes into the object ``locate`` finds."""
+        def load(self):
+            try:
+                target = locate(self)
+            except IndexError:
+                target = None  # underflow: let the stock loader report it
+            else:
+                self._require_fresh(target, loader.__name__[5:].upper())
+            loader(self)
+        return load
+
     dispatch = dict(pickle._Unpickler.dispatch)
     dispatch[pickle.BUILD[0]] = load_build
+    dispatch[pickle.REDUCE[0]] = load_reduce
+    dispatch[pickle.NEWOBJ[0]] = load_newobj
+    dispatch[pickle.NEWOBJ_EX[0]] = load_newobj_ex
+    for _code, _loader in (
+        (pickle.EMPTY_LIST, pickle._Unpickler.load_empty_list),
+        (pickle.EMPTY_DICT, pickle._Unpickler.load_empty_dictionary),
+        (pickle.EMPTY_SET, pickle._Unpickler.load_empty_set),
+        (pickle.LIST, pickle._Unpickler.load_list),
+        (pickle.DICT, pickle._Unpickler.load_dict),
+    ):
+        dispatch[_code[0]] = _allocating(_loader)
+    for _code, _loader, _locate in (
+        (pickle.APPEND, pickle._Unpickler.load_append,
+         lambda self: self.stack[-2]),
+        (pickle.SETITEM, pickle._Unpickler.load_setitem,
+         lambda self: self.stack[-3]),
+        (pickle.APPENDS, pickle._Unpickler.load_appends,
+         lambda self: self.metastack[-1][-1]),
+        (pickle.SETITEMS, pickle._Unpickler.load_setitems,
+         lambda self: self.metastack[-1][-1]),
+        (pickle.ADDITEMS, pickle._Unpickler.load_additems,
+         lambda self: self.metastack[-1][-1]),
+    ):
+        dispatch[_code[0]] = _writing(_loader, _locate)
+    del _code, _loader, _locate, _allocating, _writing
 
     def _without_shadowing(self, cls, state):
         """``state`` minus every key :func:`shadows_class_behaviour` refuses,
@@ -647,6 +920,15 @@ class SafeUnpickler(pickle._Unpickler):
         # strict is the posture everywhere else. Callers that genuinely want
         # legacy behaviour pass strict=False and say so.
         strict = getattr(self, "strict", True)
+        if getattr(self, "proto", 0) < 3 and getattr(self, "fix_imports", True):
+            # Protocols 0-2 spell stdlib names the Python 2 way
+            # (``__builtin__.set``, ``copy_reg._reconstructor``); the stock
+            # find_class maps them, so the allow-list must judge the mapped
+            # name or it refuses every set in a protocol-2 save.
+            if (module, name) in _compat_pickle.NAME_MAPPING:
+                module, name = _compat_pickle.NAME_MAPPING[(module, name)]
+            elif module in _compat_pickle.IMPORT_MAPPING:
+                module = _compat_pickle.IMPORT_MAPPING[module]
         original = module
         module = canonical_module_name(module)
         if module != original:
