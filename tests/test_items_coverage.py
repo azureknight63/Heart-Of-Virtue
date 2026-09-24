@@ -12,7 +12,6 @@ Coverage tests for src/items.py targeting the assigned missing-line ranges:
   2710, 2713-2735             SlimeFlask.drink / use
   2765, 2768-2790             MineralSolvent.drink / use
   2817, 2820-2846             Respite.drink / use
-  2877, 2880-2896             Relic.hold / use
   2961-2962, 2965             Arrow.stack_grammar (count==1) / prefer
   3243-3244                   Book._paginate_text force-split with existing page
   3309                        Book.read() blank-text fallback
@@ -806,33 +805,6 @@ class TestRespite:
         player = _fresh_player()
         player.states = []
         item = items.Respite(count=1)
-        player.inventory = [item]
-
-        item.use(player)
-
-        assert item.count == 1
-
-
-class TestRelic:
-    def test_hold_delegates_to_use(self):
-        player = _fresh_player()
-        apathy = MagicMock()
-        apathy.statustype = "apathy"
-        apathy.on_removal = MagicMock()
-        apathy.target = player
-        player.states = [apathy]
-        item = items.Relic(count=1)
-        player.inventory = [item]
-
-        item.hold(player)
-
-        assert apathy not in player.states
-        assert item not in player.inventory
-
-    def test_use_no_apathy_noop(self):
-        player = _fresh_player()
-        player.states = []
-        item = items.Relic(count=1)
         player.inventory = [item]
 
         item.use(player)

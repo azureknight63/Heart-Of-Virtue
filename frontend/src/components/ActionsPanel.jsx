@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useAudio } from '../context/AudioContext'
 import apiEndpoints from '../api/endpoints'
 import BaseDialog from './BaseDialog'
-import { colors, spacing } from '../styles/theme'
+import { accessibility, colors, spacing } from '../styles/theme'
+import { useLargeTouchTargets } from '../hooks/useLargeTouchTargets'
+import usePrayer from '../hooks/usePrayer'
 import { apiErrorMessage } from '../utils/apiError'
 import { lookupOr } from '../utils/lookup'
 
@@ -22,6 +24,7 @@ import { lookupOr } from '../utils/lookup'
 const COMMANDS = [
   { name: 'Menu', tooltip: 'Open the main menu' },
   { name: 'Save', tooltip: 'Save your game progress' },
+  { name: 'Pray', tooltip: 'Kneel and pray. Lifts Hollowed at a fatigue cost; free otherwise.' },
   { name: 'Teleport', tooltip: 'Teleport to a specific location', debug: true },
   { name: 'Alter', tooltip: 'Change game variables and switches', debug: true },
   { name: 'Showvar', tooltip: 'Display all game variables', debug: true },
@@ -62,7 +65,7 @@ function isInertDebugCommand(command) {
 /**
  * ActionsPanel - Display available actions player can take
  */
-export default function ActionsPanel({ location, onClose }) {
+export default function ActionsPanel({ location, onClose, onRefetch }) {
   const [commands, setCommands] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -71,6 +74,8 @@ export default function ActionsPanel({ location, onClose }) {
   const { playSFX } = useAudio()
   const navigate = useNavigate()
   const timerRef = useRef(null)
+  const { pray, isPraying } = usePrayer()
+  const needsLargeTargets = useLargeTouchTargets()
 
   // Helper to show a timed action message without leaking setTimeout callbacks
   const setTimedMessage = (msg, delay = 2000) => {
@@ -137,9 +142,19 @@ export default function ActionsPanel({ location, onClose }) {
     }
   }
 
+  // Prayer (issue #646) changes fatigue and can lift Hollowed, so a success
+  // refetches the player to redraw the fatigue bar and the status icons. The
+  // narration stays up longer than the other toasts: it is prose to read.
+  const handlePray = async () => {
+    const { ok, message } = await pray()
+    setTimedMessage(message, 8000)
+    if (ok && onRefetch) onRefetch()
+  }
+
   const COMMAND_HANDLERS = {
     'Menu': handleMenu,
-    'Save': handleSave
+    'Save': handleSave,
+    'Pray': handlePray,
   }
 
   const handleAction = async (command) => {
@@ -248,15 +263,22 @@ export default function ActionsPanel({ location, onClose }) {
                 .filter(cmd => cmd.name !== 'Search' && !isInertDebugCommand(cmd))
                 .map((command, idx) => {
                 const isHovered = hoveredCommand === idx
+                const isBusy = command.name === 'Pray' && isPraying
 
                 return (
                   <div key={command.name} style={{ position: 'relative' }}>
                     <button
                       onClick={() => handleAction(command)}
+                      disabled={isBusy}
+                      aria-busy={isBusy}
                       onMouseEnter={() => setHoveredCommand(idx)}
                       onMouseLeave={() => setHoveredCommand(null)}
                       style={{
                         width: '100%',
+                        // The 44px floor (#639): a coarse pointer or a narrow
+                        // viewport, decided here rather than passed in.
+                        minHeight: needsLargeTargets ? accessibility.touchTarget : undefined,
+                        touchAction: 'manipulation',
                         padding: '12px 8px',
                         backgroundColor: isHovered ? 'rgba(255, 170, 0, 0.1)' : 'transparent',
                         border: `1.5px solid ${isHovered ? colors.primary : colors.secondary}`,
@@ -265,13 +287,15 @@ export default function ActionsPanel({ location, onClose }) {
                         fontFamily: 'monospace',
                         fontSize: '13px',
                         fontWeight: 'bold',
-                        cursor: 'pointer',
+                        cursor: isBusy ? 'wait' : 'pointer',
                         transition: 'all 0.2s',
                         textTransform: 'uppercase',
                         boxShadow: isHovered ? `0 0 10px ${colors.primary}44` : 'none'
                       }}
                     >
-                      {command.name}
+                      {/* In-flight is said in words, not only by the disabled
+                          state (pillar 5: never colour alone). */}
+                      {isBusy ? 'Praying…' : command.name}
                     </button>
 
                     {/* Tooltip */}

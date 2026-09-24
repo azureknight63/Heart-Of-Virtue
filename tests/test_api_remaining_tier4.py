@@ -86,7 +86,7 @@ GAME_SERVICE_PUBLIC_API = {
     "interact_with_target", "interact_with_tile", "is_player_dead",
     "learn_skill", "list_saves", "load_game", "move_player", "npc_chat_end",
     "npc_chat_history", "npc_chat_open", "npc_chat_respond",
-    "persist_tile_state", "process_event_input", "save_game", "search",
+    "persist_tile_state", "pray", "process_event_input", "save_game", "search",
     "set_suggestions_paused", "shop_buy", "shop_buyback", "shop_sell",
     "start_combat", "store_tile_modification", "trigger_combat_events",
     "trigger_tile_events", "unequip_item", "use_item",

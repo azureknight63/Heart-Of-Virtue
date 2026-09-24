@@ -1796,9 +1796,8 @@ class TestTheMixinOnlyReadsAttributesAPlayerHas:
         No crucifix, religious token or nomad gear item exists -- and the first
         of those is not a gap waiting to be filled: the game's one crucifix is
         Mara's, and chapter 3's third beat is Jean noticing HERS and looking
-        away. He never gets one. The only devotional item, `Relic`, is a
-        `Consumable` and therefore cannot be equipped at all (and Jean no
-        longer starts with it: #646).
+        away. He never gets one. The last devotional item, the `Relic`
+        consumable, was retired by #646 (prayer cures Hollowed now).
 
         Pinned so this stays a known design question rather than a silent dead
         branch, and so that authoring a matching item turns this red and makes

@@ -302,6 +302,48 @@ def learn_skill():
         )
 
 
+@player_bp.route("/pray", methods=["POST"])
+def pray():
+    """Jean prays; lifts Hollowed at a fatigue cost (issue #646).
+
+    Headers:
+        Authorization: Bearer <session_id>
+
+    Returns:
+        200 {"success": true, "message": str, "messages": [str],
+             "cleared": [str], "fatigue_cost": int, "fatigue": int,
+             "max_fatigue": int}
+        400 {"success": false, "error": str} -- mid-fight, or too spent
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player()
+        if error:
+            return error
+
+        game_service, gs_error = require_game_service()
+        if gs_error:
+            return gs_error
+
+        result = game_service.pray(player)
+        if not result.get("success"):
+            return jsonify(result), 400
+
+        session_manager.save_session(session.session_id)
+        return jsonify(result), 200
+
+    except Exception:
+        _log.exception("Unhandled error in pray")
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "An internal error occurred",
+                }
+            ),
+            500,
+        )
+
+
 @player_bp.route("/level-up/allocate", methods=["POST"])
 def allocate_level_up_points():
     """Allocate pending attribute points (API mode).

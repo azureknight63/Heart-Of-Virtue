@@ -4,7 +4,7 @@ from typing import List
 
 from .base import Scenario
 from ..client import GameClient
-from ..reporter import BugReport
+from ..reporter import BugReport, BugSeverity, BugCategory
 
 
 class PlayerScenario(Scenario):
@@ -91,4 +91,63 @@ class PlayerScenario(Scenario):
         if bug:
             bugs.append(bug)
 
+        bugs += self._check_prayer(client)
+        return bugs
+
+    def _check_prayer(self, client: GameClient) -> List[BugReport]:
+        """Pray (issue #646): advertised in COMMANDS, free when not Hollowed,
+        and lifts a staged Hollowed for fatigue through the real route."""
+        bugs = []
+        resp = client.get("/api/world/commands")
+        if resp.status_code == 200:
+            names = [c.get("name") for c in client.parse(resp).get("commands", [])]
+            if "Pray" not in names:
+                bugs.append(self._bug(
+                    "Pray missing from COMMANDS", BugSeverity.HIGH, BugCategory.LOGIC,
+                    "/api/world/commands", "GET",
+                    "'Pray' advertised (the server allows POST /api/pray)",
+                    f"commands={names}", response=resp,
+                ))
+
+        resp = client.post("/api/pray")
+        bug = self._check_status(resp, 200, "/api/pray", "POST", "Pray while not Hollowed")
+        if bug:
+            return bugs + [bug]
+        data = client.parse(resp)
+        bugs += self._check_fields(
+            data, ["success", "message", "cleared", "fatigue_cost", "fatigue"],
+            "/api/pray", "POST", "Pray response", resp,
+        )
+        if data.get("fatigue_cost") != 0 or data.get("cleared"):
+            bugs.append(self._bug(
+                "Prayer with nothing to lift charged or cleared something",
+                BugSeverity.MEDIUM, BugCategory.LOGIC, "/api/pray", "POST",
+                "fatigue_cost=0, cleared=[]",
+                f"fatigue_cost={data.get('fatigue_cost')} cleared={data.get('cleared')}",
+                response=resp,
+            ))
+
+        live = self._live_player_tile(client)
+        if live is None:
+            return bugs  # MinimalPlayer session: cannot stage a state
+        import src.states as states
+
+        player = live.player
+        player.states.append(states.Hollowed(player))
+        client._session_manager.save_session(client.session_id)
+        resp = client.post("/api/pray")
+        bug = self._check_status(resp, 200, "/api/pray", "POST", "Pray while Hollowed")
+        if bug:
+            return bugs + [bug]
+        data = client.parse(resp)
+        hollowed_left = any(isinstance(s, states.Hollowed) for s in player.states)
+        if data.get("cleared") != ["Hollowed"] or hollowed_left or not data.get("fatigue_cost"):
+            bugs.append(self._bug(
+                "Prayer did not lift Hollowed for fatigue",
+                BugSeverity.HIGH, BugCategory.LOGIC, "/api/pray", "POST",
+                "cleared=['Hollowed'], a fatigue cost, no Hollowed left",
+                f"cleared={data.get('cleared')} cost={data.get('fatigue_cost')} "
+                f"still_hollowed={hollowed_left}",
+                response=resp,
+            ))
         return bugs

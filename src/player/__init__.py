@@ -61,7 +61,8 @@ class Player(
             items.ClothHood(),
             items.JeanWeddingBand(),
             # No Relic (issue #646): its text named Jerusalem, which the story
-            # withholds, and Hollowed's cure awaits a design.
+            # withholds. The class is retired; prayer (Player.pray) is
+            # Hollowed's cure now.
         ]
         # Equip starting gear
         for item in self.inventory:

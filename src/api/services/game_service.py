@@ -2499,6 +2499,30 @@ class GameService:
             "bgm": bgm,
         }
 
+    def pray(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Adapt ``Player.pray`` (issue #646) to JSON; refused mid-fight.
+
+        The engine decides what prayer costs and cures; this captures its
+        narration and reports the new fatigue so the HUD can redraw.
+        """
+        refused = _refused_mid_fight(player)
+        if refused is not None:
+            return refused
+        with capture_narration() as msgs:
+            outcome = player.pray()
+        if not outcome["prayed"]:
+            return {"success": False, "error": outcome["refusal"]}
+        lines = [m["text"] for m in msgs]
+        return {
+            "success": True,
+            "message": "\n".join(lines),
+            "messages": lines,
+            "cleared": outcome["cleared"],
+            "fatigue_cost": outcome["fatigue_cost"],
+            "fatigue": player.fatigue,
+            "max_fatigue": player.maxfatigue,
+        }
+
     def search(self, player: "player_module.Player") -> Dict[str, Any]:
         """Search the current room for hidden entities.
 

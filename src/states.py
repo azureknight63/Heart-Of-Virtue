@@ -1021,6 +1021,10 @@ class Hollowed(State):
 
     The absence of feeling that follows overwhelming loss. In Aurelion, it manifests
     as a wound that can be inflicted and — with enough time, or the right presence — healed.
+
+    Inflicted by the Lurker's SoulDrain. It lapses on its own clocks (40-80
+    combat beats, 30-60 world steps), or Jean can pray it away out of combat
+    for fatigue (``Player.pray``, issue #646) -- the only active cure.
     """
 
     # Flat stat points (``_POINTS``), not fractions of the holder's stat.
@@ -1046,7 +1050,8 @@ class Hollowed(State):
                 f"Faith -{self._FAITH_PENALTY_POINTS}, "
                 f"Charisma -{self._CHARISMA_PENALTY_POINTS}, "
                 f"Endurance -{self._ENDURANCE_PENALTY_POINTS}. "
-                "Drains HP and Fatigue every few beats."
+                "Drains HP and Fatigue every few beats. "
+                "Fades with time, or pray out of combat (COMMANDS) to lift it."
             ),
             tactical_mechanics=(
                 f"−{self._FAITH_PENALTY_POINTS} faith, "
@@ -1115,7 +1120,8 @@ class Fervent(State):
                 f"Strength +{_pct(self._STRENGTH_BONUS_PCT)}, "
                 f"Finesse +{_pct(self._FINESSE_BONUS_PCT)}. "
                 f"Endurance -{self._ENDURANCE_PENALTY_POINTS}. "
-                "Drains HP and Fatigue every few beats."
+                "Drains HP and Fatigue every few beats. "
+                "Fades with time, or pray out of combat (COMMANDS) to lift it."
             ),
             # Rendered live below: compound() raises strength and deepens the
             # endurance cost.
