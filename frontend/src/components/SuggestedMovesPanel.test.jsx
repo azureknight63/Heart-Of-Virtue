@@ -250,7 +250,9 @@ describe('SuggestedMovesPanel', () => {
             // none of the full panel's body.
             expect(screen.getByText('2 tips').textContent).toBe('2 tips');
             expect(screen.queryByText('Slash')).toBeNull();
-            expect(container.firstChild.style.padding).toBe('7px 10px');
+            expect(screen.getByRole('button', { name: /tactical advisor/i }).style.padding).toBe('7px 10px');
+            // No full-panel chrome on the wrapper while it is a strip.
+            expect(container.firstChild.style.border).toBe('');
         });
 
         it('shows an analyzing label on the mobile strip while loading', () => {
@@ -287,6 +289,26 @@ describe('SuggestedMovesPanel', () => {
             expect(onPause).toHaveBeenCalledWith(false);
             // Tapping the strip swaps it for the full panel.
             expect(screen.getByText('Slash').textContent).toBe('Slash');
+        });
+
+        it('keeps keyboard focus on the toggle when the mobile strip expands and collapses (#674)', async () => {
+            // The collapsed strip and the expanded panel used to be different
+            // trees (a fragment vs a wrapping div), so toggling unmounted the
+            // focused <button> and focus fell to <body>.
+            localStorage.setItem('hov_tactical_advisor_collapsed', 'true');
+            const onPause = vi.fn().mockResolvedValue();
+            render(<SuggestedMovesPanel isPlayerTurn={true} suggestions={mockSuggestions} isMobile={true} onPause={onPause} />);
+            const toggle = screen.getByRole('button', { name: /tactical advisor/i });
+            toggle.focus();
+
+            await act(async () => { fireEvent.click(toggle); });
+            expect(screen.getByText('Slash').textContent).toBe('Slash');
+            expect(screen.getByRole('button', { name: /tactical advisor/i })).toBe(toggle);
+            expect(document.activeElement).toBe(toggle);
+
+            await act(async () => { fireEvent.click(toggle); });
+            expect(screen.queryByText('Slash')).toBeNull();
+            expect(document.activeElement).toBe(toggle);
         });
 
         it('falls back to EXPANDED when localStorage.getItem throws', () => {

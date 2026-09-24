@@ -17,6 +17,7 @@ import React from 'react';
 import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import BattlefieldGrid, { VIEW_SIZE } from './BattlefieldGrid';
+import { TOKEN_MOVE_MS } from '../hooks/useTokenMoveTween';
 
 vi.mock('../context/AudioContext', () => ({
     useAudio: () => ({ playSFX: vi.fn() }),
@@ -116,6 +117,16 @@ describe('BattlefieldGrid token motion during a camera settle (#668)', () => {
         const before = tween.style.cssText;
         act(() => { vi.advanceTimersByTime(2000); });
         expect(tween.style.cssText).toBe(before);
+    });
+
+    it('glides a world move at the combat speed (#674)', () => {
+        const { container, rerender } = render(
+            <BattlefieldGrid combat={combatWithJeanAt(10, 10)} tab="overview" zoom={1} combatSpeed={2} />
+        );
+        rerender(<BattlefieldGrid combat={combatWithJeanAt(11, 10)} tab="overview" zoom={1} combatSpeed={2} />);
+        const tween = tokenOf(container, 'J').querySelector('[data-testid="token-move-tween"]');
+        act(() => { vi.advanceTimersByTime(40); });
+        expect(tween.style.transition).toBe(`transform ${TOKEN_MOVE_MS / 2}ms ease-in-out`);
     });
 
     it('maps a world move north to a screen offset downward (rows grow south)', () => {

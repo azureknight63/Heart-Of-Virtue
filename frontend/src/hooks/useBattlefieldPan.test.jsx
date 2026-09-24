@@ -2,30 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, fireEvent, act } from '@testing-library/react'
 import useBattlefieldPan from './useBattlefieldPan'
 import { windowPanBounds, panCellBounds } from '../utils/battlefieldPan'
+import { installManualRaf } from '../test/manualRaf'
 
 // A 130x260 px pan box over a 13-cell window: 10px columns, 20px rows, so a
 // single-axis cell size would be caught.
 const BOX = { width: 130, height: 260 }
 const GRID = 13
-
-function installManualRaf() {
-    let nextId = 1
-    const pending = new Map()
-    vi.stubGlobal('requestAnimationFrame', (cb) => {
-        const id = nextId++
-        pending.set(id, cb)
-        return id
-    })
-    vi.stubGlobal('cancelAnimationFrame', (id) => { pending.delete(id) })
-    return {
-        flushFrame() {
-            const due = [...pending.values()]
-            pending.clear()
-            due.forEach((cb) => cb())
-        },
-        pendingCount: () => pending.size,
-    }
-}
 
 // Renders the two layers the hook binds to and reports the hook's return
 // value through `onPan` each render.

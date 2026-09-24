@@ -93,6 +93,81 @@ export const revealedLogEntries = (log, displayedLogCount) => {
 };
 
 /**
+ * The ids (revealedLogEntries ids) of every entry already in `log` that
+ * `isTracked` selects — the entries a grid mounting into a fight in progress
+ * (a page reload) must treat as history, never news (issue #508). Walks the
+ * WHOLE log, not the revealed window: the reveal has not reached the entries
+ * this has to cover yet.
+ */
+export const seedReplayedIds = (log, isTracked) => {
+  const seed = new Set();
+  for (const { entry, id } of revealedLogEntries(log || [], Infinity)) {
+    if (isTracked(entry)) seed.add(id);
+  }
+  return seed;
+};
+
+/**
+ * Drop from `tracked` every id that has left the revealed window (front-trimmed
+ * away), so a per-fight "already handled" set tracks the window rather than
+ * growing across a long brawl. Within a fight an id never re-enters the window
+ * — it only grows at the tail and shrinks at the front — with ONE exception:
+ * the synthesized combat:ended payload blips `log: []` while the next poll
+ * still serves the finished fight's log. Pruning against that empty window
+ * would wipe the set and replay the whole fight, so an empty window prunes
+ * nothing. Mutates `tracked`.
+ */
+export const pruneToWindow = (tracked, windowIds) => {
+  if (windowIds.size === 0) return;
+  for (const id of tracked) {
+    if (!windowIds.has(id)) tracked.delete(id);
+  }
+};
+
+/**
+ * A cheap fingerprint of everything a revealedLogEntries walk depends on, so a
+ * caller can skip the walk when an idle poll re-sends the same log.
+ *
+ * `combat.log` is a freshly deserialized array on every poll, so without this
+ * the full (~800-entry) log was re-walked per poll even when idle. What each
+ * component covers: length + tail key/beat/seq catch plain appends and most
+ * trims; the HEAD entry's key and the tail's within-beat repeat ordinal catch
+ * a front-trim that removes k entries while k byte-identical UNSTAMPED
+ * carriers append (length, tail identity, reveal count and generation all
+ * match in that shape, and skipping it dropped the new landing); the reveal
+ * count covers LeftPanel progress; `generation` is the caller's fight
+ * identity, covering a new fight with an identical-looking log. A log change
+ * this signature still cannot see is one whose positional entry ids are
+ * byte-identical too, and the walk would find nothing new in that case either
+ * — the signature is exactly as discriminating as the id scheme it gates.
+ */
+export const revealedLogSignature = (log, displayedLogCount, generation) => {
+  const lastEntry = log.length ? log[log.length - 1] : null;
+  // The tail's within-beat repeat ordinal: how many earlier entries of the
+  // tail's own beat share its key. Walks back only through the tail's beat
+  // (a handful of entries), so the idle-poll cost stays O(beat), not O(log).
+  let tailRepeat = 0;
+  if (lastEntry) {
+    const tailKey = logEntryKey(lastEntry);
+    const tailBeat = lastEntry.beat_index ?? 0;
+    for (let i = log.length - 2; i >= 0; i--) {
+      if ((log[i]?.beat_index ?? 0) !== tailBeat) break;
+      if (logEntryKey(log[i]) === tailKey) tailRepeat += 1;
+    }
+  }
+  return [
+    log.length,
+    log.length ? logEntryKey(log[0]) : '',
+    lastEntry ? logEntryKey(lastEntry) : '',
+    lastEntry?.beat_index ?? '',
+    lastEntry?.animation?.seq ?? '',
+    tailRepeat,
+    displayedLogCount,
+    generation,
+  ].join(LOG_KEY_SEP);
+};
+
+/**
  * Split the head of the animation queue into the layers that play together and
  * the ones that wait. Returns `[batch, rest]` (`[[], []]` for an empty queue).
  *
@@ -278,13 +353,9 @@ export default function useBattlefieldAnimations({
   // genuinely new and animates normally.
   const replayedLogIdsRef = useRef(null);
   if (replayedLogIdsRef.current === null) {
-    const seed = new Set();
-    if (isReloadRecovery) {
-      for (const { entry, id } of revealedLogEntries(combatLog || fallbackLog || [], Infinity)) {
-        if (entry?.animation) seed.add(id);
-      }
-    }
-    replayedLogIdsRef.current = seed;
+    replayedLogIdsRef.current = isReloadRecovery
+      ? seedReplayedIds(combatLog || fallbackLog, (entry) => Boolean(entry?.animation))
+      : new Set();
   }
   // Whether the per-fight reset effect has already run once — i.e. whether the
   // NEXT boundary it sees is a real one rather than this grid's own mount.
@@ -440,43 +511,8 @@ export default function useBattlefieldAnimations({
     const log = combatLog || fallbackLog;
     if (!log) return;
 
-    // Early out when nothing can have changed: `combat.log` is a freshly
-    // deserialized array on every poll, so without this the full (~800-entry)
-    // log was re-walked through revealedLogEntries per poll even when idle.
-    // What each component covers: length + tail key/beat/seq catch plain
-    // appends and most trims; the HEAD entry's key and the tail's within-beat
-    // repeat ordinal catch a front-trim that removes k entries while k
-    // byte-identical UNSTAMPED carriers append (length, tail identity, reveal
-    // count and generation all match in that shape, and skipping it dropped
-    // the new landing); the reveal count covers LeftPanel progress; the fight
-    // generation covers a new fight with an identical-looking log. A log
-    // change this signature still cannot see is one whose positional entry
-    // ids are byte-identical too, and the enqueue walk below would find
-    // nothing new in that case either — the signature is exactly as
-    // discriminating as the id scheme it gates.
-    const lastEntry = log.length ? log[log.length - 1] : null;
-    // The tail's within-beat repeat ordinal: how many earlier entries of the
-    // tail's own beat share its key. Walks back only through the tail's beat
-    // (a handful of entries), so the idle-poll cost stays O(beat), not O(log).
-    let tailRepeat = 0;
-    if (lastEntry) {
-      const tailKey = logEntryKey(lastEntry);
-      const tailBeat = lastEntry.beat_index ?? 0;
-      for (let i = log.length - 2; i >= 0; i--) {
-        if ((log[i]?.beat_index ?? 0) !== tailBeat) break;
-        if (logEntryKey(log[i]) === tailKey) tailRepeat += 1;
-      }
-    }
-    const signature = [
-      log.length,
-      log.length ? logEntryKey(log[0]) : '',
-      lastEntry ? logEntryKey(lastEntry) : '',
-      lastEntry?.beat_index ?? '',
-      lastEntry?.animation?.seq ?? '',
-      tailRepeat,
-      displayedLogCount,
-      fightGenerationRef.current,
-    ].join(LOG_KEY_SEP);
+    // Early out when nothing can have changed (see revealedLogSignature).
+    const signature = revealedLogSignature(log, displayedLogCount, fightGenerationRef.current);
     if (logSignatureRef.current === signature) return;
     logSignatureRef.current = signature;
 
@@ -548,20 +584,7 @@ export default function useBattlefieldAnimations({
       }
     });
 
-    // Prune ids whose entries have left the revealed window (front-trimmed
-    // away): the set tracks the window, not the whole fight, so it cannot grow
-    // without bound across a long brawl. Within a fight an id never re-enters
-    // the window — it only grows at the tail and shrinks at the front — with
-    // ONE exception: the synthesized combat:ended payload blips `log: []`
-    // while the next poll still serves the finished fight's log. Pruning
-    // against that empty window would wipe the set and replay the whole fight,
-    // so an empty window prunes nothing (there is nothing worth keeping it in
-    // step with anyway).
-    if (windowIds.size > 0) {
-      for (const id of processed) {
-        if (!windowIds.has(id)) processed.delete(id);
-      }
-    }
+    pruneToWindow(processed, windowIds);
 
     if (animations.length > 0) {
       enqueueAnimations(animations);
