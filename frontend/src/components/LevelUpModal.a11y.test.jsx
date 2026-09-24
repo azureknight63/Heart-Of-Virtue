@@ -28,4 +28,15 @@ describe('LevelUpModal (real BaseDialog integration)', () => {
     )
     expect(screen.getByRole('dialog', { name: '⭐ LEVEL UP' })).toBeInTheDocument()
   })
+
+  it('names the attribute picker and points input (live check 2026-09-19)', () => {
+    render(
+      <LevelUpModal
+        player={{ pending_attribute_points: 3, pending_level_ups: [] }}
+        onAllocatePoints={vi.fn()}
+      />
+    )
+    expect(screen.getByRole('combobox', { name: /attribute/i })).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: /points/i })).toBeInTheDocument()
+  })
 })
