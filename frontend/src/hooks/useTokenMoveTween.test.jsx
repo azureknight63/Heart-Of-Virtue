@@ -1,17 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, act } from '@testing-library/react'
 import useTokenMoveTween, { TOKEN_MOVE_MS } from './useTokenMoveTween'
-
-function installManualRaf() {
-    let nextId = 1
-    const pending = new Map()
-    vi.stubGlobal('requestAnimationFrame', (cb) => { const id = nextId++; pending.set(id, cb); return id })
-    vi.stubGlobal('cancelAnimationFrame', (id) => { pending.delete(id) })
-    return {
-        flushFrame() { const due = [...pending.values()]; pending.clear(); due.forEach((cb) => cb()) },
-        pendingCount: () => pending.size,
-    }
-}
+import { installManualRaf } from '../test/manualRaf'
 
 function Token({ pos, max = 6 }) {
     const ref = useTokenMoveTween(pos, max)

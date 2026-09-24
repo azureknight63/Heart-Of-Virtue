@@ -1,28 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import useDoubleRaf from './useDoubleRaf'
-
-// Drive rAF manually so the two-frame contract is observable rather than
-// timing-dependent.
-function installManualRaf() {
-    let nextId = 1
-    const pending = new Map()
-    vi.stubGlobal('requestAnimationFrame', (cb) => {
-        const id = nextId++
-        pending.set(id, cb)
-        return id
-    })
-    vi.stubGlobal('cancelAnimationFrame', (id) => { pending.delete(id) })
-    return {
-        /** Run every callback queued so far (one frame). */
-        flushFrame() {
-            const due = [...pending.entries()]
-            pending.clear()
-            for (const [, cb] of due) cb()
-        },
-        pendingCount: () => pending.size,
-    }
-}
+import { installManualRaf } from '../test/manualRaf'
 
 describe('useDoubleRaf', () => {
     let raf
