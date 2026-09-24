@@ -163,9 +163,10 @@ def test_route_input_fuzz_never_500(seed):
             elif which == 1:
                 r = client.post("/npc/respond",
                                 json=_hostile_body(rng, ["npc_key", "jean_text",
-                                                         "jean_tone"]))
+                                                         "jean_tone", "turn_id"]))
             elif which == 2:
-                r = client.post("/npc/end", json=_hostile_body(rng, ["npc_key"]))
+                r = client.post("/npc/end",
+                                json=_hostile_body(rng, ["npc_key", "open_token"]))
             else:
                 seg = rng.choice(["x" * 9000, "Pell", "%00", "..%2f", "a b"])
                 r = client.get(f"/npc/history/{seg}")
@@ -184,6 +185,33 @@ def test_non_string_fields_return_400_not_500():
         assert client.post("/npc/respond",
                            json={"npc_key": [], "jean_text": {}}).status_code == 400
         assert client.post("/npc/end", json={"npc_key": 5}).status_code == 400
+
+
+@pytest.mark.parametrize("seed", [3, 42, 8080])
+def test_hostile_idempotency_tokens_are_refused_never_forwarded(seed):
+    """``turn_id`` (#636) and ``open_token`` (#674) are keys the server stores
+    and compares, so a malformed one is a 400 -- never truncated, coerced or
+    forwarded, since a clipped key would name a different turn."""
+    import re
+
+    shape = re.compile(r"[A-Za-z0-9_-]{8,64}")
+    rng = random.Random(seed)
+    app = _app()
+    gs = app.game_service
+    client = app.test_client()
+    with _patched_auth():
+        for _ in range(150):
+            token = _hostile_field(rng)
+            if token is None or (isinstance(token, str) and shape.fullmatch(token)):
+                continue
+            gs.reset_mock()
+            r = client.post("/npc/respond", json={
+                "npc_key": "Pell", "jean_text": "Hi", "turn_id": token})
+            assert r.status_code == 400, (token, r.status_code)
+            gs.npc_chat_respond.assert_not_called()
+            r = client.post("/npc/end", json={"npc_key": "Pell", "open_token": token})
+            assert r.status_code == 400, (token, r.status_code)
+            gs.npc_chat_end.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

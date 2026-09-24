@@ -8,7 +8,10 @@ import NpcChatPanel, { collapseTerminatorRun, TERMINATOR_RUN_RE } from './NpcCha
 import { makeNpcChatOpen, makeNpcChatRespond, makeJeanOption, makeRelationship } from '../test/payloads'
 
 // Mock the npcChat API
-vi.mock('../api/npcChat', () => ({
+// The real module's constants survive (useNpcChat reads NPC_CHAT_TIMEOUT_MS
+// to bound its pending-turn re-sends); only the calls are stubbed.
+vi.mock('../api/npcChat', async (importOriginal) => ({
+  ...(await importOriginal()),
   default: {
     open: vi.fn(),
     respond: vi.fn(),

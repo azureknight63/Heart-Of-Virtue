@@ -2713,6 +2713,59 @@ class TestWireIdRoundTrip:
                 _assert_opaque(entry["id"], f"room {key}[].id")
 
 
+# ============================================================================
+# NPC chat: idempotent turns (#636) and the per-open /end token (#674)
+# ============================================================================
+# Both are GameService-level fields, not engine ones, so the payloads below come
+# from the real GameService entry points with only the NPC stubbed -- the NPC's
+# own chat payload is not what these contracts cover.
+
+# The /open body useNpcChat keeps for the matching /end.
+NPC_CHAT_OPEN_CONTRACT = {
+    "open_token": Read("useNpcChat.js", "openTokenRef.current = data.open_token"),
+}
+
+# The 409 body for a Retry of a turn that is still running: the hook re-sends
+# the same turn_id on this flag, and shows "still composing" without it.
+NPC_CHAT_PENDING_TURN_CONTRACT = {
+    "pending": Read("useNpcChat.js", "err.response.data?.pending"),
+}
+
+
+class TestNpcChatWireContract:
+    class _Npc:
+        name = "Tal"
+
+        def chat_open(self, player):
+            return {"success": True, "npc_key": "Tal_0", "conversation_ended": False}
+
+    def _world(self):
+        from tests._gs_fixtures import live_world
+
+        player, game_map = live_world()
+        game_map[(0, 0)].npcs_here = [self._Npc()]
+        return player
+
+    def test_open_carries_the_token_end_sends_back(self):
+        result = GameService().npc_chat_open(self._world(), "Tal")
+        _assert_contract(result, NPC_CHAT_OPEN_CONTRACT, "npc_chat_open()")
+
+    def test_a_retry_of_a_running_turn_says_pending(self):
+        from src.api.services import game_service as gs_module
+
+        player = self._world()
+        lock = gs_module._begin_chat_turn(player, "turn-0001-abcdef")
+        try:
+            refused = GameService().npc_chat_respond(
+                player, "Tal_0", "Hello?", "neutral", turn_id="turn-0001-abcdef"
+            )
+        finally:
+            gs_module._end_chat_turn(player, lock)
+
+        _assert_contract(refused, NPC_CHAT_PENDING_TURN_CONTRACT, "npc_chat_respond() 409")
+        assert refused["pending"] is True
+
+
 # The citations themselves
 # ============================================================================
 # Everything above asserts that the SERIALIZER still emits what the client

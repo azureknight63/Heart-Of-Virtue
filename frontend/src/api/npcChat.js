@@ -40,7 +40,7 @@ const npcChat = {
   /**
    * Open a conversation with an NPC
    * @param {string} npcId - NPC class name (e.g., 'Mynx', 'Gorran')
-   * @returns {Promise} Response with { npc_key, npc_name, npc_opening, jean_options,
+   * @returns {Promise} Response with { npc_key, open_token, npc_name, npc_opening, jean_options,
    *   loquacity_current, loquacity_max, conversation_ended, reputation, relationship }
    */
   open: (npcId) => apiClient.post(`${BASE}/open`, { npc_id: npcId }, TURN_CONFIG),
@@ -50,16 +50,20 @@ const npcChat = {
    * @param {string} npcKey - Session key returned from /open
    * @param {string} jeanText - Jean's dialogue text
    * @param {string} jeanTone - Jean's portrait emotion for the line (the tone of the option picked)
+   * @param {string} [turnId] - Idempotency key for this turn (#636): one per
+   *   option click, reused by that click's Retry, so a turn the server already
+   *   committed is replayed instead of run twice. Omitted, the field is not sent.
    * @returns {Promise} Response with { npc_response, jean_options, loquacity_current,
    *   loquacity_max, conversation_ended, reputation, reputation_delta, relationship }
    */
-  respond: (npcKey, jeanText, jeanTone = 'direct') =>
+  respond: (npcKey, jeanText, jeanTone = 'direct', turnId) =>
     apiClient.post(
       `${BASE}/respond`,
       {
         npc_key: npcKey,
         jean_text: jeanText,
         jean_tone: jeanTone,
+        ...(turnId ? { turn_id: turnId } : {}),
       },
       TURN_CONFIG
     ),
@@ -67,9 +71,18 @@ const npcChat = {
   /**
    * End a conversation with an NPC
    * @param {string} npcKey - Session key returned from /open
+   * @param {string} [openToken] - The `open_token` /open returned (#674). The
+   *   server clears its active-chat marker only for the open it names, so a
+   *   late /end cannot clear a quick re-open of the same NPC. Omitted, the
+   *   field is not sent and the server matches on the key alone.
    * @returns {Promise} Response confirming conversation ended
    */
-  end: (npcKey) => apiClient.post(`${BASE}/end`, { npc_key: npcKey }, TURN_CONFIG),
+  end: (npcKey, openToken) =>
+    apiClient.post(
+      `${BASE}/end`,
+      { npc_key: npcKey, ...(openToken ? { open_token: openToken } : {}) },
+      TURN_CONFIG
+    ),
 
   /**
    * Retrieve conversation history.
