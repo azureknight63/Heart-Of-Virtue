@@ -44,9 +44,11 @@ behaviour unchanged pending a re-derivation) and **#654** (rate limiting and log
 the proxy's IP, `TRUSTED_PROXY_COUNT` unset, so one client throttles everyone — pre-existing,
 security).
 
-Local-only failures after the merge: `tests/test_deploy_script.py` (7) fails on a Windows checkout
-because `core.autocrlf` checks `deploy.ps1` out as CRLF; all 129 pass on LF. A `.gitattributes`
-`deploy.ps1 eol=lf` line (or reading with newline normalisation) would fix it.
+~~Local-only failures after the merge: `tests/test_deploy_script.py` (7) fails on a Windows checkout
+because `core.autocrlf` checks `deploy.ps1` out as CRLF.~~ Resolved (2026-09-24, PR #678): this was
+a real deploy outage, not a test artifact. ssh delivered every `\r` to the server and bash died on
+line 1 of every phase. `Expand-Template` now normalises CRLF to LF and refuses any `\r` left over,
+so no `.gitattributes` entry is needed.
 
 This file is the resume point. Update it at milestones.
 
