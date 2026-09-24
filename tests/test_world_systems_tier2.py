@@ -405,6 +405,20 @@ class TestDeserializeSavedInstance:
         assert obj.count == 25
         assert "tags" not in vars(obj)
 
+    def test_deserialize_gold_with_only_amt_derives_count_from_it(self, universe):
+        """Without a saved ``count``, Gold's own ``__init__`` sets
+        ``count = amt`` -- the deserializer must not leave it at a default."""
+        import src.items
+
+        obj = universe._deserialize_saved_instance({
+            "__class__": "Gold",
+            "__module__": "items",
+            "props": {"amt": 10},
+        })
+
+        assert isinstance(obj, src.items.Gold)
+        assert obj.count == 10
+
     def test_props_are_deserialized_recursively(self, universe, dummy_modules):
         """Nested plain dicts and lists survive; a nested marker resolves."""
         import src.items
