@@ -338,7 +338,7 @@ class Ch02GuideToCitadel(
                 "of experience. He opened his mouth to speak."
             )
             say(
-                "Welcome, little one. I am Elder Votha Krr. Within this city, I serve on its "
+                "I am Elder Votha Krr. Within this city, I serve on its "
                 "council of leaders — though some among us are more foolish than others in how "
                 "much weight they give that title.",
                 "Votha Krr",
