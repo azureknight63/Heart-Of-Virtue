@@ -61,13 +61,14 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
     // resolves (issue #640).
     const compactStrip = isMobile && isCollapsed
 
-    const wrapperStyle = compactStrip ? {
+    const wrapperBase = {
         width: '100%',
         opacity: isVisible ? 1 : 0,
         transition: 'all 0.4s ease-out',
         flexShrink: 0,
-    } : {
-        width: '100%',
+    }
+    const wrapperStyle = compactStrip ? wrapperBase : {
+        ...wrapperBase,
         backgroundColor: 'rgba(10, 15, 10, 0.9)',
         border: `2px solid ${colors.primary}`,
         borderRadius: '8px',
@@ -75,36 +76,59 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
         display: 'flex',
         flexDirection: 'column',
         fontFamily: 'monospace',
-        opacity: isVisible ? 1 : 0,
         transform: isVisible ? 'translateY(0)' : 'translateY(10px)',
-        transition: 'all 0.4s ease-out',
         overflow: 'hidden',
         marginBottom: '14px',
-        flexShrink: 0
     }
 
+    const headerBase = {
+        color: colors.primary,
+        fontWeight: 'normal',
+        letterSpacing: 'normal',
+        textTransform: 'none',
+    }
     const headerStyle = compactStrip ? {
+        ...headerBase,
         width: '100%',
         backgroundColor: 'rgba(10, 15, 10, 0.9)',
         border: `1px solid ${colors.primary}66`,
         borderRadius: '6px',
         padding: '7px 10px',
         fontFamily: 'monospace',
-        color: colors.primary,
-        fontWeight: 'normal',
-        letterSpacing: 'normal',
-        textTransform: 'none',
     } : {
+        ...headerBase,
         padding: '12px',
         backgroundColor: `${colors.primary}22`,
         borderBottom: isCollapsed ? 'none' : `1px solid ${colors.primary}44`,
         gap: '8px',
-        color: colors.primary,
-        fontWeight: 'normal',
-        letterSpacing: 'normal',
-        textTransform: 'none',
         userSelect: 'none',
     }
+
+    // The blink dot and label, drawn once at the size each presentation uses.
+    const dotPx = compactStrip ? 6 : 8
+    const advisorLabel = (
+        <>
+            <span style={{
+                display: 'inline-block',
+                flexShrink: 0,
+                width: `${dotPx}px`,
+                height: `${dotPx}px`,
+                borderRadius: '50%',
+                backgroundColor: colors.primary,
+                boxShadow: `0 0 ${dotPx}px ${colors.primary}`,
+                animation: 'suggested-blink 1.5s infinite ease-in-out',
+            }} />
+            <span style={{
+                color: colors.primary,
+                fontWeight: 'bold',
+                fontSize: compactStrip ? '11px' : '14px',
+                letterSpacing: '1px',
+                ...(compactStrip ? {} : { flex: 1 }),
+            }}>
+                TACTICAL ADVISOR
+            </span>
+        </>
+    )
 
     return (
         <div style={wrapperStyle}>
@@ -118,17 +142,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                 {compactStrip ? (
                     /* Spans, not divs: a <button> may only hold phrasing content. */
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{
-                            display: 'inline-block',
-                            width: '6px', height: '6px', borderRadius: '50%',
-                            backgroundColor: colors.primary,
-                            boxShadow: `0 0 6px ${colors.primary}`,
-                            animation: 'suggested-blink 1.5s infinite ease-in-out',
-                            flexShrink: 0,
-                        }} />
-                        <span style={{ color: colors.primary, fontWeight: 'bold', fontSize: '11px', letterSpacing: '1px' }}>
-                            TACTICAL ADVISOR
-                        </span>
+                        {advisorLabel}
                         {!suggestionsLoading && suggestions.length > 0 && (
                             <span style={{
                                 color: colors.primary, fontSize: '10px',
@@ -142,23 +156,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                             <span style={{ color: colors.text.muted, fontSize: '10px' }}>analyzing…</span>
                         )}
                     </span>
-                ) : (
-                    <>
-                        <span style={{
-                            display: 'inline-block',
-                            flexShrink: 0,
-                            width: '8px',
-                            height: '8px',
-                            borderRadius: '50%',
-                            backgroundColor: colors.primary,
-                            boxShadow: `0 0 8px ${colors.primary}`,
-                            animation: 'suggested-blink 1.5s infinite ease-in-out'
-                        }} />
-                        <span style={{ color: colors.primary, fontWeight: 'bold', fontSize: '14px', letterSpacing: '1px', flex: 1 }}>
-                            TACTICAL ADVISOR
-                        </span>
-                    </>
-                )}
+                ) : advisorLabel}
             </CollapsibleSectionHeader>
 
             {/* Always mounted so aria-controls always resolves; the analysis

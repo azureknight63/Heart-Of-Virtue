@@ -25,6 +25,10 @@ vi.mock('../context/AudioContext', () => ({
 
 const HALF = Math.floor(VIEW_SIZE / 2);
 
+// Long enough for the tween's two-frame release under fake timers, whose
+// requestAnimationFrame ticks every ~16ms.
+const PAST_RELEASE_FRAMES_MS = 40;
+
 const combatWithJeanAt = (x, y) => ({
     player: {
         id: 'player', name: 'Jean', hp: 100, max_hp: 100, fatigue: 0, max_fatigue: 100,
@@ -109,7 +113,7 @@ describe('BattlefieldGrid token motion during a camera settle (#668)', () => {
         expect(transitionsTransform(tween)).toBe(false);
 
         // Two frames later the offset is released and eases to her new cell.
-        act(() => { vi.advanceTimersByTime(40); });
+        act(() => { vi.advanceTimersByTime(PAST_RELEASE_FRAMES_MS); });
         expect(tween.style.transform).toBe('');
         expect(transitionsTransform(tween)).toBe(true);
 
@@ -125,7 +129,7 @@ describe('BattlefieldGrid token motion during a camera settle (#668)', () => {
         );
         rerender(<BattlefieldGrid combat={combatWithJeanAt(11, 10)} tab="overview" zoom={1} combatSpeed={2} />);
         const tween = tokenOf(container, 'J').querySelector('[data-testid="token-move-tween"]');
-        act(() => { vi.advanceTimersByTime(40); });
+        act(() => { vi.advanceTimersByTime(PAST_RELEASE_FRAMES_MS); });
         expect(tween.style.transition).toBe(`transform ${TOKEN_MOVE_MS / 2}ms ease-in-out`);
     });
 

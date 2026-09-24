@@ -4,7 +4,7 @@ import {
   revealedLogEntries,
   revealedLogSignature,
   seedReplayedIds,
-} from './useBattlefieldAnimations';
+} from '../utils/revealedLog';
 import { FLOAT_TEXT_MS, FLOAT_TEXT_PHASE, floatTextEffectFor } from '../utils/animationConfigs';
 import { MAX_BEAT_RESULTS } from '../utils/combatBeatSchema';
 import { effectiveDuration } from '../utils/combatTiming';
