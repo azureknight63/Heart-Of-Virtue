@@ -73,12 +73,10 @@ New paragraph."""
     assert '\n\n' in pages[0], "Double newlines should be preserved"
 
 
-def test_book_from_file_preserves_newlines(tmp_path, monkeypatch, capsys):
+def test_book_from_file_preserves_newlines(books_dir_in_tmp, capsys):
     """Test that newlines are preserved when loading from a file."""
-    # Issue #674 item 11: Book reads only under BOOKS_DIR; a tmp book needs it moved.
-    monkeypatch.setattr("src.items.BOOKS_DIR", tmp_path)
     # Create a file with paragraphs
-    book_file = tmp_path / "test_book_newlines.txt"
+    book_file = books_dir_in_tmp / "test_book_newlines.txt"
     file_content = """TITLE
 
 This is the first paragraph.

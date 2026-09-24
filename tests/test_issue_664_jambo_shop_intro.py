@@ -16,7 +16,7 @@ from unittest.mock import Mock, patch
 from src.narration import capture_narration
 from tests._real_map_helpers import (
     build_universe as _build_universe,
-    find_passage as _find_passage,
+    find_passage,
     map_named as _map,
     spoken as _spoken,
     text_of as _text,
@@ -136,7 +136,7 @@ class TestTheIntroFiresOnFirstEntry:
             player.current_room = outer[exterior]
             # The camp's arrival beats are #663's business, not this test's.
             outer[exterior].events_here = []
-            tent_passage = _find_passage(outer[exterior], "Jambo's Tent")
+            tent_passage = find_passage(outer[exterior], "Jambo's Tent")
 
             with capture_narration() as first:
                 tent_passage.enter(player)
@@ -148,7 +148,7 @@ class TestTheIntroFiresOnFirstEntry:
 
             assert universe.story.get(JamboShopIntroEvent.GATE_KEY) == "1"
 
-            flap = _find_passage(player.current_room, "Tent Flap")
+            flap = find_passage(player.current_room, "Tent Flap")
             flap.enter(player)
             assert (player.location_x, player.location_y) == exterior
 
@@ -223,7 +223,7 @@ class TestTheIntroTellsTheTruth:
             player.location_x, player.location_y = 2, 2
             player.current_room = tent[(2, 2)]
             player.drop_merchandise_items = Mock(return_value=[])
-            _find_passage(tent[(2, 2)], "Tent Flap").enter(player)
+            find_passage(tent[(2, 2)], "Tent Flap").enter(player)
             player.drop_merchandise_items.assert_called()
         for _o, _n, _e, tent_file, tent_name in TENTS:
             universe, _player = _build_universe(tent_file)

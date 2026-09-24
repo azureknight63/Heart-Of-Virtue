@@ -279,7 +279,7 @@ def forced_roll(value, module="src.moves._base"):
         yield patched
 
 
-class ScriptedMove:
+class _ScriptedMove:
     """A player move whose single beat runs ``effect(user)`` once.
 
     Hand-rolled like tests/test_cooldown_drain_logic.py's stub so the beat's
@@ -329,22 +329,21 @@ def run_scripted_beat(effect, slime_hp=9999, prepare=None):
     """
     from types import SimpleNamespace
 
-    from src.api.combat_adapter import ApiCombatAdapter
     from src.npc import Slime
 
     player = Player()
     slime = Slime()
     slime.hp = slime.maxhp = slime_hp
     slime.damage = 0
-    engage(player, [slime])
+    adapter = make_adapter(player, [slime], initialize=False)
     # The death path removes the corpse from the room; a real tile is not
-    # what is under test, only somewhere for that removal to land.
+    # what is under test, only somewhere for that removal to land. Staged
+    # before combat init so initialization sees the same room it would in play.
     player.current_room = SimpleNamespace(npcs_here=[slime])
-    adapter = ApiCombatAdapter(player)
     adapter.initialize_combat([slime])
     if prepare is not None:
         prepare(player)
-    move = ScriptedMove(slime, lambda user: effect(user, slime))
+    move = _ScriptedMove(slime, lambda user: effect(user, slime))
     player.known_moves = [move]
     player.current_move = None
     with seeded():
