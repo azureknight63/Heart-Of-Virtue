@@ -77,7 +77,13 @@ ENEMY_GROWTH_PROFILES = {
     # ~70 landed) that pack went 0/40 at both base and top roll, lowest HP
     # still averaging 65-74% (min 10-15%). 4/level was tried and still
     # killed 5/40.
-    "ElderSlime": {"maxhp": 14, "damage": 2, "protection": 2},
+    #
+    # 2 -> 0 (#655, solo retune): those numbers had Gorran along. Solo, the
+    # volley (~92-108 landed in the pack) was still the (3,3)/(3,4) packs'
+    # killing blow, and a careful full clear died 9/40 in the (3,4) room.
+    # At 0 the volley lands ~70-79, and with (3,4)'s pack cut to one Stone
+    # that room went 0/40 at base and top roll, Jean L4 and L5.
+    "ElderSlime": {"maxhp": 14, "damage": 0, "protection": 2},
     # CorruptedStoneCreature damage 4 -> 6 (#655): at 4/level its biggest
     # hit on Jean was 3-10 -- it did nothing. Measured only inside the (3,4)
     # pack alongside the Slime/ElderSlime changes, not in isolation.

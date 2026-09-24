@@ -338,3 +338,8 @@ class TestMineralPoolsTrashIsTunedForASoloJean:
     @pytest.mark.parametrize("cls_name", ["Slime", "CaveBat"])
     def test_pools_trash_level_is_back_on_the_draft_value(self, cls_name):
         assert REGION_ENEMY_LEVELS["grondelith-mineral-pools"][cls_name] == 2
+
+    def test_elder_slime_damage_does_not_grow_with_level(self):
+        """Solo, the ElderSlime's Slime Volley was the (3,3)/(3,4) packs'
+        killing blow; the approved retune stops its damage growing."""
+        assert ENEMY_GROWTH_PROFILES["ElderSlime"]["damage"] == 0

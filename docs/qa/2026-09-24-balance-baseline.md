@@ -386,3 +386,30 @@ The mandatory route is unaffected by #2–#4. On the current table it is 1/40 ca
 - The **no-spring** careful full clear is not 0: 12/40 today, 5/40 with #2 + #3.
 - Getting a player who never heals at the spring to 0 would need the boss or the Elder packs nerfed far enough to lose the "surge matters" target. If that player must be covered, the stronger lever is **Gorran**: return him for the boss (story change, `Ch02GorranAtPools` / `Ch02ArenaEntrance`). The with-Gorran King Slime rows above are 0–2/40.
 - **Not modelled:** retreating from a fight, gland timing beyond "on entry", the Antidote/Slime Flask economy, Draught purchases, and point allocations other than even. A live pass (rung 4) with a spring-using policy should confirm before the numbers ship.
+
+### Applied (maintainer: "All levers")
+
+**Committed:**
+- `src/npc_level_tables.py`: ElderSlime damage growth 2 → **0**.
+- `grondelith-mineral-pools.json` (3,4): the CorruptedStoneCreature spawner `count` 2 → **1**, and **2 Restoratives** placed on the tile (one stack beside its Gold). The Flooded Pass description names neither enemies nor items, so it stays true after the pickup.
+- King Slime is unchanged. The spring text is unchanged, because its description already says drinking restores Jean's health.
+- Pinned by `tests/test_npc_level_scaling.py` (ElderSlime growth) and `tests/test_pools_solo_retune.py`, which loads the map through `Universe._load_single_json_map`.
+
+**Correction to the proposal runs above:** (4,3) Deep Pocket already holds **2** Restoratives, not 1. The chains below pick up both, plus the new 2 at (3,4), so the proposal's "map43" rows under-counted the potions by one.
+
+**Re-run on the committed table and map, with no overrides.** Same driver and seeds as above, 40 runs each.
+
+| Config | Deaths / 40 | Where | Lowest HP% in the Elder rooms, mean (min) | King Slime: HP% entering · lowest HP% mean (min) · surges landed/aimed | Restoratives entering King Slime, mean (min) |
+|---|---|---|---|---|---|
+| full clear, careful, **no spring** | **0** | — | (3,3) 49 (24) · (3,4) 47 (6) | 80 (50) · 45 (21) · 44/93 | 7.7 (2) |
+| full clear, careful, spring before King | **0** | — | same | 100 · 45 (18) · 52/98 | 7.7 (2) |
+| main route, careful | **1** | King ×1 (Tidal Surge) | — | 81 (54) · 39 (0) · 50/123 | 5.9 (3) |
+| main route, basic | **12** | (2,4) ×1, King ×11 | — | 67 (40) · 16 (0) · 49/109 | 6.4 (3) |
+| (3,4) pack alone, base / top, Jean L4 | 0 · 0 | — | 54 (15) · 49 (23) | — | — |
+| (3,4) pack alone, base / top, Jean L5 | 0 · 0 | — | 52 (21) · 45 (14) | — | — |
+
+Against #655's targets:
+- **No deaths for a careful player:** met on the full clear, with or without the spring (was 12/40 without and 11/40 with). The main route is unchanged by these levers (it passes neither Elder room nor (3,4)). It keeps its 1/40: a warned surge on a Jean at 54% HP who still had potions.
+- **Genuine HP pressure:** chained trash packs take Jean to 45–58% on average (down to 5–11%), and the Elder rooms to 47–49% (down to 6–24%).
+- **The surge matters:** about half the surges aimed at Jean land, up to ~80 of 114 HP. The basic policy, which waits until 35% to drink, still dies to King Slime 11/40 on the main route.
+- **Fatigue is not the only constraint:** it bottoms out at 7–26% in the Elder rooms, but no death came from fatigue.

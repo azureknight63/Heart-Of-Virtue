@@ -1083,7 +1083,7 @@
           "npc_cls": {
             "__class_type__": "npc:CorruptedStoneCreature"
           },
-          "count": 2,
+          "count": 1,
           "spawned_npcs": []
         }
       }
@@ -1117,6 +1117,45 @@
           "add_status_resistance": {},
           "gives_exp": false,
           "count": 75
+        }
+      },
+      {
+        "__class__": "Restorative",
+        "__module__": "items",
+        "props": {
+          "weight": 0.25,
+          "maintype": "Consumable",
+          "subtype": "Potion",
+          "count": 2,
+          "interactions": [
+            "use",
+            "drink",
+            "drop"
+          ],
+          "stack_key": "Restorative",
+          "name": "Restorative",
+          "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
+          "value": 100,
+          "type": "Consumable",
+          "hidden": false,
+          "hide_factor": 0,
+          "merchandise": false,
+          "discovery_message": "a useful item.",
+          "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
+          "aliases": [
+            "small glass vial",
+            "vial",
+            "box of small glass vials",
+            "vials"
+          ],
+          "action_aliases": [],
+          "skills": null,
+          "owner": null,
+          "equip_states": [],
+          "add_resistance": {},
+          "add_status_resistance": {},
+          "gives_exp": false,
+          "power": 60
         }
       }
     ],
