@@ -316,6 +316,18 @@ describe('InventoryDialog', () => {
       expect(screen.queryByTitle('Weapons')).not.toBeInTheDocument();
     });
 
+    it('falls back to Consumables when the swap move disappears mid-fight', () => {
+      // The Weapons tab exists only while the swap move is offered; if it
+      // vanishes while open, the dialog must not fall through to the free
+      // equip list the server refuses in combat.
+      const props = { player: mockPlayer, onClose: mockOnClose, onRefetch: mockOnRefetch, combatMode: true, canSwapWeapon: true, onSwapWeapon: vi.fn() };
+      const { rerender } = render(<InventoryDialog {...props} swapWeapon={swapWeapon} />);
+      fireEvent.click(screen.getByTitle('Weapons'));
+      rerender(<InventoryDialog {...props} swapWeapon={null} />);
+      expect(screen.queryByText('Iron Sword')).toBeNull();
+      expect(screen.getByText('Health Potion')).toBeInTheDocument();
+    });
+
     it('still opens on Consumables in combat', () => {
       render(
         <InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch}

@@ -82,9 +82,14 @@ export default function useFloatingCombatText({
 
   // A new fight: forget the last one entirely. The mount run is skipped so a
   // reload's replay seeding survives it.
+  // Only a REAL id change is a new fight: combat:ended is synthesized with no
+  // combat_id (useApi.applyCombatState), and treating that blip -- or the
+  // poll that restores the old id after it -- as a boundary would clear the
+  // floated set and re-float the finished fight. Same rule as
+  // useBattlefieldAnimations' prevCombatIdRef.
   const fightRef = useRef(combatId);
   useEffect(() => {
-    if (fightRef.current === combatId) return;
+    if (combatId == null || fightRef.current === combatId) return;
     fightRef.current = combatId;
     floatedEntryIdsRef.current = new Set();
     floatedLayerIdsRef.current = new Set();
@@ -124,9 +129,13 @@ export default function useFloatingCombatText({
     setFloatTexts((prev) => {
       // Stack each text above whatever is still floating on its target, so a
       // hit and the stagger it caused read as two lines, not one smudge.
+      // The next free slot is one above the highest still in use: slots never
+      // compact when a lower text expires, so counting live texts would put a
+      // new one on top of a survivor.
       const stacked = new Map();
       for (const text of prev) {
-        stacked.set(text.target_id, (stacked.get(text.target_id) || 0) + 1);
+        const next = (text.config.effect.stack || 0) + 1;
+        stacked.set(text.target_id, Math.max(stacked.get(text.target_id) || 0, next));
       }
       const placed = spawned.map((text) => {
         const stack = stacked.get(text.target_id) || 0;

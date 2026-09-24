@@ -10,6 +10,7 @@ vi.mock('../context/AudioContext', () => ({
 import BattlefieldGrid from './BattlefieldGrid';
 import { FLOAT_TEXT_MS, getAnimationConfig } from '../utils/animationConfigs';
 import { colors } from '../styles/theme';
+import { hexToRgb } from '../test/hexToRgb';
 
 // Floating combat text on the real grid (#667): "-33 HP" rising off the target
 // that took it, drawn by EffectsLayer's `floatText` effect kind.
@@ -86,8 +87,3 @@ describe('BattlefieldGrid — floating combat text', () => {
     expect(floatTexts(container).map((el) => el.textContent)).toEqual(['Miss!']);
   });
 });
-
-function hexToRgb(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
-}

@@ -302,8 +302,15 @@ class Item:
         if slotstate:
             for key, value in slotstate.items():
                 setattr(self, key, value)
-        if "count" in self.__dict__ and "name" in self.__dict__:
-            self.name = stack_base_name(self)
+        if "count" in self.__dict__ and isinstance(self.__dict__.get("name"), str):
+            # A save is untrusted input: a malformed count (inf, a string)
+            # keeps the restored name rather than aborting the whole load.
+            try:
+                self.name = stack_base_name(self)
+            except Exception:
+                logging.getLogger(__name__).debug(
+                    "kept baked name on %s: unreadable count", type(self).__name__, exc_info=True
+                )
 
     def __str__(self) -> str:
         return "{}\n=====\n{}\nValue: {}\n".format(

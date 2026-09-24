@@ -89,8 +89,18 @@ const clearStingState = (element) => {
 const createBgmPool = () => ({
     elements: [new Audio(), new Audio()],
     tracks: [null, null],
+    // The volume each slot was last SET to. The fade steps and compares these,
+    // never `element.volume`: iOS Safari ignores writes to media volume and
+    // always reads back 1, so a fade that read the element would never finish
+    // and never release the outgoing track.
+    volumes: [0, 0],
     active: 0,
 });
+
+const setSlotVolume = (pool, slot, volume) => {
+    pool.volumes[slot] = volume;
+    pool.elements[slot].volume = volume;
+};
 
 const activeElement = (pool) => pool.elements[pool.active];
 const spareSlot = (pool) => 1 - pool.active;
@@ -137,7 +147,7 @@ export const AudioProvider = ({ children }) => {
         element.pause();
         clearStingState(element);
         element.src = '';
-        element.volume = 0;
+        setSlotVolume(pool, slot, 0);
         pool.tracks[slot] = null;
     }, [saveProgress]);
 
@@ -160,22 +170,22 @@ export const AudioProvider = ({ children }) => {
         if (fadeIntervalRef.current) return; // the running ticker reads live state
         fadeIntervalRef.current = setInterval(() => {
             const pool = poolRef.current;
-            const active = activeElement(pool);
             const target = targetVolumeRef.current;
-            if (active.volume < target) {
-                active.volume = Math.min(active.volume + BGM_FADE_STEP, target);
-            } else if (active.volume > target) {
-                active.volume = Math.max(active.volume - BGM_FADE_STEP, target);
+            const current = pool.volumes[pool.active];
+            if (current < target) {
+                setSlotVolume(pool, pool.active, Math.min(current + BGM_FADE_STEP, target));
+            } else if (current > target) {
+                setSlotVolume(pool, pool.active, Math.max(current - BGM_FADE_STEP, target));
             }
 
             const spare = spareSlot(pool);
             if (pool.tracks[spare] !== null) {
-                const outgoing = pool.elements[spare];
-                outgoing.volume = Math.max(outgoing.volume - BGM_FADE_STEP, 0);
-                if (outgoing.volume <= 0) releaseSlot(spare);
+                const next = Math.max(pool.volumes[spare] - BGM_FADE_STEP, 0);
+                setSlotVolume(pool, spare, next);
+                if (next <= 0) releaseSlot(spare);
             }
 
-            if (active.volume === target && pool.tracks[spare] === null) {
+            if (pool.volumes[pool.active] === target && pool.tracks[spare] === null) {
                 stopFade();
             }
         }, BGM_FADE_INTERVAL_MS);
@@ -191,10 +201,10 @@ export const AudioProvider = ({ children }) => {
         if (isMusicMuted) {
             // Muted means silent now, not after a fade — both slots, so an
             // in-flight outgoing track does not keep sounding.
-            pool.elements.forEach((element) => { element.volume = 0; });
+            pool.elements.forEach((_, slot) => setSlotVolume(pool, slot, 0));
         } else if (!fadeIntervalRef.current) {
             // Mid-fade, the ticker picks up the new target on its next step.
-            activeElement(pool).volume = target;
+            setSlotVolume(pool, pool.active, target);
         }
     }, [musicVolume, isMusicMuted]);
 
@@ -209,7 +219,7 @@ export const AudioProvider = ({ children }) => {
         // that to `currentTime` throws on a non-finite double. Same shape as
         // the BGM_MAP lookup above; see utils/lookup.js.
         element.currentTime = lookupOr(trackProgress.current, trackName, 0);
-        element.volume = 0;
+        setSlotVolume(pool, slot, 0);
         pool.tracks[slot] = trackName;
         element.play().catch(e => console.warn("Audio play failed (user interaction needed):", e));
     }, []);
@@ -305,7 +315,7 @@ export const AudioProvider = ({ children }) => {
         element.loop = false; // One-shot
         element.src = bgmPath(trackName);
         element.currentTime = 0;
-        element.volume = targetVolumeRef.current;
+        setSlotVolume(pool, pool.active, targetVolumeRef.current);
         pool.tracks[pool.active] = trackName;
         element.play().catch(e => console.warn("Sting play failed:", e));
         currentBGMRef.current = trackName;

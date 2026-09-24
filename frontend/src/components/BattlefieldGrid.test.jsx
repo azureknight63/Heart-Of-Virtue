@@ -10,6 +10,7 @@ import { getAnimationDuration } from '../utils/animationConfigs';
 import { CATEGORY_GROUPS, MOVE_CATEGORY_COLOR, MOVE_CATEGORY_GLOW } from '../utils/categories';
 import { setFlag, resetFlags } from '../utils/featureFlags';
 import { colors } from '../styles/theme';
+import { hexToRgb } from '../test/hexToRgb';
 
 const { mockPlaySFX } = vi.hoisted(() => ({ mockPlaySFX: vi.fn() }));
 
@@ -1573,9 +1574,8 @@ describe('BattlefieldGrid', () => {
             // The fading token keeps its alignment (ally = primary border, not danger).
             const marker = container.querySelector('[aria-label^="Gorran:"]');
             expect(marker).not.toBeNull();
-            const n = parseInt(colors.primary.slice(1), 16);
             expect(marker.closest('[style*="border-color"]').style.borderColor)
-                .toBe(`rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`);
+                .toBe(hexToRgb(colors.primary));
 
             act(() => vi.advanceTimersByTime(700 + 50));
             expect(container.querySelector(BURST)).toBeNull();
@@ -1608,6 +1608,17 @@ describe('BattlefieldGrid', () => {
                 { player: mockCombat.player, allies: [], enemies: [goblin] },
                 { player: { ...mockCombat.player, hp: 0 }, allies: [], enemies: [goblin] },
             ], 'player', { streaming: true });
+
+            act(() => vi.advanceTimersByTime(800 + 50));
+            expect(container.querySelector(BURST)).toBeNull();
+        });
+
+        it('does not burst when the blow\'s beat has no state yet (interrupted beat)', () => {
+            // An event-interrupted beat tags its log with the next index but
+            // appends no beat state: absence of a snapshot is not a death.
+            const { container } = renderKill([
+                { player: mockCombat.player, allies: [gorran], enemies: [goblin] },
+            ], 'ally_gorran');
 
             act(() => vi.advanceTimersByTime(800 + 50));
             expect(container.querySelector(BURST)).toBeNull();

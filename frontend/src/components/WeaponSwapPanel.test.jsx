@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import WeaponSwapPanel, { NO_WEAPON_TO_SWAP_REASON, NOT_YOUR_TURN_REASON } from './WeaponSwapPanel';
 import { makeAvailableOption } from '../test/payloads';
 import { accessibility } from '../styles/theme';
+import { UNAVAILABLE_FALLBACK_REASON } from '../utils/combatMoveStatus';
 
 // The engine's SwapWeapon card: SWAP_WEAPON_STAGE_BEATS is (1, 1, 1, 0) and it
 // costs no fatigue (src/moves/_utility.py). `weapon_options` is the list
@@ -111,9 +112,11 @@ describe('WeaponSwapPanel', () => {
     expect(screen.getByRole('button', { name: /Draw Shortsword/ })).toBeDisabled();
   });
 
-  it('falls back to a generic reason when an unavailable move ships none', () => {
+  it('falls back to the shared client reason when an unavailable move ships none', () => {
+    // One catch-all sentence for the combat UI (combatMoveStatus), not a
+    // second panel-private copy that can drift from it.
     render(<WeaponSwapPanel swapMove={swapMove({ available: false, reason: null })} canAct onSwap={vi.fn()} />);
-    expect(screen.getByRole('status').textContent).toMatch(/not available/i);
+    expect(screen.getByRole('status').textContent).toContain(UNAVAILABLE_FALLBACK_REASON);
   });
 
   it('treats a card with no weapon_options as having nothing to draw', () => {

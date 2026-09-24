@@ -47,7 +47,11 @@ class CombatScenario(Scenario):
         if started_on_arrival:
             # The tile's aggro roster spotted Jean as he walked in
             # (check_for_combat's stealth roll), so the move itself opened
-            # the fight and POST /combat/start has nothing left to start.
+            # the fight. A move can also report combat_started while a
+            # narrative pause holds the fight back; only a live fight counts.
+            arrival_bugs, started_on_arrival = self._check_arrival_fight(client)
+            bugs += arrival_bugs
+        if started_on_arrival:
             print("[CombatScenario] Combat started on arrival; "
                   "driving it without POST /api/combat/start.")
         else:
@@ -152,6 +156,36 @@ class CombatScenario(Scenario):
                 request_body=body,
             ))
         return bugs, True
+
+    def _check_arrival_fight(self, client: GameClient) -> Tuple[List[BugReport], bool]:
+        """A fight opened by the arrival move gets the checks POST
+        /combat/start would have made: it is live, and Jean appears once.
+
+        Returns ``(bugs, live)``. Not live (a narrative pause) means the caller
+        falls back to POST /combat/start, so that path keeps its coverage.
+        """
+        resp = client.get("/api/combat/status")
+        bug = self._check_status(resp, 200, "/api/combat/status", "GET",
+                                 "Combat status after a fight opened on arrival")
+        if bug:
+            return [bug], False
+        data = client.parse(resp)
+        if not data.get("combat_active"):
+            return [], False
+        state = data.get("battle_state") or data
+        ally_jeans = [a for a in state.get("allies") or [] if a.get("name") == "Jean"]
+        if ally_jeans:
+            return [self._bug(
+                title="Duplicate Jean in combat: player appears as an ally too",
+                severity=BugSeverity.HIGH,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/combat/status",
+                method="GET",
+                expected="Jean listed only as the player",
+                actual=f"Jean appears as ally: {[a.get('id') for a in ally_jeans]}",
+                response=resp,
+            )], True
+        return [], True
 
     def _active_scenario(self) -> str:
         """``[scenario] active_scenario`` from the CONFIG_FILE ini, else ``fodder``."""

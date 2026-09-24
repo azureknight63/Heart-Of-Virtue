@@ -143,7 +143,9 @@ class ObjectSerializer:
         """
         from src.objects import resolve_interaction
 
-        hidden = getattr(obj, "action_aliases", None) or ()
+        hidden = getattr(obj, "action_aliases", None)
+        if not isinstance(hidden, (list, tuple, set, frozenset)):
+            hidden = ()  # a degraded object never breaks the row
         groups = []  # [handler, [keywords in authored order]]
         placed = []  # per keyword: its group, or None when kept as-is
         for keyword in keywords:

@@ -1313,10 +1313,12 @@ class MapEditor:
                                         ).parameters.values()
                                         if p.name != "self"
                                     ]
+                                    # Same rule as the game loader (#651).
                                     init_kwargs = {
                                         k: deserialize_instance(v)
                                         for k, v in props.items()
                                         if k in param_names
+                                        and map_placeholders.legacy_init_kwarg_allowed(cls, k)
                                     }
                                     inst = cls(**init_kwargs)
                                     # Keys already consumed by the constructor are

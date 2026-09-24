@@ -238,3 +238,45 @@ describe('useFloatingCombatText — streaming path', () => {
     expect(texts(result)).toEqual(['-33 HP']);
   });
 });
+
+describe('useFloatingCombatText — scrub regressions', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  it('does not re-float a fight when combat:ended blips combatId to undefined', () => {
+    // combat:ended is synthesized with no combat_id and an empty log; the next
+    // poll re-serves the finished fight. Neither half is a new fight.
+    const log = [entry('Jean struck the Slime for 33 damage!', [HIT])];
+    const props = { streaming: false, combatLog: log, displayedLogCount: 1, combat, combatId: 'fight-1', combatSpeed: 1 };
+    const { result, rerender } = renderText(props);
+    expect(texts(result)).toEqual(['-33 HP']);
+    act(() => { vi.advanceTimersByTime(FLOAT_TEXT_MS * 2); });
+    expect(result.current).toEqual([]);
+
+    rerender({ ...props, combatLog: [], displayedLogCount: 0, combatId: undefined });
+    rerender({ ...props, combatLog: log.map((e) => ({ ...e })) });
+    expect(result.current).toEqual([]);
+  });
+
+  it('never stacks a new text onto a slot still in use', () => {
+    const hitAt = (delta) => ({ id: 'enemy_a', kind: 'hp', delta });
+    const log = [entry('a', [hitAt(-1)])];
+    const props = { streaming: false, combatLog: log, displayedLogCount: 1, combat, combatId: 'fight-1', combatSpeed: 1 };
+    const { result, rerender } = renderText(props);
+    // B lands half a lifetime later, taking slot 1 above A.
+    act(() => { vi.advanceTimersByTime(FLOAT_TEXT_MS / 2); });
+    const log2 = [...log, entry('b', [hitAt(-2)])];
+    rerender({ ...props, combatLog: log2, displayedLogCount: 2 });
+    // A expires; B still floats in slot 1.
+    act(() => { vi.advanceTimersByTime(FLOAT_TEXT_MS / 2 + 1); });
+    expect(result.current.map((t) => t.config.effect.stack)).toEqual([1]);
+    // C arrives while B holds slot 1: it must not take slot 1 too.
+    const log3 = [...log2, entry('c', [hitAt(-3)])];
+    rerender({ ...props, combatLog: log3, displayedLogCount: 3 });
+    const stacks = result.current.map((t) => t.config.effect.stack);
+    expect(new Set(stacks).size).toBe(stacks.length);
+  });
+});

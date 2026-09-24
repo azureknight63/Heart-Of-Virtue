@@ -6,6 +6,10 @@ import {
   windowPanBounds,
 } from '../utils/battlefieldPan';
 
+// The resting pan. Shared by the ref and the state so both start as the same
+// object; neither is ever mutated (commitPanCells replaces it).
+const NO_PAN = Object.freeze({ x: 0, y: 0 });
+
 /**
  * Drag-to-pan for the battlefield map (#592), extracted from BattlefieldGrid
  * (#623). The component derives its camera window, hands the UNPANNED window
@@ -27,9 +31,6 @@ import {
  * @returns {{panCells, isPanned, canPan, panLayerRef, gridContainerRef,
  *   recenterPan, wasDrag}}
  */
-// The resting pan. Shared by the ref and the state so both start as the same
-// object; neither is ever mutated (commitPanCells replaces it).
-const NO_PAN = Object.freeze({ x: 0, y: 0 });
 
 export default function useBattlefieldPan({
   leftX, topY, gridCols, mapSize, combatId, combatActive, isFitMode, tab,
@@ -38,7 +39,7 @@ export default function useBattlefieldPan({
   // camera, so panning doesn't interfere with the smooth camera animation.
   const panLayerRef = useRef(null);
   const gridContainerRef = useRef(null);
-  const touchPanRef = useRef({ x: 0, y: 0 }); // sub-cell remainder, screen px
+  const touchPanRef = useRef(NO_PAN); // sub-cell remainder, screen px
   const panCellsRef = useRef(NO_PAN); // authoritative copy for the handlers
   const [panCells, setPanCells] = useState(NO_PAN); // render copy
   const commitPanCells = useCallback((x, y) => {

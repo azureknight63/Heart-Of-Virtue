@@ -142,6 +142,10 @@ def _random_state(rng):
         [items.Restorative()],
         [items.WoodenArrow()],
         [items.Gold()],
+        # A spare weapon (Jean holds Fists): the only way SwapWeapon is ever
+        # viable, so without it that move's no-false-accusation check below
+        # never ran.
+        [items.Dagger()],
     ])
     return player
 
@@ -178,6 +182,12 @@ def test_reason_is_none_exactly_when_viable(cls):
     # has (Fists), so no real state reaches it -- its unit test below does.
     if cls.__name__ in _SPECIFIC - {"Parry"}:
         assert exercised[False], f"{cls.__name__}: spread never made it unviable"
+    # And the other half: a move the spread never makes viable has had only
+    # one side of the parity checked, and test_a_diagnosis_never_accuses_a_
+    # viable_move checks nothing for it.
+    if cls.__name__ in _BOTH_SIDES:
+        assert exercised[True], f"{cls.__name__}: spread never made it viable"
+        assert exercised[False], f"{cls.__name__}: spread never made it unviable"
 
 
 @pytest.mark.parametrize("cls", CASTABLE, ids=lambda c: c.__name__)
@@ -193,6 +203,10 @@ def test_a_diagnosis_never_accuses_a_viable_move(cls):
 #: have no viable() gate, so only a cooldown or fatigue can lock them, and the
 #: adapter names those. StrategicInsight and MasterTactician are passives and
 #: never reach a move card.
+#: Moves the spread must reach on BOTH sides of viable(). SwapWeapon is here
+#: because its only viable state (a spare weapon) had to be added to the spread.
+_BOTH_SIDES = {"SwapWeapon"}
+
 _SPECIFIC = {
     "Parry", "Withdraw", "TacticalRetreat", "Turn", "Rest", "CrusaderOath",
     "Ironhide", "WarCry", "SecretPlans", "BloodOfMartyrs", "Hawkeye",

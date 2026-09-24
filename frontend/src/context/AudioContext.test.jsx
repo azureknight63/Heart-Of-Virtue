@@ -547,6 +547,27 @@ describe('AudioContext BGM crossfade (#662)', () => {
         });
     };
 
+    it('finishes the crossfade where media volume is read-only (iOS Safari)', () => {
+        // iOS ignores writes to HTMLMediaElement.volume and always reads 1, so
+        // the fade must step its own tracked value, never read the element.
+        withPreferences({ musicVolume: 0.8 });
+        const { result } = renderHook(() => useAudio(), { wrapper });
+        instrument();
+        pool().forEach(a => {
+            Object.defineProperty(a, 'volume', { get: () => 1, set: () => {}, configurable: true });
+        });
+        const [first] = pool();
+
+        act(() => { result.current.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(2000); });
+        act(() => { result.current.playBGM('dungeon'); });
+        act(() => { vi.advanceTimersByTime(5000); });
+
+        expect(first.src).toBe('');
+        expect(playing()).toHaveLength(1);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
     it('overlaps the outgoing fade-out with the incoming fade-in on the other element', () => {
         withPreferences({ musicVolume: 0.8 });
         const { result } = renderHook(() => useAudio(), { wrapper });

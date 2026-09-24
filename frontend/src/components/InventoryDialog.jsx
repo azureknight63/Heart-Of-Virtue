@@ -23,7 +23,13 @@ export default function InventoryDialog({
   items, player, onClose, onRefetch, combatMode = false,
   swapWeapon = null, canSwapWeapon = false, onSwapWeapon,
 }) {
-  const [activeTab, setActiveTab] = useState(combatMode ? 'consumables' : 'weapons')
+  const [selectedTab, setActiveTab] = useState(combatMode ? 'consumables' : 'weapons')
+  // In combat the Weapons tab exists only while the swap move is offered. If
+  // it vanishes while open, show Consumables rather than falling through to
+  // the free equip list the server refuses mid-fight.
+  const activeTab = combatMode && !combatTabKeys(swapWeapon).includes(selectedTab)
+    ? 'consumables'
+    : selectedTab
   const [selectedItem, setSelectedItem] = useState(null)
   const [localInventory, setLocalInventory] = useState(items || player?.inventory || [])
   const [sortStates, setSortStates] = useState({

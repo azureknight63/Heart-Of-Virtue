@@ -55,7 +55,7 @@ from src.moves._base import (
     TELEGRAPH_SEVERITY_NORMAL,
     UNAVAILABILITY_TEXT,
     UnavailableReason,
-    weapon_requirement_code,
+    weapon_code_for,
 )
 from src.events import purge_orphaned_combat_events
 from src.story import gorran_flavor
@@ -276,6 +276,9 @@ NO_WEAPON_REASON = UNAVAILABILITY_TEXT[UnavailableReason.NO_WEAPON]
 #: (`Move.unavailability_reason`) could not name why. Kept deliberately vague
 #: -- guessing here is what shipped issue #565.
 CANNOT_USE_REASON = UNAVAILABILITY_TEXT[UnavailableReason.UNAVAILABLE]
+#: Swap Weapon cast from a path that names no weapon while more than one is
+#: on offer (#671): the client must send ``select_weapon``.
+SWAP_WEAPON_NEEDS_A_CHOICE = "Choose which weapon to draw"
 
 #: A targeted move with no `mvrange` at all, so there is no band to compare.
 NO_TARGET_REASON = UNAVAILABILITY_TEXT[UnavailableReason.NO_TARGET]
@@ -388,10 +391,11 @@ def move_unavailability(move, player, is_targeted):
         move, getattr(player, "eq_weapon", None)
     )
     if weapon_reason is not None:
-        code = weapon_requirement_code(
-            player, getattr(move, "weapon_requirement", ())
+        # Non-None exactly when weapon_code_for is: one rule decides both.
+        code = weapon_code_for(
+            getattr(player, "eq_weapon", None), getattr(move, "weapon_requirement", ())
         )
-        return code or UnavailableReason.WRONG_WEAPON, weapon_reason
+        return code, weapon_reason
 
     code = _engine_unavailability_code(move)
     if not is_targeted or code not in _RANGE_LADDER_CODES:
@@ -439,6 +443,9 @@ def _engine_unavailability_code(move):
     try:
         return UnavailableReason(hook())
     except Exception:
+        logger.debug(
+            "unavailability_reason failed for %s", type(move).__name__, exc_info=True
+        )
         return UnavailableReason.UNAVAILABLE
 
 
@@ -462,22 +469,17 @@ def weapon_requirement_reason(move, weapon):
     term.
     """
     requirement = tuple(getattr(move, "weapon_requirement", ()) or ())
-    if not requirement:
-        return None
-    # The engine models bare-handed two ways -- an absent/None ``eq_weapon``
-    # (most NPCs) or an ``items.Fists()`` whose subtype is "Unarmed", which is
-    # what ``Player.__init__`` equips and ``unequip_item`` restores. Both count
-    # as satisfying an Unarmed requirement; ``Jab._is_unarmed`` documents the
-    # pair, and reading only the subtype here would tell a genuinely
-    # bare-handed Jean that Jab "requires bare hands".
-    subtype = "Unarmed" if weapon is None else getattr(weapon, "subtype", None)
-    if subtype in requirement:
+    # Whether the hand satisfies the move is the engine's rule (both
+    # bare-handed models count as Unarmed -- see weapon_code_for); this only
+    # phrases the verdict.
+    code = weapon_code_for(weapon, requirement)
+    if code is None:
         return None
     # A fists-only move is not asking for equipment, so the empty-handed
     # wording below would be exactly backwards for it.
     if set(requirement) == {"Unarmed"}:
         return "Requires " + _weapon_noun_phrase("Unarmed")
-    if weapon is None:
+    if code is UnavailableReason.NO_WEAPON:
         return NO_WEAPON_REASON
     subtypes = sorted(requirement)
     phrases = [_weapon_noun_phrase(subtypes[0])] + [
@@ -1618,6 +1620,10 @@ class ApiCombatAdapter:
         # _beat_lock for the race and why the lock is reentrant. The wrapper
         # exists so the body below keeps its indentation and stays reviewable
         # against its history.
+        if not reinit:
+            ensure = getattr(self.player, "ensure_swap_weapon", None)
+            if callable(ensure):
+                ensure()
         with self._beat_lock:
             return self._initialize_combat_locked(enemies, reinit=reinit)
 
@@ -2224,7 +2230,28 @@ class ApiCombatAdapter:
         else:
             selected_move.target = self.player
 
+        choice_error = self._resolve_swap_choice(selected_move)
+        if choice_error is not None:
+            return choice_error
         return self._commit_and_execute(selected_move)
+
+    def _resolve_swap_choice(self, move) -> Optional[Dict[str, Any]]:
+        """Settle Swap Weapon's weapon for a cast that named none.
+
+        ``select_weapon`` names the weapon; every other path (a move card,
+        repeat-last, a suggestion) does not. Such a cast draws the one weapon
+        on offer when there is exactly one, and is refused otherwise -- never
+        a guess, and never a choice left over from an aborted swap
+        (maintainer decision, 2026-09-24). Returns an error dict, or None.
+        """
+        if not isinstance(move, SwapWeapon):
+            return None
+        options = move.swappable_weapons()
+        if len(options) == 1:
+            move.weapon = options[0]
+            return None
+        move.weapon = None
+        return {"error": SWAP_WEAPON_NEEDS_A_CHOICE}
 
     def _commit_and_execute(self, move) -> Dict[str, Any]:
         """Make ``move`` the player's current move, log it, and run it.
@@ -2301,6 +2328,9 @@ class ApiCombatAdapter:
         precondition_error = self._check_move_preconditions(selected_move)
         if precondition_error is not None:
             return precondition_error
+        choice_error = self._resolve_swap_choice(selected_move)
+        if choice_error is not None:
+            return choice_error
 
         self.player.current_move = selected_move
         self.player.current_move.user = self.player

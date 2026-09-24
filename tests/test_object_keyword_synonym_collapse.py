@@ -142,3 +142,14 @@ def test_the_interaction_response_ships_the_collapsed_row_too(ferry):
     result = interact_with(GameService(), player, ferry, "enter")
     assert "ferry" not in result["object_state"]["keywords"]
     assert result["object_state"]["keywords"] == _wire_keywords(ferry)
+
+
+def test_a_degraded_action_aliases_value_does_not_break_the_row():
+    """The serializer never raises on a degraded object: a non-container
+    ``action_aliases`` (a bad save, a fuzzer) is treated as no aliases."""
+    from src.api.serializers.object_serializer import ObjectSerializer
+    from src.objects import Passageway
+
+    way = Passageway(player=None, tile=None, name="Door")
+    way.action_aliases = 7
+    assert ObjectSerializer.collapse_synonyms(way, ["enter", "door"])

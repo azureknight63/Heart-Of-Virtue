@@ -93,6 +93,17 @@ def test_a_killing_blow_keeps_its_damage_but_not_the_statuses_death_wiped():
     ]
 
 
+def test_an_overkill_blow_reports_only_the_hp_actually_lost():
+    """Floating text shows HP removed, not the raw overkill (maintainer
+    decision 2026-09-24): a 45-point hit on a 10-HP Slime reads -10 HP."""
+    before = {"enemy_a": (10, frozenset())}
+    after = {"enemy_a": (-35, frozenset())}
+
+    assert cb.build_beat_results(before, after) == [
+        {"id": "enemy_a", "kind": "hp", "delta": -10},
+    ]
+
+
 def test_results_are_capped():
     before = {f"enemy_{i}": (50, frozenset()) for i in range(100)}
     after = {f"enemy_{i}": (40, frozenset()) for i in range(100)}

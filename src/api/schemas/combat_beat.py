@@ -307,7 +307,9 @@ def build_beat_results(before, after, resolutions=()):
         prev_hp, prev_statuses = baseline
         if prev_hp <= 0:
             continue
-        delta = int(curr_hp - prev_hp)
+        # HP actually lost, not the raw hit: an overkill blow reads as the
+        # target's remaining HP (maintainer decision 2026-09-24).
+        delta = int(max(curr_hp, 0) - prev_hp)
         if delta:
             results.append({"id": cid, "kind": "hp", "delta": delta})
         # Sorted: a set's iteration order is arbitrary, and the client stacks

@@ -1,23 +1,23 @@
 import { colors, spacing, accessibility, fonts } from '../styles/theme'
 import { getStageBeats, totalStageBeats, formatBeats, beatUnit } from '../utils/moveCommitment'
+import { moveAvailability } from '../utils/combatMoveStatus'
 
 /** Shown when the engine offers no weapon to draw (empty `weapon_options`). */
 export const NO_WEAPON_TO_SWAP_REASON = 'No other weapon in your pack to draw.'
 /** Shown when the swap is otherwise possible but it is not Jean's turn. */
 export const NOT_YOUR_TURN_REASON = 'Wait for your turn to change weapons.'
-const FALLBACK_REASON = 'Swapping weapons is not available right now.'
 
 /**
  * Why no weapon can be drawn right now, or null when one can.
  *
  * Order matters: an empty pack is the reason the player can act on (go find
- * a weapon), so it wins over the engine's generic move reason, which for this
- * move can only be "Cannot use this move" until the engine answers *why*
- * (issue #627). Off-turn comes last because it clears on its own.
+ * a weapon), so it is stated first, in the panel's own words. Any other lock
+ * shows the engine's reason (#627), with the shared client fallback when the
+ * payload carries none. Off-turn comes last because it clears on its own.
  */
 function blockedReason(swapMove, options, canAct) {
   if (options.length === 0) return NO_WEAPON_TO_SWAP_REASON
-  if (!swapMove.available) return swapMove.reason || FALLBACK_REASON
+  if (!swapMove.available) return moveAvailability(swapMove).reason
   if (!canAct) return NOT_YOUR_TURN_REASON
   return null
 }

@@ -893,16 +893,18 @@ class Rest(Move):  # standard rest to restore fatigue.
         player.combat_exp["Basic"] += 2
 
 
+#: Use Item's (prep, execute, recoil, cooldown) beats. Named so SwapWeapon's
+#: cost can be stated as "the same as using an item" and stay that way.
+USE_ITEM_STAGE_BEATS = (1, 1, 1, 0)
+
+
 class UseItem(Move):
     display_name = 'Use Item'
     web_animation = "pulse"
 
     def __init__(self, player):
         description = "Use an item from your inventory."
-        prep = 1
-        execute = 1
-        recoil = 1
-        cooldown = 0
+        prep, execute, recoil, cooldown = USE_ITEM_STAGE_BEATS
         fatigue_cost = 0
         super().__init__(
             name="Use Item",
@@ -948,7 +950,7 @@ class UseItem(Move):
 
 
 #: [prep, execute, recoil, cooldown] for SwapWeapon -- the price of changing
-#: weapons mid-fight (#671). The same 3-beat total as UseItem's [1, 1, 1, 0],
+#: weapons mid-fight (#671). The same beats as USE_ITEM_STAGE_BEATS,
 #: on purpose: both are "reach into the bag" actions -- one beat to get a hand
 #: in there, one for the thing to happen (the equip lands on the execute
 #: beat), one to settle the grip -- and pricing a weapon differently from a
@@ -956,7 +958,7 @@ class UseItem(Move):
 #: fatigue cost: the beats Jean spends open-handed ARE the penalty, and a
 #: cooldown on top would stop him correcting a wrong pick. Retune here only;
 #: the web client reads the numbers off the move's `stage_beats`.
-SWAP_WEAPON_STAGE_BEATS = (1, 1, 1, 0)
+SWAP_WEAPON_STAGE_BEATS = USE_ITEM_STAGE_BEATS
 
 
 class SwapWeapon(Move):
@@ -1024,10 +1026,13 @@ class SwapWeapon(Move):
             # Everything he could have drawn left the pack mid-swap.
             narrate(f"{player.name} finds nothing else to draw.")
             return
-        # A stale choice (sold, dropped, already equipped) falls back to the
-        # first weapon on offer rather than equipping something not in hand.
-        weapon = choice if choice in options else options[0]
-        player.equip_item(item_object=weapon)
+        if choice not in options:
+            # The chosen weapon left the pack mid-swap (or none was chosen).
+            # Never equip a weapon the player did not pick; the adapter
+            # resolves the choice before casting (maintainer, 2026-09-24).
+            narrate(f"{player.name} finds the weapon he reached for gone, and keeps his grip.")
+            return
+        player.equip_item(item_object=choice)
 
 
 class CrusaderOath(Move):

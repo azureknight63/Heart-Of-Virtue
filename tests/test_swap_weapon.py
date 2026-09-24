@@ -106,24 +106,27 @@ class TestSwapWeaponMove:
         # Selection is consumed, so the next cast cannot silently reuse it.
         assert move.weapon is None
 
-    def test_execute_without_a_selection_takes_the_first_offered_weapon(self):
-        player, _dagger, sword = _armed_player()
+    def test_execute_without_a_selection_equips_nothing(self):
+        """The adapter settles the choice before casting; the move itself
+        never guesses (maintainer decision 2026-09-24)."""
+        player, dagger, _sword = _armed_player()
         move = _swap_move(player)
         with capture_narration():
             move.execute(player)
-        assert player.eq_weapon is sword
+        assert player.eq_weapon is dagger
 
-    def test_a_stale_selection_falls_back_rather_than_equipping_a_ghost(self):
+    def test_a_stale_selection_equips_nothing_rather_than_an_unchosen_weapon(self):
         """A weapon that left the pack between choice and execute (sold,
-        dropped, stolen) must not be equipped out of thin air."""
-        player, _dagger, sword = _armed_player()
+        dropped, stolen) must not be equipped out of thin air -- and nor may
+        a weapon the player never chose (maintainer decision 2026-09-24)."""
+        player, dagger, _sword = _armed_player()
         ghost = items.Longsword()  # never in the inventory
         move = _swap_move(player)
         move.weapon = ghost
         with capture_narration():
             move.execute(player)
         assert ghost.isequipped is False
-        assert player.eq_weapon is sword
+        assert player.eq_weapon is dagger
 
     def test_execute_with_nothing_to_swap_to_changes_nothing(self):
         player = Player()
@@ -235,10 +238,11 @@ class TestSwapWeaponThroughAdapter:
         assert "error" in result
 
     def test_a_player_without_the_move_is_refused(self):
-        """A pre-#671 save has no SwapWeapon in known_moves."""
+        """The adapter's own guard, should the move be missing mid-fight.
+        (A fight backfills it for a pre-#671 save -- see the follow-ups.)"""
         player, dagger, sword = _armed_player()
-        player.known_moves = [m for m in player.known_moves if not isinstance(m, SwapWeapon)]
         adapter, _enemy = _combat(player)
+        player.known_moves = [m for m in player.known_moves if not isinstance(m, SwapWeapon)]
         result = adapter.process_command(
             {"type": "select_weapon", "item_id": wire_handle(sword)}
         )
@@ -372,3 +376,111 @@ class TestSwapWeaponUnavailabilityReason:
         code, text = move_unavailability(_swap_move(player), player, False)
         assert code == UnavailableReason.NO_SPARE_WEAPON
         assert text == UNAVAILABILITY_TEXT[UnavailableReason.NO_SPARE_WEAPON]
+
+
+# ---------------------------------------------------------------------------
+# Scrub follow-ups (maintainer decisions, 2026-09-24)
+# ---------------------------------------------------------------------------
+
+
+class TestSwapWeaponScrubFollowUps:
+    def test_combat_backfills_the_move_for_a_player_who_lacks_it(self):
+        """A Jean from a save that predates SwapWeapon is refused free equips
+        mid-fight, so the fight must hand him the move that replaces them."""
+        player, _dagger, _sword = _armed_player()
+        player.known_moves = [m for m in player.known_moves if not isinstance(m, SwapWeapon)]
+        _combat(player)
+        assert sum(isinstance(m, SwapWeapon) for m in player.known_moves) == 1
+
+    def test_backfill_does_not_duplicate_the_move(self):
+        player, _dagger, _sword = _armed_player()
+        _combat(player)
+        assert sum(isinstance(m, SwapWeapon) for m in player.known_moves) == 1
+
+    def test_a_cast_with_no_choice_is_refused_when_several_weapons_are_on_offer(self):
+        player, dagger, _sword = _armed_player()
+        player.inventory.append(items.Longsword())
+        adapter, _enemy = _combat(player)
+        with capture_narration():
+            result = adapter.process_command(
+                {"type": "select_move_and_target", "move_name": "Swap Weapon"}
+            )
+        assert "error" in result
+        assert player.current_move is None
+        assert player.eq_weapon is dagger
+
+    def test_a_cast_with_no_choice_draws_the_only_weapon_on_offer(self, monkeypatch):
+        player, _dagger, sword = _armed_player()
+        adapter, _enemy = _combat(player)
+        monkeypatch.setattr(adapter, "_process_npc_turns", lambda: None)
+        with capture_narration():
+            result = adapter.process_command(
+                {"type": "select_move_and_target", "move_name": "Swap Weapon"}
+            )
+            for _ in range(sum(SWAP_WEAPON_STAGE_BEATS) + 2):
+                if player.eq_weapon is sword:
+                    break
+                adapter.process_command({"type": "advance"})
+        assert "error" not in result
+        assert player.eq_weapon is sword
+
+    def test_a_generic_cast_clears_a_stale_choice_left_by_an_aborted_swap(self):
+        player, dagger, sword = _armed_player()
+        longsword = items.Longsword()
+        player.inventory.append(longsword)
+        adapter, _enemy = _combat(player)
+        _swap_move(player).weapon = longsword  # left over from an aborted swap
+        with capture_narration():
+            result = adapter.process_command(
+                {"type": "select_move_and_target", "move_name": "Swap Weapon"}
+            )
+        assert "error" in result
+        assert _swap_move(player).weapon is None
+        assert player.eq_weapon is dagger
+
+    def test_interact_equip_of_a_floor_weapon_is_refused_mid_fight(self):
+        """The UI offers no interact panel in combat, so this path is API-only;
+        it must not be a free weapon change that skips SwapWeapon's beats."""
+        from tests._gs_fixtures import live_world
+        from src.api.services.game_service import GameService, _WEAPON_SWAP_IN_COMBAT_MESSAGE
+
+        player, game_map = live_world()
+        dagger = items.Dagger()
+        player.inventory.append(dagger)
+        with capture_narration():
+            player.equip_item(item_object=dagger)
+        floor_axe = items.Longsword()
+        game_map[(0, 0)].items_here.append(floor_axe)
+        player.in_combat = True
+
+        result = GameService().interact_with_target(player, wire_handle(floor_axe), "equip")
+
+        assert result.get("success") is False
+        assert result.get("message") == _WEAPON_SWAP_IN_COMBAT_MESSAGE
+        assert player.eq_weapon is dagger
+        assert floor_axe in game_map[(0, 0)].items_here
+
+
+class TestSelectWeaponIdScoping:
+    """``select_weapon`` resolves a REAL handle only within the move's own
+    offer: a merchandise weapon in the pack and a weapon outside it both have
+    valid wire handles, and both must be refused before any state changes."""
+
+    @pytest.mark.parametrize("where", ["merchandise_in_pack", "not_in_pack"])
+    def test_a_real_handle_outside_the_offer_is_refused(self, where):
+        player, dagger, _sword = _armed_player()
+        adapter, _enemy = _combat(player)
+        outsider = items.Longsword(merchandise=True) if where == "merchandise_in_pack" else items.Longsword()
+        if where == "merchandise_in_pack":
+            player.inventory.append(outsider)
+        beat_before = player.combat_beat
+
+        result = adapter.process_command(
+            {"type": "select_weapon", "item_id": wire_handle(outsider)}
+        )
+
+        assert "error" in result
+        assert player.current_move is None
+        assert player.combat_beat == beat_before
+        assert player.eq_weapon is dagger
+        assert outsider.isequipped is False

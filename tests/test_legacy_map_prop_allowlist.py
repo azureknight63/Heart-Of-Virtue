@@ -126,14 +126,16 @@ def test_legacy_prop_allowed_is_the_one_rule():
     assert not map_placeholders.legacy_prop_allowed(Book, "stockable", constructed=True)
     assert not map_placeholders.legacy_prop_allowed(Book, "stockable", constructed=False)
     # A declared constructor param its __init__ takes is accepted, as the
-    # placeholder path accepts it; an undeclared one only on the fallback,
-    # where the constructor never received it.
+    # placeholder path accepts it. The constructor fallback is no wider: a
+    # map can force it, so an undeclared name -- and above all an engine
+    # back-reference -- is refused there too (#651 scrub follow-up).
     assert "text_file_path" not in map_placeholders.authored_override_names(Book)
     assert map_placeholders.legacy_prop_allowed(Book, "text_file_path", constructed=True)
     assert "chars_per_page" in map_placeholders._init_param_names(Book)
     assert "chars_per_page" in map_placeholders.authored_param_names(Book)
     assert not map_placeholders.legacy_prop_allowed(Passageway, "player", constructed=True)
-    assert map_placeholders.legacy_prop_allowed(Passageway, "player", constructed=False)
+    assert not map_placeholders.legacy_prop_allowed(Passageway, "player", constructed=False)
+    assert not map_placeholders.legacy_prop_allowed(Passageway, "tile", constructed=False)
     # Never a behaviour-shadowing name, even if one were declared.
     assert not map_placeholders.legacy_prop_allowed(Passageway, "enter", constructed=False)
     assert not map_placeholders.legacy_prop_allowed(Passageway, "__class__", constructed=False)
@@ -180,6 +182,12 @@ NOT_AUTHORABLE = {
     "allowed_subtypes": "constructor kwarg; the attribute is allowed_item_types",
     "items": "stale Container dump of '<circular_ref:...>' strings",
     "range_decay": "per-class ranged falloff tuning; only a testing-map bow dumps it",
+    "spawn_tile": (
+        "runtime state derived from the injected tile; the dumps' null only "
+        "ever came from a null `tile` reaching the constructor, which map "
+        "data may no longer supply (#651 follow-up) -- _do_spawn used the "
+        "event's own tile either way"
+    ),
     # Event constructor params the testing-map statue re-dumps.
     "name": None,
     "repeat": None,
@@ -363,3 +371,42 @@ def test_not_authorable_keys_are_really_dropped(effective_props):
         if landed == _norm(authored)
     )
     assert applied == [], applied
+
+
+# ---------------------------------------------------------------------------
+# Reproduction: engine back-references from map data (#651 scrub follow-up)
+# ---------------------------------------------------------------------------
+#
+# The setattr sweep was not the only door. A constructor kwarg reached
+# ``__init__`` for any name in its signature, and a map could force the
+# ``__new__`` fallback (any prop that makes ``__init__`` raise) to have every
+# signature name setattr'd raw. Both let map JSON plant a nested engine
+# instance as ``player``/``tile``, which the engine owns and injects itself.
+
+
+def _slime_dump():
+    return {"__class__": "Slime", "__module__": "npc", "props": {}}
+
+
+def test_a_map_cannot_hand_the_constructor_an_engine_back_reference():
+    from src.npc import Slime
+
+    way = _load(_payload(Passageway, {"name": "Door", "player": _slime_dump()}))
+
+    assert way is not None
+    assert not isinstance(getattr(way, "player", None), Slime)
+    # Positive control: the declared param still lands.
+    assert way.name == "Door"
+
+
+def test_a_forced_constructor_fallback_cannot_set_back_references():
+    from src.npc import Slime
+
+    # A non-string name makes Passageway.__init__ raise (name.lower()),
+    # sending the loader to its cls.__new__ fallback.
+    way = _load(_payload(Passageway, {
+        "name": 7, "player": _slime_dump(), "tile": _slime_dump(),
+    }))
+
+    assert not isinstance(getattr(way, "player", None), Slime)
+    assert not isinstance(getattr(way, "tile", None), Slime)

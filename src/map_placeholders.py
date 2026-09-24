@@ -253,6 +253,30 @@ def authored_override_names(cls):
     return _collect_class_attr(cls, "MAP_AUTHORED_OVERRIDES", as_set=True)
 
 
+#: Constructor params the engine injects itself and map data may never
+#: supply: the live Player and the MapTile a placement sits on. A map that
+#: could author them could plant a nested engine instance as either
+#: back-reference (#651 scrub follow-up).
+ENGINE_INJECTED_PARAMS = frozenset({"player", "tile"})
+
+
+def legacy_init_kwarg_allowed(cls, key):
+    """True when a legacy full-dump prop ``key`` may be passed to
+    ``cls.__init__``: any name the signature takes, except an engine
+    back-reference or a behaviour-shadowing name.
+
+    Wider than the setattr sweep on purpose: shipped maps pass undeclared
+    constructor args (a Consumable's required ``maintype``/``subtype``), and
+    the constructor decides how each is stored. What map data may never do is
+    hand it the engine's own ``player``/``tile`` (#651 scrub follow-up)."""
+    return (
+        isinstance(key, str)
+        and key in _init_param_names(cls)
+        and key not in ENGINE_INJECTED_PARAMS
+        and not secure_pickle.shadows_class_behaviour(cls, key)
+    )
+
+
 def legacy_prop_allowed(cls, key, constructed=True):
     """True when a legacy full-dump prop ``key`` may be ``setattr``'d onto a
     freshly built ``cls`` instance (issue #651).
@@ -268,7 +292,10 @@ def legacy_prop_allowed(cls, key, constructed=True):
 
     ``constructed=False`` is the loader's ``cls.__new__`` fallback: the
     authored kwargs never reached ``__init__``, so any name the signature
-    takes is applied here instead, as the constructor would have.
+    takes is applied here instead, as the constructor would have -- except
+    ``ENGINE_INJECTED_PARAMS``, which map data may never supply on any path:
+    a map chooses the fallback just by authoring a prop that makes
+    ``__init__`` raise (#651 scrub follow-up).
 
     A name that would shadow behaviour the class declares is never allowed,
     whatever the declarations say (#620). Anything else is dropped silently,
@@ -276,7 +303,9 @@ def legacy_prop_allowed(cls, key, constructed=True):
     carries runtime state (``target``, ``thread``, ``known_moves``) in every
     placement, so a warning per key would be noise, not signal.
     """
-    if not isinstance(key, str) or secure_pickle.shadows_class_behaviour(cls, key):
+    if not isinstance(key, str) or key in ENGINE_INJECTED_PARAMS:
+        return False
+    if secure_pickle.shadows_class_behaviour(cls, key):
         return False
     if key in authored_override_names(cls):
         return True
@@ -518,7 +547,10 @@ def instantiate_placeholder(payload, *, player=None, tile=None, _depth=0):
 
     authored = authored_param_names(cls)
     sig_names = _init_param_names(cls)
-    kwargs = {k: v for k, v in ctor_values.items() if k in authored and k in sig_names}
+    kwargs = {
+        k: v for k, v in ctor_values.items()
+        if k in authored and k in sig_names and k not in ENGINE_INJECTED_PARAMS
+    }
     if "player" in sig_names and "player" not in kwargs and player is not None:
         kwargs["player"] = player
     if "tile" in sig_names and "tile" not in kwargs and tile is not None:

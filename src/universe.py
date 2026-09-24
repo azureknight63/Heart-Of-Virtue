@@ -274,7 +274,13 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             try:
                 sig = inspect.signature(cls.__init__)
                 pnames = [p.name for p in sig.parameters.values() if p.name != "self"]
-                init_kwargs = {k: prop(k) for k in props if k in pnames}
+                # The same rule as the setattr sweep below (#651): an
+                # undeclared constructor param, or an engine back-reference,
+                # never reaches __init__ from map data.
+                init_kwargs = {
+                    k: prop(k) for k in props
+                    if k in pnames and map_placeholders.legacy_init_kwarg_allowed(cls, k)
+                }
                 # If 'player' is a parameter, pass self.player
                 if "player" in pnames and "player" not in init_kwargs:
                     init_kwargs["player"] = self.player

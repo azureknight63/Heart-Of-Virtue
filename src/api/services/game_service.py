@@ -228,9 +228,12 @@ def _is_weapon_change_in_combat(player, item):
 #: name, so an authored alias for either is caught too.
 #:
 #: ``equip`` is deliberately NOT here, though equipping a floor item picks it
-#: up: it never restacks the floor, which is the hazard this gate exists for,
-#: and snatching a weapon off the ground mid-fight is a legitimate move
-#: (maintainer decision 2026-09-19).
+#: up: it never restacks the floor, which is the hazard this gate exists for.
+#: A *weapon* equip mid-fight is refused separately by
+#: :func:`_equips_weapon_in_combat` -- the client offers no interact panel in
+#: combat, so that path was API-only and a free weapon change around
+#: SwapWeapon's beat cost (maintainer decision 2026-09-24, superseding the
+#: 2026-09-19 allowance).
 _FLOOR_PILE_HANDLERS = frozenset({"take", "drop"})
 
 
@@ -249,6 +252,24 @@ def _moves_floor_items(target, action):
         return False
     handler = resolve_interaction(target, action)
     return getattr(handler, "__name__", None) in _FLOOR_PILE_HANDLERS
+
+
+def _equips_weapon_in_combat(player, target, action):
+    """Whether ``action`` on ``target`` would equip a weapon mid-fight.
+
+    Covers both interact arms that equip: the generic dispatch (an ``equip``
+    handler, however the verb is aliased) and the container-item transfer
+    (keyed on the verb itself). SwapWeapon is the only way to change weapons
+    in combat (#671).
+    """
+    from src.objects import resolve_interaction
+
+    if not _is_weapon_change_in_combat(player, target):
+        return False
+    if action == "equip":
+        return True
+    handler = resolve_interaction(target, action)
+    return getattr(handler, "__name__", None) == "equip"
 
 
 #: Cap on the client-supplied verb echoed back by
@@ -3112,6 +3133,8 @@ class GameService:
             }
         if getattr(player, "in_combat", False) and _moves_floor_items(target, action):
             return {"success": False, "message": _FLOOR_ITEMS_IN_COMBAT_MESSAGE}
+        if _equips_weapon_in_combat(player, target, action):
+            return {"success": False, "message": _WEAPON_SWAP_IN_COMBAT_MESSAGE}
 
         # Record pre-action location to detect passageway teleportation
         _pre_location = _PreInteractionLocation.capture(player)
@@ -5300,8 +5323,11 @@ class GameService:
         # next NPC's /open; it must not clear that conversation's marker (#637).
         # No recorded key (an open whose result carried none, or a marker from
         # an older build) keeps the old unconditional clear.
+        # An empty or non-string key names no conversation, so it can never
+        # match -- in particular not the pending "" an /open in flight parks.
         active_key = player.__dict__.get("_active_chat_npc_key")
-        if active_key is None or active_key == npc_key:
+        names_a_chat = isinstance(npc_key, str) and bool(npc_key)
+        if active_key is None or (names_a_chat and active_key == npc_key):
             self._clear_active_chat(player)
 
         # Get conversation count from history if available

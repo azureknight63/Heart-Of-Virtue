@@ -293,7 +293,7 @@ function StageDialogueCard({
     showHint,
     hintText,
     hintVisible,
-    autoAdvanceMs,
+    autoAdvanceMs = null,
     beatKey,
 }) {
     const isDialogue = Boolean(speaker)

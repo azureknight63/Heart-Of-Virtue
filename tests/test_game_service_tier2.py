@@ -246,6 +246,24 @@ class TestNpcChatEndAndHistory:
 
         assert "_active_chat_npc_id" not in player.__dict__
 
+    def test_an_empty_key_end_during_an_open_keeps_its_marker(
+        self, game_service, player, tile
+    ):
+        """While an /open is composing the stored key is the pending "" --
+        an /end carrying an empty key must not match it and clear it."""
+
+        class RacingNPC(ChattyNPC):
+            def chat_open(self, player):
+                game_service.npc_chat_end(player, "")
+                return super().chat_open(player)
+
+        tile.npcs_here = [
+            RacingNPC(name="Gorran", open_result={"success": True, "npc_key": "Gorran"}),
+        ]
+        game_service.npc_chat_open(player, "Gorran")
+
+        assert player.__dict__.get("_active_chat_npc_id") == "Gorran"
+
     def test_late_end_landing_during_the_next_open_keeps_its_marker(
         self, game_service, player, tile
     ):

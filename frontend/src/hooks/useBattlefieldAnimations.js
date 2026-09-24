@@ -518,7 +518,10 @@ export default function useBattlefieldAnimations({
       // a kill whose carriers arrive across two polls must still burst once.
       const beatIdx = entry.beat_index ?? 0;
       const killKey = `${beatIdx}:${anim.target_id}`;
-      if (anim.target_id && allBeatStates && !killed.has(killKey)) {
+      // A beat interrupted by an event tags its log with the next index but
+      // appends no beat state, so `stateAt` can be missing: no snapshot is not
+      // a death, and reading it as one would burst a living ally or Jean.
+      if (anim.target_id && allBeatStates && allBeatStates[beatIdx] && !killed.has(killKey)) {
         const stateBefore = allBeatStates[Math.max(0, beatIdx - 1)];
         const stateAt = allBeatStates[beatIdx];
         // Any side can fall (issue #670): enemies, allies and Jean are all

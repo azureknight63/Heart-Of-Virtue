@@ -37,12 +37,16 @@ from .base import Scenario
 from ..client import GameClient
 from ..reporter import BugReport, BugSeverity, BugCategory
 
-_INTRO_GATE = "jambo_shop_intro_done"
-_NOTICE_GATE = "nomad_camp_jambo_tent_noticed"
+from src.story.ch02 import JAMBO_TENT_EXTERIOR, JamboShopIntroEvent  # noqa: E402
+from src.story.ch03 import JamboTentNoticeEvent  # noqa: E402
+
+# The engine's own names, so the harness cannot drift from them.
+_INTRO_GATE = JamboShopIntroEvent.GATE_KEY
+_NOTICE_GATE = JamboTentNoticeEvent.GATE_KEY
 
 #: (label, exterior map, exterior coords, tent map)
 _TENTS = (
-    ("Grondia", "grondia", (12, 4), "grondia-jambos_shop"),
+    ("Grondia", *JAMBO_TENT_EXTERIOR, "grondia-jambos_shop"),
     ("Nomad Camp", "eastern-descent-nomad-camp", (3, 0), "eastern-descent-jambos-tent"),
 )
 
@@ -150,6 +154,9 @@ class JamboTentScenario(Scenario):
     def _check_votha_sends_jean_to_the_tent(self, client, bugs, player, universe):
         from src.story.ch02 import Ch02GuideToCitadel
 
+        # skip_dialog takes Ch02GuideToCitadel's fast path (no staged
+        # segments, no input), which would read as "did not start".
+        player.skip_dialog = False
         player.teleport("grondia", (7, 5))
         tile = player.current_room
         tile.events_here = [Ch02GuideToCitadel(player, tile, params=None)]
@@ -192,12 +199,12 @@ class JamboTentScenario(Scenario):
                 break
             event = data["event"]
         where = (player.map.get("name"), (player.location_x, player.location_y))
-        if where != ("grondia", (12, 4)):
+        if where != JAMBO_TENT_EXTERIOR:
             bugs.append(self._bug(
                 title="Votha: Ch02GuideToCitadel did not leave Jean outside Jambo's tent",
                 severity=BugSeverity.HIGH, category=BugCategory.WRONG_RESPONSE,
                 endpoint="/api/world/events/input", method="POST",
-                expected="grondia (12, 4)", actual=str(where),
+                expected=str(JAMBO_TENT_EXTERIOR), actual=str(where),
             ))
         if not saw_jambo_named:
             bugs.append(self._bug(

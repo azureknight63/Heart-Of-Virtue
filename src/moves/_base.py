@@ -3,6 +3,7 @@
 from src.narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
+import logging
 from enum import StrEnum
 from types import SimpleNamespace
 import src.states as states  # noqa: F401
@@ -1380,10 +1381,20 @@ def weapon_requirement_code(user, requirement):
     truly empty hand is NO_WEAPON -- a fists-only move refused while holding a
     sword is a wrong weapon, not a missing one.
     """
+    return weapon_code_for(getattr(user, "eq_weapon", None), requirement)
+
+
+def weapon_code_for(weapon, requirement):
+    """The weapon rule itself, for ``weapon`` in hand: NO_WEAPON / WRONG_WEAPON,
+    or None when it satisfies ``requirement``.
+
+    The one place that decides whether a weapon satisfies a move. The combat
+    adapter phrases the answer (``weapon_requirement_reason``); it does not
+    re-derive it.
+    """
     requirement = tuple(requirement or ())
     if not requirement:
         return None
-    weapon = getattr(user, "eq_weapon", None)
     subtype = "Unarmed" if weapon is None else getattr(weapon, "subtype", None)
     if subtype in requirement:
         return None
@@ -1959,6 +1970,11 @@ class Move:  # master class for all moves
         try:
             return UnavailableReason(self._unavailability_code())
         except Exception:  # an unknown code or a diagnosis that raises
+            # Folded, not raised -- but logged, so a buggy diagnosis shows up
+            # somewhere other than a vague "Cannot use this move".
+            logging.getLogger(__name__).debug(
+                "unavailability diagnosis failed for %s", type(self).__name__, exc_info=True
+            )
             return UnavailableReason.UNAVAILABLE
 
     def _unavailability_code(self):

@@ -90,3 +90,21 @@ class TestBakedStackNameNormalisedOnLoad:
         item = _baked(MineralPowder, "Mineral Powder", 3)
         handle = wire_handle(item)
         assert wire_handle(_round_trip(item)) == handle
+
+
+def test_a_non_string_name_survives_load_untouched():
+    """A malformed save (name=None) must not have its name rewritten to ""."""
+    from src.items import MineralPowder
+
+    item = MineralPowder.__new__(MineralPowder)
+    item.__setstate__({"name": None, "count": 3})
+    assert item.name is None
+
+
+def test_an_unconvertible_count_does_not_abort_the_load():
+    """``int(inf)`` raises OverflowError; one bad stack must not fail a save."""
+    from src.items import MineralPowder
+
+    item = MineralPowder.__new__(MineralPowder)
+    item.__setstate__({"name": "Mineral Powder x3", "count": float("inf")})
+    assert item.name == "Mineral Powder x3"
