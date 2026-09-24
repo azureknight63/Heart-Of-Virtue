@@ -181,6 +181,34 @@ def _token_field(data, key):
     return _INVALID
 
 
+def _resends_a_known_turn(player, data):
+    """True when this /respond names a turn already running or committed.
+
+    Such a request is answered ``pending`` (409) or replayed and costs no
+    provider call, while the client re-sends a pending turn every second
+    until it commits (useNpcChat.js). Charging those against the rate limit
+    let one slow turn spend the whole budget and 429 the player (#636). The
+    service answers the question -- routes do not read chat state off the
+    player -- and anything malformed, or any answer but a literal ``True``,
+    reads as "not known", i.e. charged.
+
+    Advisory: a known turn can stop being known before the service runs it (a
+    concurrent /open forgets the replay record), and that one turn then runs
+    uncharged. The /open that caused it was itself charged, so the leak is
+    bounded at one turn per charged request.
+    """
+    turn_id = _token_field(data, "turn_id")
+    if not isinstance(turn_id, str):
+        return False
+    game_service, gs_error = require_game_service()
+    if gs_error:
+        return False
+    known = game_service.chat_turn_is_known(
+        player, _string_field(data, "npc_key"), turn_id
+    )
+    return known is True
+
+
 def _chat_status(result):
     """200, or 409 for a turn refused because one is already in flight
     (``GameService._one_chat_turn``), or 400 for any other failure."""
@@ -258,14 +286,18 @@ def npc_chat_respond():
     if error:
         return error
 
-    limited = _check_chat_rate_limit(session)
-    if limited:
-        return limited
-
     # Get request body
     try:
         data = request.get_json() or {}
     except Exception:
+        data = None
+
+    if not _resends_a_known_turn(player, data):
+        limited = _check_chat_rate_limit(session)
+        if limited:
+            return limited
+
+    if data is None:
         return jsonify({"success": False, "error": "Invalid JSON"}), 400
 
     npc_key = _string_field(data, "npc_key")
