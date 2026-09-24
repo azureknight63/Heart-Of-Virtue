@@ -275,3 +275,114 @@ ElderSlime growth check (40 runs each, with Slime/Stone at the proposed values).
 - **Needs a maintainer decision:** whether a ~5% death rate for a player who ignores the tell is right for the boss, or whether to shave damage further, for example to growth `damage: 1`.
 
 **Still not measured:** the (2,3)/(4,2) packs and the Eastern Descent trash at the committed values. Those proposals were measured above with in-process overrides that equal the committed numbers, and nothing else in their rosters changed. A live-browser pass (rung 4) is still outstanding.
+
+## Solo Pools retune (#655 step 3, measurement + proposal — nothing applied)
+
+**Why:** everything above measured the Grondelith Mineral Pools with Gorran in the party. The story takes him out for the whole stretch: `Ch02GorranAtPools` removes him from `combat_list_allies` at the threshold, and only `AfterDefeatingKingSlime` puts him back. The live run (`2026-09-24-balance-live-run.md`) died in the Pools in 4 of 4 attempts, 3 of them to trash packs. The maintainer's call was **retune the Pools for solo**.
+
+**Applied first (committed):** the Pools trash buffs from 7806fd1 are reverted: Slime damage growth 5 → **3**, Pools Slime/CaveBat level 3 → **2**. Everything else from that commit stays, including King Slime `{40, 2, 2}` at level 5 and ElderSlime damage growth 2. All numbers below are on that reverted table unless a row says otherwise.
+
+### Method
+
+- **Driver:** the same scratch driver as above (in-process `create_app(TestingConfig)`, real `/api/combat/*` and `/api/inventory/use`), extended with a chain mode, not committed.
+- **Jean:** the prod start (`config_prod.ini`: L4, chapter-1 loadout, even point split), **solo**. Starting gold (300) spent at Jambo on **3 Restoratives** (100 g each, `value` × `buy_modifier` 1.0), so he enters with **6 Restoratives + 1 Antidote**. Singles run at L4 (110 HP, prot 23.3) and L5 (114 HP, prot 24.9). The chains measure the real level: exp carries and levels are gained on the way. The mandatory route reaches the boss at **L5**, a full clear at **L6** (~1,170 and ~1,900 exp).
+- **Policies:**
+  - **careful:** drink below 50% HP. When a Tidal Surge or Slime Volley tell is visible, first top up to 80% (potions are free on Jean's turn), then Dodge.
+  - **basic:** the baseline policy. Drink below 35%, dodge tells.
+  - **nododge:** drink below 35%, ignore tells.
+- **Packs:** built from the map, with every `NPCSpawnerEvent` on the tile plus its `PulsingGlandEvent` Slimes (glands fire on tile entry, into the same fight):
+
+  | Tile | Pack | On the route to King Slime? |
+  |---|---|---|
+  | (2,2) | 4 Slime + 1 CorruptedStoneCreature | **yes** |
+  | (2,3) | 3 Slime + 2 CaveBat | **yes** |
+  | (2,4) | 4 Slime + 1 CorruptedStoneCreature | **yes** |
+  | (2,5) | 1 Slime | **yes** |
+  | (3,2) | 3 Slime | optional |
+  | (3,3) | ElderSlime + 2 Slime + 1 Stone | optional |
+  | (3,4) | ElderSlime + 2 Slime + 2 Stone | optional |
+  | (4,2) | 4 Slime | optional |
+  | (2,6) | King Slime | boss |
+
+- **Singles:** each fight starts at full HP with the 6-Restorative kit. Runs are at base level and at base + `NPC_LEVEL_VARIANCE` (top), 40 runs each, seeded as above.
+- **Chains:** one session per run (40 runs, seeds 2000+i), fought in route order. Levels are rolled with the engine's `roll_spawn_level`.
+  - Carried between fights: **HP (no free heal)**, the potion supply, exp and level-ups. Points are spent evenly, and a mid-dungeon allocation does not heal.
+  - Fatigue refills after a won fight, as the engine does.
+  - Restoratives that the dead drop (the lev0 loot table gives about 1 in 5) are picked up.
+  - `mandatory` = (2,2) → (2,3) → (2,4) → (2,5) → King.
+  - `full` = (2,2) → (3,2) → (4,2) → (2,3) → (3,3) → (2,4) → (3,4) → (2,5) → King.
+- **The Sacred Spring:** there is a plainly described, **unlimited full-HP `HealingSpring` in the Atrium (2,1)**. It is one tile from (2,2) and five from the arena. A careful player uses it, and the live-run driver did not. So a "single" row is what a player who walks back to the spring faces, and a chain row is what a player who never does faces. `springBoss` chains heal at the spring once, before King Slime only.
+
+### Solo results — current table (draft trash, #655 ElderSlime/King Slime)
+
+Singles, careful policy (King Slime rows show all three policies). HP% is of Jean's max.
+
+| Fight | Enemy stats (HP / dmg / prot) | Jean | Deaths / 40 | Lowest HP%, mean (min) | Potions per fight | Lowest fatigue % | Biggest hit |
+|---|---|---|---|---|---|---|---|
+| Slime @2 / @3 | 26/29/0 · 32/32/0 | L4 | 0 · 0 | 100 (98) · 100 (95) | 0 | 87–89 | 2–5 |
+| CaveBat @2 / @3 | 19/28/0 · 23/33/0 | L4 | 0 · 0 | 100 (96) · 98 (92) | 0 | 85–87 | 4–9 |
+| CorruptedStoneCreature @4 / @5 | 96/40/27 · 108/46/30 | L4 | 0 · 0 | 97 (85) · 94 (80) | 0 | 53–57 | 16–22 |
+| ElderSlime @4 / @5 | 112/34/18 · 126/36/20 | L4 | 0 · 0 | 82 (46) · 78 (41) | 0.2–0.3 | 33–37 | 50–55 (volley) |
+| pack (2,2) base / top | 4 Slime + Stone | L4 | 0 · 0 | 63 (28) · 55 (19) | 0.4–0.5 | 38–41 | 41–51 |
+| pack (2,3) base / top | 3 Slime + 2 Bat | L4 | 0 · 0 | 53 (17) · 43 (19) | 0.5–1.2 | 51 | 24–30 |
+| pack (3,2) base / top | 3 Slime | L4 | 0 · 0 | 84 (41) · 78 (24) | 0.03 | 54 | 21–27 |
+| pack (4,2) base / top | 4 Slime | L4 | 0 · 0 | 76 (47) · 66 (32) | 0.05–0.3 | 52–53 | 24–29 |
+| pack (3,3) base / top | Elder + 2 Slime + Stone | L4 | 0 · 0 | 44 (13) · 34 (2) | 1.7–2.5 | 7–11 | 92–108 |
+| pack (3,3) base / top | same | L5 | 0 · **1** | 42 (7) · 33 (0) | 1.8–2.6 | 21–26 | 99–106 |
+| pack (3,4) base / top | Elder + 2 Slime + 2 Stone | L4 | **3** · **3** | 31 (0) · 27 (0) | 3.0–4.1 | 4–5 | 99–106 |
+| pack (3,4) base / top | same | L5 | 0 · **1** | 40 (15) · 36 (0) | 2.6–3.5 | 17 | 85–107 |
+| King Slime @5, careful | 560/58/23 | L4 · L5 | 0 · **1** | 40 (13) · 42 (0) | 2.7–3.0 | 11–26 | 80–81 |
+| King Slime @5, basic | same | L4 · L5 | **14** · **9** | 15 (0) · 21 (0) | 1.3–1.7 | 11–28 | 80–82 |
+| King Slime @5, nododge | same | L4 · L5 | **16** · **11** | 12 (0) · 19 (0) | 1.1–1.5 | 41–61 | 79–80 |
+
+Chains, no spring. Deaths are counted where they happened:
+
+| Chain | Deaths / 40 | Where | HP% entering King Slime, mean (min) | Restoratives left at King, mean (min) |
+|---|---|---|---|---|
+| mandatory, careful | **1** | King ×1 | 81 (54) | 5.9 (3) |
+| mandatory, basic | **12** | (2,4) ×1, King ×11 | 67 (40) | 6.4 (3) |
+| full, careful | **12** | (3,3) ×1, (3,4) ×9, King ×2 | 79 (57) | 3.4 (0) |
+| full, basic | **23** | (3,3) ×7, (3,4) ×11, King ×5 | 62 (36) | 5.7 (1) |
+| full, careful, spring before King | **11** | (3,3) ×1, (3,4) ×9, King ×1 | 100 | 3.4 (0) |
+
+Carried damage in the careful mandatory chain: Jean enters (2,3) at 75% (min 51%), (2,4) at 76% (min 43%) and King Slime at 81% (min 54%). Each trash pack takes him to 41–57% at its low point. Loot refunds about 0.8 Restoratives per pack, so the supply holds. On the full clear, the Elder packs cost the careful player 2–3 potions each. A careful player therefore reaches the boss with 0–3 Restoratives, and that is where the late deaths come from.
+
+### What the solo numbers say
+
+1. **With the draft trash values, the ordinary trash is fine solo.** No trash pack killed a careful Jean, whether fought from full HP or chained. The (2,3) pack is the sharpest: 43–53% lowest HP, down to 17%. Chained, the packs keep Jean at 41–57% at his low point, which is real pressure. The deaths in the live run had other causes: the Tactical-Advisor policy, one purchase, and no spring use. The 7806fd1 buff would have taken exactly this margin away.
+2. **The Elder packs (3,3)/(3,4) are the solo danger.** They are optional side rooms off the main line, and a completionist walks into them. (3,4) kills a careful L4 Jean 3/40 even from full HP. Chained, it is where 9 of the careful full-clear deaths happen. The killing blows are split between Slime Volley and plain chip from five attackers (the two Stones land up to 22).
+3. **King Slime solo is survivable for a careful player with potions, and lethal without them.** From full HP with the kit: 0/40 at L4 and 1/40 at L5, lowest HP 40–42%, and 2.7–3.0 Restoratives used. The surge matters: about 60 of 140 land, for up to 80 of 110–114 HP, and players who don't dodge or don't top up die 9–16/40. With only **2** Restoratives, even the careful player dies 13/40. The boss is potion-gated, and the full clear spends the potions.
+4. **Fatigue is not the binding constraint.** In the Elder packs and the boss it bottoms at 4–27%, which is real pressure, but no death happened with Jean out of fatigue.
+
+### Proposal (not applied)
+
+The goal is #655's four targets for a careful solo Jean: no deaths, genuine HP pressure, a surge that matters, and fatigue that is not the only constraint.
+
+| # | Lever | Change | Why |
+|---|---|---|---|
+| 1 | `src/npc_level_tables.py` | **Keep the draft trash** (Slime `{6, 3}`, Pools Slime/CaveBat level 2), as reverted. | Solo, the draft values already give 41–63% lowest HP per pack with 0 deaths. |
+| 2 | `src/npc_level_tables.py` | ElderSlime damage growth **2 → 0** (`{"maxhp": 14, "damage": 0, "protection": 2}`) | It takes the volley off the (3,3)/(3,4) killing-blow list: volley max ~70–79 landed, down from ~92–108 in the pack. Alone it is not enough, because (3,4) at base 1/40 and top 1/40 still dies to five-attacker chip. |
+| 3 | Map `grondelith-mineral-pools.json` (3,4) | CorruptedStoneCreature spawner `count` **2 → 1** | With #2, the (3,4) pack goes to **0/40 at base and at top, at L4 and L5** (lowest HP 45–54%, min 14–23%, fatigue low 7–26%). Without #2 it didn't help: it matches (3,3), 0–1/40. |
+| 4 | Map (potion availability) | **+2 Restoratives** on the far side of the Elder rooms, e.g. on (3,4) Flooded Pass beside its Gold, or at (2,5) Approach | The boss is potion-gated: careful + full HP + 2 potions = 13/40 deaths, and ≥ 5 potions = 0–1/40. A full clear arrives with 3.4 on average (min 0). The existing Restorative at (4,3) Deep Pocket counts, and it was modelled below. |
+| 5 | King Slime | **No change** (`{40, 2, 2}`, level 5) | Damage growth 1 was measured and changes little: careful 0/40 at both levels (was 0–1), basic 7–11/40 (was 9–14), and 12/40 with 2 potions (was 13). Solo deaths come from potions and HP, not from the surge's size. Keep the surge's bite: up to 80 of 114. |
+| 6 | Signposting (content, optional) | Make the spring's role explicit. Its tile text already says drinking restores health. A line when Jean passes the Atrium after a fight, or in `Ch02ArenaEntrance`, would fit pillar 3 ("no unwarned deaths"). | Every careful chain gets safer with one spring visit before the boss. |
+
+**Measured outcome of #2 + #3 + #4** (careful, full clear, spring before King, the (4,3) Restorative picked up), 40 runs: **0/40 deaths.**
+- (3,3) lowest HP 49% (min 24%). (3,4) 48% (min 21%). King Slime 45% (min 18%).
+- 49 of 95 surges landed. Jean enters the boss with 6.7 Restoratives (min 2).
+
+Stepwise, the same chain went:
+- **11/40** as the table stands.
+- **9/40** with #2.
+- **5/40** with #2 + #3.
+- **4/40** with the (4,3) pickup counted.
+- **0/40** with #4 added.
+
+Adding King Slime damage 1 on top gave 1/40, which is noise.
+
+The mandatory route is unaffected by #2–#4. On the current table it is 1/40 careful (1/40 with a spring visit before the boss), and that one death is a warned surge on a Jean at 54% who had potions left. The basic policy stays lethal on the full clear. With a spring visit before the boss and King Slime damage growth 1, it was 17/40 even with #2–#3, and 3/40 on the mandatory route. That is a player who ignores 50%-HP warnings against a telegraphed boss, and it is outside "careful".
+
+**Where this still misses:**
+- The **no-spring** careful full clear is not 0: 12/40 today, 5/40 with #2 + #3.
+- Getting a player who never heals at the spring to 0 would need the boss or the Elder packs nerfed far enough to lose the "surge matters" target. If that player must be covered, the stronger lever is **Gorran**: return him for the boss (story change, `Ch02GorranAtPools` / `Ch02ArenaEntrance`). The with-Gorran King Slime rows above are 0–2/40.
+- **Not modelled:** retreating from a fight, gland timing beyond "on entry", the Antidote/Slime Flask economy, Draught purchases, and point allocations other than even. A live pass (rung 4) with a spring-using policy should confirm before the numbers ship.
