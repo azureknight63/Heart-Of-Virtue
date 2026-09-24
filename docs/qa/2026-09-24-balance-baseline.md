@@ -2,6 +2,8 @@
 
 **Date:** 2026-09-24 · **Scope:** measurement only. No engine code or tunables were changed. The values under "Proposed tuning" were tried with in-process overrides in a scratch driver, and none of them has been applied to `src/npc_level_tables.py`.
 
+> **Update (#655 step 2):** the proposals have since been applied. The re-measured numbers are in "After tuning" at the end of this report.
+
 ## TL;DR
 
 | Target (#655) | Draft values as measured |
@@ -232,10 +234,44 @@ ElderSlime growth check (40 runs each, with Slime/Stone at the proposed values).
    - #655 step 1 as written ("dial its level in the arena via the debug op") therefore cannot work today. This baseline sets the profile in-process instead.
    - The fix belongs in the engine: `add_combatant` or `set_combatant_stats` should attach `ENEMY_GROWTH_PROFILES[cls]` the way `apply_enemy_level` does.
 2. **`ADD_COMBATANT_ALLOWED_CLASSES` lacks TalusHound, ScarpAdder and CorruptedStoneCreature**, so three of the eight tuned enemies can't be staged through the debug API at all. The driver appends them to the tile in-process.
-3. **`tools/bug_hunt.py --scenario combat` doesn't fit balance work.** It caps at 20 rounds, picks the first offensive move with no healing or fatigue handling, and reports bugs rather than outcomes. A scratch driver (`scratch_balance/driver.py`, uncommitted) reuses its `GameClient` and its routes instead. If this loop is going to be repeated for #655 step 3, it would be worth promoting that driver into `tools/`.
+3. **`tools/bug_hunt.py --scenario combat` doesn't fit balance work.** It caps at 20 rounds, picks the first offensive move with no healing or fatigue handling, and reports bugs rather than outcomes. An uncommitted scratch driver (`driver.py`, kept out of the tree) reuses its `GameClient` and its routes instead. If this loop is going to be repeated for #655 step 3, it would be worth promoting that driver into `tools/`.
 4. **Seeding doesn't give exact reproducibility.** See Method: two identical-looking configurations gave 0/20 and 6/40 deaths. Use n ≥ 40 for any configuration near the death threshold.
 5. **Limits of the model:**
    - Enemies spawned mid-fight by pulsing glands are not included.
    - Every fight starts at full HP and fatigue, with 3 fresh Restoratives.
    - Poison and Slimed ticks are counted only when they lower HP between Jean's turns.
    - Rung 4 (a live browser run through `/orchestrate-qa-testers`) is still needed to confirm the pacing people actually feel.
+
+## After tuning (#655 step 2, applied)
+
+**Applied** to `src/npc_level_tables.py`, all as proposed above: proposals #1–#9, with #10 kept (`NPC_LEVEL_VARIANCE = 1`). `tests/test_tidal_surge_balance.py` now builds King Slime through `apply_enemy_level` at the level `REGION_ENEMY_LEVELS` gives him (5), and checks that a max-roll surge leaves a full-HP prod Jean standing at level 4 and at level 5. Against the draft table that check failed: 216 raw took Jean to 0 at both levels. It passes on the applied values.
+
+**Tooling gaps 1 and 2 are fixed.**
+- `POST /api/debug/arena/stats {"level": N}` now gives an enemy with no growth profile its `ENEMY_GROWTH_PROFILES` entry before it levels. It uses the same helper as `apply_enemy_level`. Checked through the real debug API: an arena-added King Slime set to level 5 reads 560 / 58 / 23, the same as the P1 row above.
+- TalusHound, ScarpAdder and CorruptedStoneCreature can now be staged through `/api/debug/arena/add`.
+
+**Method:** the same scratch driver, policy and seeds as above (session `random.seed(4242)`, fight `random.seed(1000+i)`, `--heal`, Gorran in the party, prod-equivalent start kit). The difference is that this run uses the committed table with no `--profile` override, and reads levels from `REGION_ENEMY_LEVELS`. Every configuration ran 40 times. The pack is Pools (3,4): ElderSlime + 2 Slime + 2 CorruptedStoneCreature, at base and at base + `NPC_LEVEL_VARIANCE` (`max`).
+
+| Config | n | Enemy @ level: HP / dmg / prot / hit%→Jean | Win % | Deaths | Jean HP% at end, mean (min) | Lowest HP% in fight, mean (min) | Beats | Potions | Lowest fatigue % | Biggest hit | Surges at Jean: landed/aimed (biggest) | Killing blows |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| A_KingSlime_L5_j4 | 40 | KingSlime@5: 560 / 58 / 23 / 64% | 95 | 2 | 71 (0) | 52 (0) | 173 | 0.57 | 47 | 82 | 30/47 (82) | Tidal Surge ×2 |
+| A_KingSlime_L5_j4_dodge | 40 | KingSlime@5: 560 / 58 / 23 / 64% | 100 | 0 | 68 (13) | 55 (5) | 188 | 0.38 | 18 | 77 | 19/38 (77) | — |
+| A_KingSlime_L5_j5 | 40 | KingSlime@5: 560 / 58 / 23 / 63% | 95 | 2 | 74 (0) | 64 (0) | 154 | 0.25 | 61 | 79 | 20/29 (79) | Tidal Surge ×2 |
+| A_KingSlime_L5_j5_dodge | 40 | KingSlime@5: 560 / 58 / 23 / 63% | 100 | 0 | 75 (40) | 69 (18) | 158 | 0.15 | 32 | 77 | 12/32 (77) | — |
+| A_pack_3_4_base_j4 | 40 | ElderSlime@4: 112 / 34 / 18 / 66%; Slime@3: 32 / 36 / 0 / 69%; CorruptedStoneCreature@4: 96 / 40 / 27 / 65% | 100 | 0 | 83 (41) | 74 (12) | 150 | 0.17 | 46 | 73 | 12/18 (73) | — |
+| A_pack_3_4_base_j4_dodge | 40 | ElderSlime@4: 112 / 34 / 18 / 66%; Slime@3: 32 / 36 / 0 / 69%; CorruptedStoneCreature@4: 96 / 40 / 27 / 65% | 100 | 0 | 79 (31) | 77 (17) | 168 | 0.05 | 20 | 51 | 4/12 (51) | — |
+| A_pack_3_4_max_j4 | 40 | ElderSlime@5: 126 / 36 / 20 / 66%; Slime@4: 38 / 41 / 0 / 69%; CorruptedStoneCreature@5: 108 / 46 / 30 / 65% | 100 | 0 | 76 (39) | 65 (15) | 168 | 0.25 | 47 | 78 | 17/22 (78) | — |
+| A_pack_3_4_max_j4_dodge | 40 | ElderSlime@5: 126 / 36 / 20 / 66%; Slime@4: 38 / 41 / 0 / 69%; CorruptedStoneCreature@5: 108 / 46 / 30 / 65% | 100 | 0 | 80 (37) | 69 (10) | 190 | 0.25 | 14 | 55 | 9/23 (55) | — |
+
+### What the re-run says
+
+- **The (3,4) pack: 0 deaths in 160 fights** (base and top roll, dodging or not). Lowest HP averages 65–77%, with minimums of 10–17%. The top roll without dodging matches the `S_pack_3_4_max_elder2` row above exactly. The ElderSlime's volley still lands for up to 78, so the pack keeps its bite.
+- **King Slime at level 5, when Jean dodges the tell: 0 deaths in 80 fights.** Lowest HP averages 55–69%.
+- **King Slime at level 5, when Jean doesn't dodge: 2 of 40 deaths at Jean L4, and 2 of 40 at L5.** The 20-run P1 rows above showed 0/20. That gap is inside the reproducibility band described under Method.
+  - None of the deaths was a one-shot from full HP. The biggest landed surge in any fight was 82 against Jean's 110 HP.
+  - In all four deaths a second surge landed on a Jean already down to 34–71% HP: 78 of 110, 53 of 110, 46 of 114 and 39 of 114.
+  - Three of those four fights used no potion, because the policy only drinks below 35%.
+  - This fits #586's promise, "survivable when warned": the tell is there, and every death was a warned hit taken without the dodge.
+- **Needs a maintainer decision:** whether a ~5% death rate for a player who ignores the tell is right for the boss, or whether to shave damage further, for example to growth `damage: 1`.
+
+**Still not measured:** the (2,3)/(4,2) packs and the Eastern Descent trash at the committed values. Those proposals were measured above with in-process overrides that equal the committed numbers, and nothing else in their rosters changed. A live-browser pass (rung 4) is still outstanding.
