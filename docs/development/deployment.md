@@ -31,7 +31,7 @@ limiter. That confirmation requires reading the live container's web server
 config, which is not available from this repo.
 
 **gunicorn is held below 26 (issue #653).** gunicorn 26.0 removed the eventlet
-worker the unit runs, so `requirements-api.txt` says `gunicorn>=20.1,<26` and
+worker the unit runs, so `requirements-api.txt` says `gunicorn>=23.0,<26` and
 `eventlet>=0.40.3` (the floor gunicorn 24+ enforces when it starts that worker).
 The server's hand-installed eventlet 0.40.0 no longer satisfies that floor, so
 the next deploy's `pip install -r requirements-api.txt` **will upgrade eventlet**
