@@ -149,6 +149,20 @@ class TestVothaKrrSendsJeanToJambo:
         # The old, wrong direction is gone.
         assert "merchants of the Eastern Gate" not in _text(messages)
 
+    def test_the_walk_leaves_jean_at_the_tent_flap_with_its_sign_read(self):
+        """The attendant's walk is the player's wayfinding: it quotes the sign
+        the Ecumerium tile shows ("Jambo Heals U") and names the flap, the way
+        in, so the next move is obvious (maintainer review 2026-09-24)."""
+        event, _player = _guide_event()
+        _play_to_stage_7(event)
+        with capture_narration() as messages:
+            event.process()
+        after_votha = messages[max(i for i, m in enumerate(messages)
+                                   if m.get("speaker") == "Votha Krr") + 1:]
+        walk = _text([m for m in after_votha if m.get("type") != "dialogue"])
+        assert "Jambo Heals U" in walk
+        assert "flap" in walk
+
     def test_closing_stage_teleports_to_the_tent_exterior(self):
         from src.story.ch02 import JAMBO_TENT_EXTERIOR
 

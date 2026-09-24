@@ -538,10 +538,25 @@ class Ch02GuideToCitadel(
             )
             narrate("He said it the same way he'd said it the first time. Like a door left open.")
             narrate(
-                "The attendant who had brought the supplies walked Jean back out through the "
-                "Citadel's halls and east across the city, into the murmur of the market. He "
-                "stopped where a tent stood among the stone counters, pointed once at its "
-                "hand-painted sign, and went back the way they had come."
+                "The attendant who had brought the supplies beckoned, and Jean followed him "
+                "out of the council chamber, down through the Citadel's forecourt — past the "
+                "braziers and the carved reliefs of clan houses he could not read — and east "
+                "into the city."
+            )
+            narrate(
+                "The passages widened, and the murmur Jean had been half-hearing grew into "
+                "the full noise of trade. The Ecumerium opened beneath a high vaulted ceiling: "
+                "an arcade of stone counters and low booths, banners and signboards swinging "
+                "from iron hooks, the air thick with spice resin. Golemite merchants called "
+                "their wares in rumbling voices, and every stall Jean passed was cut from the "
+                "same patient stone."
+            )
+            narrate(
+                "Every stall but one. Among the counters stood a tent — weathered canvas, a "
+                "small iron bell hung beside its flap, and a hand-painted sign in bright, "
+                "uneven letters: \"Jambo Heals U.\" The attendant stopped before it, pointed once "
+                "at the tent flap, and waited until Jean nodded. Then he turned and went back "
+                "the way they had come."
             )
             self.input_prompt = ""
             self.input_options = [{"value": "done", "label": "Continue"}]
