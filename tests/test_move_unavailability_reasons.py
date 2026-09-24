@@ -494,3 +494,79 @@ def test_an_unknown_diagnosis_folds_to_the_generic_code():
         target=player, user=player,
     )
     assert move.unavailability_reason() is R.UNAVAILABLE
+
+
+# ── ShootBow checks its two blockers in one order (#674) ─────────────────────
+
+def test_shoot_bow_with_no_arrows_and_nobody_in_range_blames_the_quiver():
+    player, enemy = _jean(weapon="Bow", distance=20)
+    player.combat_proximity[enemy] = 500
+    player.inventory = []
+    move = moves.ShootBow(player)
+    assert move.viable() is False
+    assert move.unavailability_reason() is R.NO_AMMUNITION
+
+
+def test_shoot_bow_viable_and_its_diagnosis_check_arrows_first():
+    """viable() and _unavailability_code must consult the same blocker first,
+    or a refactor that stops short-circuiting one of them can name a blocker
+    viable() never looked at. Both probes answer False, so each method stops
+    at whichever it checks first."""
+    player, _ = _jean(weapon="Bow", distance=20)
+    move = moves.ShootBow(player)
+    calls = []
+    move._has_arrows = lambda: calls.append("arrows") or False
+    move._enemy_in_range = lambda: calls.append("range") or False
+    move.viable()
+    viable_first = calls[0]
+    calls.clear()
+    move._unavailability_code()
+    assert calls[0] == viable_first == "arrows"
+
+
+# ── area/ranged reach ignores allies (#674) ──────────────────────────────────
+
+def _jean_with_ally(weapon, enemy_distance, ally_distance):
+    """Jean, one Slime ``enemy_distance`` ft off and one ally Slime
+    ``ally_distance`` ft off -- the ally in combat_proximity exactly as
+    positions.recalculate_proximity_dict puts it there."""
+    with seeded(674):
+        player = make_player(weapon=weapon)
+        enemy = make_npc(Slime)
+        ally = make_npc(Slime)
+        engage(player, [enemy], allies=[ally], with_positions=False)
+    player.combat_proximity = {enemy: enemy_distance, ally: ally_distance}
+    place(player, 10, 10)
+    place(enemy, min(50, 10 + max(1, enemy_distance // 5)), 10)
+    place(ally, min(50, 10 + max(1, ally_distance // 5)), 10)
+    player.fatigue = 0
+    player.inventory = [items.WoodenArrow()]
+    return player, enemy, ally
+
+
+def test_whirl_attack_ignores_an_ally_in_reach():
+    player, enemy, _ = _jean_with_ally("Sword", enemy_distance=200, ally_distance=1)
+    move = moves.WhirlAttack(player)
+    assert move.viable() is False
+    assert move.unavailability_reason() is R.NO_ENEMY_IN_REACH
+    place(enemy, 11, 10)
+    assert move.viable() is True
+
+
+def test_reap_ignores_a_living_ally():
+    player, enemy, _ = _jean_with_ally("Scythe", enemy_distance=3, ally_distance=1)
+    enemy.hp = 0
+    move = moves.Reap(player)
+    assert move.viable() is False
+    assert move.unavailability_reason() is R.NO_OPPONENTS
+    enemy.hp = 10
+    assert move.viable() is True
+
+
+def test_shoot_bow_ignores_an_ally_in_range():
+    player, enemy, ally = _jean_with_ally("Bow", enemy_distance=500, ally_distance=20)
+    move = moves.ShootBow(player)
+    assert move.viable() is False
+    assert move.unavailability_reason() is R.NO_ENEMY_IN_REACH
+    player.combat_proximity[enemy] = 20
+    assert move.viable() is True
