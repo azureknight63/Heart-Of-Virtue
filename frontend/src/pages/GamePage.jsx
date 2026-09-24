@@ -539,14 +539,17 @@ export default function GamePage() {
   useEffect(() => {
     if (!currentEvent) {
       if (mode === 'combat') {
-        playBGM('battle')
+        // Boss fights (Lurker, King Slime, …) get their own track; the
+        // engine flags them via `is_boss` on the enemy combatant.
+        const isBossFight = (combat?.enemies || []).some((enemy) => enemy.is_boss)
+        playBGM(isBossFight ? 'boss_battle' : 'battle')
       } else {
         // Use the BGM defined in map metadata, fallback to adventure
         const track = location?.bgm || 'adventure'
         playBGM(track)
       }
     }
-  }, [mode, location?.bgm, playBGM, currentEvent])
+  }, [mode, location?.bgm, playBGM, currentEvent, combat?.enemies])
 
   /**
    * Check combat status and pending events whenever player and world data

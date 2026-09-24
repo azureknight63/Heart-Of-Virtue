@@ -220,6 +220,49 @@ describe('GamePage', () => {
         });
     });
 
+    it('plays the ordinary battle BGM against a non-boss enemy', async () => {
+        const playBGM = vi.fn();
+        useAudio.mockReturnValue({ playSFX: vi.fn(), playBGM, stopBGM: vi.fn() });
+        useCombat.mockReturnValue({
+            combat: { ...mockCombat, combat_active: true, enemies: [{ id: 'enemy_1', is_boss: false }] },
+            inCombat: true,
+            loading: false,
+            fetchCombatStatus: vi.fn(),
+            performAction: vi.fn()
+        });
+
+        renderGamePage();
+        fireEvent.click(screen.getByRole('button', { name: /FIGHT FOR YOUR LIFE/i }));
+
+        await waitFor(() => {
+            expect(playBGM).toHaveBeenCalledWith('battle');
+        });
+        expect(playBGM).not.toHaveBeenCalledWith('boss_battle');
+    });
+
+    it('plays the boss BGM when a boss enemy is in the fight', async () => {
+        const playBGM = vi.fn();
+        useAudio.mockReturnValue({ playSFX: vi.fn(), playBGM, stopBGM: vi.fn() });
+        useCombat.mockReturnValue({
+            combat: {
+                ...mockCombat,
+                combat_active: true,
+                enemies: [{ id: 'enemy_1', is_boss: false }, { id: 'enemy_2', is_boss: true }]
+            },
+            inCombat: true,
+            loading: false,
+            fetchCombatStatus: vi.fn(),
+            performAction: vi.fn()
+        });
+
+        renderGamePage();
+        fireEvent.click(screen.getByRole('button', { name: /FIGHT FOR YOUR LIFE/i }));
+
+        await waitFor(() => {
+            expect(playBGM).toHaveBeenCalledWith('boss_battle');
+        });
+    });
+
     it('handles movement and triggers events', async () => {
         const mockMoveToLocation = vi.fn().mockResolvedValue({
             combat_started: false,
