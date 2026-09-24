@@ -495,9 +495,11 @@ def _turn_deadline(adapter: Any, started: Optional[float] = None) -> float:
 
     ``_CHAT_DEADLINE_SECONDS`` is a fixed number, but the per-call timeout
     :func:`_no_stage_budget` measures the remaining budget against is
-    ``NPC_CHAT_LLM_TIMEOUT`` — operator-tunable, with no upper bound. So the
-    budget scales with the timeout it is compared against: one round timeout
-    per stage in :data:`_MAX_TURN_STAGES`, with the constant as the floor.
+    ``NPC_CHAT_LLM_TIMEOUT`` — operator-tunable, though the adapter clamps it
+    to 7s (``_ROUND_TIMEOUT_CEILING_SECONDS`` in ai/llm_client.py, #637). So
+    the budget scales with the timeout it is compared against: one round
+    timeout per stage in :data:`_MAX_TURN_STAGES`, with the constant as the
+    floor and ``_TURN_CEILING_SECONDS`` as the cap.
 
     That funds every stage at the latencies the feature targets (a healthy call
     returns in 2-4s against a 6s ceiling). If *every* call instead runs to the
@@ -5009,10 +5011,7 @@ class ConversationalNPCMixin:
         not break the run: a fully degraded nomad conversation ends one reply
         sooner, which is the direction a degraded conversation should err.
         """
-        if self._chat_char_config:
-            pool = set(self._fallback_reply_pool())
-        else:
-            pool = set(self._nomad_fallback_pool())
+        pool = set(self._mid_conversation_fallback_pool())
         pool.add(_LAST_RESORT_FALLBACK_LINE)
         run = 0
         for entry in reversed(self._chat_history):
@@ -5025,6 +5024,18 @@ class ConversationalNPCMixin:
                 break
             run += 1
         return run
+
+    def _mid_conversation_fallback_pool(self) -> List[str]:
+        """The lines :meth:`_get_fallback_npc_line` rotates through mid-conversation.
+
+        The persona's reply pool for a story NPC, the personality pool for a
+        generic nomad (which draws its openers from it too). One place, so the
+        fallback cap in :meth:`_consecutive_fallback_replies` counts exactly
+        the lines the fallback can say.
+        """
+        if self._chat_char_config:
+            return self._fallback_reply_pool()
+        return self._nomad_fallback_pool()
 
     def _get_fallback_npc_line(
         self, is_opening: bool, player, exhausted: bool = False
@@ -5049,37 +5060,26 @@ class ConversationalNPCMixin:
         Jean said, falling back to ``_NEUTRAL_FALLBACK_REPLIES``.
         ``tests/test_npc_persona_fallback_replies.py`` guards the last.
         """
-        if self._chat_char_config:
+        if self._chat_char_config and (is_opening or exhausted):
             chapter = self._get_chapter(player)
             starters = self._chat_char_config.get(
                 "conversation_starters_by_chapter", {}
             ).get(chapter, [])
-            closing = self._chat_char_config.get("closing_lines_when_exhausted", [])
-
             if is_opening:
                 line = self._next_from_pool(starters)
-                if line:
-                    return line
-            elif exhausted:
-                line = self._next_from_pool(closing) or self._next_from_pool(starters)
-                if line:
-                    return line
             else:
-                # Mid-conversation and not exhausted: a line authored as a
-                # response. Never a starter -- those are openers addressed to
-                # a Jean who has just walked up, often a direct question
-                # (issue #628) -- and never a closing line, which would claim
-                # the NPC is done while the conversation carries on.
-                line = self._next_from_pool(self._fallback_reply_pool())
-                if line:
-                    return line
+                closing = self._chat_char_config.get("closing_lines_when_exhausted", [])
+                line = self._next_from_pool(closing) or self._next_from_pool(starters)
         else:
-            # Generic nomad: rotate through its personality pool.
-            line = self._next_from_pool(self._nomad_fallback_pool())
-            if line:
-                return line
+            # A story NPC mid-conversation and not exhausted: a line authored
+            # as a response. Never a starter -- those are openers addressed to
+            # a Jean who has just walked up, often a direct question (issue
+            # #628) -- and never a closing line, which would claim the NPC is
+            # done while the conversation carries on. A generic nomad draws
+            # every line from its personality pool.
+            line = self._next_from_pool(self._mid_conversation_fallback_pool())
 
-        return _LAST_RESORT_FALLBACK_LINE
+        return line or _LAST_RESORT_FALLBACK_LINE
 
     def _get_fallback_jean_options(self) -> List[Dict[str, str]]:
         """Return fallback Jean options, cycling through the pool.

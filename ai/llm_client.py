@@ -704,6 +704,11 @@ def _turn_budget_left() -> Optional[float]:
 #: tests/test_npc_chat_turn_budget.py derives the relation from all three.
 _ROUND_TIMEOUT_CEILING_SECONDS = 7.0
 
+#: One chat call's timeout when ``NPC_CHAT_LLM_TIMEOUT`` is unset or is not a
+#: positive number: a healthy free model answers in ~2-4s, so this covers the
+#: slow-but-fine tail (see ``NpcChatLLMAdapter._round_timeout``).
+_DEFAULT_ROUND_TIMEOUT_SECONDS = 6.0
+
 #: A ``requests`` timeout: one float applied to EACH phase, or a
 #: ``(connect, read)`` pair.
 _Timeout = Union[float, Tuple[float, float]]
@@ -746,6 +751,21 @@ def _fit_to_turn(read: float) -> _Timeout:
 def _read_timeout(timeout: _Timeout) -> float:
     """The read phase of a ``requests`` timeout, float or pair."""
     return timeout[1] if isinstance(timeout, tuple) else timeout
+
+
+def _timeout_was_clipped(timeout: _Timeout, nominal: float) -> bool:
+    """Whether the turn cut EITHER phase of ``timeout`` short of its own length.
+
+    A float is applied whole to each phase, so it is clipped only when it is
+    below ``nominal``. In a ``(connect, read)`` pair from :func:`_fit_to_turn`
+    the connect phase is clipped below :data:`_CONNECT_TIMEOUT_SECONDS` and the
+    read below ``nominal``. Checking the read alone let a ConnectTimeout on a
+    clipped connect bench a healthy model as slow.
+    """
+    if isinstance(timeout, tuple):
+        connect, read = timeout
+        return connect < _CONNECT_TIMEOUT_SECONDS or read < nominal
+    return timeout < nominal
 
 
 def _post_chat_completion(
@@ -3455,11 +3475,23 @@ class NpcChatLLMAdapter(GenericLLMClient):
 
     @classmethod
     def get_instance(cls) -> "NpcChatLLMAdapter":
-        """Return the shared adapter instance, creating it on first call."""
+        """Return the shared adapter instance, creating it on first call.
+
+        Built OUTSIDE ``_instances_lock``, as :meth:`prewarm` does: the
+        constructor runs network discovery and validation (seconds), and once
+        a prewarm reads stale every chat turn lands here -- holding the lock
+        for the build queued every other turn's :meth:`prewarm_in_flight` and
+        :meth:`is_prewarmed` behind it. Two cold callers may therefore both
+        build; ``setdefault`` publishes whichever finishes first and both get
+        that one.
+        """
         with cls._instances_lock:
-            if "default" not in cls._instances:
-                cls._instances["default"] = cls()
-            return cls._instances["default"]
+            instance = cls._instances.get("default")
+        if instance is not None:
+            return instance
+        built = cls()
+        with cls._instances_lock:
+            return cls._instances.setdefault("default", built)
 
     @classmethod
     def prewarm(cls) -> None:
@@ -4189,11 +4221,11 @@ class NpcChatLLMAdapter(GenericLLMClient):
         (#637); a value that is not a positive number reads as the default.
         """
         try:
-            value = float(os.getenv("NPC_CHAT_LLM_TIMEOUT", "6.0"))
+            value = float(os.getenv("NPC_CHAT_LLM_TIMEOUT", _DEFAULT_ROUND_TIMEOUT_SECONDS))
         except (TypeError, ValueError):
-            return 6.0
+            return _DEFAULT_ROUND_TIMEOUT_SECONDS
         if math.isnan(value) or value <= 0:
-            return 6.0
+            return _DEFAULT_ROUND_TIMEOUT_SECONDS
         return min(value, _ROUND_TIMEOUT_CEILING_SECONDS)
 
     @contextlib.contextmanager
@@ -4723,7 +4755,9 @@ class NpcChatLLMAdapter(GenericLLMClient):
             timeout = self._call_timeout()
             return self._openrouter_attempt(
                 model_id, payload, headers, timeout,
-                bench_on_timeout=_read_timeout(timeout) >= self._round_timeout(),
+                bench_on_timeout=not _timeout_was_clipped(
+                    timeout, self._round_timeout()
+                ),
             )
 
         content = self._rotate_openrouter(models_to_try, max_attempts, attempt)
