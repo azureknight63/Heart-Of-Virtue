@@ -8,6 +8,8 @@ Provides REST API endpoints for:
 - Retrieving conversation history
 """
 
+import re
+
 from flask import Blueprint, request, jsonify
 from src.api.middleware.auth import get_session_and_player, require_game_service
 from src.api.rate_limiter import (
@@ -154,6 +156,31 @@ def _string_field(data, key, default=""):
     return value[:_MAX_FIELD_LEN].strip()
 
 
+# Client-minted idempotency key for one /respond turn (#636), and the per-open
+# token /open hands back for /end (#674). Both are opaque handles the server
+# stores and compares; a value outside this shape is refused outright rather
+# than truncated, because a clipped key would silently name a DIFFERENT turn.
+_OPAQUE_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{8,64}")
+
+#: Sentinel: the field was present but malformed.
+_INVALID = object()
+
+
+def _token_field(data, key):
+    """An optional opaque token from an untrusted body.
+
+    Absent or JSON ``null`` -> ``None`` (the caller keeps its pre-token
+    behaviour); a string matching :data:`_OPAQUE_TOKEN_RE` -> that string;
+    anything else -> :data:`_INVALID`, which the route answers with a 400.
+    """
+    value = data.get(key) if isinstance(data, dict) else None
+    if value is None:
+        return None
+    if isinstance(value, str) and _OPAQUE_TOKEN_RE.fullmatch(value):
+        return value
+    return _INVALID
+
+
 def _chat_status(result):
     """200, or 409 for a turn refused because one is already in flight
     (``GameService._one_chat_turn``), or 400 for any other failure."""
@@ -217,6 +244,10 @@ def npc_chat_respond():
             "jean_text": "Jean's dialogue text",
             "jean_tone": a portrait emotion (optional, default "neutral").
                           The vocabulary is ai/llm_client.py's JEAN_TONES.
+            "turn_id": optional idempotency key, one per option click and
+                       reused by its Retry (#636). A turn already committed
+                       under it is replayed (``replayed: true``); one still
+                       running answers 409 with ``pending: true``.
         }
 
     Returns:
@@ -246,13 +277,18 @@ def npc_chat_respond():
         return jsonify({"success": False, "error": "npc_key is required"}), 400
     if not jean_text:
         return jsonify({"success": False, "error": "jean_text is required"}), 400
+    turn_id = _token_field(data, "turn_id")
+    if turn_id is _INVALID:
+        return jsonify({"success": False, "error": "turn_id is malformed"}), 400
 
     # Call game service
     game_service, gs_error = require_game_service()
     if gs_error:
         return gs_error
 
-    result = game_service.npc_chat_respond(player, npc_key, jean_text, jean_tone)
+    result = game_service.npc_chat_respond(
+        player, npc_key, jean_text, jean_tone, turn_id=turn_id
+    )
 
     # Save session
     session_manager.save_session(session.session_id)
@@ -267,7 +303,9 @@ def npc_chat_end():
 
     Request body:
         {
-            "npc_key": "NPC identifier for active chat"
+            "npc_key": "NPC identifier for active chat",
+            "open_token": optional, the ``open_token`` /open returned; a
+                          stale one leaves a newer open's marker alone (#674)
         }
 
     Returns:
@@ -287,13 +325,16 @@ def npc_chat_end():
     npc_key = _string_field(data, "npc_key")
     if not npc_key:
         return jsonify({"success": False, "error": "npc_key is required"}), 400
+    open_token = _token_field(data, "open_token")
+    if open_token is _INVALID:
+        return jsonify({"success": False, "error": "open_token is malformed"}), 400
 
     # Call game service
     game_service, gs_error = require_game_service()
     if gs_error:
         return gs_error
 
-    result = game_service.npc_chat_end(player, npc_key)
+    result = game_service.npc_chat_end(player, npc_key, open_token=open_token)
 
     # Save session
     session_manager.save_session(session.session_id)

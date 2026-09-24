@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import npcChat from '../api/npcChat'
+import npcChat, { NPC_CHAT_TIMEOUT_MS } from '../api/npcChat'
 import { portraitUrl, normalizeEmotion } from '../utils/portraits'
 import {
   conversationSegment,
@@ -185,6 +185,35 @@ const STILL_COMPOSING_MESSAGE = 'Still composing a reply — give it a moment.'
 // asked nothing yet, so "still composing a reply" would be false here.
 const STILL_TALKING_MESSAGE = 'Jean is still finishing another conversation — give it a moment.'
 
+// How long to wait before re-sending a turn the server says is still running
+// under this very `turn_id` (a 409 carrying `pending: true`, #636). The server
+// never blocks a request waiting on another, so the client polls instead: each
+// re-send either meets the same 409 or, once the turn commits, its replay.
+// Bounded overall by `NPC_CHAT_TIMEOUT_MS` from the first send.
+export const PENDING_RESEND_MS = 1000
+
+/**
+ * A fresh idempotency key for one option click (#636).
+ *
+ * `crypto.randomUUID` exists only in secure contexts, and a dev build opened
+ * over a LAN address for phone testing is plain http, where it is undefined;
+ * `getRandomValues` is available everywhere. Both shapes match the server's
+ * `^[A-Za-z0-9_-]{8,64}$`.
+ */
+function mintTurnId() {
+  const { crypto } = globalThis
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/** A 409 for THIS turn, still running server-side — worth re-sending. */
+function isPendingTurn(err) {
+  return err?.response?.status === 409 && err.response.data?.pending === true
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 /**
  * The fixed copy for a failure, chosen by what kind of failure it is.
  *
@@ -213,10 +242,14 @@ function failureMessage(err, fallback, busy) {
  *
  * @param {?string} npcKey - Session key from `/open`; a falsy value means no
  *   conversation was ever opened, so there is nothing to end.
+ * @param {?string} openToken - The `open_token` that `/open` returned (#674),
+ *   so the server clears only THIS open's marker and not a quick re-open of
+ *   the same NPC. Sent only when there is one.
  */
-function endAbandonedConversation(npcKey) {
+function endAbandonedConversation(npcKey, openToken) {
   if (!npcKey) return
-  npcChat.end(npcKey).catch((err) => {
+  const request = openToken ? npcChat.end(npcKey, openToken) : npcChat.end(npcKey)
+  request.catch((err) => {
     console.error('[npcChat] end after dismissal failed:', apiErrorDetail(err))
   })
 }
@@ -342,6 +375,9 @@ export function useNpcChat(npcId, npcName, onClose) {
   // read it — the unmount cleanup, and an `/open` that resolves after the
   // panel is already gone — both run outside render, where state is stale.
   const openNpcKeyRef = useRef(null)
+  // The `open_token` of that same conversation (#674), set and cleared with
+  // `openNpcKeyRef` and sent with its `/end`.
+  const openTokenRef = useRef(null)
   // The still-in-flight `POST /npc/chat/open` request, if any: `{ npcId, promise }`.
   //
   // React 18 StrictMode double-invokes a mount effect in dev (mount -> cleanup
@@ -390,8 +426,9 @@ export function useNpcChat(npcId, npcName, onClose) {
       // `handleEndConversation` — InteractPanel drops `selectedTarget` when the
       // room resyncs, and the panel is keyed per NPC. Whatever conversation is
       // still open server-side is closed out here.
-      endAbandonedConversation(openNpcKeyRef.current)
+      endAbandonedConversation(openNpcKeyRef.current, openTokenRef.current)
       openNpcKeyRef.current = null
+      openTokenRef.current = null
     }
   }, [])
 
@@ -455,6 +492,7 @@ export function useNpcChat(npcId, npcName, onClose) {
       return
     }
     openNpcKeyRef.current = null
+    openTokenRef.current = null
     setPhase(CHAT_PHASES.ENDED)
     // The close timer is NOT armed here — see handleFinalBeatRendered below
     // and the comment on AUTO_CLOSE_DELAY_MS (issue #531). Arming it the
@@ -558,12 +596,13 @@ export function useNpcChat(npcId, npcName, onClose) {
         //               `npc_chat_end` pops it unconditionally — so ending the
         //               superseded conversation would clear the NEW one's.
         if (!isMountedRef.current) {
-          endAbandonedConversation(data?.npc_key)
+          endAbandonedConversation(data?.npc_key, data?.open_token)
           return
         }
         if (cancelled) return
 
         openNpcKeyRef.current = data.npc_key
+        openTokenRef.current = data.open_token || null
         setNpcKey(data.npc_key)
         setDisplayName(data.npc_name || npcName)
         setConversationCast(npcCast(npcId, data.npc_name || npcName))
@@ -607,7 +646,33 @@ export function useNpcChat(npcId, npcName, onClose) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [npcId])
 
-  const handleOptionClick = async (option) => {
+  /**
+   * Send one turn, re-sending while the server reports that same `turnId` is
+   * still running (a pending 409, #636), up to the client deadline. Each
+   * re-send is gated on the turn still being the one on screen.
+   */
+  const sendTurn = async (option, turnId, seq) => {
+    const giveUpAt = Date.now() + NPC_CHAT_TIMEOUT_MS
+    for (;;) {
+      try {
+        return await npcChat.respond(npcKey, option.text, option.tone, turnId)
+      } catch (err) {
+        if (!isPendingTurn(err) || Date.now() + PENDING_RESEND_MS > giveUpAt) throw err
+        await wait(PENDING_RESEND_MS)
+        if (!isCurrentTurn(seq)) throw err
+      }
+    }
+  }
+
+  /** Jean picks an option: a new turn, with its own idempotency key. */
+  const handleOptionClick = (option) => sendOption(option, mintTurnId())
+
+  /**
+   * Stage Jean's line and send it as turn `turnId`. A Retry calls this again
+   * with the SAME `turnId`, so a turn the server committed after the client
+   * gave up on it comes back as a replay rather than a second commit (#636).
+   */
+  const sendOption = async (option, turnId) => {
     if (phase !== CHAT_PHASES.WAITING_JEAN || !npcKey) return
 
     // Captured before the request goes out; every post-await write below is
@@ -634,7 +699,7 @@ export function useNpcChat(npcId, npcName, onClose) {
       setConversationSegments((prev) => [...prev, jeanSegment])
 
       // Call the respond endpoint
-      const response = await npcChat.respond(npcKey, option.text, option.tone)
+      const response = await sendTurn(option, turnId, seq)
       if (!isCurrentTurn(seq)) return
       const data = response.data
 
@@ -662,7 +727,7 @@ export function useNpcChat(npcId, npcName, onClose) {
       console.error('[npcChat] respond failed:', apiErrorDetail(err))
       // Roll back the optimistic segment — the retry re-adds it.
       setConversationSegments((prev) => prev.filter((segment) => segment !== jeanSegment))
-      setRetry(() => () => handleOptionClick(option))
+      setRetry(() => () => sendOption(option, turnId))
       setError(failureMessage(err, RESPOND_FAILED_MESSAGE, STILL_COMPOSING_MESSAGE))
       setPhase(CHAT_PHASES.WAITING_JEAN)
     }
@@ -695,8 +760,10 @@ export function useNpcChat(npcId, npcName, onClose) {
     // conversation already ended) there is nothing server-side to end, and a
     // response still in flight ends itself when it lands on an unmounted hook.
     const key = openNpcKeyRef.current
+    const token = openTokenRef.current
     openNpcKeyRef.current = null
-    endAbandonedConversation(key)
+    openTokenRef.current = null
+    endAbandonedConversation(key, token)
     onClose()
   }
 
