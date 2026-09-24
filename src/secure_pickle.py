@@ -449,6 +449,8 @@ LEGACY_ALLOWED_MISSING = frozenset({
     # It was placed on no tile in any shipped map, so no save should name
     # it; listed so one that does still loads.
     ("src.story.ch03", "DemoEndEvent"),
+    # Issue #646: the Hollowed-curing consumable, retired for prayer.
+    ("src.items", "Relic"),
 })
 
 

@@ -1733,6 +1733,39 @@ JOURNAL_LINE_CONTRACT = {
 }
 
 
+# POST /api/pray (issue #646). usePrayer reads `success` and `message` off a
+# 2xx; a refusal is a 400 whose `error` it reads through apiErrorMessage.
+PRAYER_SUCCESS_CONTRACT = {
+    "success": Read("usePrayer.js", "data?.success"),
+    "message": Read("usePrayer.js", "data.message"),
+}
+PRAYER_REFUSAL_CONTRACT = {
+    "error": Read("apiError.js", "body?.error"),
+}
+
+
+class TestPrayerWireContract:
+    def test_success_fields_on_a_real_prayer(self):
+        player = Player()
+        hollowed = states.Hollowed(player)
+        player.states.append(hollowed)
+
+        payload = GameService().pray(player)
+
+        assert payload["success"] is True
+        _assert_contract(payload, PRAYER_SUCCESS_CONTRACT, "pray() success")
+
+    def test_refusal_fields_on_a_real_refusal(self):
+        player = Player()
+        player.states.append(states.Hollowed(player))
+        player.fatigue = 0
+
+        payload = GameService().pray(player)
+
+        assert payload["success"] is False
+        _assert_contract(payload, PRAYER_REFUSAL_CONTRACT, "pray() refusal")
+
+
 class TestJournalWireContract:
     def _journal_payload(self):
         """A journal with one of everything, produced by the real engine path.

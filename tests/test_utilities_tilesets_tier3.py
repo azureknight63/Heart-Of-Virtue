@@ -99,7 +99,7 @@ class TestMapTileAvailableActions:
     def test_available_actions_default_set(self):
         """Movement is dispatched via GameService.move_player, not Action
         classes -- available_actions always returns the fixed default set
-        (Search, Menu, Save only) outside of debug mode."""
+        (Search, Menu, Save, Pray -- #646) outside of debug mode."""
         universe = Mock()
         universe.testing_mode = False
         current_map = Mock()
@@ -108,7 +108,7 @@ class TestMapTileAvailableActions:
         )
 
         actions_list = tile.available_actions()
-        assert len(actions_list) == 3
+        assert len(actions_list) == 4
 
     def test_available_actions_debug_mode_via_player_config(self):
         """Test available_actions includes debug moves when debug_mode enabled."""
@@ -123,8 +123,8 @@ class TestMapTileAvailableActions:
         player.game_config.debug_mode = True
 
         actions_list = tile.available_actions(player=player)
-        # Should include debug moves: 3 default + 7 debug
-        assert len(actions_list) == 10
+        # Should include debug moves: 4 default + 7 debug
+        assert len(actions_list) == 11
 
     def test_available_actions_debug_mode_via_universe(self):
         """Test available_actions includes debug moves via universe.testing_mode."""
@@ -136,7 +136,7 @@ class TestMapTileAvailableActions:
         )
 
         actions_list = tile.available_actions()
-        assert len(actions_list) == 10
+        assert len(actions_list) == 11
 
 
 class TestMapTileEvaluateEvents:

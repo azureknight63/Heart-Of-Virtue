@@ -1393,10 +1393,10 @@ _LOQUACITY_PARTY_MOD = 10
 #:   looking away -- "a wrongness he couldn't place". Jean never gets one.
 #:   Granting him an NPC-trust bonus for wearing one would contradict the
 #:   character the story is drawing.
-#: * The only devotional object in `src/items.py` is `Relic`, and Jean no
-#:   longer starts with it (issue #646). It is a `Consumable`, so it is not
-#:   equippable, so it cannot reach an `isequipped` scan at all no matter what
-#:   this tuple says.
+#: * There is no devotional object in `src/items.py` at all. The last one,
+#:   the `Relic` consumable, was retired by issue #646 (prayer replaced it as
+#:   the cure for Hollowed); being a `Consumable`, it could never have reached
+#:   an `isequipped` scan anyway.
 #: * His equippable accessories are `JeanWeddingBand`, `DullMedallion` and
 #:   `GronditeMarkToken` -- sentimental and factional, not devotional.
 #:

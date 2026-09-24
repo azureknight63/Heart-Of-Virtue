@@ -38,7 +38,7 @@ class TestMapTileCoverage:
         """Movement is dispatched via GameService.move_player, not Action
         classes -- available_actions always returns the fixed default set."""
         names = [a.__class__.__name__ for a in tile.available_actions(player=None)]
-        assert names == ["Search", "Menu", "Save"]
+        assert names == ["Search", "Menu", "Save", "Pray"]
 
     def test_available_actions_debug_via_game_config(self, tile):
         """Debug actions appear when player.game_config.debug_mode is True."""

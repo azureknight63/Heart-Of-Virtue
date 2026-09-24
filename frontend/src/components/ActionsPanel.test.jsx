@@ -1,10 +1,11 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import ActionsPanel from './ActionsPanel';
 import apiEndpoints from '../api/endpoints';
 import { AudioProvider } from '../context/AudioContext';
-import { colors } from '../styles/theme';
+import { accessibility, colors } from '../styles/theme';
+import { stubWideTouchTablet } from '../test/pointerEnvironment';
 import { hexToRgb } from '../test/hexToRgb';
 
 // Mock apiEndpoints
@@ -17,6 +18,12 @@ vi.mock('../api/endpoints', () => ({
       save: vi.fn(),
     },
   },
+}));
+
+// Prayer goes through its hook (issue #646); the hook has its own tests.
+const prayerMock = vi.hoisted(() => ({ pray: vi.fn(), isPraying: false }));
+vi.mock('../hooks/usePrayer', () => ({
+  default: () => prayerMock,
 }));
 
 // Mock useAudio
@@ -293,5 +300,81 @@ describe('ActionsPanel', () => {
     fireEvent.click(screen.getByText(/✕/i));
     expect(mockOnClose).toHaveBeenCalledTimes(1);
     expect(mockOnClose).toHaveBeenCalledWith(expect.objectContaining({ type: 'click' }));
+  });
+});
+
+
+describe('ActionsPanel PRAY (issue #646)', () => {
+  const onClose = vi.fn();
+  const onRefetch = vi.fn();
+  let env = null;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prayerMock.isPraying = false;
+    apiEndpoints.world.getCommands.mockResolvedValue({
+      data: { commands: [{ name: 'Save', debug: false }, { name: 'Pray', debug: false }] },
+    });
+  });
+
+  afterEach(() => {
+    if (env) env.restore();
+    env = null;
+  });
+
+  const renderPanel = () => render(
+    <MemoryRouter>
+      <ActionsPanel onClose={onClose} onRefetch={onRefetch} />
+    </MemoryRouter>
+  );
+
+  it('offers the server-advertised Pray command with a tooltip saying what it does', async () => {
+    renderPanel();
+    const button = await screen.findByRole('button', { name: /^Pray$/i });
+
+    fireEvent.mouseEnter(button);
+    expect(screen.getByText(/Lifts Hollowed/i)).toBeDefined();
+  });
+
+  it('prays through the hook, shows the narration, and refreshes the HUD', async () => {
+    prayerMock.pray.mockResolvedValue({ ok: true, message: 'Jean kneels where he stands.' });
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Pray$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Jean kneels where he stands\./)).toBeDefined();
+    });
+    expect(prayerMock.pray).toHaveBeenCalledTimes(1);
+    expect(onRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a refusal and leaves the HUD alone', async () => {
+    prayerMock.pray.mockResolvedValue({ ok: false, message: 'Prayer needs 37 fatigue; he has 5.' });
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Pray$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Prayer needs 37 fatigue; he has 5\./)).toBeDefined();
+    });
+    expect(onRefetch).not.toHaveBeenCalled();
+  });
+
+  it('is disabled and says so while a prayer is in flight', async () => {
+    prayerMock.isPraying = true;
+    renderPanel();
+
+    const button = await screen.findByRole('button', { name: /^Praying…$/i });
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-busy')).toBe('true');
+  });
+
+  it('meets the 44px floor on a wide touch tablet', async () => {
+    env = stubWideTouchTablet();
+    renderPanel();
+
+    const button = await screen.findByRole('button', { name: /^Pray$/i });
+    expect(button.style.minHeight).toBe(accessibility.touchTarget);
   });
 });

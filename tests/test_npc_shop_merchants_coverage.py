@@ -280,10 +280,10 @@ def test_restock_fills_the_merchant_to_exactly_its_stock_count():
 
 
 def test_restock_never_stocks_a_disallowed_class():
-    """``disallowed_classes`` is the guard that keeps Gold, Relic and the bare
-    equipment base classes out of shop stock — a Relic on a shelf would sell
-    for nothing and break a story item."""
-    from src.items import Gold, Relic, Commodity, ProtectiveGear
+    """``disallowed_classes`` is the guard that keeps Gold and the bare
+    equipment base classes out of shop stock. (Relic was here until issue
+    #646 retired the class.)"""
+    from src.items import Gold, Commodity, ProtectiveGear
 
     m = MockMerchant()
     room = FakeRoom()
@@ -306,7 +306,7 @@ def test_restock_never_stocks_a_disallowed_class():
     # five of these six raised TypeError before they could ever be appended,
     # so the assertion could not fail for them and deleting Commodity or
     # ProtectiveGear from disallowed_classes left it green.
-    banned = {Gold, Relic, Consumable, Item, Commodity, ProtectiveGear}
+    banned = {Gold, Consumable, Item, Commodity, ProtectiveGear}
     assert not [i for i in m.inventory if type(i) in banned]
 
     # …and neither may any story item, which is now spawnable here.
