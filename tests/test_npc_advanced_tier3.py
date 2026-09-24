@@ -2651,10 +2651,6 @@ class TestMapPayloadsDoNotReintroduceTheChatKeyword:
         assert [kw for _c, _i, kw in _npc_keyword_payloads(planted)] == [["talk"]]
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
-
-
 def test_roll_loot_skips_an_equipment_entry_whose_pool_is_empty():
     """#674: random_equipment returns None for a level with no candidates;
     roll_loot skips that entry instead of reading ``None.name``."""
@@ -2665,3 +2661,7 @@ def test_roll_loot_skips_an_equipment_entry_whose_pool_is_empty():
     with patch('src.loot_tables.Loot.random_equipment', return_value=None):
         with patch('src.npc._loot.random.randint', return_value=0):
             assert npc.roll_loot() == []
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

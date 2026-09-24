@@ -1418,10 +1418,23 @@ def end_combat_cleanup(target):
 
     Returns the states that were removed, so a caller can log or assert on them.
     """
-    states = list(getattr(target, "states", None) or [])
+    return remove_states(target, lambda state: not getattr(state, "persistent", False))
+
+
+def remove_states(target, predicate):
+    """Take every state ``predicate`` accepts off ``target``, the engine's way.
+
+    The three steps ``end_combat_cleanup`` documents: rebind ``target.states``
+    without them, recompute stat bonuses once, then run each removed state's
+    ``on_removal``. A raising ``on_removal`` is logged and skipped, so one
+    state's broken teardown never strands the rest or aborts the caller
+    mid-action (``Player.pray`` has already charged fatigue by then).
+
+    Returns the removed states, in their original order.
+    """
     keep, removed = [], []
-    for state in states:
-        (keep if getattr(state, "persistent", False) else removed).append(state)
+    for state in list(getattr(target, "states", None) or []):
+        (removed if predicate(state) else keep).append(state)
     if not removed:
         return []
     target.states = keep
@@ -1431,8 +1444,8 @@ def end_combat_cleanup(target):
         if callable(on_removal):
             try:
                 on_removal(target)
-            except Exception:  # pragma: no cover - a state's own teardown
-                logging.getLogger(__name__).warning(
+            except Exception:
+                logger.warning(
                     "on_removal failed for %s", type(state).__name__, exc_info=True
                 )
     return removed

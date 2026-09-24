@@ -44,6 +44,12 @@ from src.text_format import pct as _pct
 # percentage. See ``State._applied_pct``.
 _BASE_NOT_CAPTURED = object()
 
+# The status family of Hollowed, and the only family prayer lifts
+# (``Player.pray``). The Oath lock (``src/moves/_utility.py``) and prayer both
+# key on this name rather than spelling the string, so a rename cannot leave
+# one of them behind.
+APATHY_STATUSTYPE = "apathy"
+
 
 class State:  # master class for all states
     """
@@ -1044,7 +1050,7 @@ class Hollowed(State):
             compounding=False,
             combat=True,
             world=True,
-            statustype="apathy",
+            statustype=APATHY_STATUSTYPE,
             persistent=True,
             description=(
                 f"Faith -{self._FAITH_PENALTY_POINTS}, "
@@ -1120,8 +1126,7 @@ class Fervent(State):
                 f"Strength +{_pct(self._STRENGTH_BONUS_PCT)}, "
                 f"Finesse +{_pct(self._FINESSE_BONUS_PCT)}. "
                 f"Endurance -{self._ENDURANCE_PENALTY_POINTS}. "
-                "Drains HP and Fatigue every few beats. "
-                "Fades with time, or pray out of combat (COMMANDS) to lift it."
+                "Drains HP and Fatigue every few beats."
             ),
             # Rendered live below: compound() raises strength and deepens the
             # endurance cost.

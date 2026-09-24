@@ -9,6 +9,8 @@ import src.items as items
 import src.functions as functions
 from src.narration import narrate
 
+_log = logging.getLogger(__name__)
+
 
 class Loot:
     def __init__(self):
@@ -44,7 +46,7 @@ class Loot:
         if not candidates:
             # A level with no selectable equipment is no drop, not a
             # randint(0, -1) crash in the middle of a death (#674).
-            logging.getLogger(__name__).warning(
+            _log.warning(
                 "random_equipment: no selectable equipment at level %s", eq_level
             )
             return None

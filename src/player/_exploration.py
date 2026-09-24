@@ -10,7 +10,18 @@ Hollowed. ``GameService.pray`` adapts it and refuses it mid-fight.
 """
 
 from src import functions
+import src.states as states
 from src.narration import narrate
+
+
+def _prayer_outcome(prayed, cleared=(), cost=0, refusal=None):
+    """The dict ``Player.pray`` returns; see its docstring for the fields."""
+    return {
+        "prayed": prayed,
+        "cleared": [getattr(s, "name", type(s).__name__) for s in cleared],
+        "fatigue_cost": cost,
+        "refusal": refusal,
+    }
 
 
 class PlayerExplorationMixin:
@@ -19,19 +30,23 @@ class PlayerExplorationMixin:
     #: What a prayer that lifts Hollowed costs, as a fraction of max fatigue.
     #: A quarter: enough that praying straight into the next fight is a real
     #: trade (fatigue does not regenerate while exploring -- a won fight
-    #: refills it -- so Jean carries the cost into that fight), cheap enough that it is always the right call once the
-    #: fighting is done. Scales with max fatigue so it stays a quarter at any
-    #: level. A prayer with nothing to lift costs nothing -- see ``pray``.
+    #: refills it -- so Jean carries the cost into that fight), cheap enough
+    #: that it is always the right call once the fighting is done. Scales
+    #: with max fatigue so it stays a quarter at any level. A prayer with
+    #: nothing to lift costs nothing -- see ``pray``.
     PRAYER_FATIGUE_COST_PCT = 0.25
 
-    #: The status family prayer lifts. Hollowed is the only apathy state
-    #: (``src/states.py``); keyed on the family, as the Oath lock is
-    #: (``src/moves/_utility.py``), so the two cannot disagree.
-    _PRAYER_CURES_STATUSTYPE = "apathy"
+    #: The status family prayer lifts: ``states.APATHY_STATUSTYPE``, the one
+    #: constant Hollowed declares and the Oath lock (``src/moves/_utility.py``)
+    #: also reads.
+    _PRAYER_CURES_STATUSTYPE = states.APATHY_STATUSTYPE
 
     def prayer_fatigue_cost(self):
         """Fatigue a prayer that lifts Hollowed costs right now (at least 1)."""
         return max(1, int(self.maxfatigue * self.PRAYER_FATIGUE_COST_PCT))
+
+    def _prayer_cures(self, state):
+        return getattr(state, "statustype", "") == self._PRAYER_CURES_STATUSTYPE
 
     def pray(self):
         """Kneel and pray. Lifts every apathy state (Hollowed) for fatigue.
@@ -47,29 +62,20 @@ class PlayerExplorationMixin:
             "fatigue_cost": int, "refusal": str | None}``. ``refusal`` is the
             player-facing reason when ``prayed`` is False.
         """
-        afflictions = [
-            s for s in self.states
-            if getattr(s, "statustype", "") == self._PRAYER_CURES_STATUSTYPE
-        ]
-        if not afflictions:
+        if not any(self._prayer_cures(s) for s in self.states):
             narrate(
                 f"{self.name} folds his hands and says the old words under his "
                 "breath. They come easily, out of long habit."
             )
             narrate("Nothing in him needs mending just now. He says amen and rises.")
-            return {"prayed": True, "cleared": [], "fatigue_cost": 0, "refusal": None}
+            return _prayer_outcome(True)
 
         cost = self.prayer_fatigue_cost()
         if self.fatigue < cost:
-            return {
-                "prayed": False,
-                "cleared": [],
-                "fatigue_cost": 0,
-                "refusal": (
-                    f"{self.name} is too spent to kneel and hold still that long. "
-                    f"Prayer needs {cost} fatigue; he has {int(self.fatigue)}."
-                ),
-            }
+            return _prayer_outcome(False, refusal=(
+                f"{self.name} is too spent to kneel and hold still that long. "
+                f"Prayer needs {cost} fatigue; he has {int(self.fatigue)}."
+            ))
 
         narrate(
             f"{self.name} kneels where he stands and folds his hands. The words "
@@ -81,14 +87,6 @@ class PlayerExplorationMixin:
             "it until his knees ache."
         )
         self.fatigue -= cost
-        self.states = [s for s in self.states if s not in afflictions]
-        functions.refresh_stat_bonuses(self)
-        for state in afflictions:
-            state.on_removal(self)
+        cleared = functions.remove_states(self, self._prayer_cures)
         narrate(f"The prayer cost {self.name} {cost} fatigue.")
-        return {
-            "prayed": True,
-            "cleared": [getattr(s, "name", type(s).__name__) for s in afflictions],
-            "fatigue_cost": cost,
-            "refusal": None,
-        }
+        return _prayer_outcome(True, cleared, cost)

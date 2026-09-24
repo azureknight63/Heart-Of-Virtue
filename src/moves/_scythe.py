@@ -88,10 +88,6 @@ class Reap(Move):
             return False
         return self._living_hostile()
 
-    def _living_hostile(self):
-        """Some living hostile is in the fight; an ally is not an opponent (#674)."""
-        return any(e.is_alive() for e, _distance in self._hostiles_in_proximity())
-
     def _unavailability_code(self):
         code = super()._unavailability_code()
         if code is not None or not hasattr(self.user, "combat_proximity"):
@@ -266,7 +262,7 @@ class ReapersMark(Move):
         if not hasattr(self.user, "combat_proximity"):
             return False
         # An ally is not an opponent to mark (#674, as Reap above).
-        return any(e.is_alive() for e, _distance in self._hostiles_in_proximity())
+        return self._living_hostile()
 
     def evaluate(self):
         pass

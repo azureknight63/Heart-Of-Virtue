@@ -2,6 +2,8 @@
 
 from typing import List
 
+import src.states as states
+
 from .base import Scenario
 from ..client import GameClient
 from ..reporter import BugReport, BugSeverity, BugCategory
@@ -130,8 +132,6 @@ class PlayerScenario(Scenario):
         live = self._live_player_tile(client)
         if live is None:
             return bugs  # MinimalPlayer session: cannot stage a state
-        import src.states as states
-
         player = live.player
         player.states.append(states.Hollowed(player))
         client._session_manager.save_session(client.session_id)

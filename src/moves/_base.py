@@ -2364,6 +2364,10 @@ class Move:  # master class for all moves
                 continue
             yield combatant, distance
 
+    def _living_hostile(self):
+        """Some living hostile is in the fight; an ally is not an opponent (#674)."""
+        return any(e.is_alive() for e, _distance in self._hostiles_in_proximity())
+
     def standard_evaluate_attack(
         self,
         base_power,

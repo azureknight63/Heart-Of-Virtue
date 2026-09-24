@@ -225,3 +225,74 @@ def test_hollowed_tells_the_player_prayer_lifts_it():
     hollowed = states.Hollowed(player)
     assert "pray" in hollowed.description.lower()
     assert "pray" in (states.Hollowed.__doc__ or "").lower()
+
+
+def _every_engine_state(player):
+    """One instance of every concrete ``State`` in ``src/states.py``.
+
+    Extra required constructor arguments (``StoneBulwarkState``'s ``amount``)
+    get a placeholder 1, so no class is skipped.
+    """
+    import inspect
+
+    out = []
+    for _name, cls in inspect.getmembers(states, inspect.isclass):
+        if not issubclass(cls, states.State) or cls is states.State:
+            continue
+        if cls.__module__ != states.__name__:
+            continue
+        params = list(inspect.signature(cls.__init__).parameters.values())[2:]
+        extra = [1 for p in params if p.default is inspect.Parameter.empty]
+        out.append(cls(player, *extra))
+    return out
+
+
+def test_only_states_prayer_cures_tell_the_player_to_pray():
+    """A tooltip that says "pray to lift it" on a state prayer cannot lift is
+    a lie the player acts on (Fervent claimed it; prayer lifts apathy only)."""
+    player = Player()
+    all_states = _every_engine_state(player)
+    mentions = [
+        s for s in all_states if "pray" in (getattr(s, "description", "") or "").lower()
+    ]
+    assert any(isinstance(s, states.Hollowed) for s in mentions)  # non-vacuous
+    wrong = [
+        type(s).__name__ for s in mentions
+        if s.statustype != Player._PRAYER_CURES_STATUSTYPE
+    ]
+    assert not wrong, wrong
+
+
+def test_apathy_statustype_is_one_constant():
+    """Hollowed, the Oath lock and prayer key on one named statustype."""
+    from pathlib import Path
+
+    assert states.Hollowed(Player()).statustype == states.APATHY_STATUSTYPE
+    assert Player._PRAYER_CURES_STATUSTYPE == states.APATHY_STATUSTYPE
+    root = Path(__file__).resolve().parent.parent / "src"
+    for rel in ("moves/_utility.py", "player/_exploration.py"):
+        text = (root / rel).read_text(encoding="utf-8")
+        assert '"apathy"' not in text, rel
+
+
+def test_a_raising_on_removal_does_not_abort_a_paid_prayer():
+    """Fatigue is spent before the states come off; one state's broken
+    teardown must not strand the others or lose the outcome."""
+    player = _hollowed_player()
+
+    class _Broken(states.Hollowed):
+        def on_removal(self, target):
+            raise RuntimeError("teardown bug")
+
+    broken = _Broken(player)
+    player.states.insert(0, broken)
+    before = player.fatigue
+    cost = player.prayer_fatigue_cost()
+
+    outcome = player.pray()
+
+    assert outcome["prayed"] is True
+    assert outcome["cleared"] == ["Hollowed", "Hollowed"]
+    assert player.fatigue == before - cost
+    assert not _is_hollowed(player)
+    assert player.faith == player.healthy_faith

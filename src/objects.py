@@ -1359,7 +1359,10 @@ class Passageway(Object):
     # verb in ``keywords`` is not enough (#630): that half used to admit any
     # advertised verb, including one authored for another purpose, and arming
     # the crossing drops Jean's unpaid merchandise and runs ``events_before``
-    # before he confirms. An alias, not a delegator, per #626's rule.
+    # before he confirms. An alias, not a delegator, per #626's rule -- so a
+    # subclass that overrides ``is_crossing_handler`` must re-bind
+    # ``accepts_step_through`` too, or the alias keeps calling this base
+    # method (tests/test_object_synonym_aliases.py guards every subclass).
     accepts_step_through = is_crossing_handler
 
     def is_demo_edge(self, ready_flag=None):

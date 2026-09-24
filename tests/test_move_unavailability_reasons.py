@@ -572,6 +572,16 @@ def test_reapers_mark_ignores_a_living_ally():
     assert move.viable() is True
 
 
+def test_living_hostile_is_one_shared_move_helper():
+    """Reap and Reaper's Mark ask the same question through one helper on
+    ``Move``, beside ``_hostiles_in_proximity``, not a private copy each."""
+    from src.moves._base import Move
+
+    assert "_living_hostile" in Move.__dict__
+    assert "_living_hostile" not in moves.Reap.__dict__
+    assert "_living_hostile" not in moves.ReapersMark.__dict__
+
+
 def test_shoot_bow_ignores_an_ally_in_range():
     player, enemy, ally = _jean_with_ally("Bow", enemy_distance=500, ally_distance=20)
     move = moves.ShootBow(player)
