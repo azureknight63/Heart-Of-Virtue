@@ -1351,21 +1351,16 @@ class Passageway(Object):
             for name in type(self).CROSSING_METHOD_NAMES
         )
 
-    def accepts_step_through(self, handler):
-        """Whether a verb resolved to ``handler`` should ask "step through?"
-        on this passageway (#620).
-
-        The API's confirmation arm asks here rather than spelling the rule
-        itself, so the dispatch contract test can ask the same question
-        instead of retyping it (a retyped mirror has failed open twice).
-        Only a verb that CROSSES qualifies (``is_crossing_handler``: ``enter``,
-        its class-level aliases, the name words and the declared
-        ``crossing_keywords``). Advertising a verb in ``keywords`` is not
-        enough (#630): that half used to admit any advertised verb, including
-        one authored for another purpose, and arming the crossing drops Jean's
-        unpaid merchandise and runs ``events_before`` before he confirms.
-        """
-        return self.is_crossing_handler(handler)
+    # Whether a verb resolved to ``handler`` should ask "step through?" on
+    # this passageway (#620). The API's confirmation arm asks under this name
+    # rather than spelling the rule itself, so the dispatch contract test can
+    # ask the same question instead of retyping it (a retyped mirror has
+    # failed open twice). Only a verb that CROSSES qualifies. Advertising a
+    # verb in ``keywords`` is not enough (#630): that half used to admit any
+    # advertised verb, including one authored for another purpose, and arming
+    # the crossing drops Jean's unpaid merchandise and runs ``events_before``
+    # before he confirms. An alias, not a delegator, per #626's rule.
+    accepts_step_through = is_crossing_handler
 
     def is_demo_edge(self, ready_flag=None):
         """True when this passageway is where the demo stops -- and, given
