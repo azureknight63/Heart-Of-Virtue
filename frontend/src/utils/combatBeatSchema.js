@@ -72,6 +72,7 @@ export const BEAT_FIELDS = [
   'status_changes',
   'log_line',
   'sfx',
+  'results',
 ];
 
 /**
@@ -116,3 +117,39 @@ export const SFX_KINDS = [
  * values stay identical.
  */
 export const MAX_BEAT_RESOLUTIONS = 16;
+
+/**
+ * Beat results — what the battlefield's floating text shows (#667). The
+ * adapter measures them on the real combatants around each beat and ships
+ * them on the beat's last log entry (`entry.results`, default path) or on the
+ * `combat:beat` (`beat.results`, streaming). Shapes:
+ *   { id, kind: 'hp', delta }                      "-33 HP" / "+22 HP"
+ *   { id, kind: 'status', status, change }         "+ Staggered" / "- Poisoned"
+ *   { id, kind: 'outcome', outcome }               "Miss!" / "Parried!"
+ */
+export const RESULT_KINDS = [
+  'hp',
+  'status',
+  'outcome',
+];
+
+/** The `change` vocabulary of a `status` result. */
+export const STATUS_RESULT_CHANGES = [
+  'added',
+  'removed',
+];
+
+/**
+ * The outcomes that become an `outcome` result: the ones with no HP
+ * footprint. A hit is already told by its HP number.
+ */
+export const TEXT_OUTCOMES = [
+  'miss',
+  'parry',
+  'block',
+  'deflect',
+  'absorb',
+];
+
+/** Ceiling on the results one beat may carry (server and client alike). */
+export const MAX_BEAT_RESULTS = 32;

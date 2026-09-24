@@ -25,6 +25,7 @@ from .feedback import FeedbackScenario
 from .debug_ops import DebugOpsScenario
 from .victory_loot import VictoryLootScenario
 from .beta2_start import Beta2StartScenario
+from .jambo_tent import JamboTentScenario
 
 _ALL_SCENARIOS = [
     HealthScenario(),
@@ -52,6 +53,7 @@ _ALL_SCENARIOS = [
     DebugOpsScenario(),
     VictoryLootScenario(),
     Beta2StartScenario(),
+    JamboTentScenario(),
 ]
 
 

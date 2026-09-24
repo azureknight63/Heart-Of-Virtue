@@ -1,5 +1,8 @@
 import { useState } from 'react'
 
+import { useLargeTouchTargets } from '../hooks/useLargeTouchTargets'
+import { accessibility } from '../styles/theme'
+
 const ORANGE = '#FF8800'
 const BG = '#0a0a0a'
 const MUTED = '#666'
@@ -11,6 +14,12 @@ export default function FleeButton({ onFlee, isMobile = false }) {
 
   const fontSize = isMobile ? '11px' : '13px'
   const padding = isMobile ? '4px 10px' : '6px 16px'
+  // The 44px floor is decided by the pointer, not the `isMobile` prop (#649):
+  // a missed flee costs a turn, and a landscape touch tablet is not "mobile".
+  const needsLargeTargets = useLargeTouchTargets()
+  const floor = needsLargeTargets
+    ? { minHeight: accessibility.touchTarget, touchAction: 'manipulation' }
+    : {}
 
   const handleConfirm = async () => {
     setIsLoading(true)
@@ -51,6 +60,7 @@ export default function FleeButton({ onFlee, isMobile = false }) {
               color: BG,
               border: 'none',
               padding,
+              ...floor,
               fontSize,
               fontFamily: 'monospace',
               fontWeight: 'bold',
@@ -69,6 +79,7 @@ export default function FleeButton({ onFlee, isMobile = false }) {
               color: MUTED,
               border: `1px solid ${MUTED}`,
               padding,
+              ...floor,
               fontSize,
               fontFamily: 'monospace',
               cursor: isLoading ? 'not-allowed' : 'pointer',
@@ -92,6 +103,7 @@ export default function FleeButton({ onFlee, isMobile = false }) {
         color: ORANGE,
         border: `1px solid ${ORANGE}66`,
         padding,
+        ...floor,
         fontSize,
         fontFamily: 'monospace',
         fontWeight: 'bold',

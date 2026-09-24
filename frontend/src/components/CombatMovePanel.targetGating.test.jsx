@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import CombatMovePanel from './CombatMovePanel';
+import { UNAVAILABLE_FALLBACK_REASON } from '../utils/combatMoveStatus';
 import { useAudio } from '../context/AudioContext';
 import {
   makeAvailableOption,
@@ -202,14 +203,15 @@ describe('CombatMovePanel — how far short a locked move falls (#614)', () => {
     expect(shown.textContent).not.toMatch(/ft short/i);
   });
 
-  // A card locked with no sentence at all renders no reason line (the panel
-  // has rendered it behind `reason &&` since #565), so the suffix has nothing
-  // to hang off. It must not become a dangling em-dash in the tooltip either.
-  it('adds no dangling suffix to a lock that came with no sentence', () => {
+  // A card locked with no sentence at all gets the generic fallback (#627)
+  // rather than a blank line -- and that catch-all is not a range lock, so the
+  // shortfall must not be hung off it as though walking closer would help.
+  it('adds no range suffix to a lock that came with no sentence', () => {
     renderPanel([{ ...attackWithNoReachableTarget, available: false, reason: '' }]);
 
-    expect(card('Attack')).not.toHaveAttribute('aria-describedby');
-    expect(card('Attack')).toHaveAttribute('title', '');
+    expect(reasonFor('Attack')).toHaveTextContent(UNAVAILABLE_FALLBACK_REASON);
+    expect(reasonFor('Attack').textContent).not.toMatch(/ft short/i);
+    expect(card('Attack')).toHaveAttribute('title', UNAVAILABLE_FALLBACK_REASON);
   });
 
   // The reason element IS the accessible description (aria-describedby points

@@ -3261,6 +3261,11 @@ class NpcChatLLMAdapter(GenericLLMClient):
     # warm-up is not retried on every world load. A class attribute, not a
     # magic sentinel key smuggled into _instances (which holds adapters).
     _prewarm_attempted = False
+    # True only while prewarm() is building the adapter. Unlike
+    # _prewarm_attempted it clears when the build ends, success or failure, so
+    # a chat turn can tell "being built right now" from "tried and failed"
+    # (prewarm_in_flight, #637).
+    _prewarm_in_flight = False
     _instances_lock = threading.Lock()
 
     # NPC chat's own env vars, ahead of the Mynx pair the base class reads
@@ -3403,6 +3408,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             # holding _instances_lock for that starved every concurrent
             # get_instance()/is_prewarmed() caller for the duration.
             cls._prewarm_attempted = True
+            cls._prewarm_in_flight = True
         try:
             logger.info("NpcChatLLMAdapter prewarm: initializing adapter...")
             instance = cls()
@@ -3413,6 +3419,22 @@ class NpcChatLLMAdapter(GenericLLMClient):
             logger.info("NpcChatLLMAdapter prewarm: complete.")
         except Exception as e:
             logger.warning("NpcChatLLMAdapter prewarm failed: %s", e)
+        finally:
+            with cls._instances_lock:
+                cls._prewarm_in_flight = False
+
+    @classmethod
+    def prewarm_in_flight(cls) -> bool:
+        """True while prewarm() is still building and nothing is published yet.
+
+        A chat turn that calls get_instance() now would build a second adapter
+        on the request path -- model discovery waits up to 20s on the prewarm's
+        in-flight discovery, then runs validation calls of its own -- instead
+        of the one already on its way (#637). The caller serves its
+        deterministic fallback for that turn instead.
+        """
+        with cls._instances_lock:
+            return cls._prewarm_in_flight and "default" not in cls._instances
 
     @classmethod
     def is_prewarmed(cls) -> bool:

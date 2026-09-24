@@ -11,6 +11,7 @@ import {
 } from '../utils/combatTiming';
 import { SFX_DURATIONS } from '../utils/sfxDurations';
 import { isLiving } from '../utils/combatEntities';
+import { findCombatant } from '../utils/combatStreamAdapter';
 import { lookupOr } from '../utils/lookup';
 
 // ---------------------------------------------------------------------------
@@ -517,35 +518,32 @@ export default function useBattlefieldAnimations({
       // a kill whose carriers arrive across two polls must still burst once.
       const beatIdx = entry.beat_index ?? 0;
       const killKey = `${beatIdx}:${anim.target_id}`;
-      if (anim.target_id && allBeatStates && !killed.has(killKey)) {
+      // A beat interrupted by an event tags its log with the next index but
+      // appends no beat state, so `stateAt` can be missing: no snapshot is not
+      // a death, and reading it as one would burst a living ally or Jean.
+      if (anim.target_id && allBeatStates && allBeatStates[beatIdx] && !killed.has(killKey)) {
         const stateBefore = allBeatStates[Math.max(0, beatIdx - 1)];
         const stateAt = allBeatStates[beatIdx];
-        // Both liveness checks must read a missing hp field identically.
-        // Divergent defaults across these two lines make an enemy count as
-        // alive before the blow and dead after it, firing a death burst on a
-        // combatant that is still fighting.
-        const wasAlive = stateBefore?.enemies?.some(
-          (en) => en.id === anim.target_id && isLiving(en)
-        );
-        const isNowDead = !stateAt?.enemies?.some(
-          (en) => en.id === anim.target_id && isLiving(en)
-        );
-        if (wasAlive && isNowDead) {
-          const lastKnown = stateBefore.enemies.find((en) => en.id === anim.target_id);
-          if (lastKnown?.position) {
-            // friendly: false is sound here — this branch only inspects
-            // `stateBefore.enemies`, so it can only ever synthesize an
-            // enemy death. Streamed deaths (which can be an ally or Jean)
-            // carry their own alignment from `beatToAnimations`.
-            animations.push({
-              type: 'death',
-              target_id: anim.target_id,
-              position: lastKnown.position,
-              entity: lastKnown,
-              friendly: false,
-            });
-            killed.add(killKey);
-          }
+        // Any side can fall (issue #670): enemies, allies and Jean are all
+        // resolved through the same lookup the streaming path uses, so the
+        // default (polling) mode bursts a friendly death too, with its
+        // alignment. Both liveness checks go through isLiving so a missing hp
+        // field reads identically before and after the blow — divergent
+        // defaults would burst a combatant that is still fighting. A victim
+        // absent from the later snapshot (dropped from its roster) is dead.
+        const before = findCombatant(stateBefore, anim.target_id);
+        const after = findCombatant(stateAt, anim.target_id);
+        const wasAlive = !!before && isLiving(before.entity);
+        const isNowDead = !(after && isLiving(after.entity));
+        if (wasAlive && isNowDead && before.entity.position) {
+          animations.push({
+            type: 'death',
+            target_id: anim.target_id,
+            position: before.entity.position,
+            entity: before.entity,
+            friendly: before.friendly,
+          });
+          killed.add(killKey);
         }
       }
     });

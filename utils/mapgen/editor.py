@@ -1304,6 +1304,7 @@ class MapEditor:
                                 return d
                             try:
                                 consumed_keys: set = set()
+                                constructed = False
                                 try:
                                     param_names = [
                                         p.name
@@ -1312,10 +1313,12 @@ class MapEditor:
                                         ).parameters.values()
                                         if p.name != "self"
                                     ]
+                                    # Same rule as the game loader (#651).
                                     init_kwargs = {
                                         k: deserialize_instance(v)
                                         for k, v in props.items()
                                         if k in param_names
+                                        and map_placeholders.legacy_init_kwarg_allowed(cls, k)
                                     }
                                     inst = cls(**init_kwargs)
                                     # Keys already consumed by the constructor are
@@ -1323,6 +1326,7 @@ class MapEditor:
                                     # discard the just-constructed nested instances
                                     # and build fresh duplicates for no benefit.
                                     consumed_keys = set(init_kwargs)
+                                    constructed = True
                                 except Exception:
                                     inst = cls.__new__(cls)
                                     try:
@@ -1330,9 +1334,16 @@ class MapEditor:
                                     except Exception:
                                         pass
                                 # Recursively set any remaining attributes not covered
-                                # by the constructor call above.
+                                # by the constructor call above -- only those the
+                                # game's loader would apply too (#651). A dropped
+                                # key is never deserialized, and so is not written
+                                # back by a re-save either; the game ignores it.
                                 for k2, v2 in props.items():
                                     if k2 in consumed_keys:
+                                        continue
+                                    if not map_placeholders.legacy_prop_allowed(
+                                        cls, k2, constructed
+                                    ):
                                         continue
                                     setattr(inst, k2, deserialize_instance(v2))
                                 # Tagged so save_map's serialize_instance_for_save

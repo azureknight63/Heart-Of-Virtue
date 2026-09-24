@@ -19,6 +19,45 @@ const mediaMocks = vi.hoisted(() => ({ isMobile: false }))
 vi.mock('../hooks/useMobile', () => ({ useMobile: () => mediaMocks.isMobile }))
 
 describe('computeStage (cast replay)', () => {
+    // #657: a mystery speaker wears their real portrait id from the first
+    // beat, captioned "???" until a same-id enter op reveals the name.
+    const VOTHA_REVEAL = [
+        {
+            text: 'You are welcome here.',
+            speaker: 'Votha Krr',
+            emotion: 'neutral',
+            enter: [{ id: 'Votha Krr', name: '???', side: 'right', emotion: 'neutral', transition: 'fade' }],
+            in_conversation: true,
+        },
+        {
+            text: 'I am Elder Votha Krr.',
+            speaker: 'Votha Krr',
+            emotion: 'neutral',
+            enter: [{ id: 'Votha Krr', name: 'Votha Krr', side: 'right', emotion: 'neutral', transition: 'instant' }],
+            in_conversation: true,
+        },
+    ]
+
+    it('overwrites a re-entering member name in place (one portrait, new caption)', () => {
+        const before = computeStage(VOTHA_REVEAL, 0, CAST).members.filter((m) => m.id === 'Votha Krr')
+        const after = computeStage(VOTHA_REVEAL, 1, CAST).members.filter((m) => m.id === 'Votha Krr')
+        expect(before).toHaveLength(1)
+        expect(before[0].name).toBe('???')
+        expect(after).toHaveLength(1)
+        expect(after[0].name).toBe('Votha Krr')
+        expect(after[0].enterTransition).toBe('instant')
+    })
+
+    it('never shows the real name before the reveal beat, but uses the real portrait', () => {
+        render(
+            <ConversationStage segments={VOTHA_REVEAL} conversation={{ cast: CAST }} onComplete={vi.fn()} />
+        )
+        expect(screen.queryByText(/Votha Krr/)).toBeNull()
+        expect(screen.getAllByText('???').length).toBeGreaterThan(0)
+        const img = screen.getByAltText(/^\?\?\? \(/)
+        expect(img.getAttribute('src')).toContain('votha-krr')
+    })
+
     it('seeds the initial roster with cast emotions', () => {
         const segments = [{ text: 'intro', in_conversation: true }]
         const { members } = computeStage(segments, 0, CAST)

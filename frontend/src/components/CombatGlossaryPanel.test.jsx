@@ -1,8 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 
 import CombatGlossaryPanel from './CombatGlossaryPanel'
 import { GLOSSARY_ENTRIES, getGlossaryEntry } from '../data/combatGlossary'
+import { accessibility } from '../styles/theme'
+import { stubWideTouchTablet } from '../test/pointerEnvironment'
+import { expectTouchFloorOnEveryButton } from '../test/touchTargetAssertions'
 
 const mocks = vi.hoisted(() => ({ isMobile: false, hasMore: false }))
 
@@ -139,5 +142,33 @@ describe('CombatGlossaryPanel', () => {
     expect(dialog.style.position).toBe('fixed')
     expect(dialog.style.top).toBe('52px')
     expect(dialog.style.borderRadius).toBe('8px 8px 0 0')
+  })
+
+  // Issue #649: the close button's floor was width-gated padding (~36px) and
+  // never the token. useMobile is mocked false here, so this is the wide
+  // touch tablet: only the pointer can grant the floor.
+  describe('44px touch-target floor on a coarse pointer', () => {
+    let env
+    afterEach(() => env?.restore())
+
+    it('floors the close button in both axes', () => {
+      env = stubWideTouchTablet()
+      render(<CombatGlossaryPanel onClose={() => {}} />)
+      const close = screen.getByRole('button', { name: 'Close combat glossary' })
+      expect(close.style.minHeight).toBe(accessibility.touchTarget)
+      expect(close.style.minWidth).toBe(accessibility.touchTarget)
+    })
+
+    it('floors every button in the panel, category chips included', () => {
+      env = stubWideTouchTablet()
+      const { container } = render(<CombatGlossaryPanel onClose={() => {}} />)
+      expectTouchFloorOnEveryButton(container)
+    })
+
+    it('leaves the desktop close button unfloored', () => {
+      render(<CombatGlossaryPanel onClose={() => {}} />)
+      const close = screen.getByRole('button', { name: 'Close combat glossary' })
+      expect(close.style.minHeight).toBe('')
+    })
   })
 })

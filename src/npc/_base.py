@@ -54,7 +54,14 @@ class NPC(LevelSyncMixin, NPCCombatMixin, NPCLootMixin, Combatant):
         "faith", "hidden", "hide_factor", "combat_range", "idle_message",
         "alert_message", "discovery_message", "friend", "is_boss",
     }
+    # The identity/prose block, exp_award, combat_range and loot are
+    # overrides as well as params (#651): the hardcoded zero-arg subclasses
+    # (Slime, CaveBat, Lurker, TheAdjutant, Mynx...) take none of them as
+    # kwargs, and the shipped maps author them per placement -- the arena's
+    # plain "Slime" name, Mynx's empty loot table.
     MAP_AUTHORED_OVERRIDES = {
+        "name", "description", "idle_message", "alert_message",
+        "discovery_message", "exp_award", "combat_range", "loot",
         "hidden", "hide_factor", "combat_delay",
         "maxhp", "damage", "protection", "speed", "finesse", "awareness",
         "maxfatigue", "endurance", "strength", "charisma", "intelligence",

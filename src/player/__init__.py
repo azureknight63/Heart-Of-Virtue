@@ -159,6 +159,7 @@ class Player(
             moves.Rest(self),
             moves.Turn(self),
             moves.UseItem(self),
+            moves.SwapWeapon(self),
             moves.Advance(self),
             moves.Withdraw(self),
             moves.Attack(self),
@@ -292,6 +293,17 @@ maintenant et à l'heure de notre mort. Amen.""",
         # Ensure player starts at full health and fatigue
         self.hp = self.maxhp
         self.fatigue = self.maxfatigue
+
+    def ensure_swap_weapon(self):
+        """Give Jean the Swap Weapon move if he lacks it.
+
+        A Player restored from a save that predates #671 has no SwapWeapon in
+        ``known_moves``, yet free weapon equips are refused mid-fight in its
+        favour. Called when a fight starts, so an old save is never left with
+        no way to change weapons in combat. Idempotent.
+        """
+        if not any(isinstance(m, moves.SwapWeapon) for m in self.known_moves):
+            self.known_moves.append(moves.SwapWeapon(self))
 
     def apply_starting_experience(self, exp_value: int):
         """Apply starting experience to all skill categories and trigger level-ups if needed.

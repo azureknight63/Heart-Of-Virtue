@@ -757,6 +757,11 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                                                 padding: '14px 20px',
                                                 fontSize: '15px',
                                                 backgroundColor: isSelected ? 'rgba(0, 102, 51, 0.4)' : 'rgba(0, 50, 25, 0.2)',
+                                                // The darkened background above overrides GameButton's
+                                                // variant fill, so its text colour must be overridden
+                                                // too: `primary` paints text.inverse (black), which on
+                                                // this near-black ground was unreadable (#659).
+                                                color: isSelected || isSoleOption ? colors.primary : colors.text.highlight,
                                                 opacity: isSubmitting ? 0.6 : 1,
                                             }}
                                         >

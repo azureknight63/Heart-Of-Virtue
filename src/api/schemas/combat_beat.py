@@ -96,6 +96,7 @@ BEAT_FIELDS = (
     "status_changes",
     "log_line",
     "sfx",
+    "results",
 )
 
 # Reasons a combatant leaves the battlefield. ``death`` is the only fatal one
@@ -153,6 +154,51 @@ MAX_BEAT_RESOLUTIONS = 16
 #: substitute them; guarded by tests/test_move_web_animations.py.
 DEFAULT_DAMAGE_ANIMATION = "attack"
 DEFAULT_ANIMATION = "pulse"
+
+# -- Beat results: what the battlefield's floating text shows (#667) ---------
+#
+# One entry per fact a beat produced, per combatant, each keyed by the
+# combatant's wire id:
+#
+#   {"id", "kind": "hp", "delta": <signed int>}         -- "-33 HP" / "+22 HP"
+#   {"id", "kind": "status", "status", "change"}        -- "+ Staggered" /
+#                                                          "- Poisoned"
+#   {"id", "kind": "outcome", "outcome"}                -- "Miss!" / "Parried!"
+#
+# Measured by ApiCombatAdapter off the real combatants around each beat, so the
+# client never infers a number from prose. Default path: they ride on the
+# beat's last log entry (``entry["results"]``). Streaming path: the streamer
+# copies them onto the ``combat:beat`` as ``results``.
+
+#: The ``kind`` vocabulary of a beat result.
+RESULT_KINDS = (
+    "hp",
+    "status",
+    "outcome",
+)
+
+#: The ``change`` vocabulary of a ``status`` result.
+STATUS_RESULT_CHANGES = (
+    "added",
+    "removed",
+)
+
+#: The outcomes that become an ``outcome`` result: the ones that leave no HP
+#: footprint. A hit, glance or crit is already told by its HP number, so an
+#: outcome result for it would only say the same thing twice.
+TEXT_OUTCOMES = (
+    "miss",
+    "parry",
+    "block",
+    "deflect",
+    "absorb",
+)
+
+#: Ceiling on the results one beat may carry. Larger than
+#: MAX_BEAT_RESOLUTIONS because one combatant can produce several (an HP change
+#: and a status or two); anything beyond it is a degenerate beat that would
+#: otherwise flood the battlefield with text.
+MAX_BEAT_RESULTS = 32
 
 
 def _normalize_resolution(resolution):
@@ -232,6 +278,54 @@ def build_sfx_chain(
     return emissions
 
 
+def build_beat_results(before, after, resolutions=()):
+    """The results of one beat, in the shapes documented at ``RESULT_KINDS``.
+
+    ``before`` and ``after`` map a combatant's wire id to ``(hp, statuses)``,
+    ``statuses`` being the set of its player-visible status names. Only ids
+    with a baseline in ``before`` are measured -- a reinforcement arriving this
+    beat has nothing to be compared against -- and a combatant already dead
+    before the beat reports nothing. A combatant that dies in the beat keeps
+    its HP result (the killing blow is the number that matters most) but not
+    the status removals its death caused, which are bookkeeping, not news.
+
+    ``resolutions`` are the beat's ``{"target_id", "outcome"}`` resolutions in
+    the order the engine published them; the ones in ``TEXT_OUTCOMES`` become
+    ``outcome`` results, listed first so they read in the order they happened.
+    """
+    results = []
+    for resolution in resolutions or ():
+        target_id = resolution.get("target_id")
+        outcome = resolution.get("outcome")
+        if target_id is not None and outcome in TEXT_OUTCOMES:
+            results.append({"id": target_id, "kind": "outcome", "outcome": outcome})
+
+    for cid, (curr_hp, curr_statuses) in (after or {}).items():
+        baseline = (before or {}).get(cid)
+        if baseline is None:
+            continue
+        prev_hp, prev_statuses = baseline
+        if prev_hp <= 0:
+            continue
+        # HP actually lost, not the raw hit: an overkill blow reads as the
+        # target's remaining HP (maintainer decision 2026-09-24).
+        delta = int(max(curr_hp, 0) - prev_hp)
+        if delta:
+            results.append({"id": cid, "kind": "hp", "delta": delta})
+        # Sorted: a set's iteration order is arbitrary, and the client stacks
+        # the text in list order.
+        for status in sorted(set(curr_statuses) - set(prev_statuses)):
+            results.append(
+                {"id": cid, "kind": "status", "status": status, "change": "added"}
+            )
+        if curr_hp > 0:
+            for status in sorted(set(prev_statuses) - set(curr_statuses)):
+                results.append(
+                    {"id": cid, "kind": "status", "status": status, "change": "removed"}
+                )
+    return results[:MAX_BEAT_RESULTS]
+
+
 def build_beat(
     seq,
     actor_id,
@@ -245,6 +339,7 @@ def build_beat(
     log_line="",
     has_swing=True,
     outcomes=None,
+    results=None,
 ):
     """Build a ``combat:beat`` payload from structured engine facts.
 
@@ -262,6 +357,9 @@ def build_beat(
     DERIVED from its first entry rather than trusted from the caller — the
     invariant "``outcome`` == the first own resolution" is structural here, not
     a convention the streamer has to remember. See ``build_sfx_chain``.
+
+    ``results`` are the beat's floating-text facts (``build_beat_results``),
+    capped at ``MAX_BEAT_RESULTS``.
     """
     hp_changes = list(hp_changes or [])
     killed = list(killed or [])
@@ -289,6 +387,7 @@ def build_beat(
             has_swing=has_swing,
             outcomes=outcomes,
         ),
+        "results": list(results or [])[:MAX_BEAT_RESULTS],
     }
 
 

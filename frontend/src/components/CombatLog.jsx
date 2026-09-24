@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useId, useMemo } from 'react'
 import DOMPurify from 'dompurify'
-import { colors, spacing, fonts, shadows } from '../styles/theme'
+import { accessibility, colors, spacing, fonts, shadows } from '../styles/theme'
+import CollapsibleSectionHeader from './CollapsibleSectionHeader'
 import GameText from './GameText'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
@@ -158,6 +159,7 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
   )
 
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const entriesRegionId = useId()
   const [height, setHeight] = useState(150)
   const [isResizing, setIsResizing] = useState(false)
   const logRef = useRef(null)
@@ -208,7 +210,9 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
     <div
       ref={logRef}
       style={{
-        height: isCollapsed ? '32px' : allowResize ? `${height}px` : '100%',
+        // Collapsed: the header's 44px floor plus the 1px border top and
+        // bottom, so `overflow: hidden` never clips the toggle (issue #640).
+        height: isCollapsed ? `calc(${accessibility.touchTarget} + 2px)` : allowResize ? `${height}px` : '100%',
         backgroundColor: colors.bg.panelHeavy,
         border: `1px solid ${colors.border.main}`,
         borderRadius: '4px',
@@ -224,26 +228,26 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
           screen, not a request to stop being told what is happening. */}
       <LogAnnouncer entries={visibleEntries} />
 
-      <div
-        onClick={() => setIsCollapsed(!isCollapsed)}
+      <CollapsibleSectionHeader
+        expanded={!isCollapsed}
+        onToggle={() => setIsCollapsed(!isCollapsed)}
+        controlsId={entriesRegionId}
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: `${spacing.xs} ${spacing.md}`,
+          padding: `0 ${spacing.md}`,
           backgroundColor: colors.bg.panel,
           borderBottom: isCollapsed ? 'none' : `1px solid ${colors.border.light}`,
-          cursor: 'pointer',
+          color: colors.secondary,
+          flexShrink: 0,
         }}
       >
-        <GameText variant="secondary" size="xs" weight="bold" style={{ tracking: 'wider', textTransform: 'uppercase' }}>
+        <GameText as="span" variant="secondary" size="xs" weight="bold" style={{ tracking: 'wider', textTransform: 'uppercase' }}>
           Combat Log
         </GameText>
-        <GameText variant="secondary" size="xs">
-          {isCollapsed ? '▶' : '▼'}
-        </GameText>
-      </div>
+      </CollapsibleSectionHeader>
 
+      {/* Always mounted so aria-controls always resolves; the lines inside it
+          come and go. A flex column so the scroller keeps its `flex: 1`. */}
+      <div id={entriesRegionId} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {!isCollapsed && (
         <>
           <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -321,6 +325,7 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
           )}
         </>
       )}
+      </div>
     </div>
   )
 }

@@ -206,9 +206,9 @@ class TestWallInscriptionEdgeCases:
         tile = Mock()
         inscription = WallInscription(player, tile, text="Test")
 
-        with patch.object(inscription, "read") as mock_read:
-            inscription.examine()
-        mock_read.assert_called_once()
+        # #626: a class-level alias IS its target, so an instance
+        # patch of the target can no longer be observed through it.
+        assert type(inscription).examine is type(inscription).read
 
 
 class TestContainerStartOpenProperty:
@@ -815,10 +815,9 @@ class TestPrayerCandleRackUse:
 
         rack = PrayerCandleRack(player=player, tile=tile)
 
-        with patch.object(rack, "pray") as mock_pray:
-            rack.use()
-
-        mock_pray.assert_called_once()
+        # #626: a class-level alias IS its target, so an instance
+        # patch of the target can no longer be observed through it.
+        assert type(rack).use is type(rack).pray
 
 
 class TestStreetLanternInspect:

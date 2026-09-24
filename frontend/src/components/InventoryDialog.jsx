@@ -2,17 +2,34 @@ import { useState, useEffect } from 'react'
 import ItemDetailDialog from './ItemDetailDialog'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
+import WeaponSwapPanel from './WeaponSwapPanel'
 import { colors, spacing } from '../styles/theme'
 import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon, RARITY_RANK, formatWeight, formatWeightRatio } from '../utils/itemUtils'
 import { lookupOr } from '../utils/lookup'
 import { stackDisplayName, stackCountLabel, stackSize, isStackedCount } from '../utils/stackName'
 
 /**
+ * Tabs reachable mid-fight. Consumables always (items are used from there);
+ * Weapons only when the engine offers the Swap Weapon move, whose panel then
+ * replaces the free equip list (#671). Everything else waits for peace.
+ */
+const combatTabKeys = (swapWeapon) => (swapWeapon ? ['consumables', 'weapons'] : ['consumables'])
+
+/**
  * InventoryDialog - Main container for the player's inventory
  * Displays items in categories and allows inspection via ItemDetailDialog
  */
-export default function InventoryDialog({ items, player, onClose, onRefetch, combatMode = false }) {
-  const [activeTab, setActiveTab] = useState(combatMode ? 'consumables' : 'weapons')
+export default function InventoryDialog({
+  items, player, onClose, onRefetch, combatMode = false,
+  swapWeapon = null, canSwapWeapon = false, onSwapWeapon,
+}) {
+  const [selectedTab, setActiveTab] = useState(combatMode ? 'consumables' : 'weapons')
+  // In combat the Weapons tab exists only while the swap move is offered. If
+  // it vanishes while open, show Consumables rather than falling through to
+  // the free equip list the server refuses mid-fight.
+  const activeTab = combatMode && !combatTabKeys(swapWeapon).includes(selectedTab)
+    ? 'consumables'
+    : selectedTab
   const [selectedItem, setSelectedItem] = useState(null)
   const [localInventory, setLocalInventory] = useState(items || player?.inventory || [])
   const [sortStates, setSortStates] = useState({
@@ -84,6 +101,11 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
   }
 
   const categories = categorizeItems(localInventory)
+  const visibleTabs = combatMode
+    ? INVENTORY_TABS.filter(tab => combatTabKeys(swapWeapon).includes(tab.key))
+    : INVENTORY_TABS
+  const showSwapPanel = combatMode && swapWeapon && activeTab === 'weapons'
+  const equippedWeaponName = categories.weapons.owned.find(item => item.is_equipped)?.name
 
   return (
     <>
@@ -175,7 +197,7 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
                   width: '120px',
                   flexShrink: 0
                 }}>
-                  {INVENTORY_TABS.filter(tab => !combatMode || tab.key === 'consumables').map((tab) => {
+                  {visibleTabs.map((tab) => {
                     const count = categories[tab.key].owned.length + categories[tab.key].merchandise.length
                     const isActive = activeTab === tab.key
                     return (
@@ -235,6 +257,14 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
                   flexDirection: 'column',
                   gap: spacing.md,
                 }}>
+                  {showSwapPanel ? (
+                    <WeaponSwapPanel
+                      swapMove={swapWeapon}
+                      equippedName={equippedWeaponName}
+                      canAct={canSwapWeapon}
+                      onSwap={onSwapWeapon}
+                    />
+                  ) : (<>
                   {/* Owned Items */}
                   <div style={{
                     flex: categories[activeTab].merchandise.length > 0 ? '0 1 auto' : 1,
@@ -295,6 +325,7 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
                       </div>
                     </div>
                   )}
+                  </>)}
                 </div>
               </div>
 

@@ -6,7 +6,8 @@ import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import CombatLog, { LOG_ENTRY_COLORS } from './CombatLog';
-import { colors } from '../styles/theme';
+import { accessibility, colors } from '../styles/theme';
+import { expectFoldContract } from '../test/foldContract';
 
 describe('CombatLog', () => {
   // Entry types the ENGINE emits. The fixture used to read
@@ -43,20 +44,20 @@ describe('CombatLog', () => {
 
   it('collapses and expands when header is clicked', () => {
     render(<CombatLog log={mockLog} />);
-    const header = screen.getByText('Combat Log').parentElement;
+    const header = screen.getByRole('button', { name: 'Combat Log' });
 
     // Initially expanded
-    expect(screen.getByText('▼')).toBeDefined();
+    expectFoldContract(header, { expanded: true });
     expect(screen.getByText('Combat started')).toBeDefined();
 
     // Collapse
     fireEvent.click(header);
-    expect(screen.getByText('▶')).toBeDefined();
+    expectFoldContract(header, { expanded: false });
     expect(screen.queryByText('Combat started')).toBeNull();
 
     // Expand
     fireEvent.click(header);
-    expect(screen.getByText('▼')).toBeDefined();
+    expectFoldContract(header, { expanded: true });
     expect(screen.getByText('Combat started')).toBeDefined();
   });
 
@@ -551,6 +552,31 @@ describe('CombatLog', () => {
       expect(style.width).toBe('1px');
       expect(style.height).toBe('1px');
       expect(style.overflow).toBe('hidden');
+    });
+  });
+
+  // Issue #640: the header was a `<div onClick>` — not focusable, no
+  // aria-expanded, and a ▼/▶ swap as the only state signal.
+  describe('fold contract (issue #640)', () => {
+    const header = () => screen.getByRole('button', { name: 'Combat Log' });
+
+    it('folds a region that holds the entries and survives collapse', () => {
+      render(<CombatLog log={mockLog} />);
+      const region = expectFoldContract(header(), { expanded: true });
+      expect(region.contains(screen.getByTestId('combat-log-entries'))).toBe(true);
+
+      fireEvent.click(header());
+      const folded = expectFoldContract(header(), { expanded: false });
+      expect(folded).toBe(region);
+      expect(screen.queryByTestId('combat-log-entries')).toBeNull();
+    });
+
+    it('does not clip the 44px header when collapsed', () => {
+      const { container } = render(<CombatLog log={mockLog} />);
+      fireEvent.click(header());
+      // jsdom folds `calc(44px + 2px)` to `calc(46px)`; read the number.
+      const collapsed = parseFloat(container.firstChild.style.height.replace(/^calc\(/, ''));
+      expect(collapsed).toBeGreaterThan(parseFloat(accessibility.touchTarget));
     });
   });
 });

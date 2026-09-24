@@ -205,11 +205,15 @@ class Item:
         "hidden", "hide_factor", "skills", "merchandise", "enchantment_level",
         "aliases",
     }
-    MAP_AUTHORED_OVERRIDES = {"hidden", "hide_factor", "name", "description", "announce"}
+    MAP_AUTHORED_OVERRIDES = {
+        "hidden", "hide_factor", "name", "description", "announce",
+        "discovery_message", "value", "weight",
+    }
 
     #: Issue #632: False marks an item the random merchant-stock roller must
     #: never select -- story items, quest keys, puzzle ingredients and lore
-    #: documents. Read by MerchantShopMixin._fill_remaining_stock. A per-class
+    #: documents. Read through is_randomly_selectable (issue #647), which every
+    #: random Item-class enumerator -- restock, shop conditions, loot -- calls. A per-class
     #: flag instead of a family ban because the family tree does not separate
     #: trade goods from story items: Commodity (Crystals, MineralPowder) is
     #: Special, and JeanWeddingBand is Accessory. always_stock and
@@ -272,6 +276,41 @@ class Item:
                 self.interactions.append("equip")
         if enchantment_level > 0:
             functions.add_random_enchantments(self, enchantment_level)
+
+    def __setstate__(self, state):
+        """Restore pickled state, then drop a pre-#624 baked stack count.
+
+        Behaves like pickle's default BUILD (a ``__dict__`` update plus any
+        slot state). The one addition (#643): a stack saved before #624 carries
+        ``stack_grammar()``'s old "Mineral Powder x3" name, and once it merges
+        with a fresh unit the count moves on and the suffix can never be
+        recognised again. So it is stripped here, on load, under the exact rule
+        ``stack_base_name`` applies -- only when the suffix is the digits of the
+        stack's own ``count``.
+
+        Stripping, not resetting to the class's default name: ``name`` is only
+        set in ``__init__`` (there is no class-level default to read), so a
+        reset would mean constructing a throwaway instance on every load, and
+        it would also overwrite any name deliberately customised after
+        construction.
+        """
+        slotstate = None
+        if isinstance(state, tuple) and len(state) == 2:
+            state, slotstate = state
+        if state:
+            self.__dict__.update(state)
+        if slotstate:
+            for key, value in slotstate.items():
+                setattr(self, key, value)
+        if "count" in self.__dict__ and isinstance(self.__dict__.get("name"), str):
+            # A save is untrusted input: a malformed count (inf, a string)
+            # keeps the restored name rather than aborting the whole load.
+            try:
+                self.name = stack_base_name(self)
+            except Exception:
+                logging.getLogger(__name__).debug(
+                    "kept baked name on %s: unreadable count", type(self).__name__, exc_info=True
+                )
 
     def __str__(self) -> str:
         return "{}\n=====\n{}\nValue: {}\n".format(
@@ -412,6 +451,49 @@ class Item:
             return False
         return True
 
+    def use_where_it_lies(self, player: "Player", verb: str = "use") -> None:
+        """Use one unit of this stack where it lies: on the floor, or in an
+        open container.
+
+        The INTERACT panel offers a consumable's own verbs (DRINK/USE, #665)
+        wherever it lies, but ``use`` consumes from the user's inventory. On a
+        unit outside the pack the effect applied, the removal then failed, and
+        the stack stayed put to be used again forever. So one unit is moved
+        into the pack and used there -- the only way a consumable is
+        consumed. Goods in a shop must be bought first.
+        """
+        room = getattr(player, "current_room", None)
+        if any(hasattr(npc, "shop_name") for npc in getattr(room, "npcs_here", None) or []):
+            narrate(f"{player.name} will have to pay for the {self.name} first.")
+            return
+
+        def carried():
+            return sum(
+                getattr(i, "count", 1) for i in player.inventory
+                if type(i) is type(self) and not getattr(i, "merchandise", False)
+            )
+
+        before = carried()
+        container = getattr(self, "_parent_container", None)
+        if container is not None:
+            from src.inventory_utils import transfer_item
+
+            transfer_item(container, player, self, 1)
+        else:
+            self.take(player, quantity=1)
+        if carried() <= before:
+            # The unit never reached the pack (too heavy to carry): use
+            # nothing -- above all not one Jean was already carrying.
+            return
+        unit = next(
+            (i for i in player.inventory if i is self),
+            None,
+        ) or next(  # a partial take split off a new unit, maybe merged into a pack stack
+            i for i in player.inventory
+            if type(i) is type(self) and not getattr(i, "merchandise", False)
+        )
+        getattr(unit, verb)(player)
+
     def take(self, player: "Player", quantity: Optional[int] = None) -> None:
         """Take the item from the ground."""
         # An item is only real shop goods when a genuine merchant NPC is
@@ -541,6 +623,33 @@ class Item:
             functions.refresh_stat_bonuses(player)
 
 
+def is_randomly_selectable(cls: Any) -> bool:
+    """Whether a random roll over the item registry may ever pick ``cls``.
+
+    Issue #647: the single policy every reflective ``Item``-class enumerator
+    applies -- merchant restock (``MerchantShopMixin._fill_remaining_stock``),
+    the shop-condition class pick (``ShopCondition.random_item_base_class``)
+    and loot (``loot_tables.Loot.random_equipment``). A new enumerator calls
+    this rather than re-deriving the rule, so it inherits any change to it.
+
+    True for a proper ``Item`` subclass whose inherited ``stockable`` flag is
+    set; False for ``Item`` itself, non-``Item`` classes, and story items,
+    quest keys and lore documents (``stockable = False``). Authored lists
+    (``always_stock``, ``unique_item_factories``, explicit candidates) are a
+    deliberate choice and do not consult it. Enumerator-specific filters --
+    the shop's abstract-base exclusions, loot's level match -- are applied
+    on top, not folded in here.
+    """
+    try:
+        return (
+            cls is not Item
+            and issubclass(cls, Item)
+            and bool(getattr(cls, "stockable", True))
+        )
+    except TypeError:
+        return False
+
+
 class Gold(Item):
     amt: int
 
@@ -548,6 +657,9 @@ class Gold(Item):
     # functions.randomize_amount) -- not the rolled result for a range, same
     # non-determinism-is-the-point behavior as enchantment_level.
     MAP_AUTHORED_PARAMS = {"amt"}
+    #: The stack size itself: shipped legacy placements author ``count``
+    #: (Verdette's 40- and 20-gold pouches) beside a stale ``amt`` of 1.
+    MAP_AUTHORED_OVERRIDES = {"count"}
 
     def __init__(self, amt: int = 1) -> None:
         self.amt = functions.randomize_amount(amt)
@@ -593,6 +705,12 @@ class Weapon(Item):
     subtype: str
     wpnrange: Tuple[int, int]
     twohand: bool
+
+    #: A placed weapon's stat block (#651): every leaf hardcodes it in a
+    #: zero-arg __init__, so a per-placement tweak arrives by setattr.
+    MAP_AUTHORED_OVERRIDES = {
+        "damage", "str_req", "fin_req", "str_mod", "fin_mod", "wpnrange",
+    }
 
     def __init__(
         self,
@@ -678,6 +796,9 @@ class ProtectiveGear(Item):
     str_mod: Union[int, float]
     weight: Union[int, float]
     isequipped: bool
+
+    #: See Weapon: a placed piece's protection reaches it by setattr (#651).
+    MAP_AUTHORED_OVERRIDES = {"protection"}
     maintype: str
     subtype: str
 
@@ -3412,11 +3533,15 @@ class Book(Special):
         #611's book read blank whenever the server started anywhere else. A
         failure is logged for us and reads as a blank book to the player:
         the path and the OS error are not the game's prose.
+
+        Issue #648: the gate is falsiness, not ``is None``. The legacy map
+        loader applies an authored ``"text": ""`` as a post-construction
+        ``setattr`` (``MAP_AUTHORED_ATTR_ALIASES`` routes it to ``_text``),
+        after ``__init__`` has already deferred to the file; an ``is None``
+        gate never opened it, and nothing logged.
         """
-        if self._text is None and self.text_file_path:
-            path = Path(self.text_file_path)
-            if not path.is_absolute():
-                path = _REPO_ROOT / path
+        if not self._text and self.text_file_path:
+            path = self._resolve_text_path()
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     self._text = f.read()
@@ -3424,6 +3549,20 @@ class Book(Special):
                 logger.warning("Could not load book text from %s: %s", path, e)
                 self._text = "This book is mysteriously blank."
         return self._text if self._text else "This book is mysteriously blank."
+
+    def _resolve_text_path(self) -> Path:
+        """The file ``text_file_path`` names, as the engine opens it.
+
+        Issue #648: a backslash is read as a separator. Maps are authored on
+        Windows, where ``src\\resources\\books\\x.txt`` opens; on Linux --
+        production -- the same string is one filename with no directory, and
+        the book read blank. A relative path is anchored at the repo root
+        (#611), never at the process's working directory.
+        """
+        path = Path(self.text_file_path.replace("\\", "/"))
+        if not path.is_absolute():
+            path = _REPO_ROOT / path
+        return path
 
     @text.setter
     def text(self, value: Optional[str]) -> None:

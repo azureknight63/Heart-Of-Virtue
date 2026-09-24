@@ -628,6 +628,8 @@ class TestFleeCombatCleanup:
 
     def test_flee_removes_combat_adapter(self, game_service, in_combat_player):
         in_combat_player._combat_adapter = MagicMock()
+        # Jean's turn, nothing winding up: fleeing mid-windup is refused.
+        in_combat_player._combat_adapter._abortable_move.return_value = None
         game_service.flee_combat(in_combat_player)
         assert not hasattr(in_combat_player, "_combat_adapter")
 
@@ -736,6 +738,7 @@ class TestFleeCombatCleanup:
         adapter = MagicMock()
         adapter.awaiting_input = True
         adapter.input_type = "move_selection"
+        adapter._abortable_move.return_value = None  # nothing winding up
         in_combat_player._combat_adapter = adapter
 
         with patch.object(game_service, "flee_combat", wraps=game_service.flee_combat) as spy:

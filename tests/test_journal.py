@@ -370,6 +370,20 @@ class TestSceneRecording:
             {"speaker": None, "text": "Narration."},
         ]
 
+    def test_scene_lines_record_the_displayed_name_not_the_portrait_id(self):
+        # #657: a speaker staged under a name override ("???" until his
+        # introduction) must not have his real id leak into the transcript.
+        conversation = {"cast": [{"id": "Jean", "name": "Jean"}]}
+        segments = [
+            {"text": "Welcome.", "speaker": "Votha Krr",
+             "enter": [{"id": "Votha Krr", "name": "???"}]},
+            {"text": "Hello.", "speaker": "Jean"},
+            {"text": "I am Votha Krr.", "speaker": "Votha Krr",
+             "enter": [{"id": "Votha Krr", "name": "Votha Krr"}]},
+        ]
+        lines = GameService._scene_lines("ignored", segments, conversation)
+        assert [ln["speaker"] for ln in lines] == ["???", "Jean", "Votha Krr"]
+
     def test_scene_lines_fall_back_to_splitting_the_flattened_prose(self):
         lines = GameService._scene_lines("One.\nTwo.", [])
         assert lines == [

@@ -88,6 +88,13 @@ export const combat = {
       payload = {
         move_type: 'flee'
       }
+    } else if (actionType === 'swap_weapon') {
+      // The Swap Weapon move, with the inventory id of the weapon to draw
+      // (#671). Priced in beats by the engine, unlike /inventory/equip.
+      payload = {
+        move_type: 'swap_weapon',
+        item_id: params.item_id
+      }
     }
 
     return apiClient.post('/combat/move', payload)

@@ -110,6 +110,11 @@ NPC_EDITABLE_STATS = (
 )
 
 
+# Upper bound on a pinned loot drop's quantity: enough for any harness
+# scenario, small enough that a typo cannot flood a tile with objects.
+MAX_PINNED_LOOT_QTY = 99
+
+
 class TheAdjutant(Friend):
     """Dream-space combat preparation NPC.
 
@@ -394,19 +399,61 @@ class TheAdjutant(Friend):
         npcs.clear()
         return {"success": True, "cleared": count}
 
-    def set_combatant_stats(self, player, arena, index, stats):
-        """Edit stats on an NPC already present in an arena tile."""
+    def _arena_combatant(self, player, arena, index):
+        """``(npc, None)`` for the NPC at ``index`` on an arena tile, or
+        ``(None, error result)`` when the arena, tile or index is bad."""
         coords = self._resolve_arena(arena)
         if coords is None:
-            return {"success": False, "error": f"Unknown arena '{arena}'."}
+            return None, {"success": False, "error": f"Unknown arena '{arena}'."}
         tile = self._get_arena_tile(player, coords)
         if tile is None:
-            return {"success": False, "error": f"Tile {coords} not loaded."}
+            return None, {"success": False, "error": f"Tile {coords} not loaded."}
         npcs = getattr(tile, "npcs_here", [])
         if not (0 <= int(index) < len(npcs)):
-            return {"success": False, "error": "Invalid combatant index."}
+            return None, {"success": False, "error": "Invalid combatant index."}
+        return npcs[int(index)], None
 
-        target = npcs[int(index)]
+    def pin_combatant_loot(self, player, arena, index, item, qty=1):
+        """Make an arena NPC certain to drop ``qty`` of item class ``item``.
+
+        Replaces the NPC's loot table with that one entry at 100% chance
+        (``roll_loot`` drops on ``chance >= randint(0, 100)``), so a harness
+        fight's drop is known in advance (#642). ``item`` must name a
+        concrete ``src.items.Item`` subclass: ``spawn_item`` resolves the name
+        with a bare getattr on the module, so nothing else may reach it.
+        """
+        import src.items as items_mod
+
+        target, error = self._arena_combatant(player, arena, index)
+        if error:
+            return error
+        item_cls = getattr(items_mod, item, None) if isinstance(item, str) else None
+        if not (
+            isinstance(item_cls, type)
+            and issubclass(item_cls, items_mod.Item)
+            and item_cls is not items_mod.Item
+        ):
+            return {"success": False, "error": f"'{item}' is not an item class."}
+        if isinstance(qty, bool) or not isinstance(qty, int) or not (
+            1 <= qty <= MAX_PINNED_LOOT_QTY
+        ):
+            return {
+                "success": False,
+                "error": f"qty must be an integer from 1 to {MAX_PINNED_LOOT_QTY}.",
+            }
+        target.loot = {item: {"chance": 100, "qty": qty}}
+        return {
+            "success": True,
+            "name": getattr(target, "name", "?"),
+            "item": item,
+            "qty": qty,
+        }
+
+    def set_combatant_stats(self, player, arena, index, stats):
+        """Edit stats on an NPC already present in an arena tile."""
+        target, error = self._arena_combatant(player, arena, index)
+        if error:
+            return error
         updated = {}
         for stat, value in (stats or {}).items():
             if stat not in NPC_EDITABLE_STATS:

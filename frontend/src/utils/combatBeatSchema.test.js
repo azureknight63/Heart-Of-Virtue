@@ -9,6 +9,10 @@ import {
   SFX_KINDS,
   DEPARTURE_REASONS,
   MAX_BEAT_RESOLUTIONS,
+  RESULT_KINDS,
+  STATUS_RESULT_CHANGES,
+  TEXT_OUTCOMES,
+  MAX_BEAT_RESULTS,
 } from './combatBeatSchema';
 
 // This mirror is kept in parity with src/api/schemas/combat_beat.py by the
@@ -35,7 +39,17 @@ describe('combatBeatSchema', () => {
       'status_changes',
       'log_line',
       'sfx',
+      'results',
     ]);
+  });
+
+  it('declares the beat-result vocabulary the floating text reads (#667)', () => {
+    expect(RESULT_KINDS).toEqual(['hp', 'status', 'outcome']);
+    expect(STATUS_RESULT_CHANGES).toEqual(['added', 'removed']);
+    expect(TEXT_OUTCOMES).toEqual(['miss', 'parry', 'block', 'deflect', 'absorb']);
+    // Every text outcome is a real outcome.
+    expect(TEXT_OUTCOMES.every((o) => OUTCOMES.includes(o))).toBe(true);
+    expect(MAX_BEAT_RESULTS).toBe(32);
   });
 
   it('declares the departure reasons', () => {

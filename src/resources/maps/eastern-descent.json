@@ -44,6 +44,9 @@
                         "enter",
                         "west"
                     ],
+                    "crossing_keywords": [
+                        "west"
+                    ],
                     "events": [],
                     "tile": null,
                     "player": null,

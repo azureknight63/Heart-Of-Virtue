@@ -750,6 +750,42 @@ class TestMapEditorIntegration:
         assert "__class__" in resaved_obj  # still legacy shape, not force-migrated
         assert resaved_obj["__module__"] == "objects"  # bare, not "src.objects"
 
+    def test_load_map_applies_only_accepted_legacy_props(self, map_generator_module, tmp_path):
+        """Issue #651: the editor's legacy branch is the game loader's twin
+        and applies the same rule (map_placeholders.legacy_prop_allowed). A
+        prop shadowing a class default is dropped; an authored value the game
+        would apply -- through the constructor or a declared override -- is
+        kept, so a re-save does not lose it."""
+        import json
+
+        map_json = {
+            "(0, 0)": {
+                "events": [], "npcs": [],
+                "items": [{"__class__": "Book", "__module__": "items",
+                           "props": {"name": "Ledger", "stockable": True}}],
+                "objects": [{"__class__": "WallInscription", "__module__": "objects",
+                             "props": {"name": "Old Sign", "text": "hi",
+                                       "announce": "A sign.", "__class__": "x"}}],
+            }
+        }
+        mapfile = tmp_path / "legacy.json"
+        mapfile.write_text(json.dumps(map_json))
+
+        editor = map_generator_module.MapEditor.__new__(map_generator_module.MapEditor)
+        editor.set_status = lambda msg: None
+        editor.update_map_label = lambda: None
+        editor.draw_map = lambda: None
+        editor.selected_tile = None
+        editor.load_map(str(mapfile))
+
+        book = editor.map_data[(0, 0)]["items"][0]
+        assert book.name == "Ledger"
+        assert "stockable" not in vars(book)
+        sign = editor.map_data[(0, 0)]["objects"][0]
+        assert type(sign).__name__ == "WallInscription"
+        assert sign.text == "hi"
+        assert sign.announce == "A sign."
+
     def test_load_map_rejects_malicious_legacy_class(self, map_generator_module, tmp_path):
         import json
 

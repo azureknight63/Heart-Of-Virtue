@@ -157,7 +157,9 @@ class ShopCondition:
         """
         return []
 
-    # Utility for choosing random subclass of Item (excluding Item itself)
+    # Utility for choosing random subclass of Item (excluding Item itself).
+    # Explicit ``candidates`` are the caller's authored choice and are used
+    # as given; only the reflective default applies the registry policy.
     @staticmethod
     def random_item_base_class(
         candidates: Optional[Sequence[Type[Item]]] = None,
@@ -167,12 +169,10 @@ class ShopCondition:
                 import src.items as items_module  # local import to avoid cycles
 
                 subclasses: List[Type[Item]] = []
+                # Issue #647: the shared registry policy, so a discount can
+                # never target a story item, quest key or lore document.
                 for _, obj in inspect.getmembers(items_module, inspect.isclass):
-                    if (
-                        obj is not Item
-                        and isinstance(obj, type)
-                        and issubclass(obj, Item)
-                    ):
+                    if items_module.is_randomly_selectable(obj):
                         subclasses.append(obj)
             except Exception:  # pragma: no cover - reflection failure fallback
                 subclasses = []

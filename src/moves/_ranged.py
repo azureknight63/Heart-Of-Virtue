@@ -9,6 +9,7 @@ import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
+    UnavailableReason,
     apply_glancing_blow,
     resolve_pipeline_strike,
     Move,
@@ -184,11 +185,6 @@ class ShootBow(
         return hit_chance
 
     def viable(self):
-        viability = False
-        has_bow = False
-        enemy_in_range = False
-        has_arrows = False
-
         # Defensive check: ensure self.user is actually an NPC object with combat_proximity
         if not hasattr(self.user, "combat_proximity"):
             return False
@@ -196,28 +192,42 @@ class ShootBow(
         if not getattr(self.user, "eq_weapon", None):
             return False
 
-        if self.user.eq_weapon.subtype == "Bow":
-            has_bow = True
+        # The bow gate first: without a bow the range probe below has nothing
+        # to measure.
+        if self.user.eq_weapon.subtype != "Bow":
+            return False
 
+        return self._enemy_in_range() and self._has_arrows()
+
+    def _enemy_in_range(self):
+        """Some combatant stands inside the bow's effective range."""
         range_min = self.mvrange[0]
-        effective_range = self.get_effective_range_max(self.user)
-        if effective_range is not None:
-            range_max = effective_range
-            for enemy, distance in self.user.combat_proximity.items():
-                if range_min <= distance <= range_max:
-                    enemy_in_range = True
-                    break
+        range_max = self.get_effective_range_max(self.user)
+        if range_max is None:
+            return False
+        return any(
+            range_min <= distance <= range_max
+            for distance in self.user.combat_proximity.values()
+        )
 
-        if hasattr(self.user, "inventory"):
-            for item in self.user.inventory:
-                if hasattr(item, "subtype"):
-                    if item.subtype == "Arrow":
-                        has_arrows = True
-                        break
+    def _has_arrows(self):
+        """At least one arrow in the user's pack."""
+        return any(
+            getattr(item, "subtype", None) == "Arrow"
+            for item in getattr(self.user, "inventory", ())
+        )
 
-        if has_bow and enemy_in_range and has_arrows:
-            viability = True
-        return viability
+    def _unavailability_code(self):
+        if not hasattr(self.user, "combat_proximity"):
+            return None
+        code = super()._unavailability_code()
+        if code is not None:
+            return code
+        if not self._has_arrows():
+            return UnavailableReason.NO_AMMUNITION
+        if not self._enemy_in_range():
+            return UnavailableReason.NO_ENEMY_IN_REACH
+        return None
 
     @staticmethod
     def _select_arrow(player):
@@ -284,9 +294,15 @@ class ShootBow(
             return
         self.arrow = arrow
         wpn = getattr(player, "eq_weapon", None)
-        if wpn is None:
+        # No bow, no bow range. Anything else in hand (Fists included) has no
+        # `range_base`, and evaluate() folds the arrow every beat for every
+        # known move -- so a Jean who learned this with a bow, then switched
+        # weapons with arrows still in the pack, raised AttributeError out of
+        # the move's own constructor and out of viable() (#627).
+        range_base = getattr(wpn, "range_base", None)
+        if range_base is None:
             return
-        self.base_range = wpn.range_base * arrow.range_base_modifier
+        self.base_range = range_base * arrow.range_base_modifier
         self.decay = self._decay_for(player, arrow) or 0
         # in case the arrow has a different base damage type than Piercing
         self.base_damage_type = items.get_base_damage_type(arrow)
@@ -504,6 +520,11 @@ class Hawkeye(Move):
             return False
         wpn = getattr(self.user, "eq_weapon", None)
         return wpn is not None and getattr(wpn, "subtype", None) == "Bow"
+
+    def _unavailability_code(self):
+        if not getattr(self.user, "in_combat", False):
+            return UnavailableReason.NOT_IN_COMBAT
+        return super()._unavailability_code()
 
     def execute(self, player):
         narrate(self.stage_announce[1])

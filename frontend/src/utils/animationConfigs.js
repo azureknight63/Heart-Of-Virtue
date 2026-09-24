@@ -26,7 +26,9 @@
  *     { glow, scale }  fixed styling (buff/debuff/drain style effects)
  *   shake         true → target cell shakes during the impact phase
  *   effect        overlay drawn by the battlefield effects layer:
- *     kind          'projectile' | 'ring' | 'rise' | 'drain'
+ *     kind          'projectile' | 'ring' | 'rise' | 'drain' — plus 'floatText',
+ *                   which no config declares: floatTextEffectFor() builds one
+ *                   per engine result (#667) and useFloatingCombatText plays it
  *     phase         phase during which the overlay plays
  *     color         primary CSS color of the overlay
  *     size          ring end-radius / particle size multiplier (default 1)
@@ -36,6 +38,8 @@
  *                 animation's outcome (hit/glance/miss/parry/...) at play time
  *                 through impactSfxFor()
  */
+import { colors } from '../styles/theme';
+import { STATUS_RESULT_CHANGES, TEXT_OUTCOMES } from './combatBeatSchema';
 
 /**
  * Map an attack outcome to the corresponding impact SFX cue name.
@@ -104,6 +108,71 @@ export const strikeFlashFor = (outcome) => {
       };
     default:
       return {};
+  }
+};
+
+/** How long one floating combat text rises and fades (ms, at 1x speed). */
+export const FLOAT_TEXT_MS = 1200;
+
+/** The single phase a floating text plays in (see floatTextEffectFor). */
+export const FLOAT_TEXT_PHASE = 'float';
+
+/** Longest status name a floating text spells out before truncating. */
+export const FLOAT_TEXT_MAX_STATUS_CHARS = 20;
+
+/** Words for the outcomes the engine reports as text, not as an HP number. */
+const OUTCOME_WORDS = {
+  miss: 'Miss!',
+  parry: 'Parried!',
+  block: 'Blocked!',
+  deflect: 'Deflected!',
+  absorb: 'Absorbed!',
+};
+
+/**
+ * The floating combat text for ONE engine beat result (#667): "-33 HP" in
+ * red, "+22 HP" in green, "+ Staggered" in amber, "- Poisoned" in green,
+ * "Miss!" in light grey, "Parried!" in teal. Returns a `floatText` effect —
+ * `{ kind, phase, text, color }` — for BattlefieldGrid's effects layer, or
+ * null for anything that cannot be worded truthfully.
+ *
+ * Declared here beside strikeFlashFor for the same reason: an outcome's look
+ * lives in one table. The words carry the meaning on their own (the colour
+ * only reinforces them), and every colour is a theme token.
+ *
+ * Results ride in the combat log, which rides in the pickled save, so each
+ * field is validated rather than trusted: the kind and change must be in the
+ * wire vocabulary (combatBeatSchema), an HP delta must be a finite, non-zero
+ * whole number after truncation, and a status name is capped in length.
+ */
+export const floatTextEffectFor = (result) => {
+  if (!result || typeof result !== 'object') return null;
+  const effect = (text, color) => ({ kind: 'floatText', phase: FLOAT_TEXT_PHASE, text, color });
+  switch (result.kind) {
+    case 'hp': {
+      const delta = Math.trunc(result.delta);
+      if (typeof result.delta !== 'number' || !Number.isFinite(delta) || delta === 0) return null;
+      return delta < 0
+        ? effect(`-${-delta} HP`, colors.danger)
+        : effect(`+${delta} HP`, colors.success);
+    }
+    case 'status': {
+      if (typeof result.status !== 'string') return null;
+      const name = result.status.trim().slice(0, FLOAT_TEXT_MAX_STATUS_CHARS);
+      if (!name || !STATUS_RESULT_CHANGES.includes(result.change)) return null;
+      return result.change === 'added'
+        ? effect(`+ ${name}`, colors.warning)
+        : effect(`- ${name}`, colors.success);
+    }
+    case 'outcome': {
+      if (!TEXT_OUTCOMES.includes(result.outcome)) return null;
+      return effect(
+        OUTCOME_WORDS[result.outcome],
+        result.outcome === 'miss' ? colors.text.main : colors.teal
+      );
+    }
+    default:
+      return null;
   }
 };
 

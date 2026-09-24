@@ -248,10 +248,16 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             else:
                 return value
 
-        # Recursively deserialize all props
-        props = {
-            k: recursive_deserialize(v, _depth + 1) for k, v in props.items()
-        }
+        # Props are deserialized on demand, once each: only a key the class
+        # accepts -- as a constructor kwarg or a declared override -- ever
+        # builds the nested engine instances it names (#651). A dropped key's
+        # payload is never constructed, not just never attached.
+        resolved_props = {}
+
+        def prop(key):
+            if key not in resolved_props:
+                resolved_props[key] = recursive_deserialize(props[key], _depth + 1)
+            return resolved_props[key]
 
         try:
             # Map data stores bare module names (validated + gated above); import
@@ -268,7 +274,13 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             try:
                 sig = inspect.signature(cls.__init__)
                 pnames = [p.name for p in sig.parameters.values() if p.name != "self"]
-                init_kwargs = {k: v for k, v in props.items() if k in pnames}
+                # The same rule as the setattr sweep below (#651): an
+                # undeclared constructor param, or an engine back-reference,
+                # never reaches __init__ from map data.
+                init_kwargs = {
+                    k: prop(k) for k in props
+                    if k in pnames and map_placeholders.legacy_init_kwarg_allowed(cls, k)
+                }
                 # If 'player' is a parameter, pass self.player
                 if "player" in pnames and "player" not in init_kwargs:
                     init_kwargs["player"] = self.player
@@ -285,7 +297,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 ):
                     init_kwargs["tile"] = tile
                 inst = cls(**init_kwargs)
+                constructed = True
             except Exception:
+                constructed = False
                 inst = cls.__new__(cls)
                 try:
                     cls.__init__(inst)  # type: ignore
@@ -311,13 +325,17 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 inst, tile, props.get(map_placeholders._LEVEL_OVERRIDE_KEY)
             )
 
-            # Apply remaining props as attributes
-            for k, v in props.items():
+            # Apply the remaining props the class accepts. Every other key is
+            # dropped silently, exactly as instantiate_placeholder drops an
+            # undeclared override: map JSON is attacker-influenceable, and an
+            # unfiltered setattr let it shadow any class-level default per
+            # instance (#651). See map_placeholders.legacy_prop_allowed.
+            for k in props:
                 try:
                     if k == map_placeholders._LEVEL_OVERRIDE_KEY and spawn_level_applied:
                         continue
                     # Skip setting player or tile if they're null - let runtime set these
-                    if k in ("player", "tile") and v is None:
+                    if k in ("player", "tile") and props[k] is None:
                         continue
                     # A prop may set data, never replace behaviour the class
                     # declares: handlers resolve from the class but call
@@ -329,6 +347,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                             "it would replace behaviour the class declares"
                         )
                         continue
+                    if not map_placeholders.legacy_prop_allowed(cls, k, constructed):
+                        continue
+                    v = prop(k)
                     if (
                         k == "inventory"
                         and hasattr(inst, "inventory")

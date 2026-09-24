@@ -49,7 +49,7 @@ from src.api.combat_adapter import (
     TOO_FAR_REASON,
 )
 import src.items as items
-from src.moves import Attack
+from src.moves import UNAVAILABILITY_TEXT, Attack
 from src.moves import _base as moves_base
 from src.player import Player
 
@@ -60,6 +60,10 @@ _MOVES_BASE_PY = _ROOT / "src" / "moves" / "_base.py"
 _MOVES_MOVEMENT_PY = _ROOT / "src" / "moves" / "_movement.py"
 _MOVES_UTILITY_PY = _ROOT / "src" / "moves" / "_utility.py"
 _THIS_FILE = pathlib.Path(__file__)
+
+#: Every refusal sentence a locked move card can carry verbatim (#627: one
+#: mapping in the engine, shipped by the adapter).
+_ENGINE_REFUSALS = frozenset(UNAVAILABILITY_TEXT.values())
 
 
 def _glossary_source():
@@ -524,7 +528,9 @@ class TestGlossaryTermsMatchTheEngineWording:
         glossary's `range` link riding on it, and nothing fails.
 
         Greps the literal out of the JS rather than importing it: there is no
-        JS runtime here, and the value is the whole point.
+        JS runtime here, and the value is the whole point. The Python side is
+        the engine's one mapping of refusal sentences (#627), not a grep of
+        the adapter's source: the sentences moved there.
         """
         js = (
             _ROOT / "frontend" / "src" / "utils" / "combatMoveStatus.js"
@@ -536,10 +542,7 @@ class TestGlossaryTermsMatchTheEngineWording:
             "NO_REACHABLE_TARGET_REASON is no longer a single-quoted literal "
             "in combatMoveStatus.js -- update this grep, do not delete it."
         )
-        adapter_src = (
-            _ROOT / "src" / "api" / "combat_adapter.py"
-        ).read_text(encoding="utf-8")
-        assert f'"{match.group(1)}"' in adapter_src, (
+        assert match.group(1) in _ENGINE_REFUSALS, (
             f"the client's range refusal {match.group(1)!r} is not a string "
             "the adapter emits any more; the two have drifted."
         )
@@ -590,15 +593,12 @@ class TestGlossaryTermsMatchTheEngineWording:
         """
         quoted = re.findall(r'\\"([^"]+)\\"|"([^"]+)"', _entry_text("distance"))
         quoted = {a or b for a, b in quoted}
-        adapter_source = (
-            _ROOT / "src" / "api" / "combat_adapter.py"
-        ).read_text(encoding="utf-8")
         for phrase in quoted:
             if "range" not in phrase.lower():
                 continue
-            assert f'"{phrase}"' in adapter_source, (
-                f"the Distance & reach entry quotes {phrase!r}, which "
-                "src/api/combat_adapter.py no longer emits."
+            assert phrase in _ENGINE_REFUSALS, (
+                f"the Distance & reach entry quotes {phrase!r}, which is no "
+                "longer a sentence in the engine's UNAVAILABILITY_TEXT."
             )
 
 

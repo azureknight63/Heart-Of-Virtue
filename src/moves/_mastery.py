@@ -5,6 +5,7 @@ import random
 import src.states as states
 import src.functions as functions
 from ._base import (
+    UnavailableReason,
     Move,
     OUTCOME_ABSORB,
     OUTCOME_HIT,
@@ -103,6 +104,28 @@ def _in_range(move):
         range_min <= distance <= range_max
         for _, distance in move._hostiles_in_proximity()
     )
+
+
+def _mastery_unavailability(move, stat_val):
+    """Why a mastery gated on ``stat_val`` is refused, or None (#627).
+
+    The two gates every mastery's ``viable()`` opens with, in the same order:
+    combat, then ``_is_highest`` -- where a tie for the top counts as not
+    highest, which is why the sentence says "single highest".
+    """
+    if not getattr(move.user, "in_combat", False):
+        return UnavailableReason.NOT_IN_COMBAT
+    if not _is_highest(move.user, stat_val):
+        return UnavailableReason.ATTRIBUTE_NOT_HIGHEST
+    return None
+
+
+def _striking_mastery_unavailability(move, stat_val):
+    """``_mastery_unavailability`` plus the reach gate of the three strikes."""
+    code = _mastery_unavailability(move, stat_val)
+    if code is not None or _in_range(move):
+        return code
+    return UnavailableReason.NO_ENEMY_IN_REACH
 
 
 def _mastery_strike_power(move, default=None):
@@ -207,6 +230,9 @@ class Pulverize(Move):
         # Reachability: a targeted strike is not castable against a
         # combatant outside mvrange (see _in_range).
         return _in_range(self)
+
+    def _unavailability_code(self):
+        return _striking_mastery_unavailability(self, self.user.strength)
 
     def preview_damage(self, target=None):
         """Pulverize scores its power at strike time and never sets
@@ -341,6 +367,9 @@ class KillingPrecision(Move):
         # Reachability: a targeted strike is not castable against a
         # combatant outside mvrange (see _in_range).
         return _in_range(self)
+
+    def _unavailability_code(self):
+        return _striking_mastery_unavailability(self, self.user.finesse)
 
     def preview_hit_chance(self, target=None):
         """Killing Precision never misses (see execute(): no roll, no
@@ -491,6 +520,9 @@ class LightningAssault(Move):
         # combatant outside mvrange (see _in_range).
         return _in_range(self)
 
+    def _unavailability_code(self):
+        return _striking_mastery_unavailability(self, self.user.speed)
+
     def _flurry_heats(self):
         """The heat each of the three strikes is actually scored with — see
         ``_base.projected_hit_heat_sequence`` for why the heat feedback
@@ -637,6 +669,9 @@ class Ironhide(Move):
             return False
         return _is_highest(self.user, self.user.endurance)
 
+    def _unavailability_code(self):
+        return _mastery_unavailability(self, self.user.endurance)
+
     def execute(self, player):
         narrate(self.stage_announce[1])
         heal = int(player.maxhp * 0.30)
@@ -705,6 +740,9 @@ class WarCry(Move):
             return False
         return _is_highest(self.user, self.user.charisma)
 
+    def _unavailability_code(self):
+        return _mastery_unavailability(self, self.user.charisma)
+
     def execute(self, player):
         narrate(self.stage_announce[1])
         affected = 0
@@ -769,6 +807,9 @@ class SecretPlans(Move):
         if not getattr(self.user, "in_combat", False):
             return False
         return _is_highest(self.user, self.user.intelligence)
+
+    def _unavailability_code(self):
+        return _mastery_unavailability(self, self.user.intelligence)
 
     def execute(self, player):
         narrate(self.stage_announce[1])
@@ -840,6 +881,15 @@ class BloodOfMartyrs(Move):
         ):
             return False
         return _is_highest(self.user, self.user.faith)
+
+    def _unavailability_code(self):
+        if not getattr(self.user, "in_combat", False):
+            return UnavailableReason.NOT_IN_COMBAT
+        if any(
+            getattr(s, "_absorbing", False) for s in getattr(self.user, "states", [])
+        ):
+            return UnavailableReason.ALREADY_ACTIVE
+        return _mastery_unavailability(self, self.user.faith)
 
     def cast(self):
         """Override cast to apply the absorption state before the prep phase begins."""
