@@ -89,3 +89,30 @@ def test_the_shipped_spellings_still_read():
     assert Book(text_file_path=SHIPPED.replace("/", "\\")).text == expected
     absolute = str(items._REPO_ROOT / SHIPPED)
     assert Book(text_file_path=absolute).text == expected
+
+
+@pytest.mark.parametrize("bad", [42, ["a.txt"], {"p": 1}, object()])
+def test_a_non_string_path_from_a_save_reads_blank_instead_of_crashing(bad, caplog):
+    """A save supplies ``text_file_path``; a non-string must read as a blank
+    book (logged), not raise out of ``.text``."""
+    book = Book(name="Odd", text_file_path="placeholder")
+    book.text_file_path = bad
+    with caplog.at_level(logging.WARNING, logger="src.items"):
+        assert book.text == items.BLANK_BOOK_TEXT
+    assert any("not a string" in r.getMessage() for r in caplog.records)
+
+
+def test_a_refused_path_is_resolved_and_logged_once(secret, caplog):
+    """The blank result is cached, so paging through a refused book does not
+    re-resolve the path and re-log the refusal on every access."""
+    book = Book(name="Leak", text_file_path=str(secret))
+    with caplog.at_level(logging.WARNING, logger="src.items"):
+        for _ in range(3):
+            assert book.text == items.BLANK_BOOK_TEXT
+    refusals = [r for r in caplog.records if "outside" in r.getMessage()]
+    assert len(refusals) == 1
+
+
+def test_blank_book_text_is_one_constant():
+    assert items.BLANK_BOOK_TEXT == BLANK_BOOK
+    assert Book(name="Empty").text == items.BLANK_BOOK_TEXT

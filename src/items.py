@@ -19,6 +19,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 #: The only directory ``Book.text`` reads from (issue #674 item 11): a book's
 #: path arrives from map JSON and saves, so it is confined here.
 BOOKS_DIR = _REPO_ROOT / "src" / "resources" / "books"
+#: What a book with no readable text shows the player.
+BLANK_BOOK_TEXT = "This book is mysteriously blank."
 
 item_types: Dict[str, Dict[str, Any]] = {
     "weapons": {
@@ -3459,7 +3461,7 @@ class Book(Special):
             self._text = text
         else:
             # No file path and no text means blank book
-            self._text = "This book is mysteriously blank."
+            self._text = BLANK_BOOK_TEXT
 
         self.chars_per_page = chars_per_page  # characters per page for pagination
 
@@ -3482,14 +3484,17 @@ class Book(Special):
         if not self._text and self.text_file_path:
             path = self._resolve_text_path()
             if path is None:
-                return "This book is mysteriously blank."
+                # Cached, so paging a refused book does not re-resolve and
+                # re-log the refusal on every access.
+                self._text = BLANK_BOOK_TEXT
+                return self._text
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     self._text = f.read()
             except Exception as e:
                 logger.warning("Could not load book text from %s: %s", path, e)
-                self._text = "This book is mysteriously blank."
-        return self._text if self._text else "This book is mysteriously blank."
+                self._text = BLANK_BOOK_TEXT
+        return self._text if self._text else BLANK_BOOK_TEXT
 
     def _resolve_text_path(self) -> Optional[Path]:
         """The file ``text_file_path`` names, as the engine opens it, or
@@ -3505,6 +3510,14 @@ class Book(Special):
         fully resolved -- ``..`` and symlinks included -- and must land
         inside the books directory. Anything else reads as a missing book.
         """
+        # Exactly ``str``: a save supplies this value, and anything else
+        # (including a str subclass) must not have its methods called here.
+        if type(self.text_file_path) is not str:
+            logger.warning(
+                "Book text path is not a string (%s); reading blank",
+                type(self.text_file_path).__name__,
+            )
+            return None
         path = Path(self.text_file_path.replace("\\", "/"))
         if not path.is_absolute():
             path = _REPO_ROOT / path
