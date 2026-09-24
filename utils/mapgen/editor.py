@@ -1342,7 +1342,7 @@ class MapEditor:
                                     if k2 in consumed_keys:
                                         continue
                                     if not map_placeholders.legacy_prop_allowed(
-                                        cls, k2, constructed
+                                        cls, k2, constructed=constructed
                                     ):
                                         continue
                                     setattr(inst, k2, deserialize_instance(v2))

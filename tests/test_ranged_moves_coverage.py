@@ -418,6 +418,7 @@ class TestShootBowViable:
         user, arrow = _make_bow_user()
         enemy = _make_enemy()
         user.combat_proximity = {enemy: 15}
+        user.combat_list = [enemy]  # the opposing side; allies are filtered out (#674)
         user.eq_weapon.subtype = "Bow"
         user.eq_weapon.range_base = 20
         user.eq_weapon.range_decay = 5.0

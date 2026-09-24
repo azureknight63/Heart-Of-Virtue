@@ -123,5 +123,7 @@ def test_all_enumerators_route_through_the_shared_predicate(monkeypatch):
     assert recorder.pool == set()
     assert merchant.inventory == []
 
-    with pytest.raises((ValueError, IndexError)):
-        Loot.random_equipment(_SpawnRecorder(), 0, 0)
+    # An empty equipment pool is no drop, not a randint(0, -1) crash (#674).
+    tile = _SpawnRecorder()
+    assert Loot.random_equipment(tile, 0, 0) is None
+    assert tile.names == []

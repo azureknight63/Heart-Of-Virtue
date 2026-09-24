@@ -33,13 +33,15 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.api.serializers.object_serializer import ObjectSerializer
-from src.universe import Universe
-from src.player._movement import PlayerMovementMixin
 from src.narration import capture_narration
 
 from tests._cite import Read, verify
+from tests._real_map_helpers import (
+    MAPS_DIR as MAP_DIR,
+    build_universe,
+    find_passage_on_map as _find_passage,
+)
 
-MAP_DIR = ROOT / "src" / "resources" / "maps"
 MAP_FILES = [
     "eastern-descent.json",
     "eastern-descent-nomad-camp.json",
@@ -47,41 +49,8 @@ MAP_FILES = [
 ]
 
 
-class _MinPlayer(PlayerMovementMixin):
-    """Minimal Player stand-in sufficient for Passageway._commit_teleport /
-    PlayerMovementMixin.teleport (drop_merchandise_items, map, location, room)."""
-
-    def __init__(self, universe):
-        self.universe = universe
-        self.map = None
-        self.location_x = None
-        self.location_y = None
-        self.current_room = None
-
-    def drop_merchandise_items(self):
-        return None
-
-
 def _build_universe():
-    universe = Universe()
-    player = _MinPlayer(universe)
-    universe.player = player
-    for m in MAP_FILES:
-        universe._load_single_json_map(player, MAP_DIR / m)
-    return universe, player
-
-
-def _find_passage(map_dict, name):
-    for coord, tile in map_dict.items():
-        if not isinstance(coord, tuple):
-            continue
-        for obj in getattr(tile, "objects_here", []) or []:
-            if (
-                getattr(obj, "name", None) == name
-                and getattr(obj, "__class__", None).__name__ == "Passageway"
-            ):
-                return coord, tile, obj
-    return None
+    return build_universe(*MAP_FILES)
 
 
 #: The frontend function this module mirrors. Cited by anchor rather than by

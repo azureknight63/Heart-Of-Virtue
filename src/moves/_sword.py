@@ -154,8 +154,9 @@ class WhirlAttack(Move):
         return self._enemy_within_reach()
 
     def _enemy_within_reach(self):
-        """A living combatant stands within the spin's radius, measured on the grid."""
-        for enemy in self.user.combat_proximity.keys():
+        """A living hostile stands within the spin's radius, measured on the
+        grid. Allies in ``combat_proximity`` never count (#674)."""
+        for enemy, _distance in self._hostiles_in_proximity():
             if enemy.is_alive():
                 if (
                     hasattr(enemy, "combat_position")

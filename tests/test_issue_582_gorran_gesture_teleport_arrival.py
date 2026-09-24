@@ -35,53 +35,16 @@ mechanism ever regresses (e.g. someone "simplifies" ``Player.teleport()`` and
 drops the destination-events loop), this is the test that will fail.
 """
 
-from pathlib import Path
-
 from src.events import set_story_gate
-from src.player._movement import PlayerMovementMixin
 from src.narration import capture_narration
-from src.universe import Universe
-
-MAPS_DIR = Path(__file__).resolve().parent.parent / "src" / "resources" / "maps"
-
-
-class _MinPlayer(PlayerMovementMixin):
-    """Minimal Player stand-in -- same shape used by
-    test_jambo_tent_navigation.py for real-map teleport tests: just enough
-    for PlayerMovementMixin.teleport / Passageway._commit_teleport."""
-
-    def __init__(self, universe):
-        self.universe = universe
-        self.map = None
-        self.location_x = None
-        self.location_y = None
-        self.current_room = None
-        self.previous_tile = None
-        # Suppress the narrated prose so assertions can target it precisely
-        # without depending on exact wording elsewhere in the class.
-        self.skip_dialog = False
-
-    def drop_merchandise_items(self):
-        return None
+from tests._real_map_helpers import (
+    build_universe,
+    find_passage_on_map as _find_passage,
+)
 
 
 def _build_universe():
-    universe = Universe()
-    player = _MinPlayer(universe)
-    universe.player = player
-    for map_file in ("grondia.json", "eastern-descent.json"):
-        universe._load_single_json_map(player, MAPS_DIR / map_file)
-    return universe, player
-
-
-def _find_passage(map_dict, name):
-    for coord, tile in map_dict.items():
-        if not isinstance(coord, tuple):
-            continue
-        for obj in getattr(tile, "objects_here", []) or []:
-            if getattr(obj, "name", None) == name and type(obj).__name__ == "Passageway":
-                return coord, tile, obj
-    return None
+    return build_universe("grondia.json", "eastern-descent.json")
 
 
 class TestGorranFarewellFiresOnRealEasternGateTeleportArrival:

@@ -2879,7 +2879,7 @@ class GameService:
                 isinstance(target, Passageway)
                 and not _is_demo_end_passageway(target)
                 and session_data is not None
-                and target.accepts_step_through(handler, action)
+                and target.accepts_step_through(handler)
             ):
                 events_triggered.extend(
                     self._queue_passageway_confirmation(request)

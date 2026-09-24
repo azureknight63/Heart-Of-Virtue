@@ -11,14 +11,16 @@ of dialogue that has become a lie -- the issue asked for the rules to be taught
 in character, and a character who misstates the rules is worse than none.
 """
 
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 from src.narration import capture_narration
-from src.player._movement import PlayerMovementMixin
-from src.universe import Universe
-
-MAPS_DIR = Path(__file__).resolve().parent.parent / "src" / "resources" / "maps"
+from tests._real_map_helpers import (
+    build_universe as _build_universe,
+    find_passage as _find_passage,
+    map_named as _map,
+    spoken as _spoken,
+    text_of as _text,
+)
 
 #: Both tents, as (outer map file, outer map name, exterior coords,
 #: tent map file, tent map name).
@@ -28,55 +30,6 @@ TENTS = (
     ("eastern-descent-nomad-camp.json", "eastern-descent-nomad-camp", (3, 0),
      "eastern-descent-jambos-tent.json", "eastern-descent-jambos-tent"),
 )
-
-
-class _MinPlayer(PlayerMovementMixin):
-    """Just enough Player for real-map ``Passageway.enter`` crossings."""
-
-    def __init__(self, universe):
-        self.universe = universe
-        self.map = None
-        self.location_x = None
-        self.location_y = None
-        self.current_room = None
-        self.previous_tile = None
-        self.skip_dialog = False
-        self.combat_list = []
-        self.combat_list_allies = []
-
-    def drop_merchandise_items(self):
-        return []
-
-
-def _build_universe(*map_files):
-    universe = Universe()
-    player = _MinPlayer(universe)
-    universe.player = player
-    for map_file in map_files:
-        universe._load_single_json_map(player, MAPS_DIR / map_file)
-    return universe, player
-
-
-def _map(universe, name):
-    return next(m for m in universe.maps if m.get("name") == name)
-
-
-def _find_passage(tile, name):
-    for obj in getattr(tile, "objects_here", []) or []:
-        if type(obj).__name__ == "Passageway" and getattr(obj, "name", None) == name:
-            return obj
-    return None
-
-
-def _spoken(messages, speaker=None):
-    return [
-        m for m in messages
-        if m.get("type") == "dialogue" and (speaker is None or m.get("speaker") == speaker)
-    ]
-
-
-def _text(messages):
-    return " ".join(m.get("text", "") for m in messages)
 
 
 def _intro(story=None):

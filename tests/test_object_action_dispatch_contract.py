@@ -243,7 +243,7 @@ def _is_dispatchable(cls, instance, keyword):
             # falls past arm 4 (which excludes it) to arm 5.
             if instance.is_crossing_handler(handler):
                 return True                                  # arm 3
-        elif instance.accepts_step_through(handler, keyword):
+        elif instance.accepts_step_through(handler):
             return True                                      # arm 4
     return handler is not None                               # arm 5
 

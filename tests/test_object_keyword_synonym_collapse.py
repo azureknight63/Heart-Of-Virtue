@@ -95,7 +95,7 @@ def test_every_shipped_ferry_verb_is_still_reachable_by_a_rendered_one(ferry):
         handler = resolve_interaction(ferry, keyword)
         assert handler is None or any(handler == h for h in wire_handlers), keyword
     for keyword in wire:
-        assert ferry.accepts_step_through(resolve_interaction(ferry, keyword), keyword)
+        assert ferry.accepts_step_through(resolve_interaction(ferry, keyword))
 
 
 def test_the_primary_is_the_first_authored_keyword_of_its_group():

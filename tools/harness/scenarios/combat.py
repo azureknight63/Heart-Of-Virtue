@@ -2,15 +2,11 @@
 
 from typing import List, Tuple
 
-from .base import Scenario
+from .base import ARENA_MAP, Scenario
 from ..client import GameClient
 from ..reporter import BugReport, BugSeverity, BugCategory
 
 _MAX_ROUNDS = 20  # safety cap to avoid infinite loops
-
-#: The map the arena routes below are written for. On any other map they
-#: name nothing, so the scenario fights in whatever room Jean starts in.
-_ARENA_MAP = "combat-testing-arena"
 
 #: Arena routes from the Proving Grounds (0, 0) to each scenario tile, as
 #: ``(direction, arena tile the step enters)``. Tile names are the Adjutant's
@@ -204,10 +200,10 @@ class CombatScenario(Scenario):
         return scenario
 
     def _in_the_arena(self, client: GameClient) -> bool:
-        resp = client.get("/api/world")
-        if resp.status_code != 200:
-            return False
-        return client.parse(resp).get("room", {}).get("map_name") == _ARENA_MAP
+        # The arena routes below are written for ARENA_MAP; on any other map
+        # they name nothing, so the scenario fights wherever Jean starts.
+        room = self._room(client)
+        return room is not None and room.get("map_name") == ARENA_MAP
 
     def _navigate_to_scenario_tile(
         self, client: GameClient
@@ -236,12 +232,9 @@ class CombatScenario(Scenario):
 
         started = False
         for direction, _tile in route:
-            body = {"direction": direction}
-            resp = client.post("/api/world/move", json=body)
-            bug = self._check_status(
-                resp, 200, "/api/world/move", "POST",
+            bug, resp = self._move(
+                client, direction,
                 f"Arena navigation: move {direction} toward {scenario} tile",
-                request_body=body,
             )
             if bug:
                 return [bug], False  # stop on first nav failure

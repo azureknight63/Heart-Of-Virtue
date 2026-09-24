@@ -15,18 +15,13 @@ they surface when the client reveals that beat. Streaming path: the streamer
 copies them onto the ``combat:beat`` as ``results``.
 """
 
-from types import SimpleNamespace
-
-from src.api.combat_adapter import ApiCombatAdapter
 from src.api.combat_beat_stream import CombatBeatStreamer
 from src.api.schemas import combat_beat as cb
 from src.api.serializers.combat import CombatantSerializer
 from src.moves._base import OUTCOME_MISS, publish_outcome
 from src.narration import narrate
-from src.npc import Slime
-from src.player import Player
 import src.states as states
-from tests._combat_fixtures import engage, seeded
+from tests._combat_fixtures import run_scripted_beat as _run_scripted_beat, seeded
 
 
 # ── the pure builder ────────────────────────────────────────────────────────
@@ -126,72 +121,6 @@ def test_every_result_kind_and_change_is_in_the_declared_vocabulary():
 
 
 # ── the adapter measures the real engine around a real beat ──────────────────
-
-
-class _ScriptedMove:
-    """A player move whose single beat runs ``effect`` once.
-
-    Hand-rolled like tests/test_cooldown_drain_logic.py's stub so the beat's
-    effects are exact; every attribute the adapter reads while casting and
-    serializing is present, so nothing about the beat loop is faked.
-    """
-
-    passive = False
-    targeted = True
-    instant = False
-    needs_duration = False
-    accepts_ally_target = False
-    web_animation = "attack"
-    category = "Attack"
-    description = ""
-    fatigue_cost = 0
-    beats_left = 0
-    stage_beat = (0, 0, 0, 0)
-
-    def __init__(self, target, effect):
-        self.name = "Scripted"
-        self.display_name = "Scripted"
-        self.current_stage = 0
-        self.target = target
-        self.user = None
-        self._effect = effect
-
-    def advance(self, user):
-        if self._effect is not None:
-            effect, self._effect = self._effect, None
-            effect(user)
-
-    def viable(self):
-        return True
-
-    def cast(self):
-        pass
-
-
-def _run_scripted_beat(effect, slime_hp=9999, prepare=None):
-    """One real beat over a real Player + Slime; return (result, slime).
-
-    ``prepare(player)`` runs after the fight is set up and before the beat, so
-    it defines the baseline the beat's changes are measured against.
-    """
-    player = Player()
-    slime = Slime()
-    slime.hp = slime.maxhp = slime_hp
-    slime.damage = 0  # its own turn must not muddy Jean's HP
-    engage(player, [slime])
-    # The death path removes the corpse from the room; a real tile is not
-    # what is under test, only somewhere for that removal to land.
-    player.current_room = SimpleNamespace(npcs_here=[slime])
-    adapter = ApiCombatAdapter(player)
-    adapter.initialize_combat([slime])
-    if prepare is not None:
-        prepare(player)
-    move = _ScriptedMove(slime, lambda user: effect(user, slime))
-    player.known_moves = [move]
-    player.current_move = None
-    with seeded():
-        result = adapter._execute_move_inner(move)
-    return result, slime
 
 
 def _beat_results(result, index=0):
