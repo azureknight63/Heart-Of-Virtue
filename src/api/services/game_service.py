@@ -3122,6 +3122,23 @@ class GameService:
         player._combat_deferred_enemies = combat_enemies
         return True
 
+    @staticmethod
+    def _still_waiting(player, stashed_enemies):
+        """The stashed enemies that can still fight: alive, in Jean's room.
+
+        The stash can outlive its fight. Clicking an enemy (``start_combat``)
+        does not defer, so Jean can start and win the stashed fight before
+        spending his points, or walk away from it; resuming the stash as it
+        stood then restarted a won fight around a 0-HP corpse that no move
+        could clear (#655, second live run).
+        """
+        room = getattr(player, "current_room", None)
+        present = getattr(room, "npcs_here", None) or []
+        return [
+            enemy for enemy in stashed_enemies
+            if enemy in present and enemy.is_alive()
+        ]
+
     def _start_combat(
         self, player, combat_enemies, session_id=None, session_data=None
     ):
@@ -4057,6 +4074,8 @@ class GameService:
         pending_points = int(getattr(player, "pending_attribute_points", 0) or 0)
         if deferred_enemies and pending_points == 0:
             player._combat_deferred_enemies = None
+            deferred_enemies = self._still_waiting(player, deferred_enemies)
+        if deferred_enemies and pending_points == 0:
             self._initialize_combat(
                 player,
                 deferred_enemies,

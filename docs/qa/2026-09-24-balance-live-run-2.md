@@ -48,6 +48,28 @@ All four used the game's own Tactical Advisor suggestion (`battle_state.suggeste
 
 ## Bugs found
 
+> **Diagnosis after the run (same day).** Both stalls were traced from the run's
+> own driver logs:
+>
+> - **Bug 1 is real, and fixed.** It was not a random combat failure. The (2,5)
+>   Slime was stashed as a level-up-deferred fight (points unspent), then fought
+>   and killed through `/combat/start`, which does not defer. When the points were
+>   spent, `get_combat_status` resumed the stale stash, restarting the won fight
+>   around the corpse. Runs A and C both spent points just before the stuck fight
+>   appeared; the "~50%" was whether a level-up was pending on arrival.
+>   The resume now keeps only stashed enemies that are alive and still in Jean's
+>   room (`GameService._still_waiting`, `tests/test_deferred_combat_resume.py`).
+> - **Bug 2 was the driver, not the engine.** No move path answers Advance with a
+>   direction prompt; only Turn does. The driver followed the tactical advisor's
+>   **Turn** suggestion and then cancelled its direction prompt. It also waited
+>   for an input type `number_selection` where the API sends `number_input`, so
+>   it cancelled every Wait prompt too. Neither sequence runs a beat. In 75
+>   in-process fights at the (2,2)–(2,5) packs, driven through the real API, no
+>   fight stalled while Jean kept acting.
+>   Two smaller findings from that repro, not bugs: Attack costs 89 fatigue at
+>   the level-4 start loadout, so a fatigued Jean must Rest; and the advisor ranked Turn top
+>   mid-fight as "a solid baseline choice", which a player could follow in a loop.
+
 1. **[Critical, new] Combat never resolves after the last enemy dies (~50% reproduction rate at the observed tile).** `battle_state.combat_active` stays `true` and `battle_state.enemies` keeps listing a 0-HP corpse indefinitely. No further player action (including a free `Check`) clears it. Every subsequent `/world/move` in that session returns `"Cannot move while in combat"` — a real player would be **permanently stuck** on that tile, unable to fight, move, or otherwise act, for the rest of their playthrough. Repro: enter Grondelith Mineral Pools, fight down the corridor to (2,5) (single-Slime pack), win the fight; ~50% of the time `combat_active` never flips back to `false`. Two independent live sessions hit this, at two different tiles' worth of single- and dwindling-multi-enemy fights.
 2. **[Major, new] A pack can permanently non-progress when the first enemy starts out of melee range.** `Advance`'s follow-up stage is a `direction_selection`, not simply resolved by targeting; a caller (or a real player) that doesn't supply a direction gets stuck reselecting the same move forever with `distance` never closing and neither side taking damage. Confirmed via the combat_adapter wire trace (`distance: 9`, `in_range: false` on the target, `available_options: ['north','south','east','west']` on the follow-up poll). Whether the in-game Advisor or UI genuinely steers a player into this same trap wasn't independently confirmed this pass — flagged for the maintainer to check the frontend's own Advance flow, not just this driver's.
 3. **[Known, unchanged] `ValueError: None is not a valid UnavailableReason`** in `src/moves/_base.py`, firing on nearly every combat start. Caught internally, invisible to players, present at the same rate as run 1.

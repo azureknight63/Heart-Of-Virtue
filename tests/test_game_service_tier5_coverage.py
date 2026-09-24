@@ -1798,6 +1798,7 @@ class TestGetCombatStatusExtra:
     def test_deferred_enemies_resume_combat(self, game_service, mock_player):
         enemy = MagicMock()
         mock_player._combat_deferred_enemies = [enemy]
+        mock_player.current_room.npcs_here = [enemy]  # still waiting where it was
         mock_player.pending_attribute_points = 0
         mock_player.in_combat = True
         mock_player.combat_list = [enemy]
@@ -1823,6 +1824,7 @@ class TestGetCombatStatusExtra:
         """
         enemy = MagicMock()
         mock_player._combat_deferred_enemies = [enemy]
+        mock_player.current_room.npcs_here = [enemy]  # still waiting where it was
         mock_player.pending_attribute_points = 0
         mock_player.in_combat = True
         mock_player.combat_list = [enemy]
@@ -1847,6 +1849,7 @@ class TestGetCombatStatusExtra:
     def test_deferred_enemies_but_not_in_combat_after_init(self, game_service, mock_player):
         enemy = MagicMock()
         mock_player._combat_deferred_enemies = [enemy]
+        mock_player.current_room.npcs_here = [enemy]  # still waiting where it was
         mock_player.pending_attribute_points = 0
         mock_player.in_combat = False
         if hasattr(mock_player, "combat_list"):
