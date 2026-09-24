@@ -37,9 +37,9 @@ from src.narration import capture_narration
 
 from tests._cite import Read, verify
 from tests._real_map_helpers import (
-    MAPS_DIR as MAP_DIR,
+    MAPS_DIR,
     build_universe,
-    find_passage_on_map as _find_passage,
+    find_passage_on_map,
 )
 
 MAP_FILES = [
@@ -386,7 +386,7 @@ def universe_player():
 def test_jambos_tent_serialized_keywords_have_no_name_word_aliases():
     """The serialized Jambo's Tent passage must not carry the 'jambo'/'tent'
     name-word aliases that rendered as extra frontend buttons."""
-    raw = json.loads((MAP_DIR / "eastern-descent-nomad-camp.json").read_text(encoding="utf-8"))
+    raw = json.loads((MAPS_DIR / "eastern-descent-nomad-camp.json").read_text(encoding="utf-8"))
     for coord, tile in raw.items():
         if not isinstance(tile, dict):
             continue
@@ -404,7 +404,7 @@ def test_jambos_tent_displayed_actions_are_only_enter(universe_player):
     Jambo's Tent is 'enter' (the frontend hides action_aliases + dups)."""
     universe, _ = universe_player
     nomad = next(a for a in universe.maps if a.get("name") == "eastern-descent-nomad-camp")
-    res = _find_passage(nomad, "Jambo's Tent")
+    res = find_passage_on_map(nomad, "Jambo's Tent")
     assert res, "Jambo's Tent passage not loaded"
     pw = res[2]
     assert _displayed_actions(pw) == ["enter"], _displayed_actions(pw)
@@ -422,7 +422,7 @@ def test_full_enter_exit_route_coordinates(universe_player):
     next(a for a in universe.maps if a.get("name") == "eastern-descent-jambos-tent")
 
     # Start on the eastern-descent tile that holds the Camp Entrance passage.
-    start = _find_passage(ed, "Camp Entrance")
+    start = find_passage_on_map(ed, "Camp Entrance")
     assert start, "Camp Entrance passage not found in eastern-descent"
     coord, tile, _ = start
     player.map = ed
@@ -430,7 +430,7 @@ def test_full_enter_exit_route_coordinates(universe_player):
     player.current_room = tile
 
     def step(target_name, expected_map, expected_coords):
-        res = _find_passage(player.map, target_name)
+        res = find_passage_on_map(player.map, target_name)
         assert res, f"{target_name} not found in {player.map['name']}"
         pw = res[2]
         with capture_narration():

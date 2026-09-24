@@ -129,12 +129,10 @@ def test_book_custom_chars_per_page():
     assert "".join(pages1) == "".join(pages2) == text
 
 
-def test_book_text_from_file_only(tmp_path, monkeypatch, capsys):
+def test_book_text_from_file_only(books_dir_in_tmp, monkeypatch, capsys):
     """Test book that loads text from a file with no text property set."""
-    # Issue #674 item 11: Book reads only under BOOKS_DIR; a tmp book needs it moved.
-    monkeypatch.setattr("src.items.BOOKS_DIR", tmp_path)
     # Create a temporary file with book content (keep it short to avoid pagination)
-    book_file = tmp_path / "test_book.txt"
+    book_file = books_dir_in_tmp / "test_book.txt"
     file_content = "This is content loaded from a file."
     book_file.write_text(file_content, encoding='utf-8')
 
@@ -154,12 +152,10 @@ def test_book_text_from_file_only(tmp_path, monkeypatch, capsys):
     assert file_content in captured.out
 
 
-def test_book_file_overrides_text_property(tmp_path, monkeypatch, capsys):
+def test_book_file_overrides_text_property(books_dir_in_tmp, monkeypatch, capsys):
     """Test that file takes precedence when both text and text_file_path are set."""
-    # Issue #674 item 11: Book reads only under BOOKS_DIR; a tmp book needs it moved.
-    monkeypatch.setattr("src.items.BOOKS_DIR", tmp_path)
     # Create a temporary file
-    book_file = tmp_path / "test_book.txt"
+    book_file = books_dir_in_tmp / "test_book.txt"
     file_content = "This content is in the file and should be used."
     book_file.write_text(file_content, encoding='utf-8')
 

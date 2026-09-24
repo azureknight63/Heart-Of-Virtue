@@ -46,15 +46,22 @@ def test_absolute_path_outside_the_books_dir_reads_blank(secret, caplog):
     "src\\resources\\books\\..\\..\\..\\{rel}",
     "../{rel}",
 ])
-def test_dot_dot_walks_out_of_the_books_dir_read_blank(spelling, tmp_path):
-    """A repo-relative path that climbs out reads nothing, however spelled."""
-    target = items._REPO_ROOT / "setup_probe_674.txt"
+def test_dot_dot_walks_out_of_the_books_dir_read_blank(spelling, tmp_path, monkeypatch):
+    """A repo-relative path that climbs out reads nothing, however spelled.
+
+    The repo root and books directory are moved onto a ``tmp_path`` tree so the
+    readable probe file never lands in the real checkout.
+    """
+    repo = tmp_path / "repo"
+    books = repo / "src" / "resources" / "books"
+    books.mkdir(parents=True)
+    monkeypatch.setattr(items, "_REPO_ROOT", repo)
+    monkeypatch.setattr(items, "BOOKS_DIR", books)
+    target = repo / "setup_probe_674.txt"
     target.write_text("REPO FILE", encoding="utf-8")
-    try:
-        rel = target.name
-        text = Book(text_file_path=spelling.format(rel=rel)).text
-    finally:
-        target.unlink()
+
+    text = Book(text_file_path=spelling.format(rel=target.name)).text
+
     assert text == BLANK_BOOK
 
 

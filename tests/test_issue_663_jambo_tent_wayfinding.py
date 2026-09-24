@@ -24,7 +24,7 @@ from src.events import set_story_gate
 from src.narration import capture_narration
 from tests._real_map_helpers import (
     build_universe as _build_universe,
-    find_passage as _find_passage,
+    find_passage,
     map_named as _map,
     spoken as _spoken,
     text_of as _text,
@@ -72,7 +72,7 @@ class TestVothaKrrSendsJeanToJambo:
         map_name, coords = JAMBO_TENT_EXTERIOR
         tile = _map(universe, map_name)[coords]
         assert tile.name == "Ecumerium"
-        passage = _find_passage(tile, "Jambo's Tent")
+        passage = find_passage(tile, "Jambo's Tent")
         assert passage is not None, "no Jambo's Tent passageway on the teleport target"
         assert passage.teleport_map == "grondia-jambos_shop"
         assert tuple(passage.teleport_tile) == (2, 2)
@@ -84,7 +84,7 @@ class TestVothaKrrSendsJeanToJambo:
 
         universe, player = _build_universe("grondia.json", "grondia-jambos_shop.json")
         player.teleport(*JAMBO_TENT_EXTERIOR)
-        passage = _find_passage(player.current_room, "Jambo's Tent")
+        passage = find_passage(player.current_room, "Jambo's Tent")
         with capture_narration() as messages:
             passage.enter(player)
         assert player.map.get("name") == "grondia-jambos_shop"
@@ -208,7 +208,7 @@ class TestNomadCampArrivalSequence:
     def test_notice_is_authored_after_the_greeting_on_the_tent_tile(self):
         universe, _player = _build_universe("eastern-descent-nomad-camp.json")
         tile = _map(universe, "eastern-descent-nomad-camp")[(3, 0)]
-        assert _find_passage(tile, "Jambo's Tent") is not None
+        assert find_passage(tile, "Jambo's Tent") is not None
         names = [type(e).__name__ for e in tile.events_here]
         assert names == [
             "NomadCampSmellEvent",
@@ -258,7 +258,7 @@ class TestNomadCampArrivalSequence:
         assert camp[(3, 0)].events_here == []
 
         # Leave and come back: nothing replays.
-        back = _find_passage(camp[(3, 0)], "Camp Boundary")
+        back = find_passage(camp[(3, 0)], "Camp Boundary")
         back.enter(player)
         _place(player, descent, coords)
         with capture_narration() as second:
@@ -336,7 +336,7 @@ class TestLeavingJambosTentPointsAtThePools:
 
     def test_authored_on_the_tile_the_tent_flap_returns_to(self):
         universe, _player = _build_universe("grondia.json", "grondia-jambos_shop.json")
-        flap = _find_passage(_map(universe, "grondia-jambos_shop")[(2, 2)], "Tent Flap")
+        flap = find_passage(_map(universe, "grondia-jambos_shop")[(2, 2)], "Tent Flap")
         outside = _map(universe, flap.teleport_map)[tuple(flap.teleport_tile)]
         assert any(type(e).__name__ == "JamboTentExitReminderEvent"
                    for e in outside.events_here)

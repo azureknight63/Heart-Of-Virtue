@@ -166,7 +166,7 @@ def test_walk_finds_the_authored_book_paths():
     )
 
 
-def test_guard_reads_through_a_real_book_open(tmp_path, monkeypatch):
+def test_guard_reads_through_a_real_book_open(books_dir_in_tmp):
     """Control for the check itself: ``BLANK_BOOK`` has to be discriminating.
 
     A readable file must come back as its contents, and an authored path with
@@ -175,13 +175,11 @@ def test_guard_reads_through_a_real_book_open(tmp_path, monkeypatch):
     one that always does. Both paths here are absolute and natively spelled,
     so unlike the separator control this holds on every platform.
     """
-    # Issue #674 item 11: Book reads only under BOOKS_DIR; a tmp book needs it moved.
-    monkeypatch.setattr("src.items.BOOKS_DIR", tmp_path)
-    book_file = tmp_path / "control.txt"
+    book_file = books_dir_in_tmp / "control.txt"
     book_file.write_text("readable", encoding="utf-8")
 
     assert Book(text_file_path=str(book_file)).text == "readable"
-    assert Book(text_file_path=str(tmp_path / "absent.txt")).text == BLANK_BOOK
+    assert Book(text_file_path=str(books_dir_in_tmp / "absent.txt")).text == BLANK_BOOK
 
 
 @pytest.mark.skipif(
@@ -193,7 +191,7 @@ def test_guard_reads_through_a_real_book_open(tmp_path, monkeypatch):
         "blank on Linux -- is POSIX-only, and CI runs on Linux."
     ),
 )
-def test_guard_reads_separators_the_way_the_engine_does(at_repo_root, tmp_path, monkeypatch):
+def test_guard_reads_separators_the_way_the_engine_does(at_repo_root, books_dir_in_tmp):
     """Control for the check itself: it must read paths the way the engine does.
 
     Before #648 this asserted a backslashed path came back **blank**, because
@@ -207,9 +205,7 @@ def test_guard_reads_separators_the_way_the_engine_does(at_repo_root, tmp_path, 
     repo root -- where it resolves to nothing. The spelling used here is
     therefore made relative to the repo root first, as a map would author it.
     """
-    # Issue #674 item 11: Book reads only under BOOKS_DIR; a tmp book needs it moved.
-    monkeypatch.setattr("src.items.BOOKS_DIR", tmp_path)
-    book_file = tmp_path / "control.txt"
+    book_file = books_dir_in_tmp / "control.txt"
     book_file.write_text("readable", encoding="utf-8")
     relative = os.path.relpath(book_file, ROOT)
     backslashed = relative.replace("/", "\\")

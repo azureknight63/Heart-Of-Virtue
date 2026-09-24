@@ -39,7 +39,7 @@ from src.events import set_story_gate
 from src.narration import capture_narration
 from tests._real_map_helpers import (
     build_universe,
-    find_passage_on_map as _find_passage,
+    find_passage_on_map,
 )
 
 
@@ -71,7 +71,7 @@ class TestGorranFarewellFiresOnRealEasternGateTeleportArrival:
         player.location_x, player.location_y = 15, 5
         player.current_room = arrival_tile
 
-        found = _find_passage(grondia, "Eastern Gate")
+        found = find_passage_on_map(grondia, "Eastern Gate")
         assert found, "Eastern Gate passage not found on Grondia (15, 5)"
         _, _, passage = found
 

@@ -297,6 +297,17 @@ def wire_real_allocate_level_up_points(gs):
     gs.allocate_level_up_points.side_effect = real_gs.allocate_level_up_points
 
 
+@pytest.fixture
+def books_dir_in_tmp(tmp_path, monkeypatch):
+    """Point ``src.items.BOOKS_DIR`` at ``tmp_path`` and return it.
+
+    Issue #674 item 11: ``Book`` reads only under ``BOOKS_DIR``, so a test that
+    writes its own book file must move the books directory to where it wrote.
+    """
+    monkeypatch.setattr("src.items.BOOKS_DIR", tmp_path)
+    return tmp_path
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # NPC and Player Fixtures for Performance Optimization
 # ─────────────────────────────────────────────────────────────────────────────

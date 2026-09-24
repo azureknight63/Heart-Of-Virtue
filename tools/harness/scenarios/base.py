@@ -74,11 +74,9 @@ class Scenario(ABC):
 
     def _find_enemy(self, client: "GameClient"):
         """Return the first hostile NPC ID from the current room, or None."""
-        resp = client.get("/api/world")
-        if resp.status_code != 200:
+        room = self._room(client)
+        if room is None:
             return None
-        data = client.parse(resp)
-        room = data.get("room", {})
         npcs = room.get("npcs", [])
         for npc in npcs:
             if isinstance(npc, dict):
@@ -264,10 +262,7 @@ class Scenario(ABC):
         it used to count as "combat ended", so a 500 read as a win.
         """
         bugs = []
-        body = {"direction": "east"}
-        resp = client.post("/api/world/move", json=body)
-        bug = self._check_status(resp, 200, "/api/world/move", "POST",
-                                 "Move to Fodder Pit", request_body=body)
+        bug, _ = self._move(client, "east", "Move to Fodder Pit")
         if bug:
             return [bug], False
 
