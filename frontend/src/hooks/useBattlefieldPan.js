@@ -10,6 +10,18 @@ import {
 // object; neither is ever mutated (commitPanCells replaces it).
 const NO_PAN = Object.freeze({ x: 0, y: 0 });
 
+// Recenter ease: each frame keeps this share of the remaining px offset — an
+// exponential decay that settles in ~20 frames (~1/3 s at 60 Hz) from a
+// near-full-cell remainder without a visible final jump.
+const RECENTER_DECAY_PER_FRAME = 0.82;
+// Below this many px on both axes the ease is invisible (under a device
+// pixel on most screens), so it stops and snaps the rest to zero.
+const RECENTER_SNAP_PX = 0.5;
+// A px remainder larger than this counts as "panned" for the recenter
+// affordance. The small dead zone keeps a tap's sub-pixel jitter from
+// flashing the button up.
+const PANNED_REMAINDER_PX = 2;
+
 /**
  * Drag-to-pan for the battlefield map (#592), extracted from BattlefieldGrid
  * (#623). The component derives its camera window, hands the UNPANNED window
@@ -83,7 +95,8 @@ export default function useBattlefieldPan({
     // React bails out when the value is unchanged, so calling this per frame
     // during a drag costs nothing beyond the comparison.
     const cells = panCellsRef.current;
-    const panned = cells.x !== 0 || cells.y !== 0 || Math.abs(x) > 2 || Math.abs(y) > 2;
+    const panned = cells.x !== 0 || cells.y !== 0
+      || Math.abs(x) > PANNED_REMAINDER_PX || Math.abs(y) > PANNED_REMAINDER_PX;
     setIsPanned((prev) => (prev === panned ? prev : panned));
   }, []);
 
@@ -107,11 +120,14 @@ export default function useBattlefieldPan({
     commitPanCells(0, 0);
     const step = () => {
       const pan = touchPanRef.current;
-      if (Math.abs(pan.x) < 0.5 && Math.abs(pan.y) < 0.5) {
+      if (Math.abs(pan.x) < RECENTER_SNAP_PX && Math.abs(pan.y) < RECENTER_SNAP_PX) {
         resetPan();
         return;
       }
-      touchPanRef.current = { x: pan.x * 0.82, y: pan.y * 0.82 };
+      touchPanRef.current = {
+        x: pan.x * RECENTER_DECAY_PER_FRAME,
+        y: pan.y * RECENTER_DECAY_PER_FRAME,
+      };
       applyPanTransform();
       panDecayRafRef.current = requestAnimationFrame(step);
     };
@@ -121,68 +137,76 @@ export default function useBattlefieldPan({
   /** Whether the gesture that just ended travelled far enough to be a pan, not a click. */
   const wasDrag = useCallback(() => dragTravelRef.current > DRAG_CLICK_THRESHOLD_PX, []);
 
+  // Cell size and clamp range are captured once per gesture, not per move:
+  // the viewport cannot resize mid-drag, and reading the rect on every
+  // pointer move (60-120/s) forces a synchronous layout flush over a
+  // subtree holding up to thousands of grid cells. The pan layer is the
+  // box the cells are laid out in (the viewport box, letterboxed square
+  // when that flag is on), so its width and height over gridCols are the
+  // two sides of one cell. It is mounted in the same tree as the grid
+  // container, so it is set whenever a gesture can start.
+  const measureGesture = useCallback(() => {
+    const view = viewRef.current;
+    const box = panLayerRef.current.getBoundingClientRect();
+    const { x, y } = windowPanBounds(view);
+    dragBoundsRef.current = {
+      // One cell size PER AXIS. With `squareBattlefieldCells` off (the
+      // default) the box fills the panel, so a cell is 1/gridCols of the
+      // width and 1/gridCols of the height — two different numbers, the
+      // same two `getEntityStyle` sizes tokens with. Measuring one off the
+      // width and using it for both axes stepped rows at the column pitch.
+      cellPxX: box.width / view.gridCols,
+      cellPxY: box.height / view.gridCols,
+      // Screen-space ranges. Dragging right (+px) reveals lower x, so the
+      // screen shift is the negation of the leftX shift; dragging down
+      // (+px) reveals higher y, the same sense as the topY shift.
+      minX: -x.max, maxX: -x.min,
+      minY: y.min, maxY: y.max,
+    };
+  }, []);
+
+  const applyDelta = useCallback((dx, dy) => {
+    // Lazily initialised so a synthetic move with no preceding down-event
+    // still clamps.
+    if (!dragBoundsRef.current) measureGesture();
+    const { cellPxX, cellPxY, minX, maxX, minY, maxY } = dragBoundsRef.current;
+    dragTravelRef.current += Math.abs(dx) + Math.abs(dy);
+
+    // Rebuild the gesture's screen-space total from the committed cells
+    // plus the remainder, add the move, and split it again — one clamp,
+    // one rounding rule, for both the cells and the px they leave behind.
+    // Screen x runs opposite to the leftX shift (see measureGesture); that
+    // one sign flip is applied here and undone once on the commit below.
+    const cells = panCellsRef.current;
+    const rem = touchPanRef.current;
+    const screenTravelX = -cells.x * cellPxX + rem.x + dx;
+    const screenTravelY = cells.y * cellPxY + rem.y + dy;
+    const sx = splitPanAxis(screenTravelX, cellPxX, minX, maxX);
+    const sy = splitPanAxis(screenTravelY, cellPxY, minY, maxY);
+    touchPanRef.current = { x: sx.residual, y: sy.residual };
+    commitPanCells(-sx.cells, sy.cells);
+    applyPanTransform();
+  }, [measureGesture, commitPanCells, applyPanTransform]);
+
+  const beginDrag = useCallback((x, y) => {
+    cancelPanDecay();
+    measureGesture();
+    dragTravelRef.current = 0;
+    touchStartRef.current = { x, y };
+  }, [cancelPanDecay, measureGesture]);
+
+  /** Pan by the pointer's travel since the last event, then remember where it is. */
+  const dragTo = useCallback((x, y) => {
+    const dx = x - touchStartRef.current.x;
+    const dy = y - touchStartRef.current.y;
+    touchStartRef.current = { x, y };
+    applyDelta(dx, dy);
+  }, [applyDelta]);
+
   // Touch pan handlers — attached via useEffect so touchmove can be non-passive
   useEffect(() => {
     const el = gridContainerRef.current;
     if (!el) return;
-
-    // Cell size and clamp range are captured once per gesture, not per move:
-    // the viewport cannot resize mid-drag, and reading the rect on every
-    // pointer move (60-120/s) forces a synchronous layout flush over a
-    // subtree holding up to thousands of grid cells. The pan layer is the
-    // box the cells are laid out in (the viewport box, letterboxed square
-    // when that flag is on), so its width and height over gridCols are the
-    // two sides of one cell. It is mounted in the same tree as `el`, so it
-    // is set whenever this runs.
-    const measureGesture = () => {
-      const view = viewRef.current;
-      const box = panLayerRef.current.getBoundingClientRect();
-      const { x, y } = windowPanBounds(view);
-      dragBoundsRef.current = {
-        // One cell size PER AXIS. With `squareBattlefieldCells` off (the
-        // default) the box fills the panel, so a cell is 1/gridCols of the
-        // width and 1/gridCols of the height — two different numbers, the
-        // same two `getEntityStyle` sizes tokens with. Measuring one off the
-        // width and using it for both axes stepped rows at the column pitch.
-        cellPxX: box.width / view.gridCols,
-        cellPxY: box.height / view.gridCols,
-        // Screen-space ranges. Dragging right (+px) reveals lower x, so the
-        // screen shift is the negation of the leftX shift; dragging down
-        // (+px) reveals higher y, the same sense as the topY shift.
-        minX: -x.max, maxX: -x.min,
-        minY: y.min, maxY: y.max,
-      };
-    };
-
-    const applyDelta = (dx, dy) => {
-      // Lazily initialised so a synthetic move with no preceding down-event
-      // still clamps.
-      if (!dragBoundsRef.current) measureGesture();
-      const { cellPxX, cellPxY, minX, maxX, minY, maxY } = dragBoundsRef.current;
-      dragTravelRef.current += Math.abs(dx) + Math.abs(dy);
-
-      // Rebuild the gesture's screen-space total from the committed cells
-      // plus the remainder, add the move, and split it again — one clamp,
-      // one rounding rule, for both the cells and the px they leave behind.
-      // Screen x runs opposite to the leftX shift (see measureGesture); that
-      // one sign flip is applied here and undone once on the commit below.
-      const cells = panCellsRef.current;
-      const rem = touchPanRef.current;
-      const screenTravelX = -cells.x * cellPxX + rem.x + dx;
-      const screenTravelY = cells.y * cellPxY + rem.y + dy;
-      const sx = splitPanAxis(screenTravelX, cellPxX, minX, maxX);
-      const sy = splitPanAxis(screenTravelY, cellPxY, minY, maxY);
-      touchPanRef.current = { x: sx.residual, y: sy.residual };
-      commitPanCells(-sx.cells, sy.cells);
-      applyPanTransform();
-    };
-
-    const beginDrag = (x, y) => {
-      cancelPanDecay();
-      measureGesture();
-      dragTravelRef.current = 0;
-      touchStartRef.current = { x, y };
-    };
 
     // Touch handlers
     const onTouchStart = (e) => {
@@ -192,10 +216,7 @@ export default function useBattlefieldPan({
     const onTouchMove = (e) => {
       if (!touchStartRef.current || e.touches.length !== 1) return;
       e.preventDefault();
-      const dx = e.touches[0].clientX - touchStartRef.current.x;
-      const dy = e.touches[0].clientY - touchStartRef.current.y;
-      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      applyDelta(dx, dy);
+      dragTo(e.touches[0].clientX, e.touches[0].clientY);
     };
     // Pan is sticky: releasing keeps the view where the player put it. The
     // recenter button (and starting a new fight) is what returns it.
@@ -211,10 +232,7 @@ export default function useBattlefieldPan({
     };
     const onMouseMove = (e) => {
       if (!touchStartRef.current) return;
-      const dx = e.clientX - touchStartRef.current.x;
-      const dy = e.clientY - touchStartRef.current.y;
-      touchStartRef.current = { x: e.clientX, y: e.clientY };
-      applyDelta(dx, dy);
+      dragTo(e.clientX, e.clientY);
     };
     const onMouseUp = () => {
       if (!touchStartRef.current) return;
@@ -246,7 +264,7 @@ export default function useBattlefieldPan({
     // The window (leftX/topY/gridCols) is deliberately NOT a dep: it changes
     // every time the camera steps a cell, and rebinding the listeners
     // mid-gesture drops the drag. It reaches the handlers through viewRef.
-  }, [applyPanTransform, commitPanCells, cancelPanDecay, tab]);
+  }, [beginDrag, dragTo, cancelPanDecay, tab]);
 
   // Reset the touch-pan offset when the fight identity changes, so a new fight
   // does not open with the camera parked where the last one left it.

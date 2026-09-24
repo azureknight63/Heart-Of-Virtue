@@ -45,11 +45,12 @@ from src.items import Book
 from src.universe import Universe
 from tests import _map_scan
 from tests._source_scan import ROOT
+import src.items as items
 
 #: What ``Book.text`` returns when the open fails -- and also what a book
 #: authored with neither text nor a path returns. Any authored
 #: ``text_file_path`` reaching it means the file did not load.
-BLANK_BOOK = "This book is mysteriously blank."
+BLANK_BOOK = items.BLANK_BOOK_TEXT
 
 #: Authored paths whose target file is not written yet. Exempt entries are
 #: SUBTRACTED from the offenders rather than asserted to BE offenders, so an
@@ -166,7 +167,7 @@ def test_walk_finds_the_authored_book_paths():
     )
 
 
-def test_guard_reads_through_a_real_book_open(tmp_path):
+def test_guard_reads_through_a_real_book_open(books_dir_in_tmp):
     """Control for the check itself: ``BLANK_BOOK`` has to be discriminating.
 
     A readable file must come back as its contents, and an authored path with
@@ -175,11 +176,11 @@ def test_guard_reads_through_a_real_book_open(tmp_path):
     one that always does. Both paths here are absolute and natively spelled,
     so unlike the separator control this holds on every platform.
     """
-    book_file = tmp_path / "control.txt"
+    book_file = books_dir_in_tmp / "control.txt"
     book_file.write_text("readable", encoding="utf-8")
 
     assert Book(text_file_path=str(book_file)).text == "readable"
-    assert Book(text_file_path=str(tmp_path / "absent.txt")).text == BLANK_BOOK
+    assert Book(text_file_path=str(books_dir_in_tmp / "absent.txt")).text == BLANK_BOOK
 
 
 @pytest.mark.skipif(
@@ -191,7 +192,7 @@ def test_guard_reads_through_a_real_book_open(tmp_path):
         "blank on Linux -- is POSIX-only, and CI runs on Linux."
     ),
 )
-def test_guard_reads_separators_the_way_the_engine_does(at_repo_root, tmp_path):
+def test_guard_reads_separators_the_way_the_engine_does(at_repo_root, books_dir_in_tmp):
     """Control for the check itself: it must read paths the way the engine does.
 
     Before #648 this asserted a backslashed path came back **blank**, because
@@ -205,7 +206,7 @@ def test_guard_reads_separators_the_way_the_engine_does(at_repo_root, tmp_path):
     repo root -- where it resolves to nothing. The spelling used here is
     therefore made relative to the repo root first, as a map would author it.
     """
-    book_file = tmp_path / "control.txt"
+    book_file = books_dir_in_tmp / "control.txt"
     book_file.write_text("readable", encoding="utf-8")
     relative = os.path.relpath(book_file, ROOT)
     backslashed = relative.replace("/", "\\")

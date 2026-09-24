@@ -100,16 +100,52 @@ def test_without_a_budget_the_chain_walks_as_before(clock):
     assert calls == ["openrouter", "groq"]
 
 
+def _total(timeout):
+    """Wall-clock bound of a ``requests`` timeout: a (connect, read) pair
+    applies each phase in turn, so the pair costs the sum."""
+    return sum(timeout) if isinstance(timeout, tuple) else timeout
+
+
 def test_a_call_timeout_is_clipped_to_what_the_turn_has_left(clock, monkeypatch):
     monkeypatch.setenv("NPC_CHAT_LLM_TIMEOUT", "6")
     adapter = _adapter(["openrouter"])
 
     with adapter.bounded_by(clock.now + 2.5):
-        assert adapter._call_timeout() == pytest.approx(2.5)
+        assert _total(adapter._call_timeout()) == pytest.approx(2.5)
         # Nominal, not clipped: the stage gate sizes a stage by this, and a
         # clipped value would make every remaining stage look unaffordable.
         assert adapter._round_timeout() == 6.0
     assert adapter._call_timeout() == 6.0
+
+
+@pytest.mark.parametrize("left", [0.5, 2.5, 6.0, 9.0, 21.0])
+def test_connect_and_read_together_fit_what_the_turn_has_left(
+    clock, monkeypatch, left
+):
+    """#637: ``requests`` applies a float timeout to EACH phase -- connect,
+    then read -- so ``timeout=left`` let one call run to twice what the turn
+    had left. Inside a turn the call gets a (connect, read) pair instead."""
+    monkeypatch.setenv("NPC_CHAT_LLM_TIMEOUT", "6")
+    adapter = _adapter(["openrouter"])
+
+    with adapter.bounded_by(clock.now + left):
+        timeout = adapter._call_timeout()
+
+    assert isinstance(timeout, tuple) and len(timeout) == 2, timeout
+    connect, read = timeout
+    assert connect > 0 and read > 0
+    assert connect + read <= left + 1e-9
+    assert read <= 6.0
+
+
+def test_a_turn_with_room_keeps_the_nominal_read(clock, monkeypatch):
+    """Splitting must not shorten a healthy call: with the turn's budget
+    ahead of it, the read phase is still the whole nominal timeout."""
+    monkeypatch.setenv("NPC_CHAT_LLM_TIMEOUT", "6")
+    adapter = _adapter(["openrouter"])
+
+    with adapter.bounded_by(clock.now + 21.0):
+        assert adapter._call_timeout()[1] == 6.0
 
 
 def test_the_budget_is_released_when_the_turn_ends(clock):
@@ -233,6 +269,118 @@ def test_the_worker_class_production_runs_is_installed_by_requirements():
         )
 
 
+#: Worker classes gunicorn has dropped, and the release that dropped them.
+#: An external fact, so it is written down rather than derived: gunicorn
+#: 25.x's ``workers/geventlet.py`` says the eventlet worker "will be removed in
+#: Gunicorn 26.0", and 26.x's ``SUPPORTED_WORKERS`` has no ``eventlet`` (#653).
+_WORKER_REMOVED_IN = {"eventlet": "26.0"}
+
+#: The worker's own dependency floor across the gunicorn releases the
+#: requirements admit: gunicorn 24.x and 25.x refuse to start the eventlet
+#: worker below eventlet 0.40.3 (``geventlet.py`` raises RuntimeError, and the
+#: ``[eventlet]`` extra declares ``eventlet>=0.40.3``).
+_WORKER_NEEDS = {"eventlet": ("eventlet", "0.40.3")}
+
+
+def _requirement(name):
+    """The ``packaging`` Requirement for ``name`` in requirements-api.txt."""
+    from packaging.requirements import Requirement
+
+    text = (_ROOT / "requirements-api.txt").read_text(encoding="utf-8")
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line and Requirement(line).name.lower() == name:
+            return Requirement(line)
+    pytest.fail(f"requirements-api.txt does not declare {name}")
+
+
+def test_requirements_cannot_install_a_gunicorn_without_the_units_worker():
+    """#653: gunicorn 26.0 removed the eventlet worker while the requirements
+    said ``gunicorn>=20.1``, so a rebuilt venv installed a gunicorn that cannot
+    boot the worker class the unit names. The class is read off the unit, so
+    switching the unit to another worker re-aims this check."""
+    worker_class = _production_gunicorn()["worker_class"]
+    removed_in = _WORKER_REMOVED_IN.get(worker_class)
+    if removed_in is None:
+        return
+    spec = _requirement("gunicorn").specifier
+    major = int(removed_in.split(".")[0])
+    for probe in (removed_in, f"{major}.2.0", f"{major + 1}.0", "99.0"):
+        assert not spec.contains(probe), (
+            f"requirements-api.txt admits gunicorn {probe}, which has no "
+            f"{worker_class} worker (removed in {removed_in}); "
+            f"{_UNIT.name} runs --worker-class {worker_class}"
+        )
+
+
+#: The oldest gunicorn without a known HTTP request-smuggling advisory:
+#: 22.0 fixed CVE-2024-1135 (Transfer-Encoding validation) and 23.0 fixed
+#: CVE-2024-6827 (TE.CL smuggling). Production binds gunicorn to a public
+#: listener, so the requirements must not admit anything older.
+_GUNICORN_SECURITY_FLOOR = "23.0"
+
+
+def test_requirements_cannot_install_a_gunicorn_with_known_smuggling_bugs():
+    from packaging.version import Version
+
+    spec = _requirement("gunicorn").specifier
+    floor = Version(_GUNICORN_SECURITY_FLOOR)
+    for probe in ("20.1.0", "22.0.0", f"{floor.major - 1}.99"):
+        assert not spec.contains(probe), (
+            f"requirements-api.txt admits gunicorn {probe}, below the "
+            f"{_GUNICORN_SECURITY_FLOOR} security floor"
+        )
+    assert spec.contains(_GUNICORN_SECURITY_FLOOR), "the floor itself must install"
+
+
+def test_the_worker_dependency_meets_the_floor_gunicorn_enforces():
+    """``eventlet>=0.40`` admitted 0.40.0-0.40.2, which every gunicorn from
+    24.0 on refuses to start its eventlet worker with."""
+    from packaging.version import Version
+
+    worker_class = _production_gunicorn()["worker_class"]
+    if worker_class not in _WORKER_NEEDS:
+        return
+    package, floor = _WORKER_NEEDS[worker_class]
+    v = Version(floor)
+    just_below = f"{v.major}.{v.minor}.{v.micro - 1}"
+    assert not _requirement(package).specifier.contains(just_below), (
+        f"requirements-api.txt admits {package} {just_below}; gunicorn's "
+        f"{worker_class} worker needs {floor} or later"
+    )
+
+
+def _widest_call():
+    """The longest one provider call may be, however it is configured.
+
+    The adapter clamps NPC_CHAT_LLM_TIMEOUT (#637), so the worst-case sums
+    below are taken against that clamp -- not the 6s default, which an
+    operator can raise.
+    """
+    import ai.llm_client as llm
+
+    return llm._ROUND_TIMEOUT_CEILING_SECONDS
+
+
+def _client_timeout_seconds():
+    js = (_ROOT / "frontend" / "src" / "api" / "npcChat.js").read_text(encoding="utf-8")
+    match = re.search(r"export const NPC_CHAT_TIMEOUT_MS = ([\d_]+)", js)
+    assert match is not None, "NPC_CHAT_TIMEOUT_MS is no longer an exported number literal"
+    return int(match.group(1).replace("_", "")) / 1000
+
+
+@pytest.mark.parametrize("configured", ["6", "10", "60", "1e9", "inf", "nan"])
+def test_a_raised_call_timeout_still_ends_inside_the_client_deadline(
+    configured, monkeypatch
+):
+    """#637: ``_round_timeout`` had no upper bound, so NPC_CHAT_LLM_TIMEOUT=10
+    made the worst turn 21s + 10s -- past the client's 28s, which then gave up
+    on a turn the server still went on to commit."""
+    monkeypatch.setenv("NPC_CHAT_LLM_TIMEOUT", configured)
+    worst = chat_llm._TURN_CEILING_SECONDS + NpcChatLLMAdapter._round_timeout()
+    assert worst <= _client_timeout_seconds()
+
+
 def test_a_turn_fits_inside_the_production_worker_timeout():
     """A turn must not outlive the worker.
 
@@ -243,11 +391,13 @@ def test_a_turn_fits_inside_the_production_worker_timeout():
     every player's game with it. One bound covers both, so switching the unit
     back to sync cannot quietly invalidate the budget.
 
-    Every call is clipped to the deadline, but ``requests`` applies a timeout
-    per phase (connect, then read), so one call can still end past it by up to
-    its own length: budget plus one nominal call must stay inside.
+    Inside a turn each call's (connect, read) timeout pair is sized to fit
+    what the turn has left, but ``requests``' read timeout bounds the gap
+    between bytes, not the whole body, so a trickling response can still run
+    past the deadline. The margin kept for that is one whole call at the
+    clamp: budget plus the widest call must stay inside.
     """
-    worst = chat_llm._TURN_CEILING_SECONDS + chat_llm._DEFAULT_ROUND_TIMEOUT_SECONDS
+    worst = chat_llm._TURN_CEILING_SECONDS + _widest_call()
     assert worst < _production_gunicorn()["timeout"]
 
 
@@ -255,11 +405,8 @@ def test_the_client_waits_at_least_as_long_as_a_turn_can_run():
     """``NPC_CHAT_TIMEOUT_MS`` is derived here from the engine's own numbers,
     not restated: a client that gives up first abandons a turn the server
     still commits."""
-    js = (_ROOT / "frontend" / "src" / "api" / "npcChat.js").read_text(encoding="utf-8")
-    match = re.search(r"export const NPC_CHAT_TIMEOUT_MS = ([\d_]+)", js)
-    assert match is not None, "NPC_CHAT_TIMEOUT_MS is no longer an exported number literal"
-    client_seconds = int(match.group(1).replace("_", "")) / 1000
-    worst = chat_llm._TURN_CEILING_SECONDS + chat_llm._DEFAULT_ROUND_TIMEOUT_SECONDS
+    client_seconds = _client_timeout_seconds()
+    worst = chat_llm._TURN_CEILING_SECONDS + _widest_call()
     assert client_seconds >= worst
     assert client_seconds < _production_gunicorn()["timeout"], (
         "past the worker timeout the client never gets to time out: the worker "
@@ -335,6 +482,40 @@ def test_a_full_length_timeout_still_benches_the_model(
     assert adapter._is_model_failed("vendor/model:free")
 
 
+@pytest.mark.parametrize(
+    "left, benched",
+    [
+        # 10s left: read keeps its nominal 6s, but connect is cut to 2.5s.
+        (10.0, False),
+        # 21s left: neither phase is clipped, so a connect timeout is real.
+        (21.0, True),
+    ],
+)
+def test_a_connect_timeout_benches_only_when_connect_was_not_clipped(
+    clock, monkeypatch, fresh_bench, left, benched
+):
+    """``bench_on_timeout`` compared only the read phase, so a ConnectTimeout
+    on a connect the TURN had clipped benched a healthy model as slow."""
+    import requests
+    import ai.llm_client as llm
+
+    monkeypatch.setenv("NPC_CHAT_LLM_TIMEOUT", "6")
+    adapter = _adapter(["openrouter"])
+    with adapter.bounded_by(clock.now + left):
+        connect, read = adapter._call_timeout()
+    assert read == 6.0
+    assert (connect < llm._CONNECT_TIMEOUT_SECONDS) is not benched
+
+    def connect_out(*_args, **_kwargs):
+        raise requests.exceptions.ConnectTimeout("connect timed out")
+
+    _openrouter_ready(adapter, monkeypatch, connect_out)
+    with adapter.bounded_by(clock.now + left):
+        assert adapter._call_openrouter("system", "user", 64, 0.5) is None
+
+    assert adapter._is_model_failed("vendor/model:free") is benched
+
+
 class _Response:
     def __init__(self, status_code, text=""):
         self.status_code = status_code
@@ -359,7 +540,8 @@ def test_the_400_retry_is_held_to_what_the_turn_has_left(clock, monkeypatch):
     with adapter.bounded_by(clock.now + 5.0):
         llm._post_chat_completion("url", {"model": "m", "reasoning": {}}, {}, 5.0)
 
-    assert sent == [5.0, pytest.approx(1.0)]
+    assert sent[0] == 5.0
+    assert _total(sent[1]) == pytest.approx(1.0)
 
 
 def test_the_400_retry_is_not_sent_once_the_turn_is_spent(clock, monkeypatch):
@@ -389,12 +571,12 @@ def test_an_inner_scope_never_widens_the_turn(clock, monkeypatch):
 
     with adapter.bounded_by(clock.now + 2.0):
         with adapter.bounded_by(clock.now + 10.0):
-            assert adapter._call_timeout() == pytest.approx(2.0)
+            assert _total(adapter._call_timeout()) == pytest.approx(2.0)
         with adapter.bounded_by(None):
-            assert adapter._call_timeout() == pytest.approx(2.0)
+            assert _total(adapter._call_timeout()) == pytest.approx(2.0)
         with adapter.bounded_by(clock.now + 1.0):
-            assert adapter._call_timeout() == pytest.approx(1.0)
-        assert adapter._call_timeout() == pytest.approx(2.0)
+            assert _total(adapter._call_timeout()) == pytest.approx(1.0)
+        assert _total(adapter._call_timeout()) == pytest.approx(2.0)
 
 
 def test_the_turn_clock_starts_before_the_adapter_is_built(clock):

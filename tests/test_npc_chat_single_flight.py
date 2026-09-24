@@ -9,6 +9,7 @@ while one is in flight is now refused (409) before it reaches the NPC.
 """
 
 import threading
+from unittest.mock import ANY
 
 import pytest
 
@@ -37,23 +38,31 @@ class _ChatNpc:
         return {"success": True, "conversation_ended": False}
 
 
+def _opened(player, npc_key):
+    """Mark ``npc_key`` as the conversation /open started, as the UI always
+    does before its first /respond (round-2 scrub: /respond requires it)."""
+    player.__dict__["_active_chat_npc_id"] = npc_key
+    player.__dict__["_active_chat_npc_key"] = npc_key
+
+
 @pytest.fixture
 def world():
     player, game_map = live_world()
     npc = _ChatNpc()
     game_map[(0, 0)].npcs_here = [npc]
+    _opened(player, "Tal")
     return GameService(), player, npc
 
 
 def test_a_second_turn_while_one_is_in_flight_is_refused(world):
     game_service, player, npc = world
-    lock = gs_module._chat_turn_lock(player)
-    assert lock.acquire(blocking=False)
+    lock, refusal = gs_module._begin_chat_turn(player, None)
+    assert lock is not None and refusal is None
     try:
         opened = game_service.npc_chat_open(player, "Tal")
         responded = game_service.npc_chat_respond(player, "Tal", "Hello?", "neutral")
     finally:
-        lock.release()
+        gs_module._end_chat_turn(player, lock)
 
     for result in (opened, responded):
         assert result["success"] is False and result.get("in_flight") is True, result
@@ -115,12 +124,12 @@ def test_two_players_do_not_share_a_gate(world):
     game_service, player, _npc = world
     other, other_map = live_world()
     other_map[(0, 0)].npcs_here = [_ChatNpc()]
-    lock = gs_module._chat_turn_lock(player)
-    assert lock.acquire(blocking=False)
+    lock, _refusal = gs_module._begin_chat_turn(player, None)
+    assert lock is not None
     try:
         result = game_service.npc_chat_open(other, "Tal")
     finally:
-        lock.release()
+        gs_module._end_chat_turn(player, lock)
 
     assert result["success"] is True, result
 
@@ -134,3 +143,583 @@ def test_the_route_answers_409_for_an_in_flight_turn():
     assert routes._chat_status(refused) == 409
     assert routes._chat_status({"success": False, "error": "x"}) == 400
     assert routes._chat_status({"success": True}) == 200
+
+
+# ---------------------------------------------------------------------------
+# Idempotent turns (#636): a Retry that reaches the server after the abandoned
+# turn has already committed must get that turn's result back, not a second
+# commit. The client mints one ``turn_id`` per option click and every retry of
+# that click reuses it.
+# ---------------------------------------------------------------------------
+
+
+class _CommittingNpc(_ChatNpc):
+    """A chat NPC whose ``chat_respond`` commits the way the engine's does --
+    into ``player.npc_chat_histories[npc_key]`` -- and whose every reply is
+    distinct, so a replay is distinguishable from a second run."""
+
+    def __init__(self, gate=None, started=None):
+        super().__init__(gate)
+        self._started = started
+        self.commits = 0
+
+    def chat_open(self, player):
+        self.calls.append("open")
+        return {"success": True, "npc_key": "Tal", "conversation_ended": False}
+
+    def chat_respond(self, player, jean_text, jean_tone):
+        self.calls.append("respond")
+        if self._started is not None:
+            self._started.set()
+        if self._gate is not None:
+            self._gate.wait(5)
+        self.commits += 1
+        entry = player.npc_chat_histories.setdefault(
+            "Tal", {"exchanges": [], "conversation_count": 0}
+        )
+        entry["exchanges"].append({"npc": "reply %d" % self.commits, "jean": jean_text})
+        return {
+            "success": True,
+            "npc_response": "reply %d" % self.commits,
+            "jean_options": [{"text": "More?", "tone": "neutral"}],
+            "conversation_ended": False,
+        }
+
+
+@pytest.fixture
+def committing_world():
+    player, game_map = live_world()
+    player.npc_chat_histories = {}
+    npc = _CommittingNpc()
+    game_map[(0, 0)].npcs_here = [npc]
+    _opened(player, "Tal")
+    return GameService(), player, npc
+
+
+_TURN = "turn-0001-abcdef"
+
+
+def _respond(game_service, player, turn_id, text="Hello?"):
+    return game_service.npc_chat_respond(player, "Tal", text, "neutral", turn_id=turn_id)
+
+
+def test_the_same_turn_id_twice_commits_once_and_replays_the_result(committing_world):
+    game_service, player, npc = committing_world
+
+    first = _respond(game_service, player, _TURN)
+    second = _respond(game_service, player, _TURN)
+
+    assert npc.commits == 1, "the retry committed the turn a second time"
+    assert len(player.npc_chat_histories["Tal"]["exchanges"]) == 1
+    assert second.pop("replayed") is True
+    assert first.get("replayed") is not True
+    assert second == first
+
+
+def test_a_new_turn_id_runs_normally(committing_world):
+    game_service, player, npc = committing_world
+
+    first = _respond(game_service, player, _TURN)
+    second = _respond(game_service, player, "turn-0002-abcdef", text="And?")
+
+    assert npc.commits == 2
+    assert second["npc_response"] != first["npc_response"]
+    assert second.get("replayed") is not True
+
+
+def test_no_turn_id_keeps_todays_behaviour(committing_world):
+    game_service, player, npc = committing_world
+
+    game_service.npc_chat_respond(player, "Tal", "Hello?", "neutral")
+    game_service.npc_chat_respond(player, "Tal", "Hello?", "neutral")
+
+    assert npc.commits == 2
+
+
+def test_a_failed_turn_is_not_replayed(committing_world):
+    """Only a committed turn is remembered: a retry of a failure must run."""
+    game_service, player, npc = committing_world
+    real = npc.chat_respond
+
+    def boom(*_a):
+        raise RuntimeError("provider exploded")
+
+    npc.chat_respond = boom
+    failed = _respond(game_service, player, _TURN)
+    npc.chat_respond = real
+    retried = _respond(game_service, player, _TURN)
+
+    assert failed["success"] is False
+    assert retried["success"] is True and retried.get("replayed") is not True
+    assert npc.commits == 1
+
+
+def test_the_replay_record_is_plain_builtins_beside_the_history(committing_world):
+    """It pickles with the save, so it must be builtins only (no allow-list
+    change), and it must not disturb the history fields the engine reads."""
+    import pickle
+
+    game_service, player, _npc = committing_world
+    result = _respond(game_service, player, _TURN)
+
+    entry = player.npc_chat_histories["Tal"]
+    assert entry["last_turn"]["turn_id"] == _TURN
+    assert entry["last_turn"]["result"] == result
+    assert entry["last_turn"]["result"] is not result, "stored by reference"
+    assert pickle.loads(pickle.dumps(entry)) == entry
+    assert game_service.npc_chat_history(player, "Tal")["success"] is True
+
+
+def test_no_replay_record_is_invented_for_an_npc_with_no_history(world):
+    """The engine's ``_save_exchange_to_persistence`` builds a fresh entry only
+    when the key is ABSENT; a stub entry holding just ``last_turn`` would make
+    its next ``entry["exchanges"].append`` raise KeyError."""
+    game_service, player, _npc = world
+    player.npc_chat_histories = {}
+    _respond(game_service, player, _TURN)
+    assert player.npc_chat_histories == {}
+
+
+def _overlap(game_service, player, npc, turn_id):
+    """Start a turn on another thread and hold it mid-commit."""
+    gate, started = threading.Event(), threading.Event()
+    npc._gate, npc._started = gate, started
+    first = threading.Thread(target=_respond, args=(game_service, player, turn_id))
+    first.start()
+    assert started.wait(5), "the first turn never started"
+    return gate, first
+
+
+def test_the_same_turn_id_overlapping_its_own_run_is_a_pending_409(committing_world):
+    game_service, player, npc = committing_world
+    gate, first = _overlap(game_service, player, npc, _TURN)
+    try:
+        again = _respond(game_service, player, _TURN)
+    finally:
+        gate.set()
+        first.join(5)
+
+    assert again["success"] is False
+    assert again.get("in_flight") is True and again.get("pending") is True, again
+    assert npc.commits == 1
+
+    # Once the running turn commits, the same id replays it.
+    replay = _respond(game_service, player, _TURN)
+    assert replay.get("replayed") is True and replay["npc_response"] == "reply 1"
+    assert npc.commits == 1
+
+
+@pytest.mark.parametrize("other", ["turn-0002-abcdef", None])
+def test_a_different_turn_overlapping_is_todays_409(committing_world, other):
+    game_service, player, npc = committing_world
+    gate, first = _overlap(game_service, player, npc, _TURN)
+    try:
+        again = _respond(game_service, player, other, text="Hi")
+    finally:
+        gate.set()
+        first.join(5)
+
+    assert again.get("in_flight") is True
+    assert "pending" not in again, again
+
+
+def test_the_pending_mark_is_dropped_when_the_turn_ends(committing_world):
+    game_service, player, _npc = committing_world
+    _respond(game_service, player, _TURN)
+    assert gs_module._CHAT_TURN_PENDING.get(player) is None
+
+
+# --- the route --------------------------------------------------------------
+
+
+@pytest.fixture
+def route(monkeypatch):
+    from unittest.mock import MagicMock
+    from flask import Flask
+    from src.api.routes.npc_chat import npc_chat_bp
+
+    monkeypatch.setattr("src.api.routes.npc_chat._chat_limiter", None)
+    monkeypatch.setattr("src.api.routes.npc_chat._chat_ip_limiter", None)
+    player = MagicMock()
+    monkeypatch.setattr(
+        "src.api.routes.npc_chat.get_session_and_player",
+        lambda: (MagicMock(), MagicMock(session_id="s"), player, None),
+    )
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    gs = MagicMock()
+    gs.npc_chat_respond.return_value = {"success": True}
+    gs.npc_chat_end.return_value = {"success": True}
+    app.game_service = gs
+    app.register_blueprint(npc_chat_bp, url_prefix="/npc")
+    return app.test_client(), gs, player
+
+
+_BODY = {"npc_key": "Tal", "jean_text": "Hello?", "jean_tone": "neutral"}
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["short", "x" * 65, "has space!", "turn/../id", "é" * 10, 12345678, ["a" * 10], {"a": 1}, True, ""],
+)
+def test_the_route_refuses_a_malformed_turn_id(route, bad):
+    client, gs, _player = route
+    response = client.post("/npc/respond", json=dict(_BODY, turn_id=bad))
+    assert response.status_code == 400, response.get_json()
+    gs.npc_chat_respond.assert_not_called()
+
+
+@pytest.mark.parametrize("good", ["a" * 8, "A-b_9" * 12 + "abcd", "0f8e2c1a-9b7d-4e3f-8a2b-1c4d5e6f7a8b"])
+def test_the_route_forwards_a_valid_turn_id(route, good):
+    client, gs, player = route
+    response = client.post("/npc/respond", json=dict(_BODY, turn_id=good))
+    assert response.status_code == 200
+    gs.npc_chat_respond.assert_called_once_with(
+        player, "Tal", "Hello?", "neutral", turn_id=good, charge=ANY
+    )
+
+
+@pytest.mark.parametrize("body", [_BODY, dict(_BODY, turn_id=None)])
+def test_the_route_without_a_turn_id_forwards_none(route, body):
+    client, gs, player = route
+    assert client.post("/npc/respond", json=body).status_code == 200
+    gs.npc_chat_respond.assert_called_once_with(
+        player, "Tal", "Hello?", "neutral", turn_id=None, charge=ANY
+    )
+
+
+def test_the_route_answers_409_for_a_pending_turn():
+    from src.api.routes import npc_chat as routes
+
+    assert routes._chat_status(dict(gs_module._CHAT_TURN_IN_FLIGHT, pending=True)) == 409
+
+
+# ---------------------------------------------------------------------------
+# Per-open token for /end (#674 item 7). A late /end from a panel closed on
+# one conversation with Tal must not clear the marker of the NEXT conversation
+# with Tal: the npc_key is the same, so only a per-open token tells them apart.
+# ---------------------------------------------------------------------------
+
+
+def _active(player):
+    return player.__dict__.get("_active_chat_npc_id")
+
+
+def test_open_mints_a_fresh_token_each_time(world):
+    game_service, player, _npc = world
+    first = game_service.npc_chat_open(player, "Tal")
+    second = game_service.npc_chat_open(player, "Tal")
+    assert isinstance(first.get("open_token"), str) and first["open_token"]
+    assert second["open_token"] != first["open_token"]
+
+
+def test_a_late_end_with_a_stale_token_does_not_clear_a_fresh_open(world):
+    game_service, player, _npc = world
+    stale = game_service.npc_chat_open(player, "Tal")["open_token"]
+    game_service.npc_chat_open(player, "Tal")  # the player reopened quickly
+
+    game_service.npc_chat_end(player, "Tal_0", open_token=stale)
+
+    assert _active(player) == "Tal", "a stale /end cleared the new conversation"
+
+
+def test_end_with_the_current_token_clears(world):
+    game_service, player, _npc = world
+    token = game_service.npc_chat_open(player, "Tal")["open_token"]
+    game_service.npc_chat_end(player, "Tal_0", open_token=token)
+    assert _active(player) is None
+    assert "_active_chat_open_token" not in player.__dict__
+
+
+def test_end_without_a_token_keeps_todays_behaviour(world):
+    game_service, player, _npc = world
+    game_service.npc_chat_open(player, "Tal")
+    game_service.npc_chat_end(player, "Tal_0")
+    assert _active(player) is None
+
+
+def test_the_route_forwards_the_open_token(route):
+    client, gs, player = route
+    token = "tok_" + "a" * 20
+    assert client.post("/npc/end", json={"npc_key": "Tal_0", "open_token": token}).status_code == 200
+    gs.npc_chat_end.assert_called_once_with(player, "Tal_0", open_token=token)
+
+
+def test_the_route_without_an_open_token_forwards_none(route):
+    client, gs, player = route
+    assert client.post("/npc/end", json={"npc_key": "Tal_0"}).status_code == 200
+    gs.npc_chat_end.assert_called_once_with(player, "Tal_0", open_token=None)
+
+
+@pytest.mark.parametrize("bad", ["short", 5, "x y z abcdef", ""])
+def test_the_route_refuses_a_malformed_open_token(route, bad):
+    client, gs, _player = route
+    response = client.post("/npc/end", json={"npc_key": "Tal_0", "open_token": bad})
+    assert response.status_code == 400
+    gs.npc_chat_end.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Review follow-ups on the idempotent-turn work.
+# ---------------------------------------------------------------------------
+
+
+class _HookedGuard:
+    """Wraps the real guard and runs ``hook`` once, right after the next
+    release -- the instant another thread could run between two guarded
+    sections of the same caller."""
+
+    def __init__(self, real):
+        self.real = real
+        self.hook = None
+
+    def __enter__(self):
+        return self.real.__enter__()
+
+    def __exit__(self, *exc):
+        self.real.__exit__(*exc)
+        hook, self.hook = self.hook, None
+        if hook is not None:
+            hook()
+
+
+def test_the_pending_refusal_is_decided_under_the_guard(committing_world, monkeypatch):
+    """A Retry of a running turn must be told ``pending`` even when that turn
+    finishes the moment the Retry's own lock attempt releases the guard. The
+    refusal used to be read AFTER the release, so the running turn's
+    ``_end_chat_turn`` could clear the pending id in between and the Retry got
+    a plain 409, stranding the client's replay loop."""
+    game_service, player, npc = committing_world
+    guard = _HookedGuard(gs_module._CHAT_TURN_LOCKS_GUARD)
+    monkeypatch.setattr(gs_module, "_CHAT_TURN_LOCKS_GUARD", guard)
+    gate, first = _overlap(game_service, player, npc, _TURN)
+
+    def running_turn_finishes():
+        gate.set()
+        first.join(5)
+
+    guard.hook = running_turn_finishes
+    try:
+        again = _respond(game_service, player, _TURN)
+    finally:
+        gate.set()
+        first.join(5)
+
+    assert not first.is_alive()
+    assert again.get("pending") is True, again
+
+
+def _commit_then(game_service, player):
+    first = _respond(game_service, player, _TURN)
+    assert player.npc_chat_histories["Tal"]["last_turn"]["turn_id"] == _TURN
+    return first
+
+
+def test_opening_a_new_conversation_forgets_the_last_turn(committing_world):
+    """A late Retry from the previous conversation must not replay its old
+    reply into the new one."""
+    game_service, player, npc = committing_world
+    _commit_then(game_service, player)
+
+    assert game_service.npc_chat_open(player, "Tal")["success"] is True
+    assert "last_turn" not in player.npc_chat_histories["Tal"]
+
+    late = _respond(game_service, player, _TURN)
+    assert late.get("replayed") is not True
+    assert npc.commits == 2
+
+
+def test_a_turn_without_an_id_forgets_the_last_turn(committing_world):
+    """The record names 'the click still on screen'; a newer committed turn
+    without an id has replaced that click, so its Retry must not replay."""
+    game_service, player, npc = committing_world
+    _commit_then(game_service, player)
+
+    game_service.npc_chat_respond(player, "Tal", "And?", "neutral")
+    assert "last_turn" not in player.npc_chat_histories["Tal"]
+
+    late = _respond(game_service, player, _TURN)
+    assert late.get("replayed") is not True
+    assert npc.commits == 3
+
+
+@pytest.fixture
+def limited_route(monkeypatch, committing_world):
+    """The /respond route over a real GameService and a REAL identity limiter
+    at the production default of 10/minute."""
+    from unittest.mock import MagicMock
+    from flask import Flask
+    from src.api.rate_limiter import RateLimiter
+    from src.api.routes import npc_chat as routes
+
+    game_service, player, npc = committing_world
+    monkeypatch.setattr(
+        routes, "_chat_limiter",
+        RateLimiter(routes._RATE_LIMIT_DEFAULT_PER_MINUTE, routes._RATE_WINDOW_SECONDS),
+    )
+    monkeypatch.setattr(routes, "_chat_ip_limiter", None)
+    session = MagicMock(db_user_id=7, session_id="s")
+    monkeypatch.setattr(
+        routes, "get_session_and_player",
+        lambda: (MagicMock(), session, player, None),
+    )
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    app.game_service = game_service
+    app.register_blueprint(routes.npc_chat_bp, url_prefix="/npc")
+    return app.test_client(), player, npc
+
+
+def _post(client, turn_id):
+    return client.post("/npc/respond", json=dict(_BODY, npc_key="Tal", turn_id=turn_id))
+
+
+def test_resending_a_known_turn_is_not_charged_by_the_rate_limiter(limited_route):
+    """#636 follow-up: the client re-sends a pending turn (with backoff) until
+    it commits, then replays it. Those re-sends cost no LLM call, so the
+    service charges neither them nor the replays; charged before the service,
+    one slow turn could spend the whole 10/minute budget and 429 the player."""
+    client, player, npc = limited_route
+    assert _post(client, _TURN).status_code == 200  # the one charged turn
+
+    for _ in range(12):
+        replay = _post(client, _TURN)
+        assert replay.status_code == 200, replay.get_json()
+        assert replay.get_json()["replayed"] is True
+
+    pending_id = "turn-pend-0001"
+    held, _refusal = gs_module._begin_chat_turn(player, pending_id, "Tal")
+    try:
+        for _ in range(12):
+            pending = _post(client, pending_id)
+            assert pending.status_code == 409, pending.get_json()
+            assert pending.get_json()["pending"] is True
+    finally:
+        gs_module._end_chat_turn(player, held)
+
+    assert npc.commits == 1
+
+
+def test_fresh_turns_are_still_rate_limited(limited_route):
+    """Control: exempting known turns must not exempt new ones."""
+    client, _player, _npc = limited_route
+    codes = [_post(client, "turn-%04d-fresh" % i).status_code for i in range(12)]
+    assert codes[:10] == [200] * 10
+    assert codes[10:] == [429, 429]
+
+
+# ---------------------------------------------------------------------------
+# Round-2 scrub (S1, maintainer-approved fix): the rate-limit charge is taken
+# where a provider turn actually runs, not decided by an advisory pre-check.
+# ---------------------------------------------------------------------------
+
+
+def _released_in_the_window(monkeypatch, player, held):
+    """Make the NEXT ``_begin_chat_turn`` first release ``held`` -- the running
+    turn finishing between a route's pre-check and the turn lock."""
+    real = gs_module._begin_chat_turn
+
+    def begin(p, *args, **kwargs):
+        if held[0] is not None:
+            gs_module._end_chat_turn(player, held[0])
+            held[0] = None
+        return real(p, *args, **kwargs)
+
+    monkeypatch.setattr(gs_module, "_begin_chat_turn", begin)
+
+
+def test_no_request_runs_an_uncharged_provider_turn(limited_route, monkeypatch):
+    """S1 reproduction: a re-send judged "known" (its turn pending) at the
+    route, whose turn then finishes before the re-send reaches the lock, used
+    to run a real turn with no charge. Repeated, that is unlimited provider
+    turns from nothing. Whatever the timing, every turn that reaches the NPC
+    is charged, so the 10/minute budget caps commits at 10."""
+    client, player, npc = limited_route
+    codes = []
+    for i in range(15):
+        turn_id = "turn-%04d-race" % i
+        lock, _refusal = gs_module._begin_chat_turn(player, turn_id, "Tal")
+        held = [lock]
+        _released_in_the_window(monkeypatch, player, held)
+        codes.append(_post(client, turn_id).status_code)
+    assert npc.commits <= 10, (npc.commits, codes)
+    assert 429 in codes, codes
+
+
+def test_respond_needs_the_conversation_the_player_opened(committing_world):
+    """No /open, or a key other than the one /open returned (the route used to
+    reach any NPC whose class name prefixes the key): refused before the NPC
+    sees it."""
+    game_service, player, npc = committing_world
+    game_service._clear_active_chat(player)  # the fixture opened it
+    unopened = _respond(game_service, player, _TURN)
+    assert unopened["success"] is False and npc.commits == 0, unopened
+
+    game_service.npc_chat_open(player, "Tal")
+    alias = game_service.npc_chat_respond(
+        player, "_CommittingNpcAlias", "Hi", "neutral", turn_id="turn-alias-0001"
+    )
+    assert alias["success"] is False and npc.commits == 0, alias
+
+    opened = _respond(game_service, player, "turn-open-0001")
+    assert opened["success"] is True and npc.commits == 1, opened
+
+
+def test_an_open_that_named_no_key_answers_no_respond(committing_world):
+    """An /open whose result carried no ``npc_key`` gives the UI nothing to
+    answer with (useNpcChat sends only the key /open returned), so the API
+    answers nothing either -- not any key at all (round-2 scrub, iteration 2)."""
+    game_service, player, npc = committing_world
+    game_service._clear_active_chat(player)
+    player.__dict__["_active_chat_npc_id"] = "Tal"
+    refused = _respond(game_service, player, _TURN)
+    assert refused["success"] is False and npc.commits == 0, refused
+
+
+def test_a_not_open_refusal_is_charged(committing_world):
+    """Every refusal but a replay and a ``pending`` answer costs the identity
+    tier, the service's precondition refusal included, as the route's own
+    400s are (round-2 scrub, iteration 2)."""
+    game_service, player, npc = committing_world
+    game_service._clear_active_chat(player)
+    charges = []
+    refused = game_service.npc_chat_respond(
+        player, "Tal", "Hi", "neutral", turn_id=_TURN,
+        charge=lambda: charges.append(1) or False,
+    )
+    assert refused["success"] is False and npc.commits == 0, refused
+    assert charges == [1]
+    over = game_service.npc_chat_respond(
+        player, "Tal", "Hi", "neutral", turn_id=_TURN, charge=lambda: True,
+    )
+    assert over.get("rate_limited") is True, over
+
+
+def test_free_re_sends_still_count_against_the_ip_tier(limited_route, monkeypatch):
+    """S3: a replay costs no provider call, so the identity tier leaves it
+    alone -- but every /respond records the IP tier, so a flood of free
+    re-sends from one source is still capped."""
+    from src.api.rate_limiter import RateLimiter
+    from src.api.routes import npc_chat as routes
+
+    client, _player, npc = limited_route
+    per_minute = routes._IP_RATE_LIMIT_DEFAULT_PER_MINUTE
+    monkeypatch.setattr(
+        routes, "_chat_ip_limiter",
+        RateLimiter(per_minute, routes._RATE_WINDOW_SECONDS),
+    )
+    codes = [_post(client, _TURN).status_code for _ in range(per_minute + 5)]
+    assert codes[:per_minute] == [200] * per_minute
+    assert set(codes[per_minute:]) == {429}
+    assert npc.commits == 1
+
+
+def test_opening_forgets_every_npcs_replay_record(committing_world):
+    """A late Retry naming a DIFFERENT, earlier conversation must not replay
+    that NPC's old reply while this new one is on screen."""
+    game_service, player, _npc = committing_world
+    player.npc_chat_histories["Other"] = {
+        "exchanges": [], "last_turn": {"turn_id": _TURN, "result": {"success": True}},
+    }
+    assert game_service.npc_chat_open(player, "Tal")["success"] is True
+    assert "last_turn" not in player.npc_chat_histories["Other"]

@@ -26,6 +26,7 @@ from unittest.mock import patch  # noqa: E402
 
 from src.api.services.game_service import GameService  # noqa: E402
 from src.combatant import wire_handle  # noqa: E402
+from src.npc import Slime  # noqa: E402
 from src.objects import Object  # noqa: E402
 from tests._gs_fixtures import live_world  # noqa: E402
 
@@ -107,9 +108,11 @@ class TestTheDeferralHoldsOnTheInteractionPath:
         edit stash the enemies somewhere nothing reads -- which is a soft-lock
         (the fight never happens) dressed as a fix.
         """
-        player, _tile, obj = world_with_a_touchable_object
+        player, tile, obj = world_with_a_touchable_object
         player.pending_attribute_points = 1
-        enemies = [object()]
+        slime = Slime()
+        tile.npcs_here.append(slime)  # the resume takes only who is still here
+        enemies = [slime]
 
         with patch.object(game_service, "_start_combat"):
             _interact(game_service, player, obj, enemies)
@@ -119,7 +122,7 @@ class TestTheDeferralHoldsOnTheInteractionPath:
             game_service.get_combat_status(player)
 
         assert init.call_count == 1
-        assert init.call_args.args[1] is enemies
+        assert init.call_args.args[1] == enemies
         assert player._combat_deferred_enemies is None
 
     def test_no_pending_points_still_starts_the_fight(

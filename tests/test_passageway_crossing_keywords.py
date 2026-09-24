@@ -99,7 +99,7 @@ def test_a_declared_crossing_keyword_resolves_to_a_crossing():
     handler = resolve_interaction(way, "east")
     assert handler is not None
     assert way.is_crossing_handler(handler)
-    assert way.accepts_step_through(handler, "east")
+    assert way.accepts_step_through(handler)
     # Advertised, so the client renders it and the API authorizes it.
     assert "east" in way.keywords
 
@@ -110,7 +110,7 @@ def test_an_advertised_keyword_alone_no_longer_crosses():
     way.keywords.append(NON_CROSSING_KEYWORD)
     handler = resolve_interaction(way, NON_CROSSING_KEYWORD)
     assert handler is None
-    assert not way.accepts_step_through(handler, NON_CROSSING_KEYWORD)
+    assert not way.accepts_step_through(handler)
 
 
 def test_crossing_keywords_never_redirect_a_declared_method():

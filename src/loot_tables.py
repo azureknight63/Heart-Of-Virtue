@@ -3,10 +3,13 @@ All the loot tables for NPCs can be found here. These are called from the npc mo
 """
 
 import inspect
+import logging
 import random
 import src.items as items
 import src.functions as functions
 from src.narration import narrate
+
+_log = logging.getLogger(__name__)
 
 
 class Loot:
@@ -28,6 +31,8 @@ class Loot:
 
     @staticmethod
     def random_equipment(tile, level, enchantment):
+        """Spawn one random equipment item of ``level`` on ``tile`` and return
+        it, or None (spawning nothing) when no class qualifies."""
         candidates = []
         eq_level = int(level)
         for name, obj in inspect.getmembers(items, inspect.isclass):
@@ -38,6 +43,13 @@ class Loot:
                 continue
             if getattr(obj, "level", None) == eq_level:
                 candidates.append(name)
+        if not candidates:
+            # A level with no selectable equipment is no drop, not a
+            # randint(0, -1) crash in the middle of a death (#674).
+            _log.warning(
+                "random_equipment: no selectable equipment at level %s", eq_level
+            )
+            return None
         select = random.randint(0, len(candidates) - 1)
         drop = tile.spawn_item(candidates[select], amt=1, hidden=False, hfactor=0)
         try:

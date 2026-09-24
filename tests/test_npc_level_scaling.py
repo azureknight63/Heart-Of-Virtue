@@ -315,3 +315,31 @@ class TestInstantiatePlaceholderLevelWiring:
             instantiate_placeholder(payload)
 
         mock_roll.assert_called_once_with(good_value, False)
+
+
+# ---------------------------------------------------------------------------
+# #655: the Mineral Pools are fought solo
+# ---------------------------------------------------------------------------
+
+class TestMineralPoolsTrashIsTunedForASoloJean:
+    """#655's first tuning pass raised the Pools trash (Slime damage growth
+    3 -> 5, Pools Slime/CaveBat level 2 -> 3) against arena numbers taken
+    with Gorran in the party. The story removes him for the whole Pools
+    stretch (``Ch02GorranAtPools`` until ``AfterDefeatingKingSlime``), and
+    every live run then died there, three of four to trash packs. The
+    maintainer's call was to retune the Pools for a solo Jean, starting by
+    putting the trash back on its draft values. A change here should come
+    with solo measurements (docs/qa/2026-09-24-balance-baseline.md,
+    "Solo Pools retune")."""
+
+    def test_slime_damage_growth_is_back_on_the_draft_value(self):
+        assert ENEMY_GROWTH_PROFILES["Slime"] == {"maxhp": 6, "damage": 3}
+
+    @pytest.mark.parametrize("cls_name", ["Slime", "CaveBat"])
+    def test_pools_trash_level_is_back_on_the_draft_value(self, cls_name):
+        assert REGION_ENEMY_LEVELS["grondelith-mineral-pools"][cls_name] == 2
+
+    def test_elder_slime_damage_does_not_grow_with_level(self):
+        """Solo, the ElderSlime's Slime Volley was the (3,3)/(3,4) packs'
+        killing blow; the approved retune stops its damage growing."""
+        assert ENEMY_GROWTH_PROFILES["ElderSlime"]["damage"] == 0

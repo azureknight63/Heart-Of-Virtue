@@ -21,9 +21,9 @@ class TestPlayerCore:
     def test_player_starts_without_the_relic(self, player):
         """Dropped from the starting kit (issue #646). Its text named
         Jerusalem, which the story withholds until the chapter 2 memory flash,
-        and a single-use consumable cannot carry that lore. Hollowed has no
-        active cure until #646 is designed; it lapses on its own."""
-        assert not [item for item in player.inventory if isinstance(item, items.Relic)]
+        and a single-use consumable cannot carry that lore. The class is now
+        retired too; prayer cures Hollowed (tests/test_prayer.py)."""
+        assert not [item for item in player.inventory if type(item).__name__ == "Relic"]
 
     def test_player_vulnerable_to_slimed(self, player):
         """Jean must be vulnerable to Slimed (statustype 'slimed'), inflicted by

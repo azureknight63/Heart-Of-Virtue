@@ -250,6 +250,8 @@ class NPCLootMixin:
                             self.current_room, p[1], p[2]
                         )
                     )
+                    if drop is None:
+                        continue  # no equipment at that level: skip this entry
                 else:
                     drop, landed = self._spawn_drop(
                         lambda name=item, amt=dropcount: self.current_room.spawn_item(

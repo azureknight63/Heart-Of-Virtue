@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { revealedLogEntries } from './useBattlefieldAnimations';
+import {
+  pruneToWindow,
+  revealedLogEntries,
+  revealedLogSignature,
+  seedReplayedIds,
+} from '../utils/revealedLog';
 import { FLOAT_TEXT_MS, FLOAT_TEXT_PHASE, floatTextEffectFor } from '../utils/animationConfigs';
 import { MAX_BEAT_RESULTS } from '../utils/combatBeatSchema';
 import { effectiveDuration } from '../utils/combatTiming';
@@ -65,14 +70,14 @@ export default function useFloatingCombatText({
   // first-render seeding, as useBattlefieldAnimations' replayedLogIdsRef.
   const replayedEntryIdsRef = useRef(null);
   if (replayedEntryIdsRef.current === null) {
-    const seed = new Set();
-    if (isReloadRecovery) {
-      for (const { entry, id } of revealedLogEntries(log || [], Infinity)) {
-        if (Array.isArray(entry?.results)) seed.add(id);
-      }
-    }
-    replayedEntryIdsRef.current = seed;
+    replayedEntryIdsRef.current = isReloadRecovery
+      ? seedReplayedIds(log, (entry) => Array.isArray(entry?.results))
+      : new Set();
   }
+  // Early-out fingerprint for the default-path walk: an idle poll re-sends an
+  // identical log as a fresh array (see revealedLogSignature). Cleared on a
+  // fight change so an identical-looking new log is still walked.
+  const logSignatureRef = useRef(null);
 
   // Remember where everyone stands. Declared before the spawning effects so it
   // runs first in a commit that both moves a combatant and floats its text.
@@ -94,6 +99,7 @@ export default function useFloatingCombatText({
     floatedEntryIdsRef.current = new Set();
     floatedLayerIdsRef.current = new Set();
     replayedEntryIdsRef.current = new Set();
+    logSignatureRef.current = null;
     // Rebuilt from the current state rather than emptied: the position
     // effect above has already recorded this commit's (new-fight) positions.
     lastPositionRef.current = rememberPositions(new Map(), combat);
@@ -156,6 +162,9 @@ export default function useFloatingCombatText({
   // Default path: float each newly revealed entry's results.
   useEffect(() => {
     if (streaming || !log) return;
+    const signature = revealedLogSignature(log, displayedLogCount, combatId);
+    if (logSignatureRef.current === signature) return;
+    logSignatureRef.current = signature;
     const floated = floatedEntryIdsRef.current;
     const windowIds = new Set();
     const fresh = [];
@@ -166,11 +175,7 @@ export default function useFloatingCombatText({
       floated.add(id);
       fresh.push(...entry.results);
     }
-    // Same pruning rule as the animation pipeline: an empty window (the
-    // combat:ended blip) prunes nothing.
-    if (windowIds.size > 0) {
-      for (const id of floated) if (!windowIds.has(id)) floated.delete(id);
-    }
+    pruneToWindow(floated, windowIds);
     if (fresh.length > 0) spawn(fresh);
     // combatId: the reset above empties `floated`, and this is what refills it.
   }, [streaming, log, displayedLogCount, combatId, spawn]);

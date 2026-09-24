@@ -22,28 +22,20 @@ space is load-bearing (they are appended directly to an NPC name, e.g.
 adjacent spaces, which are legitimate authored breaks.
 """
 
-import glob
 import inspect
-import json
-import os
 import re
 from unittest.mock import MagicMock
 
 import src.objects as objects_module
-
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MAP_FILES = sorted(glob.glob(os.path.join(REPO_ROOT, "src", "resources", "maps", "*.json")))
+from tests._map_scan import map_data, tiles
 
 # A space before a newline, or horizontal whitespace after one.
 _WRAP_RESIDUE = re.compile(r"[ \t]+\n|\n[ \t]+")
 
 
 def _load_maps():
-    maps = {}
-    for path in MAP_FILES:
-        with open(path, encoding="utf-8") as fh:
-            maps[os.path.basename(path)] = json.load(fh)
-    return maps
+    """``{file name: decoded map}`` over the shared, parse-once scan."""
+    return {path.name: data for path, data in map_data()}
 
 
 def _walk_key(node, key, found, where):
@@ -92,8 +84,8 @@ def _object_default_discovery_messages():
 def _tile_descriptions():
     found = []
     for name, data in _load_maps().items():
-        for coord, tile in data.items():
-            if isinstance(tile, dict) and isinstance(tile.get("description"), str):
+        for coord, tile in tiles(data):
+            if isinstance(tile.get("description"), str):
                 found.append((f"{name} {coord}", tile["description"]))
     return found
 

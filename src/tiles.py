@@ -58,6 +58,7 @@ class MapTile:
             actions.Search(),
             actions.Menu(),
             actions.Save(),
+            actions.Pray(),
         ]
 
         # Check if debug mode is enabled via player's game_config

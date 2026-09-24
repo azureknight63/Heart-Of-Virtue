@@ -197,17 +197,20 @@ class ShootBow(
         if self.user.eq_weapon.subtype != "Bow":
             return False
 
-        return self._enemy_in_range() and self._has_arrows()
+        # Arrows before range, in the same order _unavailability_code names
+        # them, so the refusal always cites the blocker viable() hit first.
+        return self._has_arrows() and self._enemy_in_range()
 
     def _enemy_in_range(self):
-        """Some combatant stands inside the bow's effective range."""
+        """Some hostile stands inside the bow's effective range; an ally in
+        the line of fire is not a target (#674)."""
         range_min = self.mvrange[0]
         range_max = self.get_effective_range_max(self.user)
         if range_max is None:
             return False
         return any(
             range_min <= distance <= range_max
-            for distance in self.user.combat_proximity.values()
+            for _enemy, distance in self._hostiles_in_proximity()
         )
 
     def _has_arrows(self):

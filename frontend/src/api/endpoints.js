@@ -20,6 +20,7 @@ export const player = {
   getJournal: () => apiClient.get('/journal'),
   learnSkill: (skillName, category) => apiClient.post('/skills/learn', { skill_name: skillName, category }),
   allocateLevelUpPoints: (attribute, amount) => apiClient.post('/level-up/allocate', { attribute, amount }),
+  pray: () => apiClient.post('/pray'),
 }
 
 // World endpoints

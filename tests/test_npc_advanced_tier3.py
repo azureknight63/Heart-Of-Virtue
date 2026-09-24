@@ -2651,5 +2651,17 @@ class TestMapPayloadsDoNotReintroduceTheChatKeyword:
         assert [kw for _c, _i, kw in _npc_keyword_payloads(planted)] == [["talk"]]
 
 
+def test_roll_loot_skips_an_equipment_entry_whose_pool_is_empty():
+    """#674: random_equipment returns None for a level with no candidates;
+    roll_loot skips that entry instead of reading ``None.name``."""
+    npc = NPC(name="EmptyPool", description="Test", damage=10, aggro=True, exp_award=50)
+    npc.loot = {"Equipment_7_0": {"chance": 100, "qty": 1}}
+    npc.current_room = MagicMock()
+    npc.player_ref = None
+    with patch('src.loot_tables.Loot.random_equipment', return_value=None):
+        with patch('src.npc._loot.random.randint', return_value=0):
+            assert npc.roll_loot() == []
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

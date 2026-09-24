@@ -135,10 +135,18 @@ def test_fuzzer_reports_a_breach_when_the_allow_list_is_disabled(monkeypatch):
     The fuzzer must then report gadgets getting through *and* a malicious
     ``__reduce__`` actually firing -- if it stays silent, its clean runs prove
     nothing about the loader.
+
+    Since issue #638 strict mode has two independent layers -- ``find_class``
+    admits only classes/functions from trusted modules, and REDUCE calls only
+    what ``_reduce_refusal`` admits -- so disabling ``_is_allowed`` alone no
+    longer lets ``os.system`` through. The injected defect disables the whole
+    gate.
     """
     import src.secure_pickle as secure_pickle
 
     monkeypatch.setattr(secure_pickle, "_is_allowed", lambda module, name: True)
+    monkeypatch.setattr(secure_pickle, "_resolved_global_is_trusted", lambda obj: True)
+    monkeypatch.setattr(secure_pickle, "_reduce_refusal", lambda func, args: None)
     findings = fuzzer.security_findings(fuzzer.run_fuzz(iterations=400, seed=5))
 
     assert findings, "fuzzer failed to notice a disabled allow-list"

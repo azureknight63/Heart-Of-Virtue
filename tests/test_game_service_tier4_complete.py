@@ -325,7 +325,7 @@ class TestGameServicePlayerStatusMethods:
         result = gs.get_available_commands(player)
 
         names = [c["name"] for c in result["commands"]]
-        assert names == ["Search", "Menu", "Save"]
+        assert names == ["Search", "Menu", "Save", "Pray"]
         assert result["count"] == len(result["commands"])
 
 

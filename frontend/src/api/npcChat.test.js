@@ -54,6 +54,38 @@ describe('npcChat', () => {
     );
   });
 
+  it('sends the turn_id that makes a retried turn idempotent (#636)', () => {
+    npcChat.respond('npc_session_123', 'Back off', 'guarded', { turnId: 'turn_0123456789' });
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/npc/chat/respond',
+      {
+        npc_key: 'npc_session_123',
+        jean_text: 'Back off',
+        jean_tone: 'guarded',
+        turn_id: 'turn_0123456789',
+      },
+      withDeadline
+    );
+  });
+
+  it('bounds a re-send by the deadline the caller has left (#636)', () => {
+    npcChat.respond('npc_session_123', 'Back off', 'guarded', { turnId: 'turn_0123456789', timeoutMs: 4200 });
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/npc/chat/respond',
+      expect.objectContaining({ turn_id: 'turn_0123456789' }),
+      { timeout: 4200 }
+    );
+  });
+
+  it('ends a conversation with its open token (#674)', () => {
+    npcChat.end('npc_session_123', 'tok_0123456789');
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/npc/chat/end',
+      { npc_key: 'npc_session_123', open_token: 'tok_0123456789' },
+      withDeadline
+    );
+  });
+
   it('ends a conversation', () => {
     npcChat.end('npc_session_123');
     expect(apiClient.post).toHaveBeenCalledWith(

@@ -57,10 +57,12 @@ Description says "an axe mounted on a large pole" (slashing) but it's built with
 2. Rewrite the description to match its spear mechanics and delete the dead taxonomy entry.
 
 ### #340 — Status-cure consumables are unobtainable
-`SlimeFlask`, `MineralSolvent`, `Respite`, `Relic` are fully working cures for states that
+`SlimeFlask`, `MineralSolvent`, `Respite` are fully working cures for states that
 live combat moves genuinely inflict — but **none is placed in any map, shop, loot table, or
 event.** Players get Petrified/Slimed with no cure available. Needs you to decide *where*
 they go (which Grondelith shops, which enemy loot tables) or to confirm they're cut content.
+(`Relic`, the Hollowed cure, was on this list until #646 retired it: Hollowed is now cured by
+the out-of-combat **Pray** command, `Player.pray`, at a fatigue cost.)
 
 ### #342 — `DragonHeartGem` / `CrystalTear` resistance bonuses are inert
 Special-class relics set `add_resistance`, but `refresh_stat_bonuses` only reads

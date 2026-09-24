@@ -14,7 +14,7 @@ passageway's ``events_before``, and only then stores the pending event.
 
 LOOT a city gate and Jean put down everything he was carrying to sell.
 
-The gate is now ``Passageway.accepts_step_through(handler, action)``, which
+The gate is now ``Passageway.accepts_step_through(handler)``, which
 since #630 is ``is_crossing_handler(handler)`` alone. #620 shipped it with a
 second half -- "or the placement advertises the verb" -- because a
 placement's name words resolve to ``enter`` (through the class-declared

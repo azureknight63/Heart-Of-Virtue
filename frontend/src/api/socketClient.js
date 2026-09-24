@@ -42,31 +42,40 @@ export function createCombatSocket({ url } = {}) {
     // otherwise — first blaming CSP, then "the deployment cannot serve an
     // upgrade at all". Both were false.
     //
-    // The pin was about what happens AFTER a successful upgrade. engineio's
-    // websocket handler parks the WSGI request thread in
-    // `while True: websocket_wait()` for the whole life of the connection
-    // (engineio/socket.py), and the reasoning ran: the Procfile runs
-    // `gunicorn -w 1`, one SYNC worker, which notifies the arbiter only at
-    // the top of its accept loop, so a parked worker is SIGKILLed at the 30s
-    // default -- taking every in-memory session with it.
-    //
-    // THAT REASON IS VOID (issue #653). The process model was read off the
-    // Procfile and never verified; the real one was read from the server on
-    // 2026-09-19 and is now mirrored at `deploy/heart-of-virtue.service`:
+    // Nor is it the reason this comment gave next: that a completed upgrade
+    // parks the WSGI request in `while True: websocket_wait()`
+    // (engineio/socket.py) and the Procfile's one SYNC worker is SIGKILLed
+    // at the 30s default with it. THAT REASON IS VOID (issue #653): the
+    // process model was read off the Procfile and never verified. Production
+    // runs the unit mirrored at `deploy/heart-of-virtue.service`,
     //
     //     gunicorn --worker-class eventlet -w 1 --timeout 120 wsgi:app
     //
-    // An eventlet worker serves requests concurrently as greenlets, so a
-    // parked connection holds a greenlet rather than the worker, and for a
-    // non-sync worker `--timeout` is a liveness heartbeat rather than a
-    // per-request deadline. Nothing here kills the worker at 30s.
+    // where a parked connection holds a greenlet, not the worker, and
+    // `--timeout` is a liveness heartbeat rather than a per-request deadline.
     //
-    // The pin STAYS for now regardless, because the decision it encodes has
-    // not been re-made: whether long-polling is still the right transport on
-    // the real deployment (proxy upgrade headers, `async_mode="threading"`
-    // under an eventlet worker) is #653's job. Do not read this pin as
-    // load-bearing until that lands, and do not delete it on the strength of
-    // the paragraph above either.
+    // The pin stands for three reasons that do hold (#653, "pin now,
+    // migrate later"):
+    //
+    //   (a) The reverse proxy in front of the API is unverified. Nobody has
+    //       read its config (docs/development/deployment.md: Apache or nginx,
+    //       unconfirmed), so whether it forwards `Upgrade`/`Connection` on
+    //       `/games/HeartOfVirtue/*` is unknown. Plain HTTP long-polling is
+    //       the one transport known to pass through it.
+    //   (b) The server runs Socket.IO with `async_mode="threading"`
+    //       (src/api/app.py) inside an eventlet worker. Flask-SocketIO's
+    //       gunicorn + eventlet recipe assumes `async_mode="eventlet"`; a
+    //       long-lived WebSocket held by the threading driver's
+    //       simple-websocket under a monkey-patched eventlet hub is an
+    //       unsupported combination nobody has exercised. Polling requests
+    //       are ordinary short WSGI requests, which that worker does serve.
+    //   (c) The worker class itself is due to change: gunicorn 26 removed
+    //       the eventlet worker, requirements-api.txt holds gunicorn below
+    //       26 until production migrates off eventlet, and the transport
+    //       should be re-derived on whatever worker that lands on, not on
+    //       this one.
+    //
+    // Re-open the transport only after all three are settled.
     //
     // (The pin also avoids the spurious 500 — "write() before
     // start_response" — that Werkzeug's threaded dev server logs when a

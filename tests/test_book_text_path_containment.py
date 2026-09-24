@@ -1,0 +1,120 @@
+"""Issue #674 item 11: ``Book.text`` reads only from the books directory.
+
+``text_file_path`` arrives from map JSON and from saves, both untrusted
+inputs, and ``_resolve_text_path`` used to accept an absolute path or a
+``..`` walk out of the repo -- so a crafted book read any file the server
+could open and handed it to the player as page text. The path is now
+resolved and must lie under ``src/resources/books``; anything else reads as a
+missing file (blank book) and is logged.
+"""
+
+import logging
+
+import pytest
+
+import src.items as items
+from src.items import Book
+
+BLANK_BOOK = items.BLANK_BOOK_TEXT
+SHIPPED = "src/resources/books/jambos-book-of-business-wisdom.txt"
+
+
+@pytest.fixture
+def secret(tmp_path):
+    """A readable file outside the books directory."""
+    path = tmp_path / "secret.txt"
+    path.write_text("TOP SECRET", encoding="utf-8")
+    return path
+
+
+def test_the_books_directory_is_the_shipped_one():
+    assert items.BOOKS_DIR == items._REPO_ROOT / "src" / "resources" / "books"
+    assert (items.BOOKS_DIR / "jambos-book-of-business-wisdom.txt").is_file()
+
+
+def test_absolute_path_outside_the_books_dir_reads_blank(secret, caplog):
+    with caplog.at_level(logging.WARNING, logger="src.items"):
+        text = Book(text_file_path=str(secret)).text
+
+    assert text == BLANK_BOOK
+    assert "TOP SECRET" not in text
+    assert any("outside" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize("spelling", [
+    "src/resources/books/../../../{rel}",
+    "src\\resources\\books\\..\\..\\..\\{rel}",
+    "../{rel}",
+])
+def test_dot_dot_walks_out_of_the_books_dir_read_blank(spelling, tmp_path, monkeypatch):
+    """A repo-relative path that climbs out reads nothing, however spelled.
+
+    The repo root and books directory are moved onto a ``tmp_path`` tree so the
+    readable probe file never lands in the real checkout.
+    """
+    repo = tmp_path / "repo"
+    books = repo / "src" / "resources" / "books"
+    books.mkdir(parents=True)
+    monkeypatch.setattr(items, "_REPO_ROOT", repo)
+    monkeypatch.setattr(items, "BOOKS_DIR", books)
+    target = repo / "setup_probe_674.txt"
+    target.write_text("REPO FILE", encoding="utf-8")
+
+    text = Book(text_file_path=spelling.format(rel=target.name)).text
+
+    assert text == BLANK_BOOK
+
+
+def test_a_repo_file_outside_the_books_dir_reads_blank():
+    """Inside the repo is not enough: CLAUDE.md is not a book."""
+    assert Book(text_file_path="CLAUDE.md").text == BLANK_BOOK
+
+
+def test_a_symlink_inside_the_books_dir_cannot_escape(secret, tmp_path, monkeypatch):
+    books = tmp_path / "books"
+    books.mkdir()
+    link = books / "innocent.txt"
+    try:
+        link.symlink_to(secret)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable on this platform")
+    monkeypatch.setattr(items, "BOOKS_DIR", books)
+
+    assert Book(text_file_path=str(link)).text == BLANK_BOOK
+
+
+def test_the_shipped_spellings_still_read():
+    expected = (items._REPO_ROOT / SHIPPED).read_text(encoding="utf-8")
+    assert Book(text_file_path=SHIPPED).text == expected
+    assert Book(text_file_path=SHIPPED.replace("/", "\\")).text == expected
+    absolute = str(items._REPO_ROOT / SHIPPED)
+    assert Book(text_file_path=absolute).text == expected
+
+
+@pytest.mark.parametrize("bad", [42, ["a.txt"], {"p": 1}, object()])
+def test_a_non_string_path_from_a_save_reads_blank_instead_of_crashing(bad, caplog):
+    """A save supplies ``text_file_path``; a non-string must read as a blank
+    book (logged), not raise out of ``.text``."""
+    book = Book(name="Odd", text_file_path="placeholder")
+    book.text_file_path = bad
+    with caplog.at_level(logging.WARNING, logger="src.items"):
+        assert book.text == items.BLANK_BOOK_TEXT
+    assert any("not a string" in r.getMessage() for r in caplog.records)
+
+
+def test_a_refused_path_is_resolved_and_logged_once(secret, caplog):
+    """The blank result is cached, so paging through a refused book does not
+    re-resolve the path and re-log the refusal on every access."""
+    book = Book(name="Leak", text_file_path=str(secret))
+    with caplog.at_level(logging.WARNING, logger="src.items"):
+        for _ in range(3):
+            assert book.text == items.BLANK_BOOK_TEXT
+    refusals = [r for r in caplog.records if "outside" in r.getMessage()]
+    assert len(refusals) == 1
+
+
+def test_blank_book_text_is_one_constant():
+    # The literal is spelled once, here, as the independent authority for the
+    # player-facing text; everything else reads BLANK_BOOK_TEXT.
+    assert items.BLANK_BOOK_TEXT == "This book is mysteriously blank."
+    assert Book(name="Empty").text == items.BLANK_BOOK_TEXT

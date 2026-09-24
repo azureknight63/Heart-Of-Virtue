@@ -43,6 +43,13 @@ class Save(Action):
         super().__init__(method=None, name="Save", hotkey=("sav", "save"))
 
 
+class Pray(Action):
+    """Advertises ``POST /api/pray`` (``Player.pray``, issue #646) in COMMANDS."""
+
+    def __init__(self):
+        super().__init__(method=None, name="Pray", hotkey=("pray", "kneel"))
+
+
 class ViewMap(Action):
     def __init__(self):
         super().__init__(

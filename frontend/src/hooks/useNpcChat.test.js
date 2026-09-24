@@ -15,6 +15,10 @@ import {
   QUALITY_EMOTIONS,
   NPC_LISTENING_EMOTION,
   __resetPreloadedPortraits,
+  NO_WEB_CRYPTO_MESSAGE,
+  PENDING_RESEND_MS,
+  PENDING_RESEND_BACKOFF,
+  PENDING_RESEND_MAX_MS,
 } from './useNpcChat'
 import { portraitUrl, EMOTIONS } from '../utils/portraits'
 import { makeNpcChatOpen, makeNpcChatRespond, makeJeanOption, makeRelationship } from '../test/payloads'
@@ -30,6 +34,9 @@ vi.mock('../api/npcChat', async (importOriginal) => ({
 }))
 
 import npcChat, { NPC_CHAT_TIMEOUT_MS } from '../api/npcChat'
+
+/** The server's accepted `turn_id` shape (src/api/routes/npc_chat.py). */
+const TURN_ID_SHAPE = /^[A-Za-z0-9_-]{8,64}$/
 
 /** What axios rejects with when the client deadline on a chat call fires. */
 const axiosTimeoutError = () =>
@@ -456,7 +463,7 @@ describe('useNpcChat', () => {
   // second real `POST /npc/chat/open`. React 18 StrictMode intentionally
   // double-invokes an effect (mount -> cleanup -> mount) on dev, so mounting
   // this hook fired two real requests for the same npcId every time. The
-  // server's one-turn-per-player lock (`_chat_turn_lock`, game_service.py) is
+  // server's one-turn-per-player lock (`_begin_chat_turn`, game_service.py) is
   // non-blocking, so the second request could land on the first one still
   // being processed and come back 409 -- which the NOT-cancelled (second)
   // closure then rendered as STILL_TALKING_MESSAGE, even though Jean never
@@ -818,7 +825,13 @@ describe('useNpcChat', () => {
         await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
       })
 
-      expect(npcChat.respond).toHaveBeenCalledWith('npc_session_123', 'Hi there', 'curious')
+      expect(npcChat.respond).toHaveBeenCalledWith(
+        'npc_session_123',
+        'Hi there',
+        'curious',
+        // a first send runs on the client's full default deadline
+        { turnId: expect.stringMatching(TURN_ID_SHAPE), timeoutMs: undefined }
+      )
       const segments = result.current.conversationSegments
       expect(segments).toHaveLength(3)
       // Jean wears the tone he answered with; the NPC wears the turn quality.
@@ -1000,11 +1013,8 @@ describe('useNpcChat', () => {
         await result.current.retry()
       })
 
-      expect(npcChat.respond).toHaveBeenLastCalledWith(
-        'npc_session_123',
-        'Leave me alone',
-        'skeptical'
-      )
+      const [firstCall, retryCall] = npcChat.respond.mock.calls
+      expect(retryCall).toEqual(['npc_session_123', 'Leave me alone', 'skeptical', { turnId: firstCall[3].turnId, timeoutMs: undefined }])
       const segments = result.current.conversationSegments
       expect(segments.filter((s) => s.text === 'Leave me alone')).toHaveLength(1)
       expect(segments).toHaveLength(3)
@@ -1104,6 +1114,217 @@ describe('useNpcChat', () => {
   })
 
   // -------------------------------------------------------------------------
+  // Idempotent turns (#636)
+  //
+  // One `turn_id` per option click; the Retry of that click re-sends it, so a
+  // turn the server already committed after the client gave up is replayed
+  // rather than run (and billed, and committed) a second time.
+  // -------------------------------------------------------------------------
+  describe('idempotent turns (#636)', () => {
+    const pendingRefusal = () => ({
+      response: {
+        status: 409,
+        data: { success: false, in_flight: true, pending: true, error: 'server copy' },
+      },
+    })
+
+    it('mints a fresh turn_id for every option click', async () => {
+      const { result } = await mountOpened()
+      npcChat.respond.mockResolvedValue({
+        data: makeNpcChatRespond({ jean_options: [makeJeanOption({ text: 'Go on', tone: 'neutral' })] }),
+      })
+
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
+      })
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Go on', tone: 'neutral' })
+      })
+
+      const [first, second] = npcChat.respond.mock.calls.map((call) => call[3].turnId)
+      expect(first).toMatch(TURN_ID_SHAPE)
+      expect(second).toMatch(TURN_ID_SHAPE)
+      expect(second).not.toBe(first)
+    })
+
+    it('falls back to getRandomValues where randomUUID is unavailable', async () => {
+      // `crypto.randomUUID` exists only in secure contexts; a dev build served
+      // over a LAN address for phone testing is plain http.
+      const realRandomUUID = globalThis.crypto.randomUUID
+      Object.defineProperty(globalThis.crypto, 'randomUUID', { value: undefined, configurable: true })
+      try {
+        const { result } = await mountOpened()
+        await act(async () => {
+          await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
+        })
+      } finally {
+        Object.defineProperty(globalThis.crypto, 'randomUUID', { value: realRandomUUID, configurable: true })
+      }
+
+      expect(npcChat.respond.mock.calls[0][3].turnId).toMatch(/^[0-9a-f]{32}$/)
+    })
+
+    it('refuses to mint a turn_id without Web Crypto rather than guess one', async () => {
+      // Never Math.random: a predictable key could replay another turn.
+      // Surfaced to the player, not thrown out of the click handler.
+      const { result } = await mountOpened()
+      vi.stubGlobal('crypto', undefined)
+      try {
+        act(() => { result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' }) })
+      } finally {
+        vi.unstubAllGlobals()
+      }
+      expect(npcChat.respond).not.toHaveBeenCalled()
+      expect(result.current.error).toBe(NO_WEB_CRYPTO_MESSAGE)
+    })
+
+    it('does not re-send after a 409 for a DIFFERENT turn', async () => {
+      npcChat.respond.mockRejectedValue({
+        response: { status: 409, data: { success: false, in_flight: true } },
+      })
+      const { result } = await mountOpened()
+
+      await act(async () => {
+        await result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
+      })
+
+      expect(npcChat.respond).toHaveBeenCalledTimes(1)
+      expect(result.current.error).toBe('Still composing a reply — give it a moment.')
+    })
+
+    describe('re-sending a pending turn', () => {
+      beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }))
+      afterEach(() => vi.useRealTimers())
+
+      /** Mount, click the first option, and hand back the in-flight click. */
+      const clickFirstOption = async () => {
+        const rendered = await mountOpened()
+        let click
+        act(() => {
+          click = rendered.result.current.handleOptionClick({ text: 'Hi there', tone: 'curious' })
+        })
+        return { ...rendered, click }
+      }
+
+      /** The gaps between re-sends, as the backoff schedule lays them out. */
+      const resendSchedule = () => {
+        const gaps = []
+        let gap = PENDING_RESEND_MS
+        let elapsed = 0
+        while (elapsed + gap <= NPC_CHAT_TIMEOUT_MS) {
+          gaps.push(gap)
+          elapsed += gap
+          gap = Math.min(gap * PENDING_RESEND_BACKOFF, PENDING_RESEND_MAX_MS)
+        }
+        return gaps
+      }
+
+      it('re-sends the same turn_id after a pending 409, then shows the reply', async () => {
+        npcChat.respond
+          .mockRejectedValueOnce(pendingRefusal())
+          .mockResolvedValueOnce({
+            data: makeNpcChatRespond({ npc_response: 'As I was saying.', jean_options: [] }),
+          })
+        const { result, click } = await clickFirstOption()
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(PENDING_RESEND_MS)
+          await click
+        })
+
+        expect(npcChat.respond).toHaveBeenCalledTimes(2)
+        const [first, resent] = npcChat.respond.mock.calls
+        expect(resent.slice(0, 3)).toEqual(first.slice(0, 3))
+        expect(resent[3].turnId).toBe(first[3].turnId)
+        expect(result.current.error).toBeNull()
+        const segments = result.current.conversationSegments
+        expect(segments.filter((s) => s.text === 'Hi there')).toHaveLength(1)
+        expect(segments.at(-1)).toMatchObject({ text: 'As I was saying.' })
+      })
+
+      it('backs off between re-sends, capped', async () => {
+        npcChat.respond.mockRejectedValue(pendingRefusal())
+        await clickFirstOption()
+
+        const gaps = resendSchedule()
+        // Pinned as literal milliseconds, not re-derived from the constants the
+        // hook uses: a mirrored schedule would change in step with the code.
+        expect(gaps.slice(0, 5)).toEqual([1000, 1500, 2250, 3375, 4000])
+        let sends = 1
+        for (const gap of gaps.slice(0, 5)) {
+          await act(async () => { await vi.advanceTimersByTimeAsync(gap - 1) })
+          expect(npcChat.respond).toHaveBeenCalledTimes(sends)
+          await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+          sends += 1
+          expect(npcChat.respond).toHaveBeenCalledTimes(sends)
+        }
+      })
+
+      it('gives each re-send only what is left of the deadline, so the turn ends on time', async () => {
+        // A re-send that hangs runs to its own timeout. Handed the full
+        // NPC_CHAT_TIMEOUT_MS it would outlive the deadline the first send set.
+        const timedOut = () =>
+          Object.assign(new Error('timeout'), { code: 'ECONNABORTED' })
+        npcChat.respond
+          .mockRejectedValueOnce(pendingRefusal())
+          .mockImplementation((_key, _text, _tone, { timeoutMs = NPC_CHAT_TIMEOUT_MS } = {}) =>
+            new Promise((_resolve, reject) => { setTimeout(() => reject(timedOut()), timeoutMs) }))
+        const { result, click } = await clickFirstOption()
+        const settled = vi.fn()
+        click.then(settled)
+
+        await act(async () => { await vi.advanceTimersByTimeAsync(NPC_CHAT_TIMEOUT_MS + 50) })
+
+        expect(settled).toHaveBeenCalled()
+        const resentTimeout = npcChat.respond.mock.calls[1][3].timeoutMs
+        expect(resentTimeout).toBeLessThanOrEqual(NPC_CHAT_TIMEOUT_MS - PENDING_RESEND_MS)
+        expect(result.current.error).toBe('The conversation timed out — try again.')
+      })
+
+      it('stops re-sending at the client deadline and leaves a Retry for the same turn', async () => {
+        npcChat.respond.mockRejectedValue(pendingRefusal())
+        const { result, click } = await clickFirstOption()
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(NPC_CHAT_TIMEOUT_MS + PENDING_RESEND_MAX_MS)
+          await click
+        })
+
+        const sends = npcChat.respond.mock.calls.length
+        expect(sends).toBeGreaterThan(1)
+        // One first send plus at most one re-send per backoff gap: with the
+        // backoff, far fewer than one request per PENDING_RESEND_MS.
+        expect(sends).toBeLessThanOrEqual(1 + resendSchedule().length)
+        expect(sends).toBeLessThan(NPC_CHAT_TIMEOUT_MS / PENDING_RESEND_MS / 2)
+        expect(result.current.error).toBe('Still composing a reply — give it a moment.')
+
+        npcChat.respond.mockResolvedValue({
+          data: makeNpcChatRespond({ npc_response: 'There.', jean_options: [] }),
+        })
+        await act(async () => {
+          await result.current.retry()
+        })
+        const ids = new Set(npcChat.respond.mock.calls.map((call) => call[3].turnId))
+        expect(ids.size).toBe(1)
+      })
+
+      it('drops a pending re-send once the panel moved on', async () => {
+        npcChat.respond.mockRejectedValue(pendingRefusal())
+        const { unmount, click } = await clickFirstOption()
+
+        await act(async () => {
+          await Promise.resolve()
+        })
+        unmount()
+        await vi.advanceTimersByTimeAsync(PENDING_RESEND_MAX_MS * 3)
+        await click
+
+        expect(npcChat.respond).toHaveBeenCalledTimes(1)
+      })
+    })
+  })
+
+  // -------------------------------------------------------------------------
   // Ending
   // -------------------------------------------------------------------------
   describe('ending the conversation', () => {
@@ -1114,7 +1335,7 @@ describe('useNpcChat', () => {
         await result.current.handleEndConversation()
       })
 
-      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', null)
       expect(onClose).toHaveBeenCalledTimes(1)
     })
 
@@ -1149,7 +1370,7 @@ describe('useNpcChat', () => {
 
       act(() => { result.current.handleEndConversation() })
 
-      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', null)
       expect(onClose).toHaveBeenCalledTimes(1)
       await act(async () => { pending.resolve({ data: { success: true } }) })
       expect(onClose).toHaveBeenCalledTimes(1)
@@ -1199,8 +1420,36 @@ describe('useNpcChat', () => {
       })
 
       expect(npcChat.end).toHaveBeenCalledTimes(2)
-      expect(npcChat.end).toHaveBeenLastCalledWith('gorran_session_1')
+      expect(npcChat.end).toHaveBeenLastCalledWith('gorran_session_1', null)
       expect(onClose).toHaveBeenCalledTimes(2)
+    })
+
+    it('sends the open token /open returned, so a late /end cannot clear a re-open (#674)', async () => {
+      npcChat.open.mockResolvedValue({
+        data: makeNpcChatOpen({ npc_key: 'npc_session_123', open_token: 'tok_0123456789abcdef' }),
+      })
+      const { result } = await mountOpened()
+
+      await act(async () => {
+        await result.current.handleEndConversation()
+      })
+
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', 'tok_0123456789abcdef')
+    })
+
+    it('ends an /open that resolved after unmount with its own token (#674)', async () => {
+      const pending = deferred()
+      npcChat.open.mockReturnValue(pending.promise)
+      const { unmount } = mount()
+
+      unmount()
+      await act(async () => {
+        pending.resolve({
+          data: makeNpcChatOpen({ npc_key: 'late_key', open_token: 'tok_late_000000000' }),
+        })
+      })
+
+      expect(npcChat.end).toHaveBeenCalledWith('late_key', 'tok_late_000000000')
     })
 
     it('closes without calling the server when there is no session key', async () => {
@@ -1457,7 +1706,7 @@ describe('useNpcChat', () => {
       unmount()
       await act(async () => { pending.resolve({ data: openData }) })
 
-      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', null)
       // No setState on an unmounted hook, and nothing schedules a close.
       expect(onClose).not.toHaveBeenCalled()
     })
@@ -1470,7 +1719,7 @@ describe('useNpcChat', () => {
 
       unmount()
 
-      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', null)
     })
 
     it('does not re-end a conversation the server already closed', async () => {
@@ -1520,7 +1769,7 @@ describe('useNpcChat', () => {
       })
 
       expect(npcChat.end).toHaveBeenCalledTimes(1)
-      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', null)
       // No "Cannot update an unmounted component" from the late reply either.
       expect(consoleError).not.toHaveBeenCalledWith(
         expect.stringContaining('unmounted'),

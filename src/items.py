@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 
 #: Authored book paths are repo-relative (``src/resources/books/...``).
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+#: The only directory ``Book.text`` reads from (issue #674 item 11): a book's
+#: path arrives from map JSON and saves, so it is confined here.
+BOOKS_DIR = _REPO_ROOT / "src" / "resources" / "books"
+#: What a book with no readable text shows the player.
+BLANK_BOOK_TEXT = "This book is mysteriously blank."
 
 item_types: Dict[str, Dict[str, Any]] = {
     "weapons": {
@@ -3111,70 +3116,6 @@ class Respite(Consumable):
             narrate("{} is not burning.".format(player.name))
 
 
-class Relic(Consumable):
-    """A fragment of stone from the Via Dolorosa. Jean carried it from Jerusalem.
-
-    It has no power except the weight of what it remembers.
-    Some things are healed not by medicine but by the act of holding still.
-    Single use. Granted nowhere since issue #646 dropped it from Jean's
-    starting inventory: this text names Jerusalem, which the story withholds,
-    and a consumable cannot carry that lore. Kept so saves holding one still
-    load; the redesign is #646. Excluded from merchant restock via
-    ``disallowed_classes`` in ``src/npc/_shop.py``.
-    """
-
-    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
-        super().__init__(
-            name="Relic",
-            description="A small, dark stone. Jean brought it from Jerusalem — from the Via Dolorosa.\n"
-            "It has smooth edges from being handled.\n"
-            "He is not sure why he kept it. He is not sure he needs a reason.",
-            value=0,
-            weight=0.05,
-            maintype="Consumable",
-            subtype="Relic",
-            count=count,
-            merchandise=merchandise,
-        )
-        self.count = count
-        self.interactions = ["use", "hold", "drop"]
-        self.announce = (
-            "A small, dark stone rests here. It looks unremarkable until you pick it up."
-        )
-
-    def hold(self, player: "Player", user=None) -> None:
-        self.use(player, user=user)
-
-    def use(self, player: "Player", user=None) -> None:
-        _user = user if user is not None else player
-        if getattr(self, "merchandise", False):
-            cprint(
-                "{} must purchase {} before using it.".format(player.name, self.name),
-                "red",
-            )
-            return
-        targets = [s for s in player.states if getattr(s, "statustype", "") == "apathy"]
-        if targets:
-            narrate(
-                f"{player.name} holds the stone from the Via Dolorosa. "
-                "He is not sure how long he stands there. Long enough."
-            )
-            for state in targets:
-                state.on_removal(state.target)
-                player.states.remove(state)
-            import src.functions as _fn
-            _fn.refresh_stat_bonuses(player)
-            self.count -= 1
-            if self.count <= 0:
-                _user.inventory.remove(self)
-        else:
-            narrate(
-                "{} turns the stone over in their hand. Nothing needs healing right now.".format(
-                    player.name
-                )
-            )
-
-
 # ---------------------------------------------------------------------------
 # Arrows
 # ---------------------------------------------------------------------------
@@ -3520,7 +3461,7 @@ class Book(Special):
             self._text = text
         else:
             # No file path and no text means blank book
-            self._text = "This book is mysteriously blank."
+            self._text = BLANK_BOOK_TEXT
 
         self.chars_per_page = chars_per_page  # characters per page for pagination
 
@@ -3542,27 +3483,57 @@ class Book(Special):
         """
         if not self._text and self.text_file_path:
             path = self._resolve_text_path()
+            if path is None:
+                # Cached, so paging a refused book does not re-resolve and
+                # re-log the refusal on every access.
+                self._text = BLANK_BOOK_TEXT
+                return self._text
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     self._text = f.read()
             except Exception as e:
                 logger.warning("Could not load book text from %s: %s", path, e)
-                self._text = "This book is mysteriously blank."
-        return self._text if self._text else "This book is mysteriously blank."
+                self._text = BLANK_BOOK_TEXT
+        return self._text if self._text else BLANK_BOOK_TEXT
 
-    def _resolve_text_path(self) -> Path:
-        """The file ``text_file_path`` names, as the engine opens it.
+    def _resolve_text_path(self) -> Optional[Path]:
+        """The file ``text_file_path`` names, as the engine opens it, or
+        ``None`` when it lies outside :data:`BOOKS_DIR`.
 
         Issue #648: a backslash is read as a separator. Maps are authored on
         Windows, where ``src\\resources\\books\\x.txt`` opens; on Linux --
         production -- the same string is one filename with no directory, and
         the book read blank. A relative path is anchored at the repo root
         (#611), never at the process's working directory.
+
+        Issue #674 item 11: the path comes from map JSON and saves, so it is
+        fully resolved -- ``..`` and symlinks included -- and must land
+        inside the books directory. Anything else reads as a missing book.
         """
+        # Exactly ``str``: a save supplies this value, and anything else
+        # (including a str subclass) must not have its methods called here.
+        if type(self.text_file_path) is not str:
+            logger.warning(
+                "Book text path is not a string (%s); reading blank",
+                type(self.text_file_path).__name__,
+            )
+            return None
         path = Path(self.text_file_path.replace("\\", "/"))
         if not path.is_absolute():
             path = _REPO_ROOT / path
-        return path
+        try:
+            resolved = path.resolve()
+            books = Path(BOOKS_DIR).resolve()
+        except (OSError, RuntimeError, ValueError) as e:
+            logger.warning("Could not resolve book path %r: %s", self.text_file_path, e)
+            return None
+        if not resolved.is_relative_to(books):
+            logger.warning(
+                "Refusing book text path %r: resolves outside %s",
+                self.text_file_path, books,
+            )
+            return None
+        return resolved
 
     @text.setter
     def text(self, value: Optional[str]) -> None:

@@ -495,9 +495,11 @@ def _turn_deadline(adapter: Any, started: Optional[float] = None) -> float:
 
     ``_CHAT_DEADLINE_SECONDS`` is a fixed number, but the per-call timeout
     :func:`_no_stage_budget` measures the remaining budget against is
-    ``NPC_CHAT_LLM_TIMEOUT`` — operator-tunable, with no upper bound. So the
-    budget scales with the timeout it is compared against: one round timeout
-    per stage in :data:`_MAX_TURN_STAGES`, with the constant as the floor.
+    ``NPC_CHAT_LLM_TIMEOUT`` — operator-tunable, though the adapter clamps it
+    to 7s (``_ROUND_TIMEOUT_CEILING_SECONDS`` in ai/llm_client.py, #637). So
+    the budget scales with the timeout it is compared against: one round
+    timeout per stage in :data:`_MAX_TURN_STAGES`, with the constant as the
+    floor and ``_TURN_CEILING_SECONDS`` as the cap.
 
     That funds every stage at the latencies the feature targets (a healthy call
     returns in 2-4s against a 6s ceiling). If *every* call instead runs to the
@@ -1393,10 +1395,10 @@ _LOQUACITY_PARTY_MOD = 10
 #:   looking away -- "a wrongness he couldn't place". Jean never gets one.
 #:   Granting him an NPC-trust bonus for wearing one would contradict the
 #:   character the story is drawing.
-#: * The only devotional object in `src/items.py` is `Relic`, and Jean no
-#:   longer starts with it (issue #646). It is a `Consumable`, so it is not
-#:   equippable, so it cannot reach an `isequipped` scan at all no matter what
-#:   this tuple says.
+#: * There is no devotional object in `src/items.py` at all. The last one,
+#:   the `Relic` consumable, was retired by issue #646 (prayer replaced it as
+#:   the cure for Hollowed); being a `Consumable`, it could never have reached
+#:   an `isequipped` scan anyway.
 #: * His equippable accessories are `JeanWeddingBand`, `DullMedallion` and
 #:   `GronditeMarkToken` -- sentimental and factional, not devotional.
 #:
@@ -1581,6 +1583,10 @@ _NEUTRAL_FALLBACK_REPLIES = (
 # the wrap would fire later and a conversation with no model behind it would
 # run longer than it ever did. Three keeps the old ceiling.
 _MAX_CONSECUTIVE_FALLBACK_REPLIES = 3
+
+# What an NPC says when it has no authored or generated line to fall back on.
+# Named because the fallback-reply cap has to recognise it as a fallback too.
+_LAST_RESORT_FALLBACK_LINE = "Nothing to say right now."
 
 
 _DEFAULT_MAX_PERSONALITY_FIELD_CHARS = 200
@@ -1861,6 +1867,8 @@ class ConversationalNPCMixin:
                 # latched, so the next turn picks up the warm adapter.
                 return None
             if module is not None:
+                # None while another build holds the one build claim: also
+                # unlatched, so this turn falls back and the next retries.
                 self._chat_adapter = module.NpcChatLLMAdapter.get_instance()
             else:
                 self._chat_adapter = self._ADAPTER_FAILED
@@ -4960,18 +4968,57 @@ class ConversationalNPCMixin:
         replies = (self._chat_char_config or {}).get("fallback_replies")
         return replies or _NEUTRAL_FALLBACK_REPLIES
 
+    def _nomad_fallback_pool(self) -> List[str]:
+        """Fallback lines for a generic nomad, from its generated personality.
+
+        A small rotation -- its speech sample, a pause, a nudge toward what it
+        knows -- so the same sample does not repeat verbatim on every fallback
+        turn. Empty when there is no personality to draw on. The one builder
+        for both the line said (:meth:`_get_fallback_npc_line`) and the run
+        counted (:meth:`_consecutive_fallback_replies`), which must agree.
+        """
+        pers = self._chat_personality or {}
+        speech = pers.get("speech_sample")
+        knowledge = pers.get("knowledge") or []
+        given_name = pers.get("given_name", "They")
+        return [
+            text
+            for text in (
+                speech,
+                (
+                    f"{given_name} falls quiet a moment, considering."
+                    if speech
+                    else None
+                ),
+                f"Ask again about {knowledge[0]}, maybe." if knowledge else None,
+            )
+            if text
+        ]
+
     def _consecutive_fallback_replies(self) -> int:
         """How many of the most recent NPC rows are fallback replies, in a row.
 
         Counted from the end of ``self._chat_history`` and stopped at the
-        first row that is not from :meth:`_fallback_reply_pool` -- an opener
-        or a generated line breaks the run, so an earlier conversation's
-        replies still in the persisted history never count against this one.
-        Rows with no NPC line (Jean spoke first) are skipped, not counted.
+        first row that is not a fallback line -- an opener or a generated line
+        breaks the run, so an earlier conversation's replies still in the
+        persisted history never count against this one. Rows with no NPC line
+        (Jean spoke first) are skipped, not counted, and so is a row that is
+        not a dict at all: history comes back from a save.
+
+        "A fallback line" is whatever :meth:`_get_fallback_npc_line` can say
+        mid-conversation: the persona's reply pool for a story NPC, the
+        personality pool for a generic nomad (#674, which the cap never saw),
+        and the last-resort line either can reach. A nomad's fallback OPENER
+        is drawn from that same pool, so unlike a story NPC's starter it does
+        not break the run: a fully degraded nomad conversation ends one reply
+        sooner, which is the direction a degraded conversation should err.
         """
-        pool = set(self._fallback_reply_pool())
+        pool = set(self._reply_fallback_pool())
+        pool.add(_LAST_RESORT_FALLBACK_LINE)
         run = 0
         for entry in reversed(self._chat_history):
+            if not isinstance(entry, dict):
+                continue
             npc_line = entry.get("npc")
             if not npc_line:
                 continue
@@ -4979,6 +5026,18 @@ class ConversationalNPCMixin:
                 break
             run += 1
         return run
+
+    def _reply_fallback_pool(self) -> List[str]:
+        """The lines :meth:`_get_fallback_npc_line` rotates through mid-conversation.
+
+        The persona's reply pool for a story NPC, the personality pool for a
+        generic nomad (which draws its openers from it too). One place, so the
+        fallback cap in :meth:`_consecutive_fallback_replies` counts exactly
+        the lines the fallback can say.
+        """
+        if self._chat_char_config:
+            return self._fallback_reply_pool()
+        return self._nomad_fallback_pool()
 
     def _get_fallback_npc_line(
         self, is_opening: bool, player, exhausted: bool = False
@@ -5003,56 +5062,26 @@ class ConversationalNPCMixin:
         Jean said, falling back to ``_NEUTRAL_FALLBACK_REPLIES``.
         ``tests/test_npc_persona_fallback_replies.py`` guards the last.
         """
-        if self._chat_char_config:
+        if self._chat_char_config and (is_opening or exhausted):
             chapter = self._get_chapter(player)
             starters = self._chat_char_config.get(
                 "conversation_starters_by_chapter", {}
             ).get(chapter, [])
-            closing = self._chat_char_config.get("closing_lines_when_exhausted", [])
-
             if is_opening:
                 line = self._next_from_pool(starters)
-                if line:
-                    return line
-            elif exhausted:
-                line = self._next_from_pool(closing) or self._next_from_pool(starters)
-                if line:
-                    return line
             else:
-                # Mid-conversation and not exhausted: a line authored as a
-                # response. Never a starter -- those are openers addressed to
-                # a Jean who has just walked up, often a direct question
-                # (issue #628) -- and never a closing line, which would claim
-                # the NPC is done while the conversation carries on.
-                line = self._next_from_pool(self._fallback_reply_pool())
-                if line:
-                    return line
+                closing = self._chat_char_config.get("closing_lines_when_exhausted", [])
+                line = self._next_from_pool(closing) or self._next_from_pool(starters)
         else:
-            # Generic nomad: rotate through a small pool derived from the
-            # generated personality so the same speech sample doesn't repeat
-            # verbatim on every fallback turn.
-            pers = self._chat_personality or {}
-            speech = pers.get("speech_sample")
-            knowledge = pers.get("knowledge") or []
-            given_name = pers.get("given_name", "They")
-            pool = [
-                text
-                for text in (
-                    speech,
-                    (
-                        f"{given_name} falls quiet a moment, considering."
-                        if speech
-                        else None
-                    ),
-                    f"Ask again about {knowledge[0]}, maybe." if knowledge else None,
-                )
-                if text
-            ]
-            line = self._next_from_pool(pool)
-            if line:
-                return line
+            # A story NPC mid-conversation and not exhausted: a line authored
+            # as a response. Never a starter -- those are openers addressed to
+            # a Jean who has just walked up, often a direct question (issue
+            # #628) -- and never a closing line, which would claim the NPC is
+            # done while the conversation carries on. A generic nomad draws
+            # every line from its personality pool.
+            line = self._next_from_pool(self._reply_fallback_pool())
 
-        return "Nothing to say right now."
+        return line or _LAST_RESORT_FALLBACK_LINE
 
     def _get_fallback_jean_options(self) -> List[Dict[str, str]]:
         """Return fallback Jean options, cycling through the pool.

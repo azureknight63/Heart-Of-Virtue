@@ -818,6 +818,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
         <ActionsPanel
           location={location}
           onClose={() => setShowActions(false)}
+          onRefetch={onRefetch}
         />
       )}
 

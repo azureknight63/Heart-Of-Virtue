@@ -479,71 +479,27 @@ STREAMED_BEAT_RESULTS_CONTRACT = {
 }
 
 
-class _ResultsScriptMove:
-    """A player move whose one beat hits, staggers and whiffs (#667).
+def _hit_stagger_and_whiff(user, target):
+    """One beat that hits, staggers and whiffs (#667), so the contract is read
+    off known results of every kind."""
+    from src.moves._base import OUTCOME_MISS, publish_outcome
+    from src.narration import narrate
 
-    Every attribute the adapter reads while casting and serializing is
-    present; the effects are exact so the contract is read off known results.
-    """
-
-    passive = False
-    targeted = True
-    instant = False
-    needs_duration = False
-    accepts_ally_target = False
-    web_animation = "attack"
-    category = "Attack"
-    description = ""
-    fatigue_cost = 0
-    beats_left = 0
-    stage_beat = (0, 0, 0, 0)
-
-    def __init__(self, target):
-        self.name = "Scripted"
-        self.display_name = "Scripted"
-        self.current_stage = 0
-        self.target = target
-        self.user = None
-        self._done = False
-
-    def advance(self, user):
-        from src.moves._base import OUTCOME_MISS, publish_outcome
-        from src.narration import narrate
-
-        if self._done:
-            return
-        self._done = True
-        self.target.hp -= 7
-        self.target.states.append(states.Staggered(self.target))
-        publish_outcome(user, OUTCOME_MISS, self.target)
-        narrate("Jean's attack just missed!")
-
-    def viable(self):
-        return True
-
-    def cast(self):
-        pass
+    target.hp -= 7
+    target.states.append(states.Staggered(target))
+    publish_outcome(user, OUTCOME_MISS, target)
+    narrate("Jean's attack just missed!")
 
 
 class TestBeatResultsWireContract:
     @pytest.fixture
     def beat(self):
         """A real beat's state, run through the real adapter beat loop."""
-        from tests._combat_fixtures import engage, seeded
+        from tests._combat_fixtures import run_scripted_beat
 
-        player = Player()
-        slime = Slime()
-        slime.hp = slime.maxhp = 9999
-        slime.damage = 0
-        engage(player, [slime])
+        # CombatStrategist is only built in the adapter's __init__.
         with patch("src.api.combat_adapter.CombatStrategist"):
-            adapter = ApiCombatAdapter(player)
-            adapter.initialize_combat([slime])
-        move = _ResultsScriptMove(slime)
-        player.known_moves = [move]
-        player.current_move = None
-        with seeded():
-            result = adapter._execute_move_inner(move)
+            result, _ = run_scripted_beat(_hit_stagger_and_whiff)
         return result["beat_states"][0]
 
     @staticmethod
@@ -1791,6 +1747,39 @@ JOURNAL_LINE_CONTRACT = {
 }
 
 
+# POST /api/pray (issue #646). usePrayer reads `success` and `message` off a
+# 2xx; a refusal is a 400 whose `error` it reads through apiErrorMessage.
+PRAYER_SUCCESS_CONTRACT = {
+    "success": Read("usePrayer.js", "data?.success"),
+    "message": Read("usePrayer.js", "data.message"),
+}
+PRAYER_REFUSAL_CONTRACT = {
+    "error": Read("apiError.js", "body?.error"),
+}
+
+
+class TestPrayerWireContract:
+    def test_success_fields_on_a_real_prayer(self):
+        player = Player()
+        hollowed = states.Hollowed(player)
+        player.states.append(hollowed)
+
+        payload = GameService().pray(player)
+
+        assert payload["success"] is True
+        _assert_contract(payload, PRAYER_SUCCESS_CONTRACT, "pray() success")
+
+    def test_refusal_fields_on_a_real_refusal(self):
+        player = Player()
+        player.states.append(states.Hollowed(player))
+        player.fatigue = 0
+
+        payload = GameService().pray(player)
+
+        assert payload["success"] is False
+        _assert_contract(payload, PRAYER_REFUSAL_CONTRACT, "pray() refusal")
+
+
 class TestJournalWireContract:
     def _journal_payload(self):
         """A journal with one of everything, produced by the real engine path.
@@ -2736,6 +2725,60 @@ class TestWireIdRoundTrip:
         for key in ("npcs", "items", "objects"):
             for entry in room[key]:
                 _assert_opaque(entry["id"], f"room {key}[].id")
+
+
+# ============================================================================
+# NPC chat: idempotent turns (#636) and the per-open /end token (#674)
+# ============================================================================
+# Both are GameService-level fields, not engine ones, so the payloads below come
+# from the real GameService entry points with only the NPC stubbed -- the NPC's
+# own chat payload is not what these contracts cover.
+
+# The /open body useNpcChat keeps for the matching /end.
+NPC_CHAT_OPEN_CONTRACT = {
+    "open_token": Read("useNpcChat.js", "const openToken = data?.open_token"),
+}
+
+# The 409 body for a Retry of a turn that is still running: the hook re-sends
+# the same turn_id on this flag, and shows "still composing" without it.
+NPC_CHAT_PENDING_TURN_CONTRACT = {
+    "pending": Read("useNpcChat.js", "err.response.data?.pending"),
+}
+
+
+class TestNpcChatWireContract:
+    class _Npc:
+        name = "Tal"
+
+        def chat_open(self, player):
+            return {"success": True, "npc_key": "Tal_0", "conversation_ended": False}
+
+    def _world(self):
+        from tests._gs_fixtures import live_world
+
+        player, game_map = live_world()
+        game_map[(0, 0)].npcs_here = [self._Npc()]
+        return player
+
+    def test_open_carries_the_token_end_sends_back(self):
+        result = GameService().npc_chat_open(self._world(), "Tal")
+        _assert_contract(result, NPC_CHAT_OPEN_CONTRACT, "npc_chat_open()")
+
+    def test_a_retry_of_a_running_turn_says_pending(self):
+        from src.api.services import game_service as gs_module
+
+        player = self._world()
+        turn_id = "turn-0001-abcdef"
+        lock, _refusal = gs_module._begin_chat_turn(player, turn_id, "Tal_0")
+        try:
+            refused = GameService().npc_chat_respond(
+                player, "Tal_0", "Hello?", "neutral", turn_id=turn_id
+            )
+        finally:
+            gs_module._end_chat_turn(player, lock)
+
+        _assert_contract(refused, NPC_CHAT_PENDING_TURN_CONTRACT, "npc_chat_respond() 409")
+        assert refused["pending"] is True
 
 
 # The citations themselves

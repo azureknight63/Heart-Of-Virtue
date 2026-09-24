@@ -21,13 +21,16 @@ import src.functions as functions  # type: ignore
 from ._base import NPC, Friend  # noqa: F401
 from ._enemies import (  # noqa: F401
     CaveBat,
+    CorruptedStoneCreature,
     ElderSlime,
     GiantSpider,
     KingSlime,
     Lurker,
     RockRumbler,
+    ScarpAdder,
     Slime,
     StatusDummy,
+    TalusHound,
     Testexp,
 )
 from ._friends import (  # noqa: F401
@@ -41,6 +44,7 @@ from ._friends import (  # noqa: F401
 from ._merchants import JamboHealsU, MiloCurioDealer, Merchant  # noqa: F401
 
 from src.narration import narrate
+from src.npc_level_tables import attach_enemy_growth_profile
 
 # Explicit allow-list of NPC/Friend/Merchant classes instantiable through the
 # debug-only add_combatant operation. Deliberately narrower than "everything
@@ -49,13 +53,16 @@ from src.narration import narrate
 # concrete, intended combatant — never an arbitrary module-level name.
 ADD_COMBATANT_ALLOWED_CLASSES = {
     "CaveBat": CaveBat,
+    "CorruptedStoneCreature": CorruptedStoneCreature,
     "ElderSlime": ElderSlime,
     "GiantSpider": GiantSpider,
     "KingSlime": KingSlime,
     "Lurker": Lurker,
     "RockRumbler": RockRumbler,
+    "ScarpAdder": ScarpAdder,
     "Slime": Slime,
     "StatusDummy": StatusDummy,
+    "TalusHound": TalusHound,
     "Testexp": Testexp,
     "Gorran": Gorran,
     "GronditeConclaveElder": GronditeConclaveElder,
@@ -472,10 +479,15 @@ class TheAdjutant(Friend):
                 # whoever uses this to test balance. Route through
                 # sync_level (LevelSyncMixin) instead, same as a real
                 # spawn-time level assignment (src/npc_level_tables.py) and
-                # set_ally_progression below. Classes with no growth_profile
-                # (most arena test NPCs today) are an intentional no-op here
+                # set_ally_progression below. An enemy staged by
+                # add_combatant is a bare cls() with no growth_profile, so it
+                # gets its ENEMY_GROWTH_PROFILES entry first, as a real spawn
+                # does (#655: without it the op reported success and left
+                # level 1). A class with no entry stays an intentional no-op
                 # -- sync_level already behaves that way everywhere else.
                 if hasattr(target, "sync_level"):
+                    if not getattr(target, "growth_profile", None):
+                        attach_enemy_growth_profile(target)
                     target.sync_level(int(value))
                 updated[stat] = int(getattr(target, "level", 1) or 1)
                 continue

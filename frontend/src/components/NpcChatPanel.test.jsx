@@ -8,7 +8,10 @@ import NpcChatPanel, { collapseTerminatorRun, TERMINATOR_RUN_RE } from './NpcCha
 import { makeNpcChatOpen, makeNpcChatRespond, makeJeanOption, makeRelationship } from '../test/payloads'
 
 // Mock the npcChat API
-vi.mock('../api/npcChat', () => ({
+// The real module's constants survive (useNpcChat reads NPC_CHAT_TIMEOUT_MS
+// to bound its pending-turn re-sends); only the calls are stubbed.
+vi.mock('../api/npcChat', async (importOriginal) => ({
+  ...(await importOriginal()),
   default: {
     open: vi.fn(),
     respond: vi.fn(),
@@ -372,7 +375,7 @@ describe('NpcChatPanel', () => {
 
       // And it has to actually work, not merely look clickable.
       fireEvent.click(endButton)
-      await waitFor(() => expect(npcChat.end).toHaveBeenCalledWith('npc_session_123'))
+      await waitFor(() => expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', null))
       await waitFor(() => expect(mockOnClose).toHaveBeenCalledTimes(1))
     })
 
@@ -447,7 +450,7 @@ describe('NpcChatPanel', () => {
       await screen.findByText('Hi there')
       fireEvent.click(control())
 
-      await waitFor(() => expect(npcChat.end).toHaveBeenCalledWith('npc_session_123'))
+      await waitFor(() => expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', null))
       expect(mockOnClose).toHaveBeenCalledTimes(1)
     })
 
@@ -488,7 +491,7 @@ describe('NpcChatPanel', () => {
 
       await act(async () => { resolveOpen(mockOpenResponse) })
 
-      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', null)
     })
   })
 

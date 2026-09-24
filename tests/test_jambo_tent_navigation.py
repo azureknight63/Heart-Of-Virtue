@@ -33,13 +33,15 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.api.serializers.object_serializer import ObjectSerializer
-from src.universe import Universe
-from src.player._movement import PlayerMovementMixin
 from src.narration import capture_narration
 
 from tests._cite import Read, verify
+from tests._real_map_helpers import (
+    MAPS_DIR,
+    build_universe,
+    find_passage_on_map,
+)
 
-MAP_DIR = ROOT / "src" / "resources" / "maps"
 MAP_FILES = [
     "eastern-descent.json",
     "eastern-descent-nomad-camp.json",
@@ -47,41 +49,8 @@ MAP_FILES = [
 ]
 
 
-class _MinPlayer(PlayerMovementMixin):
-    """Minimal Player stand-in sufficient for Passageway._commit_teleport /
-    PlayerMovementMixin.teleport (drop_merchandise_items, map, location, room)."""
-
-    def __init__(self, universe):
-        self.universe = universe
-        self.map = None
-        self.location_x = None
-        self.location_y = None
-        self.current_room = None
-
-    def drop_merchandise_items(self):
-        return None
-
-
 def _build_universe():
-    universe = Universe()
-    player = _MinPlayer(universe)
-    universe.player = player
-    for m in MAP_FILES:
-        universe._load_single_json_map(player, MAP_DIR / m)
-    return universe, player
-
-
-def _find_passage(map_dict, name):
-    for coord, tile in map_dict.items():
-        if not isinstance(coord, tuple):
-            continue
-        for obj in getattr(tile, "objects_here", []) or []:
-            if (
-                getattr(obj, "name", None) == name
-                and getattr(obj, "__class__", None).__name__ == "Passageway"
-            ):
-                return coord, tile, obj
-    return None
+    return build_universe(*MAP_FILES)
 
 
 #: The frontend function this module mirrors. Cited by anchor rather than by
@@ -417,7 +386,7 @@ def universe_player():
 def test_jambos_tent_serialized_keywords_have_no_name_word_aliases():
     """The serialized Jambo's Tent passage must not carry the 'jambo'/'tent'
     name-word aliases that rendered as extra frontend buttons."""
-    raw = json.loads((MAP_DIR / "eastern-descent-nomad-camp.json").read_text(encoding="utf-8"))
+    raw = json.loads((MAPS_DIR / "eastern-descent-nomad-camp.json").read_text(encoding="utf-8"))
     for coord, tile in raw.items():
         if not isinstance(tile, dict):
             continue
@@ -435,7 +404,7 @@ def test_jambos_tent_displayed_actions_are_only_enter(universe_player):
     Jambo's Tent is 'enter' (the frontend hides action_aliases + dups)."""
     universe, _ = universe_player
     nomad = next(a for a in universe.maps if a.get("name") == "eastern-descent-nomad-camp")
-    res = _find_passage(nomad, "Jambo's Tent")
+    res = find_passage_on_map(nomad, "Jambo's Tent")
     assert res, "Jambo's Tent passage not loaded"
     pw = res[2]
     assert _displayed_actions(pw) == ["enter"], _displayed_actions(pw)
@@ -453,7 +422,7 @@ def test_full_enter_exit_route_coordinates(universe_player):
     next(a for a in universe.maps if a.get("name") == "eastern-descent-jambos-tent")
 
     # Start on the eastern-descent tile that holds the Camp Entrance passage.
-    start = _find_passage(ed, "Camp Entrance")
+    start = find_passage_on_map(ed, "Camp Entrance")
     assert start, "Camp Entrance passage not found in eastern-descent"
     coord, tile, _ = start
     player.map = ed
@@ -461,7 +430,7 @@ def test_full_enter_exit_route_coordinates(universe_player):
     player.current_room = tile
 
     def step(target_name, expected_map, expected_coords):
-        res = _find_passage(player.map, target_name)
+        res = find_passage_on_map(player.map, target_name)
         assert res, f"{target_name} not found in {player.map['name']}"
         pw = res[2]
         with capture_narration():

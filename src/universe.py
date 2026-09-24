@@ -347,7 +347,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                             "it would replace behaviour the class declares"
                         )
                         continue
-                    if not map_placeholders.legacy_prop_allowed(cls, k, constructed):
+                    if not map_placeholders.legacy_prop_allowed(cls, k, constructed=constructed):
                         continue
                     v = prop(k)
                     if (

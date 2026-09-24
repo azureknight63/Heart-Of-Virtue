@@ -3,6 +3,7 @@ import threading
 import weakref
 import uuid
 import contextlib
+import copy
 import inspect
 import re
 from collections import Counter
@@ -131,13 +132,130 @@ _CHAT_TURN_IN_FLIGHT = {
 }
 
 
-def _chat_turn_lock(player):
-    """``player``'s chat-turn lock, created on first use."""
+#: The ``(npc_key, turn_id)`` of the turn each player has in flight, if it
+#: carried an id (#636). A Retry of THAT turn -- same id, same NPC -- which
+#: lands while it is still running is told so (``pending``) and re-sends until
+#: the commit lands, then gets it replayed from
+#: ``npc_chat_histories[npc_key]["last_turn"]``. Beside the locks and
+#: weak-keyed for the same reason: in-flight state is not saved.
+_CHAT_TURN_PENDING: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+#: The refusal for a Retry of the very turn that is still running.
+_CHAT_TURN_PENDING_REFUSAL = dict(_CHAT_TURN_IN_FLIGHT, pending=True)
+
+#: The refusal for a turn over the chat rate limit; the route answers 429.
+_CHAT_TURN_RATE_LIMITED = {
+    "success": False,
+    "rate_limited": True,
+    "error": "Slow down — too many messages.",
+}
+
+#: The refusal for a /respond that does not name the conversation /open
+#: started: the UI only ever answers the chat it opened.
+_CHAT_NOT_OPEN = {"success": False, "error": "No open conversation with that NPC."}
+
+
+def _chat_turn_lock_locked(player):
+    """``player``'s chat-turn lock, created on first use; the caller holds
+    :data:`_CHAT_TURN_LOCKS_GUARD`."""
+    lock = _CHAT_TURN_LOCKS.get(player)
+    if lock is None:
+        lock = _CHAT_TURN_LOCKS[player] = threading.Lock()
+    return lock
+
+
+def _begin_chat_turn(player, turn_id, npc_key=None):
+    """Take ``player``'s turn lock and record the turn as pending, atomically.
+
+    Returns ``(lock, None)`` with the lock held, or ``(None, refusal)`` when a
+    turn is already in flight -- the 409 body, saying whether the running turn
+    is this very one. Everything here runs under one guard: taking the lock
+    with the pending id written, and deciding the refusal from the pending id
+    the lock attempt saw. Reading that id after releasing the guard let the
+    running turn's :func:`_end_chat_turn` clear it in between, answering a
+    Retry of that turn with the plain 409 and stranding the client's replay.
+    """
     with _CHAT_TURN_LOCKS_GUARD:
-        lock = _CHAT_TURN_LOCKS.get(player)
-        if lock is None:
-            lock = _CHAT_TURN_LOCKS[player] = threading.Lock()
-        return lock
+        lock = _chat_turn_lock_locked(player)
+        if not lock.acquire(blocking=False):
+            if turn_id and _CHAT_TURN_PENDING.get(player) == (npc_key, turn_id):
+                return None, dict(_CHAT_TURN_PENDING_REFUSAL)
+            return None, dict(_CHAT_TURN_IN_FLIGHT)
+        if turn_id:
+            _CHAT_TURN_PENDING[player] = (npc_key, turn_id)
+        return lock, None
+
+
+def _end_chat_turn(player, lock):
+    """Drop the pending id and release, under the same guard that set them."""
+    with _CHAT_TURN_LOCKS_GUARD:
+        _CHAT_TURN_PENDING.pop(player, None)
+        lock.release()
+
+
+def _chat_history_entry(player, npc_key):
+    """The persisted history dict for ``npc_key``, or ``None``.
+
+    Never created here: the engine's ``_save_exchange_to_persistence`` builds
+    a fresh entry only when the key is absent, so a stub holding just
+    ``last_turn`` would make its next ``entry["exchanges"]`` raise.
+    """
+    hists = getattr(player, "npc_chat_histories", None)
+    entry = hists.get(npc_key) if isinstance(hists, dict) else None
+    return entry if isinstance(entry, dict) else None
+
+
+def _replayed_chat_turn(player, npc_key, turn_id):
+    """The committed result of ``turn_id``, marked ``replayed``, or ``None``."""
+    entry = _chat_history_entry(player, npc_key)
+    last = entry.get("last_turn") if entry else None
+    if not isinstance(last, dict) or last.get("turn_id") != turn_id:
+        return None
+    result = copy.deepcopy(last.get("result"))
+    if not isinstance(result, dict):
+        return None
+    result["replayed"] = True
+    return result
+
+
+def _remember_chat_turn(player, npc_key, turn_id, result):
+    """Record -- or, for a turn without an id, clear -- ``npc_key``'s replay
+    record, so a Retry of the click on screen replays instead of re-running.
+
+    One record per NPC (the latest turn only -- a Retry only ever names the
+    click still on screen), stored in the history entry the commit itself just
+    wrote, so it is saved and restored with the rest of that conversation.
+    Deep-copied: it is JSON-shaped builtins, and the caller's dict goes on to
+    be serialized and must not alias the saved one.
+
+    A committed turn WITHOUT an id still replaces the click on screen, so it
+    drops the previous record rather than leaving it for a late Retry.
+    """
+    if not result.get("success"):
+        return
+    if not turn_id:
+        _forget_chat_turn(player, npc_key)
+        return
+    entry = _chat_history_entry(player, npc_key)
+    if entry is not None:
+        entry["last_turn"] = {"turn_id": turn_id, "result": copy.deepcopy(result)}
+
+
+def _forget_chat_turn(player, npc_key):
+    """Drop ``npc_key``'s replay record, so no late Retry can replay it."""
+    entry = _chat_history_entry(player, npc_key)
+    if entry is not None:
+        entry.pop("last_turn", None)
+
+
+def _forget_every_chat_turn(player):
+    """Drop every NPC's replay record: a new conversation is on screen, so no
+    late Retry from any earlier one -- this NPC's or another's -- may replay
+    its reply into it."""
+    hists = getattr(player, "npc_chat_histories", None)
+    if isinstance(hists, dict):
+        for npc_key in list(hists):
+            _forget_chat_turn(player, npc_key)
 
 
 def _warn(message):
@@ -2499,6 +2617,30 @@ class GameService:
             "bgm": bgm,
         }
 
+    def pray(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Adapt ``Player.pray`` (issue #646) to JSON; refused mid-fight.
+
+        The engine decides what prayer costs and cures; this captures its
+        narration and reports the new fatigue so the HUD can redraw.
+        """
+        refused = _refused_mid_fight(player)
+        if refused is not None:
+            return refused
+        with capture_narration() as msgs:
+            outcome = player.pray()
+        if not outcome["prayed"]:
+            return {"success": False, "error": outcome["refusal"]}
+        lines = [m["text"] for m in msgs]
+        return {
+            "success": True,
+            "message": "\n".join(lines),
+            "messages": lines,
+            "cleared": outcome["cleared"],
+            "fatigue_cost": outcome["fatigue_cost"],
+            "fatigue": player.fatigue,
+            "max_fatigue": player.maxfatigue,
+        }
+
     def search(self, player: "player_module.Player") -> Dict[str, Any]:
         """Search the current room for hidden entities.
 
@@ -2879,7 +3021,7 @@ class GameService:
                 isinstance(target, Passageway)
                 and not _is_demo_end_passageway(target)
                 and session_data is not None
-                and target.accepts_step_through(handler, action)
+                and target.accepts_step_through(handler)
             ):
                 events_triggered.extend(
                     self._queue_passageway_confirmation(request)
@@ -2979,6 +3121,23 @@ class GameService:
             return False
         player._combat_deferred_enemies = combat_enemies
         return True
+
+    @staticmethod
+    def _still_waiting(player, stashed_enemies):
+        """The stashed enemies that can still fight: alive, in Jean's room.
+
+        The stash can outlive its fight. Clicking an enemy (``start_combat``)
+        does not defer, so Jean can start and win the stashed fight before
+        spending his points, or walk away from it; resuming the stash as it
+        stood then restarted a won fight around a 0-HP corpse that no move
+        could clear (#655, second live run).
+        """
+        room = getattr(player, "current_room", None)
+        present = getattr(room, "npcs_here", None) or []
+        return [
+            enemy for enemy in stashed_enemies
+            if enemy in present and enemy.is_alive()
+        ]
 
     def _start_combat(
         self, player, combat_enemies, session_id=None, session_data=None
@@ -3915,6 +4074,8 @@ class GameService:
         pending_points = int(getattr(player, "pending_attribute_points", 0) or 0)
         if deferred_enemies and pending_points == 0:
             player._combat_deferred_enemies = None
+            deferred_enemies = self._still_waiting(player, deferred_enemies)
+        if deferred_enemies and pending_points == 0:
             self._initialize_combat(
                 player,
                 deferred_enemies,
@@ -5214,15 +5375,52 @@ class GameService:
             _log.warning("loquacity recovery skipped", exc_info=True)
 
     @staticmethod
-    def _one_chat_turn(player, turn, *args) -> Dict[str, Any]:
-        """Run ``turn(*args)`` unless this player already has one in flight."""
-        lock = _chat_turn_lock(player)
-        if not lock.acquire(blocking=False):
-            return dict(_CHAT_TURN_IN_FLIGHT)
+    def _one_chat_turn(
+        player, turn, *args, turn_id=None, npc_key=None, charge=None, precondition=None,
+    ) -> Dict[str, Any]:
+        """Run ``turn(*args)`` unless this player already has one in flight.
+
+        With a ``turn_id`` (and the ``npc_key`` whose history records it) the
+        turn is idempotent (#636): one already committed under that id is
+        replayed rather than run again, and a Retry overlapping its own
+        still-running turn is refused as ``pending`` rather than plain busy.
+        The replay check sits INSIDE the lock, so a turn that commits between
+        a check and an acquire can never be run a second time.
+
+        ``charge`` is the caller's rate limit: a no-argument callable that
+        records one request and is truthy when that request is over the limit.
+        It is taken HERE, under the lock, for every request but a replay and a
+        ``pending`` refusal -- neither costs a provider call, so both go free.
+        Deciding that before the lock (an advisory "is this turn known?" at
+        the route) let a re-send whose turn finished in the gap run a real turn
+        uncharged, and chain (round-2 scrub, S1). ``precondition`` returns a
+        refusal or ``None`` and runs after the replay check, so a Retry can
+        still collect a committed reply.
+        """
+        over_limit = charge or (lambda: False)
+        lock, refusal = _begin_chat_turn(player, turn_id, npc_key)
+        if lock is None:
+            if not refusal.get("pending") and over_limit():
+                return dict(_CHAT_TURN_RATE_LIMITED)
+            return refusal
         try:
-            return turn(*args)
+            if turn_id:
+                replayed = _replayed_chat_turn(player, npc_key, turn_id)
+                if replayed is not None:
+                    return replayed
+            refused = precondition() if precondition is not None else None
+            # Charged before a precondition refusal returns: only a replay
+            # and a ``pending`` answer go free.
+            if over_limit():
+                return dict(_CHAT_TURN_RATE_LIMITED)
+            if refused is not None:
+                return refused
+            result = turn(*args)
+            if npc_key:
+                _remember_chat_turn(player, npc_key, turn_id, result)
+            return result
         finally:
-            lock.release()
+            _end_chat_turn(player, lock)
 
     def npc_chat_open(
         self, player: "player_module.Player", npc_id: str
@@ -5272,6 +5470,7 @@ class GameService:
         # while this open is composing must not match it (#637).
         player.__dict__["_active_chat_npc_id"] = npc_id
         player.__dict__["_active_chat_npc_key"] = ""
+        player.__dict__.pop("_active_chat_open_token", None)
 
         # Call NPC's chat_open method
         try:
@@ -5295,6 +5494,15 @@ class GameService:
             self._clear_active_chat(player)
         elif result.get("npc_key"):
             player.__dict__["_active_chat_npc_key"] = result["npc_key"]
+            # A new conversation: a late Retry from any earlier one must run
+            # (or be refused) rather than replay that conversation's reply here.
+            _forget_every_chat_turn(player)
+            # One token per open (#674): a late /end from a closed panel for
+            # this SAME npc_key must not clear a quick re-open's marker, and
+            # the key alone cannot tell the two conversations apart.
+            token = uuid.uuid4().hex
+            player.__dict__["_active_chat_open_token"] = token
+            result["open_token"] = token
         else:
             # No key to match /end against: fall back to an unconditional /end.
             player.__dict__.pop("_active_chat_npc_key", None)
@@ -5307,14 +5515,40 @@ class GameService:
         npc_key: str,
         jean_text: str,
         jean_tone: str = "neutral",
+        turn_id: Optional[str] = None,
+        charge=None,
     ) -> Dict[str, Any]:
-        """Jean's choice, one turn per player at a time (``_npc_chat_respond``)."""
+        """Jean's choice, one turn per player at a time (``_npc_chat_respond``).
+
+        ``turn_id`` makes the turn idempotent and ``charge`` is the route's
+        rate limit -- see ``_one_chat_turn``. A mid-fight refusal is a
+        game-state answer decided before the turn, and is not charged. The route validates the id;
+        ``None`` keeps the pre-#636 behaviour.
+        """
         refused = _refused_mid_fight(player)
         if refused is not None:
             return refused
         return self._one_chat_turn(
-            player, self._npc_chat_respond, player, npc_key, jean_text, jean_tone
+            player, self._npc_chat_respond, player, npc_key, jean_text, jean_tone,
+            turn_id=turn_id, npc_key=npc_key, charge=charge,
+            precondition=lambda: self._chat_not_open(player, npc_key),
         )
+
+    @staticmethod
+    def _chat_not_open(player, npc_key) -> Optional[Dict[str, Any]]:
+        """A refusal unless ``npc_key`` names the conversation /open started.
+
+        The UI only answers the chat it opened, so neither may the API. Without
+        this a /respond reached any NPC on the tile whose class name prefixes
+        the key (``_find_chat_npc``) with no /open at all, and a made-up key
+        also kept its turns out of the replay record (round-2 scrub, S1). An
+        open whose result carried no key gives the UI nothing to answer with,
+        so it answers nothing here either.
+        """
+        opened_key = player.__dict__.get("_active_chat_npc_key")
+        if npc_key and opened_key == npc_key:
+            return None
+        return dict(_CHAT_NOT_OPEN)
 
     def _npc_chat_respond(
         self,
@@ -5390,19 +5624,31 @@ class GameService:
         """Drop the active-chat marker and the npc_key it belongs to."""
         player.__dict__.pop("_active_chat_npc_id", None)
         player.__dict__.pop("_active_chat_npc_key", None)
+        player.__dict__.pop("_active_chat_open_token", None)
 
     def npc_chat_end(
-        self, player: "player_module.Player", npc_key: str
+        self,
+        player: "player_module.Player",
+        npc_key: str,
+        open_token: Optional[str] = None,
     ) -> Dict[str, Any]:
         """End an NPC conversation and flush state.
 
         Args:
             player: The player instance
             npc_key: NPC identifier for active chat
+            open_token: The token ``/open`` returned for this conversation. A
+                token naming an earlier open of the same NPC leaves the marker
+                alone (#674); ``None`` keeps the key-only rule below.
 
         Returns:
             Dict with success status and conversation summary
         """
+        # A token naming an earlier open of this same NPC is a late /end from
+        # a panel already closed: the key matches, the conversation does not.
+        active_token = player.__dict__.get("_active_chat_open_token")
+        stale = bool(open_token) and active_token is not None and open_token != active_token
+
         # Clear the active chat only when it is this NPC's. A panel closed
         # after its /open resolved sends a late /end that can land after the
         # next NPC's /open; it must not clear that conversation's marker (#637).
@@ -5412,16 +5658,11 @@ class GameService:
         # match -- in particular not the pending "" an /open in flight parks.
         active_key = player.__dict__.get("_active_chat_npc_key")
         names_a_chat = isinstance(npc_key, str) and bool(npc_key)
-        if active_key is None or (names_a_chat and active_key == npc_key):
+        if not stale and (active_key is None or (names_a_chat and active_key == npc_key)):
             self._clear_active_chat(player)
 
-        # Get conversation count from history if available
-        count = 0
-        if (
-            hasattr(player, "npc_chat_histories")
-            and npc_key in player.npc_chat_histories
-        ):
-            count = player.npc_chat_histories[npc_key].get("conversation_count", 0)
+        entry = _chat_history_entry(player, npc_key)
+        count = entry.get("conversation_count", 0) if entry else 0
 
         return {"success": True, "data": {"conversation_count": count}}
 
@@ -5441,7 +5682,7 @@ class GameService:
         if not hasattr(player, "npc_chat_histories"):
             return {"success": False, "error": "No chat history available"}
 
-        hist = player.npc_chat_histories.get(npc_key)
+        hist = _chat_history_entry(player, npc_key)
         if not hist:
             return {"success": False, "error": f"No history for '{npc_key}'"}
 

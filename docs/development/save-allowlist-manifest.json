@@ -162,6 +162,10 @@
     },
     {
       "module": "src.actions",
+      "name": "Pray"
+    },
+    {
+      "module": "src.actions",
       "name": "RefreshMerchants"
     },
     {
@@ -719,10 +723,6 @@
     {
       "module": "src.items",
       "name": "QuiltedVest"
-    },
-    {
-      "module": "src.items",
-      "name": "Relic"
     },
     {
       "module": "src.items",

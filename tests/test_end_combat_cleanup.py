@@ -262,3 +262,20 @@ class TestEveryExitPathCallsIt:
                 or (isinstance(n, ast.Attribute) and n.attr == "persistent")
                 for n in ast.walk(assign.value)
             ), source
+
+
+def test_remove_states_takes_the_matching_states_off_the_engine_way():
+    """``functions.remove_states`` is the shared three-step removal that
+    ``end_combat_cleanup`` and ``Player.pray`` both use."""
+    from unittest.mock import MagicMock, patch
+
+    keep, drop = MagicMock(tag="keep"), MagicMock(tag="drop")
+    drop.on_removal.side_effect = RuntimeError("boom")
+    target = MagicMock(states=[keep, drop])
+    with patch("src.functions.refresh_stat_bonuses") as refresh:
+        removed = functions.remove_states(target, lambda s: s.tag == "drop")
+    assert removed == [drop]
+    assert target.states == [keep]
+    refresh.assert_called_once_with(target)
+    drop.on_removal.assert_called_once_with(target)
+    keep.on_removal.assert_not_called()

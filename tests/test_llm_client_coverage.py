@@ -2129,6 +2129,169 @@ class TestConfigurationPrecedesDiscovery:
         assert NpcChatLLMAdapter.prewarm_in_flight() is False
         assert ("default" in NpcChatLLMAdapter._instances) is not build_fails
 
+    def test_a_hung_prewarm_stops_reading_as_in_flight(self, monkeypatch):
+        """#674: every chat turn serves its fallback while a prewarm is in
+        flight, so a prewarm that never returns (a stuck socket in discovery)
+        pinned every conversation to the fallback for the process's life.
+        Past a bound the build is reported stale, and turns build on demand."""
+        import ai.llm_client as llm
+
+        monkeypatch.setattr(NpcChatLLMAdapter, "_instances", {})
+        monkeypatch.setattr(NpcChatLLMAdapter, "_prewarm_attempted", False)
+        now = [5000.0]
+        monkeypatch.setattr(llm.time, "monotonic", lambda: now[0])
+        bound = llm._PREWARM_STALE_SECONDS
+        seen = []
+
+        def hung(self):
+            seen.append(NpcChatLLMAdapter.prewarm_in_flight())
+            now[0] += bound - 1.0
+            seen.append(NpcChatLLMAdapter.prewarm_in_flight())
+            now[0] += 2.0
+            seen.append(NpcChatLLMAdapter.prewarm_in_flight())
+
+        with patch.object(NpcChatLLMAdapter, "__init__", hung):
+            NpcChatLLMAdapter.prewarm()
+
+        assert seen == [True, True, False]
+        assert NpcChatLLMAdapter.prewarm_in_flight() is False
+
+    def test_get_instance_builds_outside_the_instances_lock(self, monkeypatch):
+        """Once a prewarm reads stale, every chat turn calls get_instance().
+        It used to build (network discovery + validation, seconds) while
+        holding _instances_lock, so every other turn's prewarm_in_flight() and
+        is_prewarmed() queued behind that build."""
+        import threading
+
+        monkeypatch.setattr(NpcChatLLMAdapter, "_instances", {})
+        monkeypatch.setattr(NpcChatLLMAdapter, "_prewarm_attempted", False)
+        started, gate = threading.Event(), threading.Event()
+
+        def slow(self):
+            started.set()
+            gate.wait(5)
+
+        built = []
+        with patch.object(NpcChatLLMAdapter, "__init__", slow):
+            builder = threading.Thread(
+                target=lambda: built.append(NpcChatLLMAdapter.get_instance())
+            )
+            builder.start()
+            try:
+                assert started.wait(5), "get_instance never began building"
+                probes = []
+                prober = threading.Thread(target=lambda: probes.append(
+                    (NpcChatLLMAdapter.prewarm_in_flight(), NpcChatLLMAdapter.is_prewarmed())
+                ))
+                prober.start()
+                prober.join(1.0)
+                assert not prober.is_alive(), "a probe blocked behind the build"
+                assert probes == [(False, False)]
+            finally:
+                gate.set()
+                builder.join(5)
+
+        assert built and built[0] is NpcChatLLMAdapter._instances["default"]
+
+    def test_get_instance_keeps_whichever_adapter_published_first(self, monkeypatch):
+        """Built outside the lock, two cold builders can race; both callers
+        must get the one adapter that landed first."""
+        monkeypatch.setattr(NpcChatLLMAdapter, "_instances", {})
+        first = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
+
+        def racing(self):
+            # Another builder publishes while this one is constructing.
+            NpcChatLLMAdapter._instances.setdefault("default", first)
+
+        with patch.object(NpcChatLLMAdapter, "__init__", racing):
+            assert NpcChatLLMAdapter.get_instance() is first
+
+    def test_concurrent_cold_callers_build_once(self, monkeypatch):
+        """Round-2 scrub S2: built outside the lock with no claim, N cold
+        callers each ran the constructor -- and each construction spends
+        metered OpenRouter validation calls against an account-wide free
+        quota. One builds; the others get None (the turn's fallback) at once
+        rather than a second build or a wait."""
+        import threading
+
+        monkeypatch.setattr(NpcChatLLMAdapter, "_instances", {})
+        monkeypatch.setattr(NpcChatLLMAdapter, "_prewarm_attempted", False)
+        monkeypatch.setattr(NpcChatLLMAdapter, "_build_in_flight", False, raising=False)
+        started, gate = threading.Event(), threading.Event()
+        inits = []
+
+        def slow(self):
+            inits.append(self)
+            started.set()
+            gate.wait(5)
+
+        built = []
+        with patch.object(NpcChatLLMAdapter, "__init__", slow):
+            builder = threading.Thread(
+                target=lambda: built.append(NpcChatLLMAdapter.get_instance())
+            )
+            builder.start()
+            try:
+                assert started.wait(5), "get_instance never began building"
+                second = NpcChatLLMAdapter.get_instance()
+            finally:
+                gate.set()
+                builder.join(5)
+
+        assert len(inits) == 1, "a second cold caller built its own adapter"
+        assert second is None
+        assert built and built[0] is NpcChatLLMAdapter._instances["default"]
+
+    def test_a_hung_build_claim_goes_stale(self, monkeypatch):
+        """The claim must not strand every turn on the fallback forever: a
+        build older than the prewarm stale bound is taken to be hung (#674)."""
+        import ai.llm_client as llm
+
+        monkeypatch.setattr(NpcChatLLMAdapter, "_instances", {})
+        monkeypatch.setattr(NpcChatLLMAdapter, "_build_in_flight", True, raising=False)
+        monkeypatch.setattr(
+            NpcChatLLMAdapter, "_build_started_at",
+            llm.time.monotonic() - llm._PREWARM_STALE_SECONDS - 1, raising=False,
+        )
+        with patch.object(NpcChatLLMAdapter, "__init__", lambda self: None):
+            assert NpcChatLLMAdapter.get_instance() is not None
+
+    def test_a_hung_build_finishing_late_keeps_the_newer_claim(self, monkeypatch):
+        """Build A goes stale and B takes the claim; when A finally returns it
+        must not drop B's claim, or a third caller starts a second concurrent
+        metered build (round-2 scrub, iteration 2)."""
+        import ai.llm_client as llm
+
+        monkeypatch.setattr(NpcChatLLMAdapter, "_instances", {})
+        monkeypatch.setattr(NpcChatLLMAdapter, "_build_in_flight", False, raising=False)
+        clock = [1000.0]
+        monkeypatch.setattr(llm.time, "monotonic", lambda: clock[0])
+
+        with NpcChatLLMAdapter._instances_lock:
+            hung = NpcChatLLMAdapter._claim_build_locked()
+        clock[0] += llm._PREWARM_STALE_SECONDS + 1
+        with NpcChatLLMAdapter._instances_lock:
+            assert NpcChatLLMAdapter._claim_build_locked() is not None  # B takes over
+
+        def boom(self):
+            raise RuntimeError("A's validation finally gave up")
+
+        with patch.object(NpcChatLLMAdapter, "__init__", boom):
+            with pytest.raises(RuntimeError):
+                NpcChatLLMAdapter._build_and_publish(hung)
+
+        with NpcChatLLMAdapter._instances_lock:
+            assert NpcChatLLMAdapter._claim_build_locked() is None, (
+                "the hung build released the claim its successor holds"
+            )
+
+    def test_the_prewarm_stale_bound_outlasts_discovery(self):
+        """The bound must not fire on a prewarm that is merely slow: it is
+        named against the discovery wait it has to outlast."""
+        import ai.llm_client as llm
+
+        assert llm._PREWARM_STALE_SECONDS >= 2 * llm._DISCOVERY_WAIT_SECONDS
+
 
 class TestWorldFactsBlock:
     def test_full_world_facts_block(self, monkeypatch):

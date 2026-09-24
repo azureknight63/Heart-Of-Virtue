@@ -8,6 +8,8 @@ Provides REST API endpoints for:
 - Retrieving conversation history
 """
 
+import re
+
 from flask import Blueprint, request, jsonify
 from src.api.middleware.auth import get_session_and_player, require_game_service
 from src.api.rate_limiter import (
@@ -121,14 +123,29 @@ def _check_chat_rate_limit(session):
     Its bucket is therefore charged even when the identity tier already
     rejected — a caller being throttled has still cost this worker a request.
     """
-    limited = RateLimiter.check(_chat_limiter, _chat_rate_limit_key(session))
+    limited = _identity_over_limit(session)
     # Not `or`-short-circuited: `RateLimiter.check` records, and a
     # short-circuit would leave the IP tier uncounted whenever the identity
     # tier tripped -- see the paragraph above on charging both buckets.
-    limited = RateLimiter.check(_chat_ip_limiter, client_ip()) or limited
+    limited = _ip_over_limit() or limited
     if limited:
-        return rate_limited_response("Slow down — too many messages.")
+        return _chat_rate_limited()
     return None
+
+
+def _chat_rate_limited():
+    """The chat routes' one 429 response."""
+    return rate_limited_response("Slow down — too many messages.")
+
+
+def _identity_over_limit(session) -> bool:
+    """Charge the identity tier; True when this call is over it."""
+    return bool(RateLimiter.check(_chat_limiter, _chat_rate_limit_key(session)))
+
+
+def _ip_over_limit() -> bool:
+    """Charge the IP tier; True when this call is over it."""
+    return bool(RateLimiter.check(_chat_ip_limiter, client_ip()))
 
 
 def _string_field(data, key, default=""):
@@ -154,12 +171,45 @@ def _string_field(data, key, default=""):
     return value[:_MAX_FIELD_LEN].strip()
 
 
+# Client-minted idempotency key for one /respond turn (#636), and the per-open
+# token /open hands back for /end (#674). Both are opaque handles the server
+# stores and compares; a value outside this shape is refused outright rather
+# than truncated, because a clipped key would silently name a DIFFERENT turn.
+_OPAQUE_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{8,64}")
+
+#: Sentinel: the field was present but malformed.
+_INVALID = object()
+
+
+def _token_field(data, key):
+    """An optional opaque token from an untrusted body.
+
+    Absent or JSON ``null`` -> ``None`` (the caller keeps its pre-token
+    behaviour); a string matching :data:`_OPAQUE_TOKEN_RE` -> that string;
+    anything else -> :data:`_INVALID`, which the route answers with a 400.
+    """
+    value = data.get(key) if isinstance(data, dict) else None
+    if value is None:
+        return None
+    if isinstance(value, str) and _OPAQUE_TOKEN_RE.fullmatch(value):
+        return value
+    return _INVALID
+
+
 def _chat_status(result):
     """200, or 409 for a turn refused because one is already in flight
     (``GameService._one_chat_turn``), or 400 for any other failure."""
     if result.get("success"):
         return 200
     return 409 if result.get("in_flight") else 400
+
+
+def _chat_response(result):
+    """The response for a chat service result: the chat 429 when the turn was
+    rate limited, else the result at :func:`_chat_status`."""
+    if result.get("rate_limited"):
+        return _chat_rate_limited()
+    return jsonify(result), _chat_status(result)
 
 
 @npc_chat_bp.route("/open", methods=["POST"])
@@ -203,8 +253,7 @@ def npc_chat_open():
     # Save session
     session_manager.save_session(session.session_id)
 
-    status_code = _chat_status(result)
-    return jsonify(result), status_code
+    return _chat_response(result)
 
 
 @npc_chat_bp.route("/respond", methods=["POST"])
@@ -217,6 +266,10 @@ def npc_chat_respond():
             "jean_text": "Jean's dialogue text",
             "jean_tone": a portrait emotion (optional, default "neutral").
                           The vocabulary is ai/llm_client.py's JEAN_TONES.
+            "turn_id": optional idempotency key, one per option click and
+                       reused by its Retry (#636). A turn already committed
+                       under it is replayed (``replayed: true``); one still
+                       running answers 409 with ``pending: true``.
         }
 
     Returns:
@@ -227,15 +280,27 @@ def npc_chat_respond():
     if error:
         return error
 
-    limited = _check_chat_rate_limit(session)
-    if limited:
-        return limited
+    # Every /respond records the IP tier, free re-sends included: it caps a
+    # flood from one source. The identity tier -- the per-player budget that
+    # protects the provider quota -- is charged for a request refused here or,
+    # below, by the service under the turn lock for every request but a
+    # replay, a ``pending`` answer, or a mid-fight refusal (a game-state
+    # answer decided before the turn) -- round-2 scrub, S1/S3.
+    if _ip_over_limit():
+        return _chat_rate_limited()
+
+    def charged_bad_request(message):
+        """A 400 that still charges the identity tier (it cost this worker a
+        request) -- or the chat 429 when that charge is over the limit."""
+        if _identity_over_limit(session):
+            return _chat_rate_limited()
+        return jsonify({"success": False, "error": message}), 400
 
     # Get request body
     try:
         data = request.get_json() or {}
     except Exception:
-        return jsonify({"success": False, "error": "Invalid JSON"}), 400
+        return charged_bad_request("Invalid JSON")
 
     npc_key = _string_field(data, "npc_key")
     jean_text = _string_field(data, "jean_text")
@@ -243,22 +308,30 @@ def npc_chat_respond():
     jean_tone = _string_field(data, "jean_tone", "neutral") or "neutral"
 
     if not npc_key:
-        return jsonify({"success": False, "error": "npc_key is required"}), 400
+        return charged_bad_request("npc_key is required")
     if not jean_text:
-        return jsonify({"success": False, "error": "jean_text is required"}), 400
+        return charged_bad_request("jean_text is required")
+    turn_id = _token_field(data, "turn_id")
+    if turn_id is _INVALID:
+        return charged_bad_request("turn_id is malformed")
 
     # Call game service
     game_service, gs_error = require_game_service()
     if gs_error:
         return gs_error
 
-    result = game_service.npc_chat_respond(player, npc_key, jean_text, jean_tone)
+    # The identity tier is charged by the service, under the turn lock, for
+    # every request but a replay or a ``pending`` answer, which cost no
+    # provider call (#636, round-2 scrub S1).
+    result = game_service.npc_chat_respond(
+        player, npc_key, jean_text, jean_tone, turn_id=turn_id,
+        charge=lambda: _identity_over_limit(session),
+    )
 
     # Save session
     session_manager.save_session(session.session_id)
 
-    status_code = _chat_status(result)
-    return jsonify(result), status_code
+    return _chat_response(result)
 
 
 @npc_chat_bp.route("/end", methods=["POST"])
@@ -267,7 +340,9 @@ def npc_chat_end():
 
     Request body:
         {
-            "npc_key": "NPC identifier for active chat"
+            "npc_key": "NPC identifier for active chat",
+            "open_token": optional, the ``open_token`` /open returned; a
+                          stale one leaves a newer open's marker alone (#674)
         }
 
     Returns:
@@ -287,13 +362,16 @@ def npc_chat_end():
     npc_key = _string_field(data, "npc_key")
     if not npc_key:
         return jsonify({"success": False, "error": "npc_key is required"}), 400
+    open_token = _token_field(data, "open_token")
+    if open_token is _INVALID:
+        return jsonify({"success": False, "error": "open_token is malformed"}), 400
 
     # Call game service
     game_service, gs_error = require_game_service()
     if gs_error:
         return gs_error
 
-    result = game_service.npc_chat_end(player, npc_key)
+    result = game_service.npc_chat_end(player, npc_key, open_token=open_token)
 
     # Save session
     session_manager.save_session(session.session_id)

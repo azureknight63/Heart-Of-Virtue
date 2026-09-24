@@ -2702,22 +2702,31 @@ class TestTelegraphSeverity:
 
 
 def _statustypes_declared_in_states_module():
-    """Every ``statustype=`` string literal src/states.py can construct.
+    """Every ``statustype=`` string (literal or module constant) src/states.py can construct.
 
     Static parse rather than instantiation: State subclasses need a live target
     and several touch the player's stat pipeline in ``__init__``.
     """
     path = Path(__file__).resolve().parent.parent / "src" / "states.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
+    # Module-level string constants (``APATHY_STATUSTYPE = "apathy"``), so a
+    # ``statustype=`` that names one resolves to its value.
+    constants = {
+        target.id: node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
     found = set()
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.keyword)
-            and node.arg == "statustype"
-            and isinstance(node.value, ast.Constant)
-            and isinstance(node.value.value, str)
-        ):
-            found.add(node.value.value)
+        if isinstance(node, ast.keyword) and node.arg == "statustype":
+            if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                found.add(node.value.value)
+            elif isinstance(node.value, ast.Name) and node.value.id in constants:
+                found.add(constants[node.value.id])
         # `State.__init__`'s own signature default, which no keyword node covers.
         if isinstance(node, ast.FunctionDef):
             args = node.args

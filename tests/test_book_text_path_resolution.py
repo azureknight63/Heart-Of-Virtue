@@ -21,8 +21,9 @@ import pytest
 
 from src.items import Book
 from src.universe import Universe
+import src.items as items
 
-BLANK_BOOK = "This book is mysteriously blank."
+BLANK_BOOK = items.BLANK_BOOK_TEXT
 #: A shipped book file: the repo-relative spelling the maps author.
 SHIPPED = "src/resources/books/jambos-book-of-business-wisdom.txt"
 

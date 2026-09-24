@@ -33,7 +33,7 @@ identity half was not exercised.
 import os
 from typing import List, Optional
 
-from .base import Scenario
+from .base import ARENA_MAP, Scenario
 from ..client import GameClient
 from ..reporter import BugReport, BugSeverity, BugCategory
 
@@ -72,7 +72,7 @@ class VictoryLootScenario(Scenario):
                     category=BugCategory.WRONG_RESPONSE,
                     endpoint="/api/world",
                     method="GET",
-                    expected="Jean at (0, 0) on map 'combat-testing-arena'",
+                    expected=f"Jean at (0, 0) on map {ARENA_MAP!r}",
                     actual="Some other map or tile",
                 ))
             else:
@@ -93,7 +93,7 @@ class VictoryLootScenario(Scenario):
         if not won:
             return bugs
 
-        drop_names, read_bugs = self._read_victory_drops(client)
+        read_bugs, drop_names = self._read_victory_drops(client)
         bugs += read_bugs
         if drop_names is None:
             return bugs
@@ -113,7 +113,7 @@ class VictoryLootScenario(Scenario):
             bugs += self._provoke_a_restack(client, drop_names)
 
         # 5. Walk away -----------------------------------------------------
-        bug = self._move(client, _WALK_AWAY, "Walk away from the won fight")
+        bug, _ = self._move(client, _WALK_AWAY, "Walk away from the won fight")
         if bug:
             bugs.append(bug)
             return bugs
@@ -141,16 +141,17 @@ class VictoryLootScenario(Scenario):
     # ------------------------------------------------------------------
 
     def _read_victory_drops(self, client: GameClient):
-        """Step 2's read-back: ``(sorted drop names, bugs)`` from the victory
-        ``end_state``, or ``(None, bugs)`` when there is no victory to read."""
+        """Step 2's read-back: ``(bugs, sorted drop names)`` from the victory
+        ``end_state``, or ``(bugs, None)`` when there is no victory to read --
+        bugs first, like the other steps."""
         resp = client.get("/api/combat/status")
         bug = self._check_status(resp, 200, "/api/combat/status", "GET",
                                  "Combat status after the victory")
         if bug:
-            return None, [bug]
+            return [bug], None
         end_state = client.parse(resp).get("end_state") or {}
         if end_state.get("status") != "victory":
-            return None, [self._bug(
+            return [self._bug(
                 title="No victory end_state after winning a fight",
                 severity=BugSeverity.HIGH,
                 category=BugCategory.WRONG_RESPONSE,
@@ -159,11 +160,11 @@ class VictoryLootScenario(Scenario):
                 expected="end_state.status == 'victory' until the loot is resolved",
                 actual=f"end_state = {end_state!r}",
                 response=resp,
-            )]
+            )], None
         drop_names = sorted({
             d["name"] for d in end_state.get("items_dropped", []) if d.get("name")
         })
-        return drop_names, []
+        return [], drop_names
 
     def _collect_and_verify(self, client: GameClient, drop_names):
         """Step 6: collect every drop from one tile away, then check it was
@@ -234,26 +235,12 @@ class VictoryLootScenario(Scenario):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _room(self, client: GameClient) -> Optional[dict]:
-        """The ``room`` of GET /api/world, or None when the request failed."""
-        resp = client.get("/api/world")
-        if resp.status_code != 200:
-            return None
-        return client.parse(resp).get("room", {})
-
-    def _move(self, client: GameClient, direction: str, why: str) -> Optional[BugReport]:
-        """POST /api/world/move; the bug if it did not answer 200."""
-        body = {"direction": direction}
-        resp = client.post("/api/world/move", json=body)
-        return self._check_status(resp, 200, "/api/world/move", "POST",
-                                  why, request_body=body)
-
     def _in_the_arena(self, client: GameClient) -> bool:
         room = self._room(client)
         if room is None:
             return False
         return (
-            room.get("map_name") == "combat-testing-arena"
+            room.get("map_name") == ARENA_MAP
             and (room.get("x"), room.get("y")) == (0, 0)
         )
 
@@ -408,7 +395,7 @@ class VictoryLootScenario(Scenario):
         return planted[0], []
 
     def _walk_back_to_the_fight(self, client: GameClient) -> List[BugReport]:
-        bug = self._move(client, _BACK_TO_THE_FIGHT, "Walk back to the fight tile")
+        bug, _ = self._move(client, _BACK_TO_THE_FIGHT, "Walk back to the fight tile")
         return [bug] if bug else []
 
     def _check_only_the_fights_objects_left(

@@ -13,7 +13,10 @@ import { render, act } from '@testing-library/react'
 import NpcChatPanel from './NpcChatPanel'
 import { makeNpcChatOpen, makeNpcChatRespond } from '../test/payloads'
 
-vi.mock('../api/npcChat', () => ({
+// The real module's constants survive (useNpcChat reads NPC_CHAT_TIMEOUT_MS);
+// only the calls are stubbed.
+vi.mock('../api/npcChat', async (importOriginal) => ({
+  ...(await importOriginal()),
   default: { open: vi.fn(), respond: vi.fn(), end: vi.fn() },
 }))
 

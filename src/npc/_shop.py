@@ -42,7 +42,6 @@ from src.items import (
     Armor,
     Weapon,
     Arrow,
-    Relic,
     Commodity,
     ProtectiveGear,
 )
@@ -65,10 +64,7 @@ from src.shop_conditions import (  # type: ignore
 #: "Book", value 5, ``text_file_path=None``), which is what rolled into Jambo's
 #: tent as an item that could be neither bought nor read (issue #611). ``Key``
 #: is itself a ``Special`` and is named here so the intent survives any
-#: reparenting. ``Relic`` has no subclasses today and is listed by intent: it
-#: is a single-use personal memento awaiting a redesign (issue #646), and its
-#: ``value=0`` would make it sell for free, so a future subclass must not
-#: quietly reopen the hole.
+#: reparenting. (``Relic`` sat here too until issue #646 retired the class.)
 #:
 #: ``Special`` ITSELF was here until issue #632 landed the inherited
 #: ``stockable`` flag (``src/items.py``). The family test excluded every
@@ -79,7 +75,7 @@ from src.shop_conditions import (  # type: ignore
 #: flag, per class and per subtree (``Book.stockable = False`` covers the bare
 #: ``Book`` that issue #611 found in Jambo's tent), which is the finer
 #: instrument. Do not restore ``Special`` here without moving that test.
-_NEVER_STOCK_FAMILIES: tuple[type[Item], ...] = (Key, Relic)
+_NEVER_STOCK_FAMILIES: tuple[type[Item], ...] = (Key,)
 
 #: Classes excluded by exact membership only, because the shop stocks *through*
 #: them: these are the abstract bases whose concrete subclasses are the

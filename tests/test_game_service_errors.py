@@ -529,6 +529,7 @@ class TestNPCChatErrors:
         mock_tile.npcs_here = []
         mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
 
+        mock_player.__dict__["_active_chat_npc_key"] = "Nobody"  # the UI opens first
         result = game_service.npc_chat_respond(mock_player, "Nobody", "hello")
 
         assert result == {"success": False, "error": "Active chat NPC not found"}

@@ -4,18 +4,18 @@ async_mode="threading" — engineio's threading driver *does* provide a WebSocke
 transport (via simple-websocket) and the handshake advertises it. There is no
 automatic "fall back to long-polling behind gunicorn sync workers", whatever an
 earlier version of this header said; engineio does no such thing. The client
-pins polling instead (frontend/src/api/socketClient.js), because a *completed*
-upgrade parks the WSGI request thread for the life of the connection, which a
-`-w 1` sync worker cannot survive. That file carries the full derivation and
-its caveats — which said gunicorn was in no requirements file and the process
-model was asserted from the Procfile rather than verified. Both were true when
-written and are not now: the server was read on 2026-09-19 and runs
-``gunicorn --worker-class eventlet -w 1 --timeout 120 wsgi:app`` from the
-systemd unit mirrored at ``deploy/heart-of-virtue.service``. That is a
-CONCURRENT worker, not the sync one the transport pin was argued from, and
-eventlet is now pinned in requirements-api.txt (production had it installed by
-hand and declared nowhere). Whether long-polling is still the right pin under
-that worker is issue #653; it stands until that lands.
+pins polling instead (frontend/src/api/socketClient.js). The reason it once
+gave -- a completed upgrade parks the WSGI request for the life of the
+connection, which a `-w 1` sync worker cannot survive -- is void (issue #653):
+production runs ``gunicorn --worker-class eventlet -w 1 --timeout 120
+wsgi:app`` from the systemd unit mirrored at ``deploy/heart-of-virtue.service``,
+a concurrent worker where a parked connection holds a greenlet. The pin stands
+for three reasons that do hold, derived in full in socketClient.js: the reverse
+proxy's ``Upgrade``/``Connection`` handling is unverified
+(docs/development/deployment.md); ``async_mode="threading"`` serving
+WebSockets under an eventlet worker is an unsupported combination; and the
+worker class is due to migrate off eventlet, which gunicorn 26 removed --
+requirements-api.txt holds gunicorn below 26 until it does.
 
 `simple-websocket` is therefore pinned in requirements-api.txt for a narrower
 reason than "the dev WebSocket half": with the client pinning polling in dev

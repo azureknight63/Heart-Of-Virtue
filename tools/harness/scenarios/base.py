@@ -7,6 +7,11 @@ from typing import Any, List, NamedTuple, Optional, Tuple
 from ..client import GameClient
 from ..reporter import BugReport, BugSeverity, BugCategory
 
+#: The combat-testing arena's map name (``config_combat_testing.ini`` and the
+#: arena acceptance configs start Jean on it). Off this map the arena routes
+#: and rosters name nothing.
+ARENA_MAP = "combat-testing-arena"
+
 
 class LivePlayerTile(NamedTuple):
     """The in-process engine objects behind a harness session."""
@@ -28,6 +33,23 @@ class Scenario(ABC):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _room(self, client: GameClient) -> Optional[dict]:
+        """The ``room`` of GET /api/world, or None when the request failed."""
+        resp = client.get("/api/world")
+        if resp.status_code != 200:
+            return None
+        return client.parse(resp).get("room", {})
+
+    def _move(self, client: GameClient, direction: str, why: str):
+        """POST /api/world/move. Returns ``(bug or None, response)``; the bug
+        when it did not answer 200, the response for callers that read it
+        (e.g. ``combat_started``)."""
+        body = {"direction": direction}
+        resp = client.post("/api/world/move", json=body)
+        bug = self._check_status(resp, 200, "/api/world/move", "POST",
+                                 why, request_body=body)
+        return bug, resp
 
     def _live_player_tile(self, client: GameClient) -> Optional[LivePlayerTile]:
         """Resolve session -> player -> universe -> the tile Jean stands on.
@@ -52,11 +74,9 @@ class Scenario(ABC):
 
     def _find_enemy(self, client: "GameClient"):
         """Return the first hostile NPC ID from the current room, or None."""
-        resp = client.get("/api/world")
-        if resp.status_code != 200:
+        room = self._room(client)
+        if room is None:
             return None
-        data = client.parse(resp)
-        room = data.get("room", {})
         npcs = room.get("npcs", [])
         for npc in npcs:
             if isinstance(npc, dict):
@@ -242,10 +262,7 @@ class Scenario(ABC):
         it used to count as "combat ended", so a 500 read as a win.
         """
         bugs = []
-        body = {"direction": "east"}
-        resp = client.post("/api/world/move", json=body)
-        bug = self._check_status(resp, 200, "/api/world/move", "POST",
-                                 "Move to Fodder Pit", request_body=body)
+        bug, _ = self._move(client, "east", "Move to Fodder Pit")
         if bug:
             return [bug], False
 

@@ -148,7 +148,7 @@ const CITATIONS = [
     cite({
         where: 'api/npcChat.js',
         about: 'hooks/useNpcChat.js',
-        anchor: 'endAbandonedConversation(key)',
+        anchor: 'endAbandonedConversation(key, token)',
         claim: 'the end handler closes the panel first and sends /end fire-and-forget',
     }),
     cite({
