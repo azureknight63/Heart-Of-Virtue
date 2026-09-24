@@ -1210,19 +1210,15 @@ class Passageway(Object):
         self.keywords.append("enter")
         self.action_aliases.extend(Passageway._DELEGATED_CROSSING_VERBS)
         self.keywords.extend(self.action_aliases)
-        for _word in type(self)._name_alias_words(name):
-            # Advertised as data only. The word is instance-supplied; what it
-            # means is fixed by `instance_keyword_aliases` on the class (#620).
-            if hasattr(self, _word) or _word in self.action_aliases:
-                continue
-            self.action_aliases.append(_word)
-            self.keywords.append(_word)
         # Stored as authored; `_crossing_words` validates it where it is read,
         # since the legacy loader and a save both write this attribute.
         self.crossing_keywords = crossing_keywords
-        # Advertised so the client renders the button and the API authorizes
-        # the verb. What it MEANS is fixed by `instance_keyword_aliases`.
-        for _word in type(self)._crossing_words(crossing_keywords):
+        # The name words, then the declared crossing words -- the same order
+        # `instance_keyword_aliases` reads them. Advertised as data only, so
+        # the client renders the button and the API authorizes the verb; what
+        # each MEANS is fixed by `instance_keyword_aliases` on the class (#620).
+        cls = type(self)
+        for _word in cls._name_alias_words(name) + cls._crossing_words(crossing_keywords):
             if hasattr(self, _word) or _word in self.action_aliases:
                 continue
             self.action_aliases.append(_word)
@@ -1355,9 +1351,9 @@ class Passageway(Object):
             for name in type(self).CROSSING_METHOD_NAMES
         )
 
-    def accepts_step_through(self, handler, action):
-        """Whether ``action`` -- already resolved to ``handler`` -- should ask
-        "step through?" on this passageway (#620).
+    def accepts_step_through(self, handler):
+        """Whether a verb resolved to ``handler`` should ask "step through?"
+        on this passageway (#620).
 
         The API's confirmation arm asks here rather than spelling the rule
         itself, so the dispatch contract test can ask the same question
@@ -1368,8 +1364,6 @@ class Passageway(Object):
         enough (#630): that half used to admit any advertised verb, including
         one authored for another purpose, and arming the crossing drops Jean's
         unpaid merchandise and runs ``events_before`` before he confirms.
-        ``action`` is kept for the callers' shape; the verb has already been
-        resolved to ``handler``.
         """
         return self.is_crossing_handler(handler)
 
