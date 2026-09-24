@@ -1329,7 +1329,7 @@ describe('useNpcChat', () => {
         await result.current.handleEndConversation()
       })
 
-      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', null)
       expect(onClose).toHaveBeenCalledTimes(1)
     })
 
@@ -1364,7 +1364,7 @@ describe('useNpcChat', () => {
 
       act(() => { result.current.handleEndConversation() })
 
-      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', null)
       expect(onClose).toHaveBeenCalledTimes(1)
       await act(async () => { pending.resolve({ data: { success: true } }) })
       expect(onClose).toHaveBeenCalledTimes(1)
@@ -1414,7 +1414,7 @@ describe('useNpcChat', () => {
       })
 
       expect(npcChat.end).toHaveBeenCalledTimes(2)
-      expect(npcChat.end).toHaveBeenLastCalledWith('gorran_session_1')
+      expect(npcChat.end).toHaveBeenLastCalledWith('gorran_session_1', null)
       expect(onClose).toHaveBeenCalledTimes(2)
     })
 
@@ -1700,7 +1700,7 @@ describe('useNpcChat', () => {
       unmount()
       await act(async () => { pending.resolve({ data: openData }) })
 
-      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', null)
       // No setState on an unmounted hook, and nothing schedules a close.
       expect(onClose).not.toHaveBeenCalled()
     })
@@ -1713,7 +1713,7 @@ describe('useNpcChat', () => {
 
       unmount()
 
-      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', null)
     })
 
     it('does not re-end a conversation the server already closed', async () => {
@@ -1763,7 +1763,7 @@ describe('useNpcChat', () => {
       })
 
       expect(npcChat.end).toHaveBeenCalledTimes(1)
-      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+      expect(npcChat.end).toHaveBeenCalledWith('npc_session_123', null)
       // No "Cannot update an unmounted component" from the late reply either.
       expect(consoleError).not.toHaveBeenCalledWith(
         expect.stringContaining('unmounted'),

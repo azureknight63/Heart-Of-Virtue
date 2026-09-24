@@ -258,12 +258,11 @@ function failureMessage(err, fallback, busy) {
  *   conversation was ever opened, so there is nothing to end.
  * @param {?string} openToken - The `open_token` that `/open` returned (#674),
  *   so the server clears only THIS open's marker and not a quick re-open of
- *   the same NPC. Sent only when there is one.
+ *   the same NPC. `npcChat.end` sends it only when there is one.
  */
 function endAbandonedConversation(npcKey, openToken) {
   if (!npcKey) return
-  const request = openToken ? npcChat.end(npcKey, openToken) : npcChat.end(npcKey)
-  request.catch((err) => {
+  npcChat.end(npcKey, openToken).catch((err) => {
     console.error('[npcChat] end after dismissal failed:', apiErrorDetail(err))
   })
 }
@@ -384,14 +383,22 @@ export function useNpcChat(npcId, npcName, onClose) {
   // lets the "conversation ended" auto-close timer be cancelled on unmount.
   const isMountedRef = useRef(true)
   const endTimeoutRef = useRef(null)
-  // The key of a conversation this hook opened server-side and has NOT ended.
-  // A ref rather than the `npcKey` state because the two paths that have to
-  // read it — the unmount cleanup, and an `/open` that resolves after the
-  // panel is already gone — both run outside render, where state is stale.
-  const openNpcKeyRef = useRef(null)
-  // The `open_token` of that same conversation (#674), set and cleared with
-  // `openNpcKeyRef` and sent with its `/end`.
-  const openTokenRef = useRef(null)
+  // The conversation this hook opened server-side and has NOT ended:
+  // `{ key, token }` — its `npc_key` and the `open_token` (#674) sent with its
+  // `/end` — or null. A ref rather than the `npcKey` state because the two
+  // paths that have to read it — the unmount cleanup, and an `/open` that
+  // resolves after the panel is already gone — both run outside render, where
+  // state is stale.
+  const openConversationRef = useRef(null)
+  /**
+   * Claim the open conversation, if any, clearing it so no other path ends it
+   * too. Returns `{ key, token }`, both null when nothing is open.
+   */
+  const takeOpenConversation = () => {
+    const open = openConversationRef.current
+    openConversationRef.current = null
+    return { key: open?.key ?? null, token: open?.token ?? null }
+  }
   // The still-in-flight `POST /npc/chat/open` request, if any: `{ npcId, promise }`.
   //
   // React 18 StrictMode double-invokes a mount effect in dev (mount -> cleanup
@@ -440,9 +447,8 @@ export function useNpcChat(npcId, npcName, onClose) {
       // `handleEndConversation` — InteractPanel drops `selectedTarget` when the
       // room resyncs, and the panel is keyed per NPC. Whatever conversation is
       // still open server-side is closed out here.
-      endAbandonedConversation(openNpcKeyRef.current, openTokenRef.current)
-      openNpcKeyRef.current = null
-      openTokenRef.current = null
+      const { key, token } = takeOpenConversation()
+      endAbandonedConversation(key, token)
     }
   }, [])
 
@@ -492,7 +498,7 @@ export function useNpcChat(npcId, npcName, onClose) {
    * the rule once is what makes the two paths agree by construction rather than
    * by two people remembering.
    *
-   * Clearing `openNpcKeyRef` is the load-bearing half: `npc_chat_open` and
+   * Clearing `openConversationRef` is the load-bearing half: `npc_chat_open` and
    * `npc_chat_respond` (src/api/services/game_service.py) BOTH pop
    * `_active_chat_npc_id` when they end a conversation, so firing `/end` on the
    * way out would clear a marker that is already gone — and, after the player
@@ -505,8 +511,7 @@ export function useNpcChat(npcId, npcName, onClose) {
       setPhase(CHAT_PHASES.WAITING_JEAN)
       return
     }
-    openNpcKeyRef.current = null
-    openTokenRef.current = null
+    takeOpenConversation()
     setPhase(CHAT_PHASES.ENDED)
     // The close timer is NOT armed here — see handleFinalBeatRendered below
     // and the comment on AUTO_CLOSE_DELAY_MS (issue #531). Arming it the
@@ -610,13 +615,12 @@ export function useNpcChat(npcId, npcName, onClose) {
         //               `npc_chat_end` pops it unconditionally — so ending the
         //               superseded conversation would clear the NEW one's.
         if (!isMountedRef.current) {
-          endAbandonedConversation(data?.npc_key, data?.open_token)
+          endAbandonedConversation(data?.npc_key, data?.open_token || null)
           return
         }
         if (cancelled) return
 
-        openNpcKeyRef.current = data.npc_key
-        openTokenRef.current = data.open_token || null
+        openConversationRef.current = { key: data.npc_key, token: data.open_token || null }
         setNpcKey(data.npc_key)
         setDisplayName(data.npc_name || npcName)
         setConversationCast(npcCast(npcId, data.npc_name || npcName))
@@ -779,10 +783,7 @@ export function useNpcChat(npcId, npcName, onClose) {
     // sends nothing. With no key (`/open` never resolved, failed, or the
     // conversation already ended) there is nothing server-side to end, and a
     // response still in flight ends itself when it lands on an unmounted hook.
-    const key = openNpcKeyRef.current
-    const token = openTokenRef.current
-    openNpcKeyRef.current = null
-    openTokenRef.current = null
+    const { key, token } = takeOpenConversation()
     endAbandonedConversation(key, token)
     onClose()
   }
