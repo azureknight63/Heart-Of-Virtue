@@ -324,7 +324,11 @@ class ConfigManager:
             allocation = "even"
         self.config.starting_level_allocation = allocation
 
-        # Story flag pre-seeding: parse comma-separated "flag" or "flag=value" tokens
+        # Story flag pre-seeding: parse comma-separated "flag" or "flag=value" tokens.
+        # Applied to the session by SessionManager._apply_starting_story_flags.
+        # Note: seeding "king_slime_defeated" also needs "MineralFragment" in
+        # starting_items -- AfterKingSlimeReturn (src/story/ch02.py) waits for the
+        # fragment that AfterDefeatingKingSlime would otherwise have granted.
         raw_flags = _safe_get(section, "starting_story_flags", "")
         parsed_flags: List[str] = []
         if raw_flags.strip():
