@@ -330,9 +330,10 @@ class Ch02GuideToCitadel(
             narrate(
                 "Now having gotten a chance to look at the elder, Jean could see he was a bit "
                 "smaller in form than Gorran, though still quite large by human standards. "
-                "Rather than the craggy, harsh exterior of other Golemites, this elder had a "
-                "smooth, almost polished appearance. Many years of erosion had worn away the "
-                "rough edges of his form, much like stones in a riverbed. His eyes were deep-set "
+                "Where Gorran was solid and smooth, this elder was weathered like an old cliff "
+                "face — pitted, webbed with fine cracks, and draped across the shoulders and "
+                "crown in thick moss that glowed faintly green and gold, as if life had simply "
+                "moved into the places where the stone had given way. His eyes were deep-set "
                 "and wise, and they seemed to hold a depth of knowledge that spoke of centuries "
                 "of experience. He opened his mouth to speak."
             )
@@ -510,14 +511,9 @@ class Ch02GuideToCitadel(
             self.player.add_items_to_inventory(loot)
             narrate("With that, Votha Krr slowly got to his feet, his massive form towering over Jean.")
             say(
-                "May the earth guide your steps, Jean. You are a guest of our city.",
-                "Votha Krr",
-                "neutral",
-            )
-            say(
-                "Before you go down to the pools, find Jambo, the trader. His tent stands in "
-                "the Ecumerium — our market — beneath a painted sign. He sells remedies for "
-                "the kind of harm the pools will do.",
+                "That bundle will not see you through the pools. Before you go down, find "
+                "Jambo, the trader. His tent stands in the Ecumerium — our market — beneath "
+                "a painted sign. He sells what the pools will take from you.",
                 "Votha Krr",
                 "neutral",
             )
@@ -529,7 +525,8 @@ class Ch02GuideToCitadel(
             )
             say("Jambo. The Ecumerium.", "Jean", "neutral")
             say(
-                "Return to me when you have dealt with the slimes.",
+                "May the earth guide your steps, Jean. You are a guest of our city. Return "
+                "to me when you have dealt with the slimes.",
                 "Votha Krr",
                 "neutral",
             )
@@ -1699,7 +1696,8 @@ class JamboShopIntroEvent(Event):
 
     def process(self):
         if not self.player.skip_dialog:
-            begin_conversation(_JEAN_SOLO)
+            with_gorran = _find_gorran(_party(self.player)) is not None
+            begin_conversation(_JEAN_GORRAN_ALLY if with_gorran else _JEAN_SOLO)
             narrate(
                 "The tent flap fell closed behind Jean and the noise outside went soft. "
                 "The air was warm and close — dried herbs, lamp oil, something spiced "
@@ -1709,7 +1707,8 @@ class JamboShopIntroEvent(Event):
             )
             say(
                 "A customer! Come in, come in — mind the rugs, they are older than they "
-                "look. Welcome to Jambo Heals U!",
+                "look. Welcome to Jambo Heals U — finest healer in Grondia, and anywhere "
+                "else Jambo pitches this tent!",
                 "Jambo",
                 "happy",
                 enter=enter_op("Jambo", emotion="happy"),
@@ -1722,6 +1721,18 @@ class JamboShopIntroEvent(Event):
             )
             say("Jean.", "Jean", "neutral")
             say("Jean! Good. Short. Easy for the ledger.", "Jambo", "happy")
+            if with_gorran:
+                narrate(
+                    "His eyes went past Jean to the Golemite filling the tent flap, "
+                    "and his grin did not falter for a moment."
+                )
+                say(
+                    "And the stone one. Jambo does not have a potion for stone. "
+                    "Jambo is thinking about it.",
+                    "Jambo",
+                    "curious",
+                )
+                narrate("Gorran did not move.")
             narrate(
                 "Jambo looked him over the way a tailor looks over a torn coat — the "
                 "grime, the scrapes, the tired set of his shoulders — and clicked his "
@@ -1760,7 +1771,7 @@ class JamboShopIntroEvent(Event):
             say(
                 "Half is honest. Jambo has met merchants who say 'full price' and mean "
                 "'a quarter.' And friends of Jambo always do a little better — on both "
-                "sides of the counter. Jambo likes to talk. This is a hint.",
+                "sides of the counter. Jambo likes to talk. Jambo remembers who talks back.",
                 "Jambo",
                 "neutral",
             )
@@ -1786,18 +1797,17 @@ class JamboShopIntroEvent(Event):
             # Periodic restock (update_goods) re-rolls the counter AND clears
             # and refills the crate.
             say(
-                "Last thing, and this is the important one. Every so often new stock "
-                "comes in, and Jambo turns everything over — the counter and the crate, "
-                "both. What is here today may be gone the next time Jean comes through "
-                "that flap, and something new in its place. So if Jean sees a thing he "
-                "likes, Jean should not wait. Jambo says this as a friend.",
+                "Last thing, the important one. Every so often the caravans come, and "
+                "Jambo turns everything over — counter and crate, both. What is here "
+                "today may be gone tomorrow. If Jean likes a thing, Jean should not "
+                "wait. Jambo says this as a friend.",
                 "Jambo",
                 "neutral",
             )
             narrate("He paused.")
             say("Also as a merchant.", "Jambo", "happy")
             say(
-                "He's given that speech a thousand times. He still means every word of it.",
+                "I'd bet he's given that speech a thousand times. I'd bet he meant it every time.",
                 "Jean",
                 "neutral",
                 thought=True,

@@ -363,7 +363,7 @@ class JamboTentNoticeEvent(Event):
         if not self.player.skip_dialog:
             begin_conversation(_JEAN_GORRAN)
             narrate(
-                "Just inside the boundary stakes, a little apart from the lean-tos, stood "
+                "Just inside the boundary stakes, a little apart from the other tents, stood "
                 "a small tent — its canvas weathered, its sign hand-painted and cheerful: "
                 "JAMBO HEALS U."
             )

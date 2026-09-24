@@ -85,6 +85,7 @@ def _intro(story=None):
     player = Mock()
     player.skip_dialog = False
     player.universe = Mock()
+    player.combat_list_allies = []
     player.universe.story = {} if story is None else story
     tile = Mock()
     event = JamboShopIntroEvent(player=player, tile=tile)
@@ -133,6 +134,23 @@ class TestJamboShopIntroEvent:
                        "crate",                                 # back stock
                        "counter"):                              # where it's priced
             assert needle in jambo, needle
+
+    def test_jambo_greets_gorran_when_he_is_in_the_party(self):
+        """At the camp tent Gorran is usually at Jean's side; Jambo notices."""
+        event, player, _tile = _intro()
+        gorran = type("Gorran", (), {})()  # ch02 matches Gorran by class name
+        player.combat_list_allies = [player, gorran]
+        with capture_narration() as messages:
+            event.check_conditions()
+        begin = next(m for m in messages if m.get("type") == "conversation_begin")
+        assert [c["id"] for c in begin["cast"]] == ["Jean", "Gorran"]
+        assert "potion for stone" in _text(_spoken(messages, "Jambo"))
+
+    def test_no_gorran_line_when_jean_is_alone(self):
+        event, _player, _tile = _intro()
+        with capture_narration() as messages:
+            event.check_conditions()
+        assert "stone" not in _text(_spoken(messages, "Jambo"))
 
     def test_skip_dialog_still_sets_the_gate(self):
         from src.story.ch02 import JamboShopIntroEvent
