@@ -60,13 +60,13 @@ ENEMY_GROWTH_PROFILES = {
     # multi-enemy pools packs") -- Slime/CaveBat stay closer to baseline so
     # pack pressure comes from numbers, not individual toughness.
     #
-    # Slime damage 3 -> 5 (#655): at 3/level a level-3 Slime (32 damage)
-    # landed 2-15 through Jean's ~23 protection, so packs never pressed him.
-    # At 5 (36 at L3, 41 at L4) the (4,2) pack's lowest HP goes 94% -> 86%
-    # (min 49%) at base, 80% (min 32%) at the top roll, 0 deaths.
-    "Slime": {"maxhp": 6, "damage": 5},
-    # CaveBat unchanged: 5/level already sat right; it only needed the
-    # region level bump below.
+    # #655 raised Slime damage 3 -> 5 against arena numbers taken with Gorran
+    # in the party, then reverted it: the story takes Gorran out for the
+    # whole Pools stretch (Ch02GorranAtPools until AfterDefeatingKingSlime),
+    # and every live run died there, three of four to trash packs. Any
+    # retune here is measured solo (docs/qa/2026-09-24-balance-baseline.md,
+    # "Solo Pools retune").
+    "Slime": {"maxhp": 6, "damage": 3},
     "CaveBat": {"maxhp": 4, "damage": 5},
     # ElderSlime/CorruptedStoneCreature are the pools' tougher single
     # spawns -- more growth so they read as a step up from Slime/CaveBat.
@@ -127,16 +127,16 @@ REGION_ENEMY_LEVELS = {
     # the player realistically arrives at (prod starts Jean at 4 and the
     # Pools pay him to ~5), so the fight has real teeth without a one-shot.
     #
-    # #655: Slime/CaveBat 2 -> 3, paired with Slime's damage growth above,
-    # so the packs are the pressure #617 asked for ((2,3) pack lowest HP
-    # 91% -> 83%, min 49%; 0 deaths). KingSlime 6 -> 5, paired with his
-    # growth retune: at 6 (even with maxhp growth 50) he still killed Jean
-    # 4/20 at L4; at 5 there were 0 deaths in 80 fights across Jean L4/L5,
-    # dodging or not.
+    # #655: Slime/CaveBat went 2 -> 3 and back to 2 -- the bump was measured
+    # with Gorran along, but Jean fights the Pools alone (see Slime above).
+    # KingSlime 6 -> 5, paired with his growth retune: at 6 (even with maxhp
+    # growth 50) he still killed Jean 4/20 at L4; at 5 there were 0 deaths in
+    # 80 fights across Jean L4/L5, dodging or not -- also with Gorran along,
+    # so it too awaits the solo retune.
     "grondelith-mineral-pools": {
         "default": 3,
-        "Slime": 3,
-        "CaveBat": 3,
+        "Slime": 2,
+        "CaveBat": 2,
         "ElderSlime": 4,
         "CorruptedStoneCreature": 4,
         "KingSlime": 5,
