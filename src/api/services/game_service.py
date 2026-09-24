@@ -199,10 +199,27 @@ _ACTION_FAILED_MESSAGE = "Jean can't seem to manage that just now."
 #: combat").
 _PASSAGEWAY_IN_COMBAT_MESSAGE = "Cannot use a passageway while in combat."
 
+#: Why an exploration-only action is refused mid-fight. The client never
+#: offers these in combat (INTERACT, SKILLS, the shop and non-weapon equipment
+#: are exploration-only), so the server refuses them too (maintainer rule,
+#: 2026-09-24: what the UI cannot do, the API does not allow).
+_NOT_DURING_COMBAT_MESSAGE = "There is no time for that in the middle of a fight."
+
 #: Why picking an item up or putting one down is refused mid-fight (#621).
-_FLOOR_ITEMS_IN_COMBAT_MESSAGE = (
-    "There is no time for that in the middle of a fight."
-)
+_FLOOR_ITEMS_IN_COMBAT_MESSAGE = _NOT_DURING_COMBAT_MESSAGE
+
+#: Why an in-combat action is refused outside Jean's turn -- the client's
+#: `isMyTurn` gate: awaiting input, and no move still winding up.
+_NOT_YOUR_TURN_MESSAGE = "Wait for your turn."
+
+
+def _refused_mid_fight(player, key="error"):
+    """``{"success": False, key: _NOT_DURING_COMBAT_MESSAGE}`` when ``player``
+    is in combat, else None -- the guard every exploration-only route runs."""
+    if getattr(player, "in_combat", False):
+        return {"success": False, key: _NOT_DURING_COMBAT_MESSAGE}
+    return None
+
 
 #: Why the free equip/unequip routes refuse a weapon mid-fight (#671). A
 #: weapon change in combat is the ``SwapWeapon`` move, which costs beats; left
@@ -340,6 +357,26 @@ def _call_interaction_handler(method, player, quantity):
     if "quantity" in param_names:
         return method(player, quantity=quantity)
     return method(player)
+
+
+#: Consumable handlers that consume the item (``use``, ``drink``, ``eat``),
+#: matched on the resolved handler so an alias counts.
+_CONSUME_HANDLERS = frozenset({"use", "drink", "eat"})
+
+
+def _consumes_an_item_outside_the_pack(player, target, handler):
+    """Whether this interaction consumes (use/drink/eat) a consumable lying on
+    the floor or in an open container rather than one in Jean's pack -- which must
+    go through ``Item.use_where_it_lies`` so a unit is actually consumed."""
+    from src.items import Consumable
+
+    # Consumables only: a Book's READ resolves to ``use`` too, and is read
+    # where it lies, not picked up.
+    if not isinstance(target, Consumable):
+        return False
+    if getattr(handler, "__name__", None) not in _CONSUME_HANDLERS:
+        return False
+    return not any(i is target for i in getattr(player, "inventory", None) or [])
 
 
 def _merge_new_events(existing, new_events):
@@ -2205,7 +2242,7 @@ class GameService:
         # was queued and before the player submits this input -- so the
         # guard belongs here too, at the point where the teleport actually
         # commits, not only at the point where it was first queued.
-        from src.events import PassagewayTransitionEvent
+        from src.events import LootEvent, PassagewayTransitionEvent
 
         if isinstance(event, PassagewayTransitionEvent) and getattr(
             player, "in_combat", False
@@ -2214,6 +2251,13 @@ class GameService:
                 "success": False,
                 "error": _PASSAGEWAY_IN_COMBAT_MESSAGE,
             }
+        # A loot dialog queued before the fight began takes items only once it
+        # is over -- the same rule as looting the container directly. Only
+        # LootEvent: combat's own events answer through this route too.
+        if isinstance(event, LootEvent):
+            refused = _refused_mid_fight(player)
+            if refused is not None:
+                return refused
 
         # Process the event with user input
         result = {"success": True, "event_id": event_id}
@@ -2464,6 +2508,9 @@ class GameService:
         Returns:
             Dictionary with search results
         """
+        refused = _refused_mid_fight(player, key="message")
+        if refused is not None:
+            return refused
         import random
 
         tile = player.universe.get_tile(player.location_x, player.location_y)
@@ -2850,7 +2897,10 @@ class GameService:
                         beta_end,
                         _unsupported_action_message(target, action),
                     )
-                _call_interaction_handler(handler, player, quantity)
+                if _consumes_an_item_outside_the_pack(player, target, handler):
+                    target.use_where_it_lies(player, handler.__name__)
+                else:
+                    _call_interaction_handler(handler, player, quantity)
 
             return _InteractionOutcome(events_triggered, beta_end, None)
 
@@ -3135,6 +3185,13 @@ class GameService:
             return {"success": False, "message": _FLOOR_ITEMS_IN_COMBAT_MESSAGE}
         if _equips_weapon_in_combat(player, target, action):
             return {"success": False, "message": _WEAPON_SWAP_IN_COMBAT_MESSAGE}
+        # Everything else INTERACT offers is exploration-only too: the panel
+        # never renders in combat, so a direct call was a free full heal from
+        # a spring, a looted chest, an armour swap. The specific refusals
+        # above keep their own sentences.
+        refused = _refused_mid_fight(player, key="message")
+        if refused is not None:
+            return refused
 
         # Record pre-action location to detect passageway teleportation
         _pre_location = _PreInteractionLocation.capture(player)
@@ -3453,6 +3510,10 @@ class GameService:
         events into ``session["pending_events"]`` (#335). Omitting it leaves the
         callback bound to ``None``, which silently drops those events.
         """
+        # A fight is already on: the client never starts a second one, and
+        # doing so would re-roster this fight around another NPC.
+        if getattr(player, "in_combat", False):
+            return {"error": _NOT_DURING_COMBAT_MESSAGE}
         # Find enemy in current room
         enemy = None
         tile = None
@@ -4287,6 +4348,9 @@ class GameService:
         Returns:
             Dictionary with result
         """
+        refused = _refused_mid_fight(player)
+        if refused is not None:
+            return refused
         if not hasattr(player, "skilltree") or not hasattr(
             player.skilltree, "subtypes"
         ):
@@ -4931,6 +4995,21 @@ class GameService:
         if not getattr(player, "in_combat", False):
             return {"error": "Not in combat"}
 
+        # The client offers Flee only on Jean's turn (`isMyTurn` excludes a
+        # move still winding up). Fleeing mid-windup skipped the costed abort.
+        adapter = getattr(player, "_combat_adapter", None)
+        in_flight = adapter._abortable_move() if adapter is not None else None
+        if in_flight is not None:
+            return {
+                "success": False,
+                "fled": False,
+                "error": (
+                    f"{display_name_of(in_flight)} is already winding up. "
+                    "Abort it first to act on something else."
+                ),
+                "requires_abort": True,
+            }
+
         enemies = getattr(player, "combat_list", [])
         for enemy in enemies:
             prox = getattr(enemy, "combat_proximity", 0)
@@ -5149,6 +5228,9 @@ class GameService:
         self, player: "player_module.Player", npc_id: str
     ) -> Dict[str, Any]:
         """Start a conversation, one turn per player at a time (``_npc_chat_open``)."""
+        refused = _refused_mid_fight(player)
+        if refused is not None:
+            return refused
         return self._one_chat_turn(player, self._npc_chat_open, player, npc_id)
 
     def _npc_chat_open(
@@ -5227,6 +5309,9 @@ class GameService:
         jean_tone: str = "neutral",
     ) -> Dict[str, Any]:
         """Jean's choice, one turn per player at a time (``_npc_chat_respond``)."""
+        refused = _refused_mid_fight(player)
+        if refused is not None:
+            return refused
         return self._one_chat_turn(
             player, self._npc_chat_respond, player, npc_key, jean_text, jean_tone
         )
@@ -5756,6 +5841,9 @@ class GameService:
         Returns:
             Dict with success, shop_state, and sell_inventory.
         """
+        refused = _refused_mid_fight(player)
+        if refused is not None:
+            return refused
         # Found in a /review pass on this branch: this method's "restock if
         # empty" check (below) is a check-then-act TOCTOU -- two concurrent
         # calls (two tabs, a client retry) can both see empty stock and both
@@ -5847,6 +5935,9 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
+        refused = _refused_mid_fight(player)
+        if refused is not None:
+            return refused
         # #641: serialized against take/drop/equip/collect and the other shop
         # ops for this player -- the gold-sufficiency check and the transfer
         # it guards must not interleave with a concurrent mutation of the
@@ -5939,6 +6030,9 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
+        refused = _refused_mid_fight(player)
+        if refused is not None:
+            return refused
         # #641: serialized against take/drop/equip/collect and the other shop
         # ops for this player -- see shop_buy's note on the same TOCTOU shape.
         # Split into `_shop_sell_locked` so the lock wraps one call rather
@@ -6079,6 +6173,9 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
+        refused = _refused_mid_fight(player)
+        if refused is not None:
+            return refused
         # #641: serialized against take/drop/equip/collect and the other shop
         # ops for this player -- see shop_buy's note on the same TOCTOU shape.
         # Split into `_shop_buyback_locked` so the lock wraps one call rather
@@ -6310,6 +6407,10 @@ class GameService:
 
             if _is_weapon_change_in_combat(player, item):
                 return {"error": _WEAPON_SWAP_IN_COMBAT_MESSAGE}
+            # Armour and accessories are exploration-only too: the combat
+            # inventory never offers Equip (only Swap Weapon prices a change).
+            if getattr(player, "in_combat", False):
+                return {"error": _NOT_DURING_COMBAT_MESSAGE}
 
             if item.isequipped:
                 return self.unequip_item(player, item)
@@ -6342,6 +6443,8 @@ class GameService:
                 return {"error": f"{getattr(item, 'name', 'Item')} cannot be unequipped"}
             if _is_weapon_change_in_combat(player, item):
                 return {"error": _WEAPON_SWAP_IN_COMBAT_MESSAGE}
+            if getattr(player, "in_combat", False):
+                return {"error": _NOT_DURING_COMBAT_MESSAGE}
             if not item.isequipped:
                 return {"error": f"{item.name} is not equipped"}
 
@@ -6455,6 +6558,16 @@ class GameService:
             target = player
         if user is None:
             user = player
+
+        # In combat the client offers item use only on Jean's turn
+        # (`isMyTurn`: the adapter awaits input and no move is winding up).
+        if getattr(player, "in_combat", False):
+            adapter = getattr(player, "_combat_adapter", None)
+            if adapter is not None and (
+                not getattr(adapter, "awaiting_input", True)
+                or adapter._abortable_move() is not None
+            ):
+                return {"error": _NOT_YOUR_TURN_MESSAGE}
 
         # In combat, an ally target must be within reach.
         if target is not player and getattr(player, "in_combat", False):

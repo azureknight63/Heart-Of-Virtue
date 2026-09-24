@@ -186,8 +186,12 @@ class TestStartCombat:
 
     def test_starting_the_same_fight_twice_is_refused(self, game_service, player, slime):
         game_service.start_combat(player, enemy_id(slime))
+        # Refused up front, before the roster is touched (2026-09-24): the
+        # client never starts a second fight.
+        from src.api.services.game_service import _NOT_DURING_COMBAT_MESSAGE
+
         assert game_service.start_combat(player, enemy_id(slime)) == {
-            "error": "Already in combat with these enemies"
+            "error": _NOT_DURING_COMBAT_MESSAGE
         }
 
     def test_a_combat_adapter_is_attached(self, game_service, player, slime):

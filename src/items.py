@@ -451,6 +451,49 @@ class Item:
             return False
         return True
 
+    def use_where_it_lies(self, player: "Player", verb: str = "use") -> None:
+        """Use one unit of this stack where it lies: on the floor, or in an
+        open container.
+
+        The INTERACT panel offers a consumable's own verbs (DRINK/USE, #665)
+        wherever it lies, but ``use`` consumes from the user's inventory. On a
+        unit outside the pack the effect applied, the removal then failed, and
+        the stack stayed put to be used again forever. So one unit is moved
+        into the pack and used there -- the only way a consumable is
+        consumed. Goods in a shop must be bought first.
+        """
+        room = getattr(player, "current_room", None)
+        if any(hasattr(npc, "shop_name") for npc in getattr(room, "npcs_here", None) or []):
+            narrate(f"{player.name} will have to pay for the {self.name} first.")
+            return
+
+        def carried():
+            return sum(
+                getattr(i, "count", 1) for i in player.inventory
+                if type(i) is type(self) and not getattr(i, "merchandise", False)
+            )
+
+        before = carried()
+        container = getattr(self, "_parent_container", None)
+        if container is not None:
+            from src.inventory_utils import transfer_item
+
+            transfer_item(container, player, self, 1)
+        else:
+            self.take(player, quantity=1)
+        if carried() <= before:
+            # The unit never reached the pack (too heavy to carry): use
+            # nothing -- above all not one Jean was already carrying.
+            return
+        unit = next(
+            (i for i in player.inventory if i is self),
+            None,
+        ) or next(  # a partial take split off a new unit, maybe merged into a pack stack
+            i for i in player.inventory
+            if type(i) is type(self) and not getattr(i, "merchandise", False)
+        )
+        getattr(unit, verb)(player)
+
     def take(self, player: "Player", quantity: Optional[int] = None) -> None:
         """Take the item from the ground."""
         # An item is only real shop goods when a genuine merchant NPC is

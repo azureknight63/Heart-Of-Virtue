@@ -320,12 +320,16 @@ class TestEquipRouteCombatGate:
         assert result.get("success") is True
         assert player.eq_weapon is sword
 
-    def test_non_weapon_equip_is_not_gated_by_this_change(self):
+    def test_non_weapon_equip_is_refused_with_the_general_message(self):
+        """Armour is exploration-only too (maintainer rule 2026-09-24, see
+        tests/test_ui_gated_paths.py) -- but it is not pointed at Swap Weapon."""
+        from src.api.services.game_service import _NOT_DURING_COMBAT_MESSAGE
+
         player = Player()
         helm = items.ClothHood()
         player.inventory.append(helm)
         player.in_combat = True
-        assert self._service().equip_item(player, helm).get("success") is True
+        assert self._service().equip_item(player, helm) == {"error": _NOT_DURING_COMBAT_MESSAGE}
 
     def test_execute_move_routes_swap_weapon_to_the_adapter(self):
         service = self._service()
