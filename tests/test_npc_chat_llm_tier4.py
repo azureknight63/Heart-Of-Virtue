@@ -37,6 +37,7 @@ from src.npc._chat_llm import (
     MAX_OPTION_CHARS,
     _MAX_CONSECUTIVE_FALLBACK_REPLIES,
     _MIN_OPTION_CHARS,
+    _HUMAN_NPC_DIR as _PERSONA_DIR,
     _NEUTRAL_FALLBACK_REPLIES,
     ConversationalNPCMixin,
     scale_loquacity,
@@ -51,8 +52,6 @@ from tests._npc_fixtures import (
     wired_chat_npc,
     equipped_item,
 )
-
-_PERSONA_DIR = Path(__file__).resolve().parent.parent / "ai" / "npc" / "human"
 
 
 @pytest.fixture

@@ -13,11 +13,11 @@ Prohibited phrases are matched the way the runtime matches them
 """
 
 import json
-from pathlib import Path
 
 import pytest
 
-_PERSONA_DIR = Path(__file__).resolve().parent.parent / "ai" / "npc" / "human"
+# The directory the runtime loads personas from, not a second spelling of it.
+from src.npc._chat_llm import _HUMAN_NPC_DIR as _PERSONA_DIR
 
 
 def _personas():
