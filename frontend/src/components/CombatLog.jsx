@@ -289,9 +289,18 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
 
                 return (
                   <div key={entry.id ?? `${entry.timestamp}-${idx}`} style={{ fontSize: '13px', lineHeight: '1.4' }}>
-                    <span style={{ opacity: 0.5, marginRight: spacing.sm, color: colors.text.muted, fontSize: '11px' }}>
-                      [{entry.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}]
-                    </span>
+                    {/* #718 item 6: the server's `timestamp` is already 24h
+                        `%H:%M:%S` (ApiCombatAdapter) -- rendered verbatim, never
+                        reformatted. An entry with none is shown with no time at
+                        all rather than a `new Date().toLocaleTimeString()` "now":
+                        that fallback was both 12-hour (mixing formats with every
+                        real entry beside it) and a lie -- it stamps the moment
+                        this line rendered, not the moment it happened. */}
+                    {entry.timestamp && (
+                      <span style={{ opacity: 0.5, marginRight: spacing.sm, color: colors.text.muted, fontSize: '11px' }}>
+                        [{entry.timestamp}]
+                      </span>
+                    )}
                     {isTelegraph && (
                       <span role="img" aria-label={TELEGRAPH_SPOKEN_LABEL} style={{ color: textColor, marginRight: spacing.xs, fontWeight: 'bold' }}>
                         {TELEGRAPH_GLYPH}

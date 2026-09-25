@@ -42,6 +42,29 @@ describe('CombatLog', () => {
     expect(screen.getByText('Combat started...')).toBeDefined();
   });
 
+  // #718 item 6: the server sends `timestamp` as 24h `%H:%M:%S`
+  // (ApiCombatAdapter). An entry that arrives without one used to fall back
+  // to `new Date().toLocaleTimeString()` — a 12-hour, locale "now" that both
+  // mixes formats with every real entry beside it AND lies about when the
+  // line actually happened (it's render time, not the entry's time).
+  it('shows no timestamp for an entry the server never gave one, instead of a 12-hour "now"', () => {
+    render(<CombatLog log={[{ type: 'combat', message: 'Jean strikes' }]} />);
+
+    const entriesEl = screen.getByTestId('combat-log-entries');
+    expect(within(entriesEl).getByText('Jean strikes')).toBeDefined();
+    expect(entriesEl.textContent).not.toMatch(/\d{1,2}:\d{2}:\d{2}\s?(AM|PM)/i);
+  });
+
+  it('renders the server\'s 24h timestamp verbatim, never a 12-hour AM/PM string', () => {
+    render(<CombatLog log={mockLog} />);
+
+    const entries = screen.getByTestId('combat-log-entries');
+    expect(entries.textContent).toContain('12:00:00');
+    // Scoped to an actual clock reading, not a bare "AM"/"PM" substring test
+    // (which false-positives on ordinary log prose like "damage").
+    expect(entries.textContent).not.toMatch(/\d{1,2}:\d{2}:\d{2}\s?(AM|PM)/i);
+  });
+
   it('collapses and expands when header is clicked', () => {
     render(<CombatLog log={mockLog} />);
     const header = screen.getByRole('button', { name: 'Combat Log' });
