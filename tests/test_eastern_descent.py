@@ -18,6 +18,9 @@ from unittest.mock import patch, MagicMock
 
 from src.narration import capture_narration
 from src.npc._eastern_descent import Anvil, NomadCamper, NomadScout, NomadTrader
+from src.story.ch03 import IronAndOathIntroEvent
+
+_IRON_AND_OATH_GATE = IronAndOathIntroEvent.GATE_KEY
 
 
 def _player_with_story(story=None):
@@ -128,10 +131,14 @@ def test_anvil_talk_and_pet_draw_from_different_pools():
 
 @pytest.mark.parametrize("verb", ["talk", "pet"])
 def test_anvil_first_encounter_is_silent_and_sets_ready_flag(verb):
-    """The first talk()/pet() call defers to AnvilIntroEvent (src/story/ch03.py)
-    instead of narrating a flavor line, so it must emit nothing itself."""
+    """The first talk()/pet() call *after Jean has met Kaelen & Vespera*
+    defers to AnvilIntroEvent (src/story/ch03.py) instead of narrating a
+    flavor line, so it must emit nothing itself. ``iron_and_oath_intro_done``
+    is AnvilIntroEvent's own precondition (both gates on the same tile
+    (4, 3), Iron & Oath's intro firing on tile entry) -- it must already be
+    set for this "first encounter" to be the real one (issue #695)."""
     npc = Anvil()
-    player = _player_with_story()
+    player = _player_with_story({_IRON_AND_OATH_GATE: "1"})
 
     texts = _narrated(getattr(npc, verb), player)
 
@@ -139,9 +146,34 @@ def test_anvil_first_encounter_is_silent_and_sets_ready_flag(verb):
     assert player.universe.story["anvil_conversation_ready"] == "1"
 
 
+@pytest.mark.parametrize("verb,pool_attr", [("talk", "_TALK_LINES"),
+                                            ("pet", "_PET_LINES")])
+def test_anvil_first_encounter_before_iron_and_oath_intro_narrates_normally(
+        verb, pool_attr):
+    """Issue #695: petting/talking to Anvil before Jean has met Kaelen &
+    Vespera used to burn the one-shot ``CONVERSATION_READY_FLAG`` for
+    nothing -- AnvilIntroEvent's own ``check_conditions`` also requires
+    ``iron_and_oath_intro_done``, so the "first encounter" narrated nothing
+    (deferring to a conversation that could never fire) and the API's
+    generic ''Jean successfully completes the 'pet' action.'' fallback
+    reached the player instead of an Anvil line. It must fall open to the
+    ambient flavor line and leave the ready flag unset, so a later
+    talk()/pet() call -- once Jean HAS met them -- is still the genuine first
+    encounter that hands off to AnvilIntroEvent.
+    """
+    npc = Anvil()
+    player = _player_with_story()  # iron_and_oath_intro_done unset
+
+    texts = _narrated(getattr(npc, verb), player)
+
+    assert len(texts) == 1
+    assert texts[0] in getattr(Anvil, pool_attr)
+    assert "anvil_conversation_ready" not in player.universe.story
+
+
 def test_anvil_talk_after_first_encounter_narrates_normally():
     npc = Anvil()
-    player = _player_with_story()
+    player = _player_with_story({_IRON_AND_OATH_GATE: "1"})
 
     first = _narrated(npc.talk, player)   # first call: silent, sets the flag
     second = _narrated(npc.talk, player)  # second: flag set, normal flavor line
@@ -164,3 +196,17 @@ def test_anvil_known_moves_exception_falls_back_to_empty_list():
     with patch("src.npc._base.moves.NpcIdle", side_effect=RuntimeError("boom")):
         npc = Anvil()
     assert npc.known_moves == []
+
+
+def test_anvil_first_encounter_follows_the_iron_and_oath_gate_key(monkeypatch):
+    """Scrub of #695: Anvil gated its first encounter on a literal copy of
+    ``IronAndOathIntroEvent.GATE_KEY``. Renaming that key would leave Anvil
+    waiting on a gate nothing ever sets -- its intro silently dead. The gate
+    must be read from the event that owns it."""
+    from src.story.ch03 import IronAndOathIntroEvent
+
+    monkeypatch.setattr(IronAndOathIntroEvent, "GATE_KEY", "iron_and_oath_renamed")
+    anvil = Anvil()
+    player = _player_with_story({"iron_and_oath_renamed": "1"})
+
+    assert anvil._first_encounter(player) is True

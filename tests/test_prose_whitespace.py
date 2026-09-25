@@ -22,8 +22,10 @@ space is load-bearing (they are appended directly to an NPC name, e.g.
 adjacent spaces, which are legitimate authored breaks.
 """
 
+import ast
 import inspect
 import re
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import src.objects as objects_module
@@ -121,3 +123,76 @@ class TestTileDescriptionWrapResidue:
         desc = data["(2, 2)"]["description"]
         assert "\n" not in desc
         assert "compact, well-worn vestibule" in desc
+
+
+#: Issue #694 item 3: ``Restorative.use`` built its narration from adjacent
+#: string literals with an embedded "\n" mid-sentence -- 80-column terminal
+#: wrap residue that survived the terminal teardown and rendered in the
+#: combat/interaction log as a fragment with its own timestamp. The map-JSON
+#: population above cannot see this: item narration lives in Python source,
+#: not map data. This population is scanned from the AST rather than
+#: hand-listed, per the same "population derived from the code" rule the two
+#: classes above already follow.
+_ITEMS_PY = Path(__file__).resolve().parent.parent / "src" / "items.py"
+
+
+def _literal_text(node):
+    """Best-effort reconstruction of a string-literal AST node's authored
+    text, with any interpolated part (an f-string ``{expr}``, or the source
+    ``str`` a chained ``.format(...)`` call is invoked on) replaced by a
+    placeholder. Residue detection only cares about the literal text an
+    author actually typed -- adjacent-literal concatenation (implicit or via
+    ``+``) is where the wrap residue in #694 lived, and that survives here
+    same as it does at runtime, whether or not the string also happens to be
+    an f-string or feed a ``.format()`` call.
+
+    Returns ``None`` for anything that isn't a string-literal expression.
+    """
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format":
+        return _literal_text(node.func.value)
+    if isinstance(node, ast.JoinedStr):
+        parts = []
+        for value in node.values:
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                parts.append(value.value)
+            else:
+                parts.append("X")
+        return "".join(parts)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _literal_text(node.left), _literal_text(node.right)
+        if left is None or right is None:
+            return None
+        return left + right
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _item_narration_strings():
+    """``(location label, literal text)`` for every ``narrate()``/``cprint()``
+    call's first argument in ``src/items.py``, scanned via AST rather than by
+    instantiating every item class: ``use()``/``on_equip()``/etc. narration
+    runs on a live ``Player`` with random rolls and inventory mutation, which
+    a population scan has no business triggering -- the AST already has the
+    authored literal text without calling anything.
+    """
+    tree = ast.parse(_ITEMS_PY.read_text(encoding="utf-8"), filename=str(_ITEMS_PY))
+    found = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+            continue
+        if node.func.id not in ("narrate", "cprint") or not node.args:
+            continue
+        text = _literal_text(node.args[0])
+        if text is not None:
+            found.append((f"src/items.py:{node.lineno}", text))
+    return found
+
+
+class TestItemNarrationWrapResidue:
+    def test_population_is_non_empty(self):
+        assert len(_item_narration_strings()) >= 20
+
+    def test_no_space_adjacent_to_embedded_newline(self):
+        offenders = [w for w, t in _item_narration_strings() if _WRAP_RESIDUE.search(t)]
+        assert offenders == []

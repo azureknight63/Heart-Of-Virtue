@@ -574,17 +574,21 @@ def get_currency():
     """Get player currency information.
 
     Returns:
-        JSON with gold and other currency amounts
+        JSON with gold amount
     """
     _, session, player, error = get_session_and_player()
     if error:
         return error
 
+    game_service, gs_error = require_game_service()
+    if gs_error:
+        return gs_error
+
     try:
-        currency = {
-            "gold": getattr(player, "gold", 0),
-            "platinum": getattr(player, "platinum", 0),
-        }
+        # #689c: `player.gold` never existed, so this always said 0. The read
+        # lives on GameService (routes never reach into the player). "platinum"
+        # was dropped: nothing in src/ or frontend/src/ ever read it.
+        currency = {"gold": game_service.get_gold_amount(player)}
 
         return (
             jsonify({"success": True, "currency": currency}),

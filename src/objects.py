@@ -1489,10 +1489,15 @@ class Passageway(Object):
         discards it because the API never arms that event for a demo edge.
 
         The story-gate lock (``crossing_locked``, #669) is repeated here for
-        the identical reason: the API queues a "Step through?" confirmation
-        for any ordinary (non-demo-edge) Passageway without asking whether it
-        is locked, so this primitive is the only place a locked crossing
-        confirmed through that flow is still refused.
+        the identical reason: ``GameService._queue_passageway_confirmation``
+        (src/api/services/game_service.py) checks ``crossing_locked`` before
+        arming the "Step through?" confirmation and short-circuits to its
+        decline instead (#694) -- so in the ordinary API flow this repeat
+        never fires. It stays as defence in depth for the same reason the
+        demo-end repeat above does: ``PassagewayTransitionEvent.process``
+        reaches this primitive directly and bypasses that queuing method
+        entirely, so a locked crossing confirmed through THAT route is still
+        refused here rather than crossing silently.
         """
         if self.is_demo_edge():
             return self.end_demo(player)

@@ -22,8 +22,9 @@ def _wired_jambo():
 
     Hooks only the mixin's I/O seams — adapter, persistence, key, loquacity —
     and lets the real ``chat_open`` machinery (personality generation, system
-    prompt, turn assembly, guard) run. ``_chat_config_path`` is left unset, so
-    Jambo exercises the generic/story identity path, exactly as shipped.
+    prompt, turn assembly, guard) run, with his shipped ``jambo.json`` config
+    (#685). The config-less fallback is covered in
+    ``tests/test_npc_chat_named_npc_identity.py``.
     """
     jambo = JamboHealsU()
     adapter = ScriptedAdapter(npc_text="Jambo grins: the road west is long, friend.")

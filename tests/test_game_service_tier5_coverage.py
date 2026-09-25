@@ -1895,6 +1895,10 @@ class TestGetCombatStatusExtra:
         assert result == {"resumed": True}
 
     def test_post_combat_tile_events_fire_once(self, game_service, mock_player):
+        """Outside a won fight's loot phase (here: no victory summary) the
+        events still ride the status response once. A victory's are held for
+        collect-loot instead -- issue #683,
+        ``tests/test_victory_loot_resolution.py::TestThePostCombatStoryRidesCollectLoot``."""
         mock_player._combat_deferred_enemies = None
         mock_player.pending_attribute_points = 0
         mock_player.in_combat = False

@@ -413,7 +413,7 @@ class JamboTentNoticeEvent(Event):
 
 class MaraFirstContactEvent(Event):
     """
-    Fires once on Jean's first entry to RiversEdge (1,0) in the nomad camp sub-map.
+    Fires once on Jean's first entry to RiversEdge (1,2) in the nomad camp sub-map.
     Mara clocked them fifty paces out, already back to her pack by the time Jean arrives.
 
     Beat 1: "Crossing west?" — the fee, named flat, not negotiated.
@@ -498,7 +498,12 @@ class MaraFirstContactEvent(Event):
                 "skeptical",
             )
             time.sleep(0.8)
-            say("No idea. At least he only eats rocks. Small consolation. \n\nWe're headed to a place called the Wailing Badlands.", "Jean", "neutral")
+            say(
+                "No idea. At least he only eats rocks. Small consolation. "
+                "We're headed to a place called the Wailing Badlands.",
+                "Jean",
+                "neutral",
+            )
             time.sleep(1)
 
             # Beat 3 — the crucifix, nothing spoken
@@ -526,7 +531,7 @@ class MaraFirstContactEvent(Event):
             time.sleep(0.8)
             react("Mara", "skeptical")
             print_slow(
-                "She turns back to Jean, holding his gaze for an uncomfortable moment."
+                "She turned back to Jean, holding his gaze for an uncomfortable moment."
             )
             time.sleep(1.5)
             say(
@@ -575,7 +580,7 @@ class MaraFirstContactEvent(Event):
 
 class DevetIntroEvent(Event):
     """
-    Fires once on Jean's first entry to FireRing (1,1) in the nomad camp sub-map.
+    Fires once on Jean's first entry to FireRing (3,2) in the nomad camp sub-map.
     Devet tends the fire. He offers food wordlessly — not a question — then two
     short, dry exchanges give the player a sense of him without breaking his
     terseness: he deflects a direct question about himself and declines a
@@ -662,7 +667,7 @@ class DevetIntroEvent(Event):
 
 class LissObservingEvent(Event):
     """
-    Fires once on Jean's first entry to CampFarEdge (2,1) in the nomad camp sub-map.
+    Fires once on Jean's first entry to CampFarEdge (3,4) in the nomad camp sub-map.
     Liss is not-approaching Gorran at the camp's boundary — three rapid-fire bursts
     of unfiltered curiosity, each met with total Gorran stillness (the comedic
     engine here: her chatter against his total silence — he is Stage 1 language
@@ -855,7 +860,7 @@ class IronAndOathIntroEvent(Event):
             time.sleep(0.3)
             print_slow(
                 "The metallic scraping of a hand file against steel and the sharp snap of waxed thread "
-                "echoed beneath the canvas awning. A man in an oil-cured leather apron was sharpening a pommel "
+                "echoed beneath the canvas awning. A man in an oil-cured leather apron was filing a pommel "
                 "while a sharp-eyed woman beside him inspected the buckle alignment of a leather cuirass."
             )
             time.sleep(1)
@@ -888,11 +893,9 @@ class IronAndOathIntroEvent(Event):
                 "curious",
             )
             time.sleep(1)
-            say(
+            print_slow(
                 "A low, subsonic vibration rolled through the gravel underfoot as Gorran shifted his weight. "
-                "The tools hanging from the counter rack chimed softly against one another.",
-                "Gorran",
-                "neutral",
+                "The tools hanging from the counter rack chimed softly against one another."
             )
             time.sleep(1)
             say("Gorran travels with me. He isn't armor.", "Jean", "neutral")
@@ -980,7 +983,7 @@ class IronAndOathIntroEvent(Event):
             )
             time.sleep(1.5)
             print_slow(
-                "Kaelen noticed her shift instantly. He set the fallen spear down, stepped over, and quietly "
+                "Kaelen noticed her shift instantly. He stepped over and quietly "
                 "rested a warm, soot-stained hand on the small of her back."
             )
             time.sleep(1)

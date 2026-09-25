@@ -134,6 +134,7 @@ def _make_game_config(**overrides):
         learn_all_skills=False,
         god_mode=False,
         starting_party_members=[],
+        starting_story_flags=[],
     )
     defaults.update(overrides)
     return types.SimpleNamespace(**defaults)
@@ -1095,6 +1096,70 @@ def test_apply_starting_party_members_non_dict_story_is_skipped(monkeypatch):
 
     mgr._apply_starting_party_members(player)  # should not raise
     assert ally in player.combat_list_allies
+
+
+# ---------------------------------------------------------------------------
+# _apply_starting_story_flags (issue #687)
+# ---------------------------------------------------------------------------
+
+
+def test_apply_starting_story_flags_no_config(monkeypatch):
+    mgr = _bare_manager(monkeypatch)
+    mgr.game_config = None
+    player = MagicMock()
+    player.universe.story = {}
+    mgr._apply_starting_story_flags(player)  # must not raise
+    assert player.universe.story == {}
+
+
+def test_apply_starting_story_flags_no_flags(monkeypatch):
+    mgr = _bare_manager(monkeypatch)
+    mgr.game_config = _make_game_config(starting_story_flags=[])
+    player = MagicMock()
+    player.universe.story = {}
+    mgr._apply_starting_story_flags(player)
+    assert player.universe.story == {}
+
+
+def test_apply_starting_story_flags_bare_and_valued_tokens(monkeypatch):
+    mgr = _bare_manager(monkeypatch)
+    mgr.game_config = _make_game_config(
+        starting_story_flags=["alpha", "beta=2", "  gamma  ", "delta = 5 "]
+    )
+    player = MagicMock()
+    story = {}
+    player.universe.story = story
+
+    mgr._apply_starting_story_flags(player)
+
+    # A bare flag is "set" by the same value gate_is_set() compares against,
+    # read from src.events rather than restated here.
+    from src.events import GATE_SET
+
+    assert story == {"alpha": GATE_SET, "beta": "2", "gamma": GATE_SET, "delta": "5"}
+
+
+def test_apply_starting_story_flags_skips_a_token_with_no_key(monkeypatch):
+    # "=value" (or a stray "=") names no flag; it must not write story[""].
+    mgr = _bare_manager(monkeypatch)
+    mgr.game_config = _make_game_config(starting_story_flags=["=orphan", "=", "alpha"])
+    player = MagicMock()
+    story = {}
+    player.universe.story = story
+
+    mgr._apply_starting_story_flags(player)
+
+    assert "" not in story
+    assert set(story) == {"alpha"}
+
+
+def test_apply_starting_story_flags_no_story_is_skipped(monkeypatch):
+    mgr = _bare_manager(monkeypatch)
+    mgr.game_config = _make_game_config(starting_story_flags=["alpha"])
+    player = MagicMock()
+    player.universe = None  # no story dict to write into
+
+    mgr._apply_starting_story_flags(player)  # should not raise
 
 
 # ---------------------------------------------------------------------------

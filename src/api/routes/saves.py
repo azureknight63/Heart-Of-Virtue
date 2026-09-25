@@ -4,6 +4,7 @@ import logging
 
 from flask import Blueprint, request, jsonify
 from src.api.services.auth_service import SaveLimitReached
+from src.api.services.game_service import SaveRefusedWhileDead
 from src.api.middleware.auth import get_session_and_player, require_game_service
 from src.api.services.validators import validate_string_field
 
@@ -160,11 +161,11 @@ async def create_save():
             save_id = await game_service.save_game(
                 player, save_name, session.db_user_id, is_autosave=is_autosave
             )
-        except SaveLimitReached as limit:
-            # The ONLY exception whose text is echoed here, and it is echoed
-            # because of its type. See routes/auth.py for the same rule and
-            # the leak that produced it.
-            return jsonify({"success": False, "error": str(limit)}), 403
+        except (SaveLimitReached, SaveRefusedWhileDead) as refusal:
+            # The ONLY exceptions whose text is echoed here, and they are
+            # echoed because of their type. See routes/auth.py for the same
+            # rule and the leak that produced it. SaveRefusedWhileDead is #690.
+            return jsonify({"success": False, "error": str(refusal)}), 403
         except ValueError:
             # Everything else is infrastructure until declared otherwise.
             # This used to be the same `except ValueError: str(ve)` that leaked

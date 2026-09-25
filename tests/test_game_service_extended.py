@@ -554,7 +554,9 @@ class TestCollectCombatLoot:
     def test_collecting_nothing_still_succeeds(self, game_service, looter):
         result = game_service.collect_combat_loot(looter, [])
 
-        assert result == {"success": True, "collected": [], "skipped": []}
+        assert result == {
+            "success": True, "collected": [], "skipped": [], "events_triggered": []
+        }
 
     def test_a_named_drop_moves_into_the_pack(self, game_service, looter):
         tonic = _tradeable(name="Tonic", value=10, weight=0.5)

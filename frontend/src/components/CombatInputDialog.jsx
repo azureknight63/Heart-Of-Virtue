@@ -56,6 +56,15 @@ const TargetCard = ({ target, confirmVerb, onHover, onSelect }) => {
   const hpPct = hp && hp.max > 0 ? hp.current / hp.max : 0;
   const hpColor = hp ? healthBarColor(hp.current, hp.max) : null;
 
+  // `{min, max, lethal}` or null (out of reach, or a move that deals none).
+  // Only a preview with numeric bounds is a preview; anything else renders as
+  // "no data" rather than "undefined–undefined dmg".
+  const rawPreview = target.damage_preview;
+  const preview = Number.isFinite(rawPreview?.min) && Number.isFinite(rawPreview?.max)
+    ? rawPreview
+    : null;
+  const harmless = Boolean(preview) && preview.max <= 0;
+
   return (
       <div
           data-testid="target-card"
@@ -107,6 +116,24 @@ const TargetCard = ({ target, confirmVerb, onHover, onSelect }) => {
                           HauntingPresence modifiers, so the final value can sit
                           slightly outside that band. */}
                       <span style={{ fontWeight: 'bold' }}>{Math.round(target.hit_chance)}%</span>
+                  </div>
+              )}
+              {preview && (
+                  // Issue #688: the engine's Move.preview_damage for THIS
+                  // target, verbatim. A zero ceiling says so in words -- a
+                  // Shortsword against a Stone Creature was 150 silent swings
+                  // -- and lethal is a word too, never a colour alone.
+                  <div
+                      data-testid="target-damage-preview"
+                      style={{ fontSize: '12px', color: harmless ? colors.warning : colors.text.muted, display: 'flex', justifyContent: 'space-between', gap: '6px' }}
+                  >
+                      <span>Damage:</span>
+                      <span style={{ fontWeight: 'bold' }}>
+                          {harmless ? '⊘ no damage' : `${preview.min}–${preview.max} dmg`}
+                          {preview.lethal && !harmless && (
+                              <span style={{ color: colors.danger, marginLeft: '6px' }}>☠ LETHAL</span>
+                          )}
+                      </span>
                   </div>
               )}
           </div>

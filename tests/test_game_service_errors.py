@@ -554,11 +554,13 @@ class TestCollectCombatLootErrors:
 
     def test_collect_loot_empty_items(self, game_service, mock_player):
         """An empty selection succeeds with nothing collected and nothing
-        skipped — the client renders both lists, so neither may be omitted."""
+        skipped — the client renders both lists, so neither may be omitted.
+        ``events_triggered`` (issue #683) is always present too, empty here."""
         assert game_service.collect_combat_loot(mock_player, []) == {
             "success": True,
             "collected": [],
             "skipped": [],
+            "events_triggered": [],
         }
 
     def test_collect_loot_none_items(self, game_service, mock_player):

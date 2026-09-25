@@ -93,7 +93,7 @@ function HeaderButton({
   )
 }
 
-function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, isMobile, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onInteractionClose, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover, onMoveSubmitted, onAdvisorPause, onAdvisorRequestSuggestions }) {
+function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, isMobile, onMove, onRefetch, onRefetchPlayer, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onInteractionClose, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover, onMoveSubmitted, onAdvisorPause, onAdvisorRequestSuggestions }) {
   const notifyMoveSubmitted = () => { if (onMoveSubmitted) onMoveSubmitted() }
 
   const [showInventory, setShowInventory] = useState(false)
@@ -241,6 +241,19 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       await onCombatAction('swap_weapon', { item_id: itemId })
     } catch (err) {
       console.error('Failed to swap weapon:', err)
+      return
+    }
+    // #694: the inventory's "In hand" label reads the `player` prop, which is
+    // fetched once by GamePage and only otherwise refreshed on combat end, so
+    // reopening the Weapons tab mid-fight still showed the pre-swap weapon.
+    // Only `player` went stale: prefer the player-only refetch over the full
+    // one (room, explored map, combat status), and report its failure as a
+    // refresh failure rather than a failed swap.
+    const refresh = onRefetchPlayer ?? onRefetch
+    try {
+      await refresh?.()
+    } catch (err) {
+      console.error('Failed to refresh the player after a weapon swap:', err)
     }
   }
 

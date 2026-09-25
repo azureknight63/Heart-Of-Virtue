@@ -49,6 +49,13 @@ export default function GamePage() {
   // refresh (issue #505). Surface it, and remember an "Event pending" refusal
   // so the recovery poll below can go re-fetch the event the client lost.
   const pendingEventRefusalRef = useRef(false)
+  // #694: the room behind the VICTORY/DEFEAT modal kept listing dead enemies
+  // as HOSTILE until loot was collected -- the world refetch only ran in
+  // returnToExploration/finishLoot, both well after the modal (and the
+  // exploration panel underneath it) had already rendered on the stale room.
+  // Tracks the end_state id already refetched-for, so a re-render of this
+  // effect (it runs on every combat poll) doesn't refetch the room repeatedly.
+  const worldRefetchedForEndStateRef = useRef(null)
   const handleCombatActionRefused = useCallback((refusal) => {
     if (refusal?.error === 'Event pending') pendingEventRefusalRef.current = true
     showError(refusal?.message || refusal?.error || 'That action is not available right now.')
@@ -348,11 +355,18 @@ export default function GamePage() {
   }, [inCombat, combat?.suggestions_loading, fetchCombatStatus, checkPendingEvents])
 
   /**
-   * Handle events triggered from combat
+   * Handle events triggered from combat.
+   *
+   * Skips a won fight's `post_combat` story: the server holds it for
+   * collect-loot, which `finishLoot` hands to the queue (issue #683), and only
+   * echoes it on status for REST readers. Taking the echo too would show the
+   * scene twice — or under the Victory dialog, on the level-up path, where
+   * `handleAllocatePoints` polls status while that dialog is still open.
    */
   useEffect(() => {
-    if (combat?.events_triggered && combat.events_triggered.length > 0) {
-      handleEventsTriggered(combat.events_triggered)
+    const deliverable = (combat?.events_triggered ?? []).filter(event => !event.post_combat)
+    if (deliverable.length > 0) {
+      handleEventsTriggered(deliverable)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [combat?.events_triggered])
@@ -501,6 +515,16 @@ export default function GamePage() {
       if (maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
         setEndState(maybeEnd)
 
+        // Refetch the room as soon as combat end is detected, not only once the
+        // player leaves it: the exploration panel can render underneath the
+        // victory/defeat modal (mode flips to 'exploration' below while the
+        // dialog is still pending) and it reads `location`, which otherwise
+        // still carries the pre-fight, everyone-hostile room state.
+        if (maybeEnd.id && worldRefetchedForEndStateRef.current !== maybeEnd.id) {
+          worldRefetchedForEndStateRef.current = maybeEnd.id
+          refetchWorld()
+        }
+
         // Keep mode locked to 'combat' while the dialog is pending (timer running)
         // or while the dialog is open. endStatePendingRef.current is a ref so it
         // reflects the value set by useCombatCoordinator's effect in the same render
@@ -562,7 +586,12 @@ export default function GamePage() {
   useEffect(() => {
     if (!playerLoading && !worldLoading) {
       fetchCombatStatus()
-      checkPendingEvents()
+      // Not while a fight's end is unresolved: #694 refetches the room as soon
+      // as combat ends, which lands here with Victory/Defeat still up, and a
+      // pending story event would then open under the dialog, ahead of
+      // collect-loot's scene (#683). returnToExploration clears endState and
+      // polls pending events itself once the dialogs are done.
+      if (!endState) checkPendingEvents()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerLoading, worldLoading])
@@ -623,10 +652,17 @@ export default function GamePage() {
    * memory flash), and a restarted run's starting-tile events, which
    * `GET /world` re-arms into the session. One helper, because issue #587
    * was a closer that lacked the flush the others had.
+   *
+   * `storyEvents` — a won fight's post-combat story from collect-loot (issue
+   * #683) — are queued in the same batch as the switch to exploration, so the
+   * queue never sees them in combat mode (which would hold them behind the
+   * end-of-combat delay) and ahead of the pending events flushed below (the
+   * memory flash `AfterDefeatingKingSlime` queues after itself).
    */
-  const returnToExploration = async () => {
+  const returnToExploration = async (storyEvents = []) => {
     setEndState(null)
     setMode('exploration')
+    if (storyEvents.length > 0) handleEventsTriggered(storyEvents)
     await handleRefetch()
     await fetchCombatStatus()
     await checkPendingEvents()
@@ -637,9 +673,9 @@ export default function GamePage() {
    * dialog: back to exploration, then the demo-end screen if this kill ended
    * the beta.
    */
-  const returnFromVictory = async () => {
+  const returnFromVictory = async (storyEvents = []) => {
     const isBetaEnd = endState?.beta_end
-    await returnToExploration()
+    await returnToExploration(storyEvents)
     if (isBetaEnd) setShowBetaEndDialog(true)
   }
 
@@ -680,9 +716,15 @@ export default function GamePage() {
    * victory, so they can retry or SKIP. This used to close as if the loot had
    * been taken (issue #610). A refused skip still leaves, since there is
    * nothing to retry.
+   *
+   * A successful collect also carries the fight's post-combat story as
+   * `events_triggered` (issue #683) — the only carrier of a no-input scene
+   * such as `AfterDefeatingKingSlime`, whose status-poll copy any other reader
+   * could consume first.
    */
   const finishLoot = async (itemNames) => {
     const collecting = itemNames?.length > 0
+    let storyEvents = []
     try {
       const response = await combatApi.collectLoot(itemNames)
       const result = response?.data
@@ -690,11 +732,12 @@ export default function GamePage() {
       if (refused) showError(apiErrorMessage(result, LOOT_COLLECT_REFUSED))
       const keepDialogOpen = refused && collecting
       if (keepDialogOpen) return
+      storyEvents = result?.events_triggered ?? []
     } catch (err) {
       console.error(collecting ? 'collect-loot failed:' : 'collect-loot (skip) failed:', err)
     }
     setShowLootDialog(false)
-    await returnFromVictory()
+    await returnFromVictory(storyEvents)
   }
 
   // LootDialog wires onSkip straight to a button's onClick, so it arrives
@@ -761,6 +804,7 @@ export default function GamePage() {
           isMobile={isMobile}
           onMove={handleMove}
           onRefetch={handleRefetch}
+          onRefetchPlayer={refetchPlayer}
           onEventsTriggered={handleEventsTriggered}
           onInteractionComplete={(data) => {
             // A world interaction can be the end of the demo (the Ferry

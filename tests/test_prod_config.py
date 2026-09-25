@@ -67,6 +67,24 @@ def test_it_carries_the_chapter_1_state_beta_2_assumes(config):
     assert config.starting_party_members == ["Gorran"]
 
 
+def test_the_starting_story_flags_land_on_a_real_session(monkeypatch):
+    """Issue #687: config.starting_story_flags was parsed but never applied.
+
+    Prove the shipped config's flags actually reach the player's story dict,
+    not just that the parser produced them (test above).
+    """
+    from src.api.services.session_manager import SessionManager
+    from src.events import story_gates
+
+    monkeypatch.setenv("CONFIG_FILE", PROD_CONFIG.name)
+    manager = SessionManager()
+
+    session_id, _player_id = manager.create_session("prod-config-flag-check")
+    player = manager.get_player(session_id)
+
+    assert story_gates(player).get("lurker_defeated") == "1"
+
+
 def test_it_plays_the_story_and_keeps_saves(config):
     assert config.skipdialog is False
     assert config.autosave_enabled is True

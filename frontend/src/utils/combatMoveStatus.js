@@ -324,7 +324,12 @@ export function moveAvailability(move) {
  *
  * A targeted move offering more than one viable target (`requires_target_
  * selection`) returns `null` rather than a range that silently describes
- * only the nearest candidate.
+ * only the nearest candidate. Re-examined for #688 and kept: folding the
+ * candidates into one range the way the area branch does would describe no
+ * swing Jean can actually make (one strike, one target -- "0–46 ☠ LETHAL"
+ * over a Stone Creature it cannot scratch and a Slime it would kill), and
+ * the choice is made one step later on the target picker, whose cards now
+ * show each target's own preview (`TargetCard` in CombatInputDialog.jsx).
  *
  * @param {Object} move a move entry from `available_options` / `moves`
  * @returns {?{min: number, max: number, lethal: boolean}}

@@ -2,7 +2,7 @@
 
 ## Confirmed (to file)
 1. **starting_story_flags is a dead config key on the web path** — Medium (dev/QA-blocking, no shipped impact).
-   Source: parsed at src/config_manager.py:328-335; only consumer was src/game.py (311a644e), deleted in the
+   Source: parsed at src/config_manager.py:328-335; only consumer was the terminal game loop (added in 311a644e), deleted in the
    terminal teardown; SessionManager._create_player_for_session never applies it (grep: zero readers of
    `config.starting_story_flags` in src/). Seen by A3 (indirectly), A3b (diagnosed), orchestrator (grep + shim
    verification: with game.py's semantics restored, camp session opens the #669 gate). Shipped config_prod.ini

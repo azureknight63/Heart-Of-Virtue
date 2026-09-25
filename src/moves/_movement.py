@@ -199,7 +199,11 @@ class Advance(Move):
         """Advance is viable when the target is beyond adjacent range.
 
         Targeting an ally closes distance for healing (no damage is dealt to
-        friendlies); targeting an enemy closes distance to attack.
+        friendlies); targeting an enemy closes distance to attack. Advance
+        walks toward ``self.target`` specifically, so a live, selected target
+        that is already adjacent means "don't advance" even when another
+        combatant is farther away. Stale cross-fight targets are cleared at
+        new-fight init (``ApiCombatAdapter._reset_stale_move_targets``, #691).
         """
         if not hasattr(self.user, "combat_proximity"):
             return False
@@ -217,9 +221,17 @@ class Advance(Move):
         return False
 
     def _unavailability_code(self):
+        """Mirror ``viable()``, plus the one case it can't distinguish itself:
+        an EMPTY ``combat_proximity`` (the very first status poll right after
+        a fight is joined, before positions have been computed) means nobody
+        is on the field to advance toward, not "everyone is adjacent" --
+        reported #691. ``NO_OPPONENTS`` is the code ``TacticalRetreat`` already
+        uses for exactly that state."""
         if not hasattr(self.user, "combat_proximity"):
             return None
         proximity = self.user.combat_proximity
+        if not proximity:
+            return UnavailableReason.NO_OPPONENTS
         if self.target and self.target in proximity:
             if self.target.is_alive() and proximity[self.target] <= 1:
                 return UnavailableReason.ALREADY_ADJACENT

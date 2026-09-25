@@ -933,6 +933,41 @@ describe('LeftPanel', () => {
             await waitFor(() => expect(errorSpy).toHaveBeenCalled());
             errorSpy.mockRestore();
         });
+
+        // #694: `player` is fetched once by GamePage and handed down; a
+        // successful swap changed the engine's equipped weapon but nothing
+        // told GamePage to refetch it, so reopening the Weapons tab still
+        // read the pre-swap `is_equipped` flag off the stale `player` prop.
+        it('refetches player/combat state after a successful swap so "In hand" is not stale', async () => {
+            const onCombatAction = vi.fn().mockResolvedValue({});
+            const onRefetch = vi.fn().mockResolvedValue();
+            const combat = combatWith([swapOption()]);
+            render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} onRefetch={onRefetch} />);
+            fireEvent.click(screen.getByText('Inventory Btn'));
+            fireEvent.click(screen.getByText('Draw Mock Weapon'));
+            await waitFor(() => expect(onCombatAction).toHaveBeenCalledWith('swap_weapon', { item_id: 'w-sword' }));
+            await waitFor(() => expect(onRefetch).toHaveBeenCalled());
+        });
+
+        // Scrub of #694: only `player` is stale after a swap. The full
+        // handleRefetch also re-pulls the room, the explored map and combat
+        // status (four requests mid-fight); a player-only refetch is enough,
+        // and a refresh failure must not be reported as a failed swap.
+        it('prefers the player-only refetch after a swap and reports a refresh failure as such', async () => {
+            const onCombatAction = vi.fn().mockResolvedValue({});
+            const onRefetch = vi.fn().mockResolvedValue();
+            const onRefetchPlayer = vi.fn().mockRejectedValue(new Error('offline'));
+            const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+            const combat = combatWith([swapOption()]);
+            render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} onRefetch={onRefetch} onRefetchPlayer={onRefetchPlayer} />);
+            fireEvent.click(screen.getByText('Inventory Btn'));
+            fireEvent.click(screen.getByText('Draw Mock Weapon'));
+            await waitFor(() => expect(onRefetchPlayer).toHaveBeenCalled());
+            expect(onRefetch).not.toHaveBeenCalled();
+            await waitFor(() => expect(errors).toHaveBeenCalled());
+            expect(errors.mock.calls.some(([msg]) => /swap weapon/i.test(String(msg)))).toBe(false);
+            errors.mockRestore();
+        });
     });
 
     // HeroPanel's base bounding box is 360x310; the wrapper scales by

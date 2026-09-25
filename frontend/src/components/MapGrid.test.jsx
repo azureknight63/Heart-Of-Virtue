@@ -84,9 +84,14 @@ describe('MapGrid', () => {
   })
 
   describe('header, legend and footer', () => {
-    it('title-cases the map name and replaces hyphens, keeping underscores', () => {
+    it('title-cases the map name and replaces both hyphens and underscores (#694)', () => {
       renderGrid({ location: makeLocation({ ...LOCATION, map_name: 'dark-grotto_01' }), onMove })
-      expect(screen.getByText('⛰️ Dark Grotto_01')).toBeInTheDocument()
+      expect(screen.getByText('⛰️ Dark Grotto 01')).toBeInTheDocument()
+    })
+
+    it('turns a raw file-name segment like "grondia-jambos_shop" into a proper header', () => {
+      renderGrid({ location: makeLocation({ ...LOCATION, map_name: 'grondia-jambos_shop' }), onMove })
+      expect(screen.getByText('⛰️ Grondia Jambos Shop')).toBeInTheDocument()
     })
 
     it('falls back to location.name, then to "World Map", when map_name is absent', () => {

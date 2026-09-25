@@ -327,6 +327,36 @@ describe('GamePage', () => {
         }
     });
 
+    // #694: the exploration panel that sits behind the VICTORY/DEFEAT modal
+    // (RightPanel/LeftPanel keep rendering under it, from `location`) still
+    // listed the enemy just killed as HOSTILE until the player collected loot
+    // -- the world/room refetch only ran in returnToExploration/finishLoot,
+    // both of which happen well after this modal has already been on screen.
+    // The fix refetches the room as soon as combat end is detected.
+    it('refetches the room as soon as combat end is detected, not only after loot is collected', () => {
+        const mockRefetchWorld = vi.fn();
+        useWorld.mockReturnValue({
+            location: mockLocation,
+            loading: false,
+            moveToLocation: vi.fn(),
+            refetch: mockRefetchWorld
+        });
+        useCombat.mockReturnValue({
+            combat: {
+                combat_active: false,
+                end_state: { id: 'win-2', status: 'victory', message: 'You won!' }
+            },
+            inCombat: false,
+            loading: false,
+            fetchCombatStatus: vi.fn(),
+            performAction: vi.fn()
+        });
+
+        renderGamePage();
+
+        expect(mockRefetchWorld).toHaveBeenCalled();
+    });
+
     it('shows BetaEndDialog after closing victory dialog with beta_end=true', async () => {
         vi.useFakeTimers();
         try {

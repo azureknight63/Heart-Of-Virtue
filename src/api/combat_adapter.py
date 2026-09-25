@@ -58,10 +58,26 @@ from src.moves._base import (
     weapon_code_for,
 )
 from src.events import purge_orphaned_combat_events
+from src.player._leveling import LEVEL_UP_ATTRIBUTE_NAMES
 from src.story import gorran_flavor
 
 if TYPE_CHECKING:
     from src.player import Player
+
+
+def _victory_attribute_snapshot(player) -> Dict[str, int]:
+    """The victory allocator's per-attribute base values (#694).
+
+    Built from ``LEVEL_UP_ATTRIBUTE_NAMES`` -- the engine's own list of
+    everything the LEVEL UP dialog can raise -- rather than a hand-copied set
+    of keys, which is what let ``faith_base`` go missing here twice (once at
+    combat end, once in ``get_combat_state``'s refresh) while the LEVEL UP
+    dialog itself (reading straight off ``player``) never lost it.
+    """
+    return {
+        name: int(getattr(player, name, 0) or 0) for name in LEVEL_UP_ATTRIBUTE_NAMES
+    }
+
 
 #: Reach, in feet, above which a move earns a drawn range ring in the client.
 #: Every melee swing reaches about 5 ft, so a ring at that distance is drawn on
@@ -790,6 +806,21 @@ class CombatOutputCapture:
         self.log_entries = []
 
 
+def combat_adapter_state(player) -> dict:
+    """``player.combat_adapter_state``, created empty when missing.
+
+    The single home of the lazy init that five sites used to carry as their
+    own ``if not hasattr(...)`` copy; the adapter and GameService both read
+    through here. The dict lives on the player (not on the adapter) because
+    the adapter object is not the fight's lifetime -- see
+    ``ApiCombatAdapter.combat_id``.
+    """
+    state = getattr(player, "combat_adapter_state", None)
+    if not isinstance(state, dict):
+        state = player.combat_adapter_state = {}
+    return state
+
+
 class ApiCombatAdapter:
     """
     Adapts the terminal combat system for API use.
@@ -1074,15 +1105,9 @@ class ApiCombatAdapter:
     def _adapter_state(self) -> dict:
         """``player.combat_adapter_state``, created empty when missing.
 
-        The single home of the lazy init that five sites used to carry as
-        their own ``if not hasattr(...)`` copy. The dict lives on the player
-        (not on ``self``) because the adapter object is not the fight's
-        lifetime — see the ``combat_id`` property.
+        See :func:`combat_adapter_state`, the single home of the lazy init.
         """
-        state = getattr(self.player, "combat_adapter_state", None)
-        if not isinstance(state, dict):
-            state = self.player.combat_adapter_state = {}
-        return state
+        return combat_adapter_state(self.player)
 
     @property
     def combat_id(self):
@@ -1600,6 +1625,24 @@ class ApiCombatAdapter:
         self._detach_current_move(combatant)
         self._reset_idle_move_stages(combatant)
 
+    def _reset_stale_move_targets(self, combatant) -> None:
+        """Clear a move's ``target`` if it names someone outside THIS fight.
+
+        A move's ``target`` is only reassigned once a cast completes and is
+        never reset on its own, so a target from a PRIOR fight -- or a corpse
+        from it -- could still sit on a move when a new fight starts, and a
+        move that reads ``self.target`` for its viability (``Advance``) then
+        measured against a combatant who isn't there (#691). Only targets
+        outside this fight's roster (``combat_list`` / ``combat_list_allies``,
+        already final when this runs) are cleared; an in-fight target is left
+        alone (see ``Advance.viable``).
+        """
+        roster = self.player.combat_list + self.player.combat_list_allies
+        for move in getattr(combatant, "known_moves", []):
+            target = getattr(move, "target", None)
+            if target is not None and target not in roster:
+                move.target = None
+
     def initialize_combat(
         self, enemies: List[Any], reinit: bool = False
     ) -> Dict[str, Any]:
@@ -1771,6 +1814,10 @@ class ApiCombatAdapter:
                 # Reset moves only for new combat
                 for ally in self.player.combat_list_allies:
                     ally.in_combat = True
+                    # A move's `target` from a fight that has already ended
+                    # (e.g. Jean or Gorran's Advance still pointed at last
+                    # encounter's foe) must not survive into this one (#691).
+                    self._reset_stale_move_targets(ally)
                     if ally is self.player:
                         # Jean's in-flight move belongs to the four
                         # combat-exit paths and to _detach_current_move, which
@@ -1800,6 +1847,7 @@ class ApiCombatAdapter:
                     # this one is too.
                     # Provide a back-reference for API-mode drop/loot tracking
                     self._attach_player_ref(enemy)
+                    self._reset_stale_move_targets(enemy)
                     self._reset_move_state_for_new_fight(enemy)
             else:
                 # For re-init, ensure ALL combatants are properly flagged and
@@ -3948,16 +3996,7 @@ class ApiCombatAdapter:
                 (getattr(self.player, "exp_to_level", 0) or 0)
                 - (getattr(self.player, "exp", 0) or 0)
             ),
-            "attributes": {
-                "strength_base": int(getattr(self.player, "strength_base", 0) or 0),
-                "finesse_base": int(getattr(self.player, "finesse_base", 0) or 0),
-                "speed_base": int(getattr(self.player, "speed_base", 0) or 0),
-                "endurance_base": int(getattr(self.player, "endurance_base", 0) or 0),
-                "charisma_base": int(getattr(self.player, "charisma_base", 0) or 0),
-                "intelligence_base": int(
-                    getattr(self.player, "intelligence_base", 0) or 0
-                ),
-            },
+            "attributes": _victory_attribute_snapshot(self.player),
         }
 
         # Check for beta end: player just defeated the Lurker in Verdette Caverns.
@@ -4649,6 +4688,17 @@ class ApiCombatAdapter:
         # combat_id rides in battle_state (not the top level) so the client's
         # transformCombatData spread carries it through on every poll; a
         # top-level key would be dropped by its whitelist.
+        # serialize_combat_state hardcodes "active" -- it has no way to know
+        # the fight just ended. Once combat_active goes false, reflect the
+        # real outcome (issue #689a: this used to stay "active" through both
+        # victory and defeat, contradicting combat_active in the same
+        # payload).
+        if not self.player.in_combat:
+            summary = getattr(self.player, "combat_end_summary", None) or {}
+            # "ended" once collect-loot / flee / load has cleared the summary:
+            # the serializer's hardcoded "active" must never sit beside
+            # combat_active: false.
+            battle_state["status"] = summary.get("status", "ended")
         battle_state["combat_id"] = self.combat_id
         # Same reason: emitted top-level, map_size was dropped by
         # transformCombatData's whitelist, so Battlefield's `combat?.map_size`
@@ -4770,18 +4820,7 @@ class ApiCombatAdapter:
                     (getattr(self.player, "exp_to_level", 0) or 0)
                     - (getattr(self.player, "exp", 0) or 0)
                 )
-                summary["attributes"] = {
-                    "strength_base": int(getattr(self.player, "strength_base", 0) or 0),
-                    "finesse_base": int(getattr(self.player, "finesse_base", 0) or 0),
-                    "speed_base": int(getattr(self.player, "speed_base", 0) or 0),
-                    "endurance_base": int(
-                        getattr(self.player, "endurance_base", 0) or 0
-                    ),
-                    "charisma_base": int(getattr(self.player, "charisma_base", 0) or 0),
-                    "intelligence_base": int(
-                        getattr(self.player, "intelligence_base", 0) or 0
-                    ),
-                }
+                summary["attributes"] = _victory_attribute_snapshot(self.player)
             result["end_state"] = summary
 
         return result

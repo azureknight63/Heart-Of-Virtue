@@ -129,9 +129,24 @@ class Anvil(NonCombatantMixin, Friend):
     def _first_encounter(self, player):
         """Mark this interaction as having happened; return True the first time.
 
+        Only meaningful once Iron & Oath's intro has run
+        (``IronAndOathIntroEvent.GATE_KEY``) -- otherwise AnvilIntroEvent's
+        own precondition can never be satisfied, and
+        consuming ``CONVERSATION_READY_FLAG`` early would defer this
+        interaction to a conversation that will never fire, narrating
+        nothing (#695). Before that gate, talk()/pet() always fall through
+        to their ambient flavor lines below, and the ready flag stays unset
+        so the real first encounter is still available afterward.
+
         Subsequent calls (including after AnvilIntroEvent has already run)
         return False, so the ambient flavor lines take over as normal.
         """
+        # Local import: ch03 imports this class, so a module-level import
+        # back would cycle. Read the key from the event that owns it.
+        from src.story.ch03 import IronAndOathIntroEvent
+
+        if not gate_is_set(player, IronAndOathIntroEvent.GATE_KEY):
+            return False
         already = gate_is_set(player, self.CONVERSATION_READY_FLAG)
         recorded = set_story_gate(player, self.CONVERSATION_READY_FLAG)
         if not recorded:
