@@ -2849,6 +2849,20 @@ class GameService:
         ``append`` of a list ships ``events_triggered: [[{...}]]`` to the
         client, ``extend`` of a dict splats its keys.
 
+        Checks ``target.crossing_locked(player)`` FIRST (issue #694): a story
+        gate (e.g. Grondia's Eastern Gate before Votha Krr's second
+        conversation, #669) used to be checked only inside
+        ``Passageway._commit_teleport``, which does not run until the player
+        clicks "Step through" on the dialog this method had already shown
+        them -- so the confirmation ("Jean steps through the eastern
+        gate...") promised a crossing the very next click would refuse.
+        ``crossing_locked`` already narrates its own decline, so a locked
+        target short-circuits here with that message and no event armed at
+        all. ``_commit_teleport``'s check stays as defence in depth: it is
+        the only guard for ``PassagewayTransitionEvent.process``, which
+        reaches the crossing PRIMITIVE directly and bypasses this method
+        entirely.
+
         Unpaid shop stock is taken back here, and the confirmation is where
         the player is told so (issue #611). The drop's own narration reaches
         the interact response's ``message`` as well, but the client's
@@ -2863,6 +2877,9 @@ class GameService:
 
         player, target = request.player, request.target
         tile, session_data = request.tile, request.session_data
+
+        if target.crossing_locked(player):
+            return []
 
         returned_goods = []
         if hasattr(player, "drop_merchandise_items"):

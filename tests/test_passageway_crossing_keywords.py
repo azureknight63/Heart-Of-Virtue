@@ -20,7 +20,7 @@ import pytest
 
 from src import map_placeholders
 from src.api.services.game_service import GameService
-from src.events import PassagewayTransitionEvent
+from src.events import PassagewayTransitionEvent, set_story_gate
 from src.narration import capture_narration
 from src.objects import Passageway, resolve_interaction
 from tests._ferry_fixtures import (
@@ -246,6 +246,16 @@ def test_each_shipped_placement_declares_its_crossing_verb(game_service, where):
         way = player.universe._deserialize_saved_instance(matches[0], tile=tile)
     assert isinstance(way, Passageway)
     assert way.is_crossing_handler(resolve_interaction(way, verb))
+
+    # This test is about the crossing-keyword arming mechanism (#630), not
+    # the independent story-gate lock (#669/#694): Grondia's Eastern Gate
+    # placement authors `locked_until_flag`, and since #694 a locked
+    # crossing short-circuits the confirmation instead of arming it. Set
+    # whatever gate this placement is authored to wait on, so the assertion
+    # below is about the arm, same as for the two placements with no lock.
+    lock_flag = (class_ref(matches[0]).props or {}).get("locked_until_flag")
+    if lock_flag:
+        set_story_gate(player, lock_flag)
 
     way.teleport_map, way.teleport_tile = REACHABLE_DESTINATION
     tile.objects_here = [way]
