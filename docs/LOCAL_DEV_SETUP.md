@@ -5,16 +5,16 @@ browser-based play and testing. The game is web-only; there is no terminal play 
 
 ## Prerequisites
 
-- **Python 3.11** (installed and on PATH). CI runs 3.11 and `pyproject.toml` targets
-  `py311`. It matters beyond convention: the save allow-list manifest is derived from
-  `__module__`, which CPython moves between releases, so regenerating it on a newer
-  interpreter fixes your box by breaking CI (`.claude/rules/saves-persistence.md`).
+- **Python 3.13**. CI and production both run 3.13. It matters beyond convention: the
+  save allow-list manifest is derived from `__module__`, which CPython moves between
+  releases, so regenerating it on a different interpreter fixes your box by breaking CI
+  (`.claude/rules/saves-persistence.md`).
 - **Node.js 22** (installed and on PATH, required for npm) — the version CI uses.
 - **git** (installed)
 
 Verify your setup:
 ```bash
-python --version      # Python 3.11.x
+python --version      # Python 3.13.x (inside the activated .venv)
 node --version        # Node 22.x
 npm --version
 ```
@@ -28,7 +28,7 @@ pip install -r requirements-dev.txt
 ```
 
 `requirements-dev.txt` pulls in `requirements.txt` (engine) and `requirements-api.txt`
-(Flask, Socket.IO, LibSQL, crypto) and adds pytest, flake8, black and the harness tooling.
+(Flask, Socket.IO, LibSQL, crypto) and adds pytest, flake8 and the harness tooling.
 **`requirements-api.txt` alone is not enough to run the game** — it is the production-API
 set and omits the engine's own dependencies.
 

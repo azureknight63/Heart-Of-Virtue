@@ -21,7 +21,7 @@ Derived from `docs/lore/`, `src/resources/outline.md`, and the map-design princi
 
 ## Stack
 
-Python 3.11 engine · Flask 3.1 + Flask-SocketIO API · React 18 + Vite + Tailwind (+ react-three-fiber battlefield) · LibSQL/Turso · pytest / Vitest · flake8 (`--extend-ignore=E501`) — no autoformatter, see Coding conventions · OpenRouter/Groq/Cerebras/Ollama for NPC chat and Mynx ambient behaviour (`MYNX_LLM_ENABLED`; see `.env.example`).
+Python 3.13 engine · Flask 3.1 + Flask-SocketIO API · React 18 + Vite + Tailwind (+ react-three-fiber battlefield) · LibSQL/Turso · pytest / Vitest · flake8 (`--extend-ignore=E501`) — no autoformatter, see Coding conventions · OpenRouter/Groq/Cerebras/Ollama for NPC chat and Mynx ambient behaviour (`MYNX_LLM_ENABLED`; see `.env.example`).
 
 ## Layout — only the non-obvious parts
 

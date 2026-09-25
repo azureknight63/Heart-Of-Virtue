@@ -133,6 +133,10 @@ DELIBERATELY_ABSENT = {
         "src/moves.py",
     ): "Dated QA report. Accurate when written; editing it would falsify the record.",
     (
+        "docs/qa/beta-live-test-2026-09-24.md",
+        "src/game.py",
+    ): "Finding #687's evidence is that the only consumer was the deleted src/game.py.",
+    (
         "docs/qa/beta-live-test-2026-09-17/tester-reports/T1.md",
         ".../src/components/CombatLog.jsx",
     ): (

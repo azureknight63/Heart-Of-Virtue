@@ -25,10 +25,6 @@ pytest-timeout==2.4.0
 
 # Code quality
 flake8==7.3.0
-# black is a documented step in CLAUDE.md's test block (`python -m black --check src/`)
-# and pyproject.toml configures it (line-length 88, target py311), but it was in no
-# requirements file -- so the documented check could not run on a clean install.
-black==26.5.1
 
 # Inquisitor browser harness (requires: python -m playwright install chromium)
 playwright>=1.49.0

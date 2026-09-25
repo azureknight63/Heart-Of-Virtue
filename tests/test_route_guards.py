@@ -252,7 +252,7 @@ class TestTheMessageScanSeesThroughFormatting:
         [
             'x = "Game service not initialized"',
             "x = 'Game service not initialized'",
-            # black splits long lines into implicit concatenation
+            # a long line wrapped in parentheses becomes implicit concatenation
             'x = (\n    "Game service "\n    "not initialized"\n)',
             # explicit concatenation -- the one the parser does not fold
             'x = "Game service not " + "initialized"',
