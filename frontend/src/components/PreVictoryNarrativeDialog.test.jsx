@@ -48,7 +48,7 @@ describe('PreVictoryNarrativeDialog', () => {
     // and BaseDialog's ✕ is suppressed via showCloseButton={isComplete}.
     const { onClose } = setup()
     expect(screen.queryByText('Continue')).toBeNull()
-    expect(screen.queryByRole('button', { name: '✕' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
     expect(onClose).not.toHaveBeenCalled()
   })
 

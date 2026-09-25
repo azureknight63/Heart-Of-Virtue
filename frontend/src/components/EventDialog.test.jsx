@@ -275,7 +275,9 @@ describe('EventDialog', () => {
 
     renderDialog({ ...mockEvent, needs_input: false });
     finishText();
-    const closeBtn = screen.getByRole('button', { name: /^Close$/i });
+    // Case-sensitive: BaseDialog's ✕ also answers to "Close" now (#718 item
+    // 8), but this dialog's own action button reads all-caps "CLOSE".
+    const closeBtn = screen.getByRole('button', { name: /^CLOSE$/ });
     expect(closeBtn.disabled).toBe(false);
     // No input section for a no-input event.
     expect(screen.queryByPlaceholderText(/Enter your text here/i)).toBeNull();
@@ -483,8 +485,10 @@ describe('EventDialog', () => {
     expect(preEl.textContent).toBe('Jean has died.\n\n   .oOOOo.\n  OOOOOOOOo');
     expect(screen.queryByTestId('event-text-container')).toBeNull();
 
-    // Close button visible immediately (isComplete=true on mount).
-    expect(screen.getByRole('button', { name: /Close/i }).disabled).toBe(false);
+    // Close button visible immediately (isComplete=true on mount). Matched
+    // case-sensitively: BaseDialog's ✕ also answers to "Close" now (#718 item
+    // 8), but this dialog's own action button reads all-caps "CLOSE".
+    expect(screen.getByRole('button', { name: /^CLOSE$/ }).disabled).toBe(false);
   });
 
   describe('submissionErrorMessage', () => {
@@ -736,7 +740,9 @@ describe('EventDialog', () => {
         expect(screen.queryByText(/or click anywhere to continue/i)).toBeNull();
         expect(screen.queryByText(/click to finish/i)).toBeNull();
 
-        fireEvent.click(screen.getByRole('button', { name: '✕' }));
+        // BaseDialog's ✕ has an accessible name of "Close" (#718 item 8),
+        // distinct in case from this dialog's own all-caps "CLOSE" text button.
+        fireEvent.click(screen.getByRole('button', { name: 'Close' }));
         expect(mockOnClose).toHaveBeenCalledTimes(1);
       });
 
@@ -760,13 +766,16 @@ describe('EventDialog', () => {
         fireEvent.click(stage); // advance to beat 2
         fireEvent.click(stage); // finish beat 2's typewriter — last beat NOT reached
         expect(screen.queryByText(/his voice low and rough from disuse/)).toBeNull();
-        expect(screen.queryByRole('button', { name: /^Close$/i })).toBeNull();
+        // The all-caps text button, not BaseDialog's ✕ — matched case-sensitively
+        // so it isn't confused with the ✕'s "Close" accessible name (#718 item 8),
+        // which is still present and clickable at this point in the conversation.
+        expect(screen.queryByRole('button', { name: /^CLOSE$/ })).toBeNull();
         return utils.unmount;
       };
 
       it('still dismisses via ✕ when the conversation has not reached its last beat', () => {
         const unmount = driveToBeatTwo({ ...longNoRosterEvent, event_id: 'gorran-pools-2a' });
-        fireEvent.click(screen.getByRole('button', { name: '✕' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Close' }));
         expect(mockOnClose).toHaveBeenCalledTimes(1);
         unmount();
       });
@@ -804,7 +813,7 @@ describe('EventDialog', () => {
 
         // showCloseButton={!needsInput} hides the ✕ entirely for this event;
         // the overlay click is still wired to handleGlobalInteraction though.
-        expect(screen.queryByRole('button', { name: '✕' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
         fireEvent.click(document.querySelector('.modal-overlay'));
         expect(mockOnClose).not.toHaveBeenCalled();
       });
@@ -1202,7 +1211,7 @@ describe('EventDialog', () => {
       await waitFor(() => expect(touch.disabled).toBe(false));
       expect(onSubmitInput).not.toHaveBeenCalled();
       // No ✕ either, which is what makes the stuck state unrecoverable.
-      expect(screen.queryByRole('button', { name: '✕' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
     });
 
     it('re-enables the choice buttons when the submission resolves unsuccessfully', async () => {
