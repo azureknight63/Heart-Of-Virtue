@@ -1600,6 +1600,35 @@ class ApiCombatAdapter:
         self._detach_current_move(combatant)
         self._reset_idle_move_stages(combatant)
 
+    def _reset_stale_move_targets(self, combatant) -> None:
+        """Clear a move's ``target`` if it names someone outside THIS fight.
+
+        A move's ``target`` is only reassigned once a cast completes (the
+        three ``_execute_move`` call sites) and is never reset on its own, so
+        a target chosen in a PRIOR fight -- or a corpse from it -- can still
+        be sitting on a move when a brand new fight starts. A move that reads
+        ``self.target`` for its own viability (``Advance``, ``Withdraw``,
+        ``QuickSwap``, ...) then measures against that foreign combatant
+        instead of anyone actually present, which is how ``Advance`` could
+        report "No one is out of reach" moments after joining a fresh fight
+        with real enemies still 8-10 ft away (#691).
+
+        Scoped to targets OUTSIDE this fight's roster (``combat_list`` /
+        ``combat_list_allies``, already finalized by the time this runs --
+        see the top of :meth:`_initialize_combat_locked`) so a still-relevant,
+        currently-selected target from the fight actually starting is never
+        touched: ``Advance.viable()`` deliberately treats "my chosen target
+        is already adjacent" as *not viable* even when another enemy is
+        farther away (it walks toward ``self.target`` specifically, not
+        toward whichever combatant happens to be farthest), and that design
+        choice is intentional, not the bug here.
+        """
+        roster = self.player.combat_list + self.player.combat_list_allies
+        for move in getattr(combatant, "known_moves", []):
+            target = getattr(move, "target", None)
+            if target is not None and target not in roster:
+                move.target = None
+
     def initialize_combat(
         self, enemies: List[Any], reinit: bool = False
     ) -> Dict[str, Any]:
@@ -1771,6 +1800,10 @@ class ApiCombatAdapter:
                 # Reset moves only for new combat
                 for ally in self.player.combat_list_allies:
                     ally.in_combat = True
+                    # A move's `target` from a fight that has already ended
+                    # (e.g. Jean or Gorran's Advance still pointed at last
+                    # encounter's foe) must not survive into this one (#691).
+                    self._reset_stale_move_targets(ally)
                     if ally is self.player:
                         # Jean's in-flight move belongs to the four
                         # combat-exit paths and to _detach_current_move, which
@@ -1800,6 +1833,7 @@ class ApiCombatAdapter:
                     # this one is too.
                     # Provide a back-reference for API-mode drop/loot tracking
                     self._attach_player_ref(enemy)
+                    self._reset_stale_move_targets(enemy)
                     self._reset_move_state_for_new_fight(enemy)
             else:
                 # For re-init, ensure ALL combatants are properly flagged and
