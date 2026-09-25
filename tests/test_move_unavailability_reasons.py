@@ -29,6 +29,7 @@ import src.states as states
 from _combat_fixtures import (
     WEAPON_BY_SUBTYPE,
     engage,
+    make_adapter,
     make_npc,
     make_player,
     make_weapon,
@@ -224,6 +225,12 @@ def test_a_listed_move_never_falls_back_to_the_generic_code(cls):
     for player in _spread():
         move = cls(player)
         if not move.viable():
+            if cls.__name__ == "Advance" and not player.combat_proximity:
+                # #691: an empty/not-yet-built combat_proximity (the first
+                # status poll right after a fight is joined) is genuinely
+                # unmeasured, not a specific blocker -- the generic code is
+                # the honest answer, not a gap in Advance's diagnosis.
+                continue
             assert move.unavailability_reason() is not R.UNAVAILABLE, (
                 f"{cls.__name__} refused in a state its diagnosis cannot name"
             )
@@ -467,6 +474,48 @@ def test_shoot_bow_is_simply_unviable_with_another_weapon_and_arrows():
 def test_advance_with_everyone_adjacent():
     player, _ = _jean(distance=1)
     assert _reason(moves.Advance, player) is R.ALREADY_ADJACENT
+
+
+def test_advance_stale_target_from_a_prior_fight_is_reset_on_new_combat():
+    """#691: Advance.target is only reassigned once a cast completes
+    (combat_adapter.py) and is never reset on its own, so a target chosen in
+    a PRIOR fight (or a corpse from it) can still be sitting on the move when
+    a brand new fight starts. If that stale reference happened to still be
+    "adjacent" (distance <= 1) it would out-vote real, farther-away enemies
+    via Advance's own target-specific branch -- ``ApiCombatAdapter`` fixes
+    this at the source, by clearing a move's target when it names someone
+    outside the new fight's roster, rather than in ``Advance`` itself
+    (``test_advance_with_multiple_enemies_but_target_close`` below pins that
+    a live, currently-selected, IN-FIGHT target that is already adjacent
+    correctly keeps Advance unviable, even with another enemy far away --
+    Advance walks toward ``self.target`` specifically, so "viable" would be
+    a false promise there).
+    """
+    player = make_player(weapon="Sword")
+    foreign_target = make_npc(Slime)  # from a fight that has already ended
+    advance = next(m for m in player.known_moves if isinstance(m, moves.Advance))
+    advance.target = foreign_target
+
+    enemy1 = make_npc(Slime)
+    enemy2 = make_npc(Slime)
+    with seeded(627):
+        adapter = make_adapter(player, enemies=[enemy1, enemy2])
+
+    assert advance.target is not foreign_target
+    assert advance.viable() is True
+    assert adapter is not None  # keep the adapter alive for the assertion above
+
+
+def test_advance_empty_proximity_is_not_already_adjacent():
+    """#691 secondary: an empty/not-yet-built combat_proximity (as seen on
+    the first /api/combat/status poll right after a fight is joined) is
+    "not yet known", not "everyone is adjacent" -- it must not report
+    ALREADY_ADJACENT."""
+    player, _ = _jean()
+    player.combat_proximity = {}
+    move = moves.Advance(player)
+    assert move.viable() is False
+    assert move.unavailability_reason() is not R.ALREADY_ADJACENT
 
 
 def test_quick_swap_with_no_ally():
