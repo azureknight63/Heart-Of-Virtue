@@ -42,12 +42,12 @@ structured `{text, color, type}` messages rather than terminal `print`, and the 
 reads those messages directly instead of scraping stdout.
 
 ## Requirements
-- Python 3.11 (see `.python-version`; CI pins 3.11 in all four workflows). Not a style preference: the save allow-list manifest is derived from `__module__`, which CPython moves between releases, so regenerating it on a newer interpreter fixes your box by breaking CI. See `docs/LOCAL_DEV_SETUP.md`.
+- Python 3.13 (see `.python-version`; all four CI workflows and production run 3.13). Not a style preference: the save allow-list manifest is derived from `__module__`, which CPython moves between releases, so regenerating it on a different interpreter fixes your box by breaking CI. See `docs/LOCAL_DEV_SETUP.md`.
 - See requirements.txt for dependencies
 
 | Component | Version |
 |---|---|
-| Python | 3.11 (pinned in `.python-version`; all four CI workflows match) |
+| Python | 3.13 (pinned in `.python-version`; all four CI workflows and production match) |
 | Node.js | 22 (per CI) |
 
 Dependency manifests:

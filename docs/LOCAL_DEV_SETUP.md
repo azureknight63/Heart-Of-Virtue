@@ -5,16 +5,16 @@ browser-based play and testing. The game is web-only; there is no terminal play 
 
 ## Prerequisites
 
-- **Python 3.11** (installed and on PATH). CI runs 3.11 and `pyproject.toml` targets
-  `py311`. It matters beyond convention: the save allow-list manifest is derived from
-  `__module__`, which CPython moves between releases, so regenerating it on a newer
-  interpreter fixes your box by breaking CI (`.claude/rules/saves-persistence.md`).
+- **Python 3.13**. CI and production both run 3.13. It matters beyond convention: the
+  save allow-list manifest is derived from `__module__`, which CPython moves between
+  releases, so regenerating it on a different interpreter fixes your box by breaking CI
+  (`.claude/rules/saves-persistence.md`).
 - **Node.js 22** (installed and on PATH, required for npm) — the version CI uses.
 - **git** (installed)
 
 Verify your setup:
 ```bash
-python --version      # Python 3.11.x
+python --version      # Python 3.13.x (inside the activated .venv)
 node --version        # Node 22.x
 npm --version
 ```
