@@ -539,6 +539,46 @@ def test_an_unknown_diagnosis_folds_to_the_generic_code():
     assert move.unavailability_reason() is R.UNAVAILABLE
 
 
+def _refused_move(code):
+    class Refused(Move):
+        display_name = "Refused"
+
+        def viable(self):
+            return False
+
+        def _unavailability_code(self):
+            return code
+
+    player = make_player()
+    return Refused(
+        name="Refused", description="", xp_gain=0, current_stage=0,
+        stage_beat=[0, 0, 0, 0], targeted=False,
+        stage_announce=["", "", "", ""], fatigue_cost=0, beats_left=0,
+        target=player, user=player,
+    )
+
+
+def test_a_diagnosis_that_cannot_name_the_blocker_folds_quietly(caplog):
+    """None is the documented "cannot name it" answer, not a failure.
+
+    It used to be fed to ``UnavailableReason(None)`` and logged with a
+    traceback: Attack, which has no diagnosis, wrote 707 of them across the
+    2026-09-24 QA stacks and buried the real ones.
+    """
+    move = _refused_move(None)
+    with caplog.at_level("DEBUG", logger="src.moves._base"):
+        assert move.unavailability_reason() is R.UNAVAILABLE
+    assert not [r for r in caplog.records if r.name == "src.moves._base"]
+
+
+def test_an_unknown_diagnosis_is_still_logged(caplog):
+    """The quiet path must not swallow the case the log exists for."""
+    move = _refused_move("because I said so")
+    with caplog.at_level("DEBUG", logger="src.moves._base"):
+        assert move.unavailability_reason() is R.UNAVAILABLE
+    assert any("diagnosis failed" in r.getMessage() for r in caplog.records)
+
+
 # ── ShootBow checks its two blockers in one order (#674) ─────────────────────
 
 def test_shoot_bow_with_no_arrows_and_nobody_in_range_blames_the_quiver():
