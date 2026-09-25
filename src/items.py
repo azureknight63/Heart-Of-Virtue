@@ -2764,9 +2764,9 @@ class Restorative(Consumable):
             return
         if player.hp < player.maxhp:
             narrate(
-                f"{player.name} quaffs down the Restorative. The liquid burns slightly in his throat for a moment, before the \n"
-                "sensation is replaced with a period of numbness. He feels his limbs getting a bit lighter, his \n"
-                "muscles relaxing, and the myriad of scratches and cuts closing up.\n"
+                f"{player.name} quaffs down the Restorative. The liquid burns slightly in his throat for a moment, before the "
+                "sensation is replaced with a period of numbness. He feels his limbs getting a bit lighter, his "
+                "muscles relaxing, and the myriad of scratches and cuts closing up."
             )
             amount: int = int((self.power * random.uniform(0.8, 1.2)))
             missing_hp: int = player.maxhp - player.hp
@@ -2838,7 +2838,7 @@ class Draught(Consumable):
             return
         if player.fatigue < player.maxfatigue:
             narrate(
-                "{} gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n"
+                "{} gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems "
                 "to have lifted off of his shoulders for the time being.".format(
                     player.name, self.name
                 )
@@ -2922,9 +2922,9 @@ class Antidote(Consumable):
 
         if poisons:
             narrate(
-                f"{player.name} sips gingerly at the Antidote. The liquid feels very cool as it slides thickly down \n"
-                "his throat. He shudders uncontrollably for a moment as the medicine flows into his \n"
-                "bloodstream, doing its work on whatever toxic agent made its home there.\n"
+                f"{player.name} sips gingerly at the Antidote. The liquid feels very cool as it slides thickly down "
+                "his throat. He shudders uncontrollably for a moment as the medicine flows into his "
+                "bloodstream, doing its work on whatever toxic agent made its home there."
             )
             amount: int = int((self.power * random.uniform(0.8, 1.2)))
             missing_hp: int = player.maxhp - player.hp
