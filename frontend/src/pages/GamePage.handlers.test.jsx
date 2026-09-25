@@ -327,7 +327,7 @@ describe('GamePage handler wiring', () => {
     it('a move the server refuses (#713) is surfaced, resurfaces the scene and resyncs the room', async () => {
         // The /world/move route answers a refusal with a 400 and prose in
         // `error`; axios rejects with it under `response.data`.
-        const refusal = 'Jean must first answer the scene in front of her (Passage_Eastern Gate).';
+        const refusal = 'Jean must first answer the scene in front of him.';
         const err = Object.assign(new Error('Request failed with status code 400'), {
             response: { status: 400, data: { success: false, error: refusal } },
         });

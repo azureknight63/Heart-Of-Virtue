@@ -59,7 +59,11 @@ class TestMoveRefusedWhileASceneAwaitsInput:
             "move_player's refusal convention is a bare {'error': ...}, "
             "which /world/move maps to a 400"
         )
-        assert "ChestLoot" in result["error"]
+        # The engine name rides in its own field for clients; the prose is
+        # player-facing, so it carries no internal event name, and Jean is he/him.
+        assert result.get("pending_event") == "ChestLoot", result
+        assert "ChestLoot" not in result["error"]
+        assert " him" in result["error"] and " her" not in result["error"]
         assert (player.location_x, player.location_y) == (0, 0)
         assert player.universe.game_tick == tick_before, (
             "a refused move must not advance the world"
@@ -79,7 +83,11 @@ class TestMoveRefusedWhileASceneAwaitsInput:
 
         result = game_service.move_player(player, "east", session_data)
 
-        assert PassagewayTransitionEvent.NAME_PREFIX in result.get("error", ""), result
+        assert "error" in result, result
+        assert result.get("pending_event", "").startswith(
+            PassagewayTransitionEvent.NAME_PREFIX
+        ), result
+        assert PassagewayTransitionEvent.NAME_PREFIX not in result["error"]
         assert (player.location_x, player.location_y) == (0, 0)
 
     @pytest.mark.parametrize(
@@ -120,7 +128,8 @@ class TestInteractRefusedWhileASceneAwaitsInput:
         )
 
         assert result["success"] is False, result
-        assert "ChestLoot" in result["message"]
+        assert result.get("pending_event") == "ChestLoot", result
+        assert "ChestLoot" not in result["message"]
         assert list(session_data["pending_events"]) == ["loot-1"], (
             "the refused interact must not have queued a confirmation"
         )

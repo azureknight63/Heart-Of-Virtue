@@ -413,8 +413,9 @@ def _blocking_pending_events(session_data):
 
 
 #: Why a world move or interaction is refused while a scene awaits an answer
-#: (#713). ``{name}`` is the pending event's name, so the refusal says which.
-_SCENE_AWAITS_INPUT_MESSAGE = "Jean must first answer the scene in front of her ({name})."
+#: (#713). Player-facing prose: no engine event name (that rides in the
+#: refusal's separate ``pending_event`` field for clients).
+_SCENE_AWAITS_INPUT_MESSAGE = "Jean must first answer the scene in front of him."
 
 
 def _refused_while_scene_awaits_input(session_data, key="error", include_success=True):
@@ -427,9 +428,9 @@ def _refused_while_scene_awaits_input(session_data, key="error", include_success
     blocking = _blocking_pending_events(session_data)
     if not blocking:
         return None
-    name = blocking[0].get("event_data", {}).get("name") or "an open scene"
     refusal = {"success": False} if include_success else {}
-    refusal[key] = _SCENE_AWAITS_INPUT_MESSAGE.format(name=name)
+    refusal[key] = _SCENE_AWAITS_INPUT_MESSAGE
+    refusal["pending_event"] = blocking[0].get("event_data", {}).get("name")
     return refusal
 
 

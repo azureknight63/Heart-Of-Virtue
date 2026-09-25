@@ -106,7 +106,10 @@ def test_live_sequence_walk_off_is_refused_so_no_deadlock(
 
         assert moved.status_code == 400, moved.data
         body = json.loads(moved.data)
-        assert PREFIX in body.get("error", ""), body
+        # The route forwards which scene blocks (pending_event); the prose
+        # itself is player-facing and carries no engine event name.
+        assert body.get("pending_event", "").startswith(PREFIX), body
+        assert PREFIX not in body.get("error", ""), body
         assert (player.location_x, player.location_y) == where_before
         assert not player.in_combat
         assert _pending_passage_names(client, session_id), (

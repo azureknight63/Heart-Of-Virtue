@@ -262,7 +262,11 @@ def move_player():
         )
 
         if "error" in result:
-            return jsonify({"success": False, "error": result["error"]}), 400
+            refusal = {"success": False, "error": result["error"]}
+            if result.get("pending_event"):
+                # #713: which scene is blocking, for clients (the prose omits it).
+                refusal["pending_event"] = result["pending_event"]
+            return jsonify(refusal), 400
 
         # Save session after movement (includes pending events)
         session_manager.save_session(session.session_id)
