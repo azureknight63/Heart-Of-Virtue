@@ -28,7 +28,7 @@ pip install -r requirements-dev.txt
 ```
 
 `requirements-dev.txt` pulls in `requirements.txt` (engine) and `requirements-api.txt`
-(Flask, Socket.IO, LibSQL, crypto) and adds pytest, flake8, black and the harness tooling.
+(Flask, Socket.IO, LibSQL, crypto) and adds pytest, flake8 and the harness tooling.
 **`requirements-api.txt` alone is not enough to run the game** — it is the production-API
 set and omits the engine's own dependencies.
 
