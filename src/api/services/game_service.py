@@ -3495,16 +3495,19 @@ class GameService:
         clean_output, teleported = self._clean_interaction_output(
             _msgs, player, _pre_location
         )
-        if not clean_output:
-            clean_output = _fallback_interaction_message(
-                action, target, events_triggered
-            )
 
         # Trigger tile events after action execution to handle state changes (e.g., chest looted or wall opened)
         _merge_new_events(
             events_triggered,
             self.trigger_tile_events(player, tile, session_data),
         )
+        # After the merge (#718): an action that hands off to a tile event --
+        # Anvil's first pet starting AnvilIntro -- narrates nothing itself,
+        # and the event is the answer, not "successfully completes".
+        if not clean_output:
+            clean_output = _fallback_interaction_message(
+                action, target, events_triggered
+            )
 
         # Store tile modifications AFTER all events have processed to capture state changes
         self.persist_tile_state(session_data, tile)
