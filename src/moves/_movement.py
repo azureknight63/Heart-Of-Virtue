@@ -210,7 +210,7 @@ class Advance(Move):
         reassigned once a cast completes, never reset between fights) with an
         EMPTY proximity dict -- fixed at the source in
         ``ApiCombatAdapter``'s new-fight reset, not here: see
-        ``_reset_move_state_for_new_fight``.
+        ``_reset_stale_move_targets``.
         """
         if not hasattr(self.user, "combat_proximity"):
             return False
@@ -230,13 +230,15 @@ class Advance(Move):
     def _unavailability_code(self):
         """Mirror ``viable()``, plus the one case it can't distinguish itself:
         an EMPTY ``combat_proximity`` (the very first status poll right after
-        a fight is joined, before positions have been computed) means "not
-        measured yet", not "everyone is adjacent" -- reported #691."""
+        a fight is joined, before positions have been computed) means nobody
+        is on the field to advance toward, not "everyone is adjacent" --
+        reported #691. ``NO_OPPONENTS`` is the code this module's other
+        movement move already uses for exactly that state."""
         if not hasattr(self.user, "combat_proximity"):
             return None
         proximity = self.user.combat_proximity
         if not proximity:
-            return None
+            return UnavailableReason.NO_OPPONENTS
         if self.target and self.target in proximity:
             if self.target.is_alive() and proximity[self.target] <= 1:
                 return UnavailableReason.ALREADY_ADJACENT

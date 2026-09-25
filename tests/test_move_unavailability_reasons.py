@@ -225,12 +225,6 @@ def test_a_listed_move_never_falls_back_to_the_generic_code(cls):
     for player in _spread():
         move = cls(player)
         if not move.viable():
-            if cls.__name__ == "Advance" and not player.combat_proximity:
-                # #691: an empty/not-yet-built combat_proximity (the first
-                # status poll right after a fight is joined) is genuinely
-                # unmeasured, not a specific blocker -- the generic code is
-                # the honest answer, not a gap in Advance's diagnosis.
-                continue
             assert move.unavailability_reason() is not R.UNAVAILABLE, (
                 f"{cls.__name__} refused in a state its diagnosis cannot name"
             )
@@ -509,13 +503,13 @@ def test_advance_stale_target_from_a_prior_fight_is_reset_on_new_combat():
 def test_advance_empty_proximity_is_not_already_adjacent():
     """#691 secondary: an empty/not-yet-built combat_proximity (as seen on
     the first /api/combat/status poll right after a fight is joined) is
-    "not yet known", not "everyone is adjacent" -- it must not report
-    ALREADY_ADJACENT."""
+    nobody on the field to advance toward, not "everyone is adjacent" -- it
+    must report NO_OPPONENTS, as this module's other movement move does."""
     player, _ = _jean()
     player.combat_proximity = {}
     move = moves.Advance(player)
     assert move.viable() is False
-    assert move.unavailability_reason() is not R.ALREADY_ADJACENT
+    assert move.unavailability_reason() is R.NO_OPPONENTS
 
 
 def test_quick_swap_with_no_ally():
