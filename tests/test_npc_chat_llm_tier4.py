@@ -847,7 +847,7 @@ class TestBuildSystemPrompt:
 
         assert "You are Tal, a nomad. methodical." in prompt
         assert "You know about trade routes, water caches." in prompt
-        assert "Jean is he/him. Do not write Jean's dialogue." in prompt
+        assert "Jean is a grown man (he/him). Do not write Jean's dialogue." in prompt
         assert "MagicMock" not in prompt
 
     def test_generic_npc_prompt_falls_back_with_no_personality(self, player):
@@ -940,8 +940,10 @@ class TestBuildSystemPrompt:
 
         prompt = npc._build_system_prompt(player)
 
+        from ai.llm_client import NPC_PRIVATE_BLOCK_LABEL
+
         assert "WORLD:" not in prompt
-        assert prompt.startswith("You are Ren, a nomad.")
+        assert prompt.startswith(NPC_PRIVATE_BLOCK_LABEL + "\nYou are Ren, a nomad.")
 
     @pytest.mark.parametrize("chapter", ["1", "2", "7"])
     def test_the_real_story_chapter_reaches_the_spoiler_guard(self, player, chapter):
@@ -959,6 +961,105 @@ class TestBuildSystemPrompt:
 
         assert f"It is currently chapter {chapter}." in prompt
         assert f"JEAN'S KNOWN CONTEXT (chapter {chapter})" in prompt
+
+    def test_the_character_block_is_labelled_private_to_the_npc(self, player):
+        """Issue #716. Jean's options are generated in the SAME completion as
+        the NPC's line, under this prompt, so the model read Liss's sheet
+        ("You adore Gorran the Golemite") and had Jean quote it back to her.
+        The sheet is fenced with a label saying Jean does not know it, directly
+        above the authored text, and the options rule names that label."""
+        from ai.llm_client import (
+            NPC_PRIVATE_BLOCK_LABEL,
+            NPC_PRIVATE_BLOCK_NAME,
+            _JEAN_OPTION_KNOWLEDGE_RULE,
+        )
+
+        snippet = "You adore Gorran the Golemite."
+        npc = chat_npc(
+            init=False,
+            name="Liss",
+            _chat_world_facts={},
+            _chat_char_config={"system_prompt_snippet": snippet},
+            _chat_personality=None,
+        )
+
+        prompt = npc._build_system_prompt(player)
+
+        assert NPC_PRIVATE_BLOCK_LABEL + "\n" + snippet in prompt
+        assert NPC_PRIVATE_BLOCK_NAME in NPC_PRIVATE_BLOCK_LABEL
+        assert "Jean" in NPC_PRIVATE_BLOCK_LABEL
+        assert NPC_PRIVATE_BLOCK_NAME in _JEAN_OPTION_KNOWLEDGE_RULE
+
+    def test_a_generic_persona_is_labelled_private_too(self, player):
+        from ai.llm_client import NPC_PRIVATE_BLOCK_LABEL
+
+        npc = chat_npc(
+            init=False,
+            name="Nomad",
+            _chat_world_facts={},
+            _chat_char_config=None,
+            _chat_personality={"given_name": "Ren", "voice": "sparse"},
+        )
+
+        prompt = npc._build_system_prompt(player)
+
+        assert NPC_PRIVATE_BLOCK_LABEL + "\nYou are Ren, a nomad." in prompt
+
+    @staticmethod
+    def _stand_on(player, map_name):
+        """Put ``player`` on the real map ``map_name``, as the loader would.
+
+        ``Universe._load_single_json_map`` builds ``player.map`` as the map's
+        name plus its ``metadata`` block verbatim; this does the same from the
+        shipped JSON without instantiating the map's NPCs (which would mutate
+        the merchant registries).
+        """
+        path = Path("src/resources/maps") / f"{map_name}.json"
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        player.map = {"name": map_name}
+        if "metadata" in raw:
+            player.map["metadata"] = raw["metadata"]
+
+    @staticmethod
+    def _where_line(prompt):
+        lines = [ln for ln in prompt.splitlines() if ln.startswith("WHERE YOU ARE:")]
+        assert len(lines) == 1, prompt
+        return lines[0]
+
+    def _jambo(self):
+        return chat_npc(
+            init=False,
+            name="Jambo",
+            _chat_world_facts={},
+            _chat_char_config={"system_prompt_snippet": "You are Jambo."},
+            _chat_personality=None,
+        )
+
+    def test_jambo_in_the_grondia_tent_is_told_he_is_in_grondia(self, player):
+        """Issue #717 (O1): in his Grondia tent Jambo placed himself by the
+        river for three turns; nothing in the prompt said which tent."""
+        self._stand_on(player, "grondia-jambos_shop")
+        where = self._where_line(self._jambo()._build_system_prompt(player))
+        assert "Grondia" in where
+        assert "camp" not in where.lower()
+        assert "river" not in where.lower()
+
+    def test_jambo_in_the_camp_tent_is_told_he_is_at_the_camp(self, player):
+        self._stand_on(player, "eastern-descent-jambos-tent")
+        where = self._where_line(self._jambo()._build_system_prompt(player))
+        assert "camp" in where.lower()
+        assert "Grondia" not in where
+
+    def test_a_map_with_no_place_gives_no_where_line(self, player):
+        """``live_world``'s scratch map has no metadata: say nothing rather
+        than guess."""
+        assert "WHERE YOU ARE" not in self._jambo()._build_system_prompt(player)
+
+    def test_the_prompt_says_jean_is_a_grown_man(self, player):
+        """Issue #717 (A5): Liss, a nine-year-old, called Jean "child". The
+        prompt said he/him and nothing about his age."""
+        prompt = self._jambo()._build_system_prompt(player)
+        assert "Jean is a grown man" in prompt
 
     def test_chapter_defaults_to_one_for_a_fresh_game(self, player):
         npc = chat_npc(

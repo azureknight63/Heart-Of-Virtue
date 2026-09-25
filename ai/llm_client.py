@@ -526,6 +526,17 @@ _NPC_MAY_NOT_KNOW_RULE = (
     "in character (\"I wouldn't know\") rather than inventing an answer."
 )
 
+#: The fence around the NPC's own character sheet in the chat system prompt
+#: (issue #716). The NPC's line and Jean's options come out of one completion,
+#: so the model reads the sheet while writing Jean's lines too, and handed Jean
+#: "You said you adore Gorran" from Liss's private notes. Public because
+#: ``src/npc/_chat_llm.py`` prints the label and the rule below names it; one
+#: spelling keeps the two agreeing.
+NPC_PRIVATE_BLOCK_NAME = "PRIVATE"
+NPC_PRIVATE_BLOCK_LABEL = (
+    f"{NPC_PRIVATE_BLOCK_NAME} (yours alone; Jean knows none of it unless you say it):"
+)
+
 #: Jean cannot ask about what he has never heard of.
 #:
 #: The turn prompt has always carried this inline; the standalone options
@@ -534,7 +545,7 @@ _NPC_MAY_NOT_KNOW_RULE = (
 #: world. Spelled once here and used by both.
 _JEAN_OPTION_KNOWLEDGE_RULE = (
     "Never reference anything outside JEAN'S KNOWN CONTEXT, the WORLD facts, "
-    "and this conversation."
+    f"and this conversation; never the {NPC_PRIVATE_BLOCK_NAME} block."
 )
 
 #: Shared guidance for every prompt that asks the model for Jean's options.
