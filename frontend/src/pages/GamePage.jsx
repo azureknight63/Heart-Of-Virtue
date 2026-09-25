@@ -586,7 +586,12 @@ export default function GamePage() {
   useEffect(() => {
     if (!playerLoading && !worldLoading) {
       fetchCombatStatus()
-      checkPendingEvents()
+      // Not while a fight's end is unresolved: #694 refetches the room as soon
+      // as combat ends, which lands here with Victory/Defeat still up, and a
+      // pending story event would then open under the dialog, ahead of
+      // collect-loot's scene (#683). returnToExploration clears endState and
+      // polls pending events itself once the dialogs are done.
+      if (!endState) checkPendingEvents()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerLoading, worldLoading])
@@ -799,6 +804,7 @@ export default function GamePage() {
           isMobile={isMobile}
           onMove={handleMove}
           onRefetch={handleRefetch}
+          onRefetchPlayer={refetchPlayer}
           onEventsTriggered={handleEventsTriggered}
           onInteractionComplete={(data) => {
             // A world interaction can be the end of the demo (the Ferry

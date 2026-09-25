@@ -10,7 +10,7 @@ from collections import Counter
 from typing import TYPE_CHECKING, Dict, Any, NamedTuple, Optional, List, Tuple
 from unittest.mock import patch
 
-from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES
+from src.api.combat_adapter import MAX_VISIBLE_LOG_ENTRIES, combat_adapter_state
 from src.api.constants import ITEM_USE_RANGE
 from src.api.services.auth_service import SaveLimitReached
 from src.combatant import find_by_handle, index_by_handle, wire_handle
@@ -88,6 +88,16 @@ MAX_MANUAL_SAVES = 20
 #: toggling gear off, so a plain ``Lock`` would deadlock the very call it
 #: exists to protect.
 _PLAYER_MUTATION_LOCKS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+
+def _append_unseen(first: List[Any], extra: List[Any]) -> List[Any]:
+    """``first`` plus each item of ``extra`` not already in it, by identity.
+
+    Post-combat event dicts are the same objects whichever reader (status,
+    collect-loot) returns them, so identity -- not equality -- is what says
+    "this scene is already in the response".
+    """
+    return first + [e for e in extra if not any(e is f for f in first)]
 
 
 def _player_mutation_lock(player: Any) -> threading.RLock:
@@ -346,13 +356,11 @@ def _refused_mid_fight(player, key="error"):
 #: ``GameService.is_player_dead`` again -- so a corpse could still walk,
 #: search, interact, learn a skill, chat, shop, and even heal itself back to
 #: full HP with ``POST /inventory/use``. There is no legitimate out-of-combat
-#: revival (``check_revive`` is combat-pipeline only), so every mutating
-#: GameService method refuses outright once ``player.hp <= 0``. The client's
-#: ``DefeatDialog`` ("START OVER") is the only way forward -- ``POST
-#: /game/new``, ``POST /saves/<id>/load``, every read-only route, and
-#: ``/level-up/allocate`` are deliberately NOT guarded (a dead player must
-#: still be able to start over, load a save, or read state; unspent
-#: attribute points from a final, fatal level-up are not this bug).
+#: revival (``check_revive`` is combat-pipeline only), so the mutating
+#: GameService methods refuse outright once ``player.hp <= 0``. The ways out
+#: -- starting over, loading a save, spending pending points -- and every
+#: read are deliberately NOT guarded. Both sets are pinned from source by
+#: ``tests/test_death_guard_690.py`` rather than listed here.
 _PLAYER_DEAD_MESSAGE = (
     "Jean has fallen. There is nothing more to do until you start over."
 )
@@ -4280,18 +4288,13 @@ class GameService:
         # this response once, as they always have; inside it they are HELD for
         # collect-loot and only echoed here (issue #683) -- see
         # _fire_post_combat_tile_events.
-        post_events = self._fire_post_combat_tile_events(player, session_data)
-        if post_events and not victory_loot_pending(player):
-            state = self._combat_adapter_state(player)
-            state["events_triggered"] = state.get("events_triggered", []) + post_events
+        self._fire_post_combat_tile_events(player, session_data, ship_unheld=True)
 
         result = player._combat_adapter.get_combat_state()
         held = self._held_post_combat_events(player)
         if held:
             shipped = result.get("events_triggered") or []
-            result["events_triggered"] = shipped + [
-                e for e in held if not any(e is s for s in shipped)
-            ]
+            result["events_triggered"] = _append_unseen(shipped, held)
         return result
 
     #: Where a won fight's post-combat story waits for collect-loot (issue
@@ -4304,13 +4307,13 @@ class GameService:
     @staticmethod
     def _combat_adapter_state(player: Any) -> Dict[str, Any]:
         """``player.combat_adapter_state``, created empty when missing."""
-        state = getattr(player, "combat_adapter_state", None)
-        if not isinstance(state, dict):
-            state = player.combat_adapter_state = {}
-        return state
+        return combat_adapter_state(player)
 
     def _fire_post_combat_tile_events(
-        self, player: Any, session_data: Optional[Dict[str, Any]]
+        self,
+        player: Any,
+        session_data: Optional[Dict[str, Any]],
+        ship_unheld: bool = False,
     ) -> List[Dict[str, Any]]:
         """Fire the finished fight's tile events once; returns what fired.
 
@@ -4332,37 +4335,51 @@ class GameService:
         asked.
         """
         adapter = getattr(player, "_combat_adapter", None)
-        if adapter is None or getattr(player, "in_combat", False):
+        if adapter is None:
             return []
-        # Check-and-set under the player's lock: a status poll racing
-        # collect-loot must not fire the scene twice. The events themselves
-        # run outside it, as every other tile-event trigger does.
+        # The whole fire-and-hold runs under the player's (re-entrant) lock,
+        # which collect_combat_loot also holds across its resolve, fire and
+        # take. Firing outside the lock let a collect-loot land between the
+        # fire and the hold: it found nothing to take and the scene left on
+        # the stray status response instead -- the #683 hole, narrowed.
         with _player_mutation_lock(player):
+            if getattr(player, "in_combat", False):
+                return []
             if getattr(adapter, "_post_combat_tile_events_fired", False):
                 return []
             adapter._post_combat_tile_events_fired = True
-        tile = next((t for t in self._fight_tile_candidates(player) if t), None)
-        if not tile:
-            return []
-        if session_data is None:
-            _log.warning(
-                "post-combat tile events fired without session_data; "
-                "interactive events cannot be queued"
+            tile = next(
+                (t for t in self._fight_tile_candidates(player) if t), None
             )
-        try:
-            fired = self.trigger_tile_events(player, tile, session_data) or []
-        except Exception:
-            _log.exception("Post-combat tile event processing failed")
-            return []
-        if fired and victory_loot_pending(player):
-            for event in fired:
-                event["post_combat"] = True
-            with _player_mutation_lock(player):
-                state = self._combat_adapter_state(player)
-                state[self._HELD_POST_COMBAT_EVENTS_KEY] = (
-                    state.get(self._HELD_POST_COMBAT_EVENTS_KEY, []) + fired
+            if not tile:
+                return []
+            if session_data is None:
+                _log.warning(
+                    "post-combat tile events fired without session_data; "
+                    "interactive events cannot be queued"
                 )
-        return fired
+            try:
+                fired = self.trigger_tile_events(player, tile, session_data) or []
+            except Exception:
+                _log.exception("Post-combat tile event processing failed")
+                return []
+            # Held-or-shipped is decided HERE, under the lock, exactly once.
+            # The status reader used to re-ask victory_loot_pending after the
+            # lock was released, and a collect-loot that took the held scene
+            # in between made it ship the same events a second time.
+            if fired:
+                state = self._combat_adapter_state(player)
+                if victory_loot_pending(player):
+                    for event in fired:
+                        event["post_combat"] = True
+                    state[self._HELD_POST_COMBAT_EVENTS_KEY] = (
+                        state.get(self._HELD_POST_COMBAT_EVENTS_KEY, []) + fired
+                    )
+                elif ship_unheld:
+                    state["events_triggered"] = (
+                        state.get("events_triggered", []) + fired
+                    )
+            return fired
 
     def _held_post_combat_events(self, player: Any) -> List[Dict[str, Any]]:
         """The post-combat events held for collect-loot, left in place."""
@@ -5936,13 +5953,15 @@ class GameService:
             cannot be found — in which cases the drops, the victory and any
             held events are kept.
         """
-        result = self._resolve_combat_loot(player, item_names)
-        if result.get("success"):
-            fired = self._fire_post_combat_tile_events(player, session_data)
-            held = self._take_post_combat_events(player)
-            result["events_triggered"] = held + [
-                e for e in fired if not any(e is h for h in held)
-            ]
+        # One lock hold across resolve, fire and take, so a racing status
+        # poll either finishes firing-and-holding first (and this takes the
+        # scene) or finds the fight already fired (and ships nothing).
+        with _player_mutation_lock(player):
+            result = self._resolve_combat_loot(player, item_names)
+            if result.get("success"):
+                fired = self._fire_post_combat_tile_events(player, session_data)
+                held = self._take_post_combat_events(player)
+                result["events_triggered"] = _append_unseen(held, fired)
         return result
 
     def _resolve_combat_loot(self, player: Any, item_names: list) -> Dict[str, Any]:
@@ -6818,9 +6837,10 @@ class GameService:
         """Return True if the player's HP has dropped to zero or below.
 
         Centralises the death-state derivation so routes don't compute it from
-        ``player.hp`` inline.
+        ``player.hp`` inline. The same predicate the #690 death guard uses, so
+        the route's game-over annotation and the guard cannot disagree.
         """
-        return getattr(player, "hp", 1) <= 0
+        return _player_hp_is_nonpositive(player)
 
     def set_suggestions_paused(
         self, player: "player_module.Player", paused: bool

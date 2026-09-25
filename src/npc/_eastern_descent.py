@@ -85,20 +85,6 @@ class Anvil(NonCombatantMixin, Friend):
     #: because that reader lives outside this class.
     CONVERSATION_READY_FLAG = "anvil_conversation_ready"
 
-    #: Mirrors ``IronAndOathIntroEvent.GATE_KEY`` (``src/story/ch03.py``) --
-    #: duplicated as a literal rather than imported, since ch03 imports this
-    #: class (``from src.npc import Anvil``) and importing back would cycle.
-    #: AnvilIntroEvent's own ``check_conditions`` requires this gate too, so
-    #: ``_first_encounter`` checks it before treating an interaction as the
-    #: one that hands off to that event: both placements sit on the same
-    #: tile (Tradepost, (4, 3)) and Iron & Oath's intro fires on tile entry,
-    #: so in ordinary play it is already set by the time Anvil is reachable
-    #: -- but a client that reaches Anvil before that conversation completes
-    #: (#695) must not have this one-shot flag consumed for nothing: silently
-    #: deferring to a conversation that can never fire left the interaction
-    #: with no narration at all.
-    _INTRO_PRECONDITION_GATE = "iron_and_oath_intro_done"
-
     def __init__(self):
         description = (
             "A low, heavy-bodied Shell-back, his shell banded grey and "
@@ -143,8 +129,9 @@ class Anvil(NonCombatantMixin, Friend):
     def _first_encounter(self, player):
         """Mark this interaction as having happened; return True the first time.
 
-        Only meaningful once ``_INTRO_PRECONDITION_GATE`` is set -- otherwise
-        AnvilIntroEvent's own precondition can never be satisfied, and
+        Only meaningful once Iron & Oath's intro has run
+        (``IronAndOathIntroEvent.GATE_KEY``) -- otherwise AnvilIntroEvent's
+        own precondition can never be satisfied, and
         consuming ``CONVERSATION_READY_FLAG`` early would defer this
         interaction to a conversation that will never fire, narrating
         nothing (#695). Before that gate, talk()/pet() always fall through
@@ -154,7 +141,11 @@ class Anvil(NonCombatantMixin, Friend):
         Subsequent calls (including after AnvilIntroEvent has already run)
         return False, so the ambient flavor lines take over as normal.
         """
-        if not gate_is_set(player, self._INTRO_PRECONDITION_GATE):
+        # Local import: ch03 imports this class, so a module-level import
+        # back would cycle. Read the key from the event that owns it.
+        from src.story.ch03 import IronAndOathIntroEvent
+
+        if not gate_is_set(player, IronAndOathIntroEvent.GATE_KEY):
             return False
         already = gate_is_set(player, self.CONVERSATION_READY_FLAG)
         recorded = set_story_gate(player, self.CONVERSATION_READY_FLAG)

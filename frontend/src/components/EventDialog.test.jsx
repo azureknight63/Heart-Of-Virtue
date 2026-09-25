@@ -948,6 +948,43 @@ describe('EventDialog', () => {
       expect(screen.getByText('The gate groaned open.').textContent).toBe('The gate groaned open.');
       expect(screen.queryByText('Votha Krr waved a hand...')).toBeNull();
     });
+
+    // Scrub of #694: keeping ConversationStage mounted under LOG also kept its
+    // document-level Enter/Space listener live, so a key meant for the log's
+    // own "Back" button was preventDefault'ed and advanced the HIDDEN stage.
+    it('does not advance the hidden stage on Enter/Space while LOG is open', () => {
+      const staged = {
+        event_id: 'guide-9',
+        name: 'Ch02GuideToCitadel',
+        needs_input: false,
+        segments: [
+          { text: 'Votha Krr waved a hand...', speaker: 'Votha Krr', in_conversation: true },
+          { text: 'The gate groaned open.', speaker: 'Votha Krr', in_conversation: true },
+          { text: 'Come, Jean Claire.', speaker: 'Votha Krr', in_conversation: true },
+        ],
+        conversation: { cast: [{ id: 'Votha Krr', name: 'Votha Krr', side: 'right' }] },
+      };
+      renderDialog(staged, { history });
+
+      const stage = screen.getByTestId('conversation-stage');
+      fireEvent.click(stage); // finish beat one's typewriter
+      fireEvent.click(stage); // advance to beat two
+      fireEvent.click(stage); // finish beat two's typewriter
+
+      fireEvent.click(screen.getByText(/Log \(2\)/i));
+      const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      document.dispatchEvent(enter);
+      const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+      document.dispatchEvent(space);
+      // Neither key was claimed by the hidden stage...
+      expect(enter.defaultPrevented).toBe(false);
+      expect(space.defaultPrevented).toBe(false);
+
+      // ...and it is still on beat two when the player returns.
+      fireEvent.click(screen.getByText(/↩ Back/i));
+      expect(screen.getByText('The gate groaned open.').textContent).toBe('The gate groaned open.');
+      expect(screen.queryByText('Come, Jean Claire.')).toBeNull();
+    });
   });
 
   // The one corner of this file the click gesture cannot settle: the damage

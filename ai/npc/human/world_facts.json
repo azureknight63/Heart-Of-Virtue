@@ -44,7 +44,8 @@
     "Aurelion", "Grondia", "Badlands", "Wailing Badlands", "Echoing Caves",
     "Golemites", "Pillar Readers", "Conclave", "Grondites",
     "Iron", "Oath", "Nomad", "Camp", "Nomad Camp",
-    "Jambo", "Votha Krr", "Ecumerium", "Citadel", "Grondelith"
+    "Jambo", "Jambo Heals U", "Votha Krr", "Ecumerium", "Citadel", "Grondelith",
+    "Grondelith Mineral Pools"
   ],
   "prohibited_inventions": [
     "Do NOT invent new place names not on the allowed list.",

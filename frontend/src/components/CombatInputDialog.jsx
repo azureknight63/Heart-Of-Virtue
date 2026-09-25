@@ -57,7 +57,12 @@ const TargetCard = ({ target, confirmVerb, onHover, onSelect }) => {
   const hpColor = hp ? healthBarColor(hp.current, hp.max) : null;
 
   // `{min, max, lethal}` or null (out of reach, or a move that deals none).
-  const preview = target.damage_preview ?? null;
+  // Only a preview with numeric bounds is a preview; anything else renders as
+  // "no data" rather than "undefined–undefined dmg".
+  const rawPreview = target.damage_preview;
+  const preview = Number.isFinite(rawPreview?.min) && Number.isFinite(rawPreview?.max)
+    ? rawPreview
+    : null;
   const harmless = Boolean(preview) && preview.max <= 0;
 
   return (

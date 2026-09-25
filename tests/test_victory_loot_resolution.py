@@ -1038,3 +1038,113 @@ class TestThePostCombatStoryRidesCollectLoot:
         assert GameService._HELD_POST_COMBAT_EVENTS_KEY not in (
             fight.player.combat_adapter_state
         )
+
+
+class TestPostCombatDeliverySerialisesWithCollectLoot:
+    """Scrub of #683: a status poll and collect-loot racing on one victory.
+
+    The status reader fired the scene outside the player lock and only then
+    asked ``victory_loot_pending``. A collect-loot landing inside that window
+    resolved the victory, found nothing fired or held, and returned no scene;
+    the status poll then saw "not pending" and shipped it unheld on its own
+    response -- the #683 hole again, just narrower. Both readers must
+    serialise so collect-loot always ends up with the scene.
+    """
+
+    @pytest.fixture
+    def fight(self, won_fight):
+        fight = won_fight()
+        fight.fight_tile.events_here = [_AfterTheFightScene(fight.fight_tile)]
+        return fight
+
+    def test_collect_loot_racing_a_status_poll_still_delivers_the_scene(
+        self, fight, game_service
+    ):
+        import threading
+
+        entered, release = threading.Event(), threading.Event()
+        real_trigger = game_service.trigger_tile_events
+
+        def slow_trigger(*args, **kwargs):
+            fired = real_trigger(*args, **kwargs)
+            if threading.current_thread().name == "status-poll":
+                entered.set()
+                release.wait(timeout=5)
+            return fired
+
+        game_service.trigger_tile_events = slow_trigger
+        poll = threading.Thread(
+            target=game_service._fire_post_combat_tile_events,
+            args=(fight.player, {}),
+            name="status-poll",
+        )
+        poll.start()
+        assert entered.wait(timeout=5), "status poll never reached the tile events"
+
+        collected = {}
+        collector = threading.Thread(
+            target=lambda: collected.update(
+                game_service.collect_combat_loot(fight.player, [], session_data={})
+            ),
+            name="collect-loot",
+        )
+        collector.start()
+        collector.join(timeout=0.3)  # with the fix it is still blocked here
+        release.set()
+        poll.join(timeout=5)
+        collector.join(timeout=5)
+
+        assert collected.get("success") is True
+        scenes = [
+            e for e in collected.get("events_triggered") or []
+            if e.get("name") == _AfterTheFightScene.name
+        ]
+        assert len(scenes) == 1, collected.get("events_triggered")
+
+    def test_a_status_poll_resuming_after_collect_loot_does_not_ship_it_again(
+        self, fight, game_service
+    ):
+        """The other half of the race: the poll fires and HOLDS, collect-loot
+        then takes the scene, and the poll -- resuming -- must not also ship
+        it. It used to re-ask ``victory_loot_pending`` after releasing the
+        lock, read False (collect had cleared the victory) and copy the same
+        events onto the status response: a second delivery."""
+        import threading
+
+        paused, release = threading.Event(), threading.Event()
+        real_fire = game_service._fire_post_combat_tile_events
+
+        def fire_then_pause(*args, **kwargs):
+            fired = real_fire(*args, **kwargs)
+            if threading.current_thread().name == "status-poll":
+                paused.set()
+                release.wait(timeout=5)
+            return fired
+
+        game_service._fire_post_combat_tile_events = fire_then_pause
+        status = {}
+        poll = threading.Thread(
+            target=lambda: status.update(
+                game_service.get_combat_status(fight.player, session_data={})
+            ),
+            name="status-poll",
+        )
+        poll.start()
+        assert paused.wait(timeout=5), "status poll never fired"
+
+        collected = game_service.collect_combat_loot(fight.player, [], session_data={})
+        release.set()
+        poll.join(timeout=5)
+
+        def scenes(events):
+            return [e for e in events or [] if e.get("name") == _AfterTheFightScene.name]
+
+        assert len(scenes(collected.get("events_triggered"))) == 1
+        # collect-loot already took the scene, so the resumed poll -- built
+        # after that -- must carry no copy of it at all. (Held events are
+        # tagged in place, so a copy would be tagged too: filtering on the tag
+        # would hide exactly the double delivery this pins.)
+        assert scenes(status.get("events_triggered")) == [], status.get("events_triggered")
+        after = game_service.get_combat_status(fight.player, session_data={})
+        assert scenes(after.get("events_triggered")) == []
+

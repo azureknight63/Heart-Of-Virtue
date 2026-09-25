@@ -307,3 +307,46 @@ class TestCharacterConfigsSatisfyTheLoader:
         # everywhere and would strip every reply).
         for phrase in config["prohibited_phrases"]:
             assert re.compile(re.escape(phrase), re.IGNORECASE).pattern.strip()
+
+
+# ---------------------------------------------------------------------------
+# Scrub review of #685: the invented-noun filter must not eat the names the
+# world facts themselves hand the model. `_allowed_noun_tokens` splits
+# `allowed_proper_nouns` into single words, so a place added to `geography`
+# ("the Grondelith Mineral Pools") needs every capitalised word allowed, or
+# `_find_invented_nouns` rewrites the model's correct answer to "the Grondelith
+# someone someone". The population is read from the facts file and from Jambo's
+# own role line -- not restated here -- so a new place is covered on arrival.
+# ---------------------------------------------------------------------------
+
+
+def _names_the_model_is_given():
+    facts = json.loads((_HUMAN_NPC_DIR / "world_facts.json").read_text(encoding="utf-8"))
+    names = []
+    for place in facts.get("geography", []):
+        names.append(place.split(" (")[0])  # drop the parenthetical gloss
+    for npc in facts.get("known_npcs", []):
+        names.append(npc.split(" (")[0])
+    jambo = json.loads((_HUMAN_NPC_DIR / "jambo.json").read_text(encoding="utf-8"))
+    names.append(jambo["role"])
+    return names
+
+
+def test_the_given_names_population_is_nonempty():
+    names = _names_the_model_is_given()
+    assert len(names) >= 3, names
+    assert any("Grondelith" in n for n in names), names
+
+
+@pytest.mark.parametrize("given", _names_the_model_is_given())
+def test_the_noun_filter_keeps_every_name_the_facts_give(given):
+    from src.npc._merchants import JamboHealsU
+
+    jambo = JamboHealsU()
+    # Mid-sentence, so no word is excused as a sentence opener.
+    sentence = f"He said that {given} was worth the trip."
+    invented = jambo._find_invented_nouns(sentence)
+    assert invented == {}, (
+        f"the noun filter would rewrite {sorted(invented)} in {given!r}; "
+        "add the word(s) to allowed_proper_nouns in world_facts.json"
+    )

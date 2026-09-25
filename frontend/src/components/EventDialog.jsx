@@ -720,6 +720,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                             conversation={event?.conversation || null}
                             onComplete={handleStageComplete}
                             skipRequested={skipRequested}
+                            paused={showHistory}
                         />
                     </div>
                 )}

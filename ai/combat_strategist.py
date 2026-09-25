@@ -127,6 +127,10 @@ _DEFENSIVE_MOVE_NAMES = ("Dodge", "Parry")
 # Wait/Check (20), because a swing still costs the enemy nothing but it also
 # teaches the player nothing new that Check would.
 _HARMLESS_ATTACK_SCORE = 15
+#: Move categories that deal damage and carry per-target damage previews, so
+#: the #688 "can this hurt anyone?" rule applies to all of them -- not just
+#: Offensive (Mastery moves strike too).
+_DAMAGING_CATEGORIES = frozenset({"Offensive", "Mastery"})
 # ...and what Swap Weapon is worth once that is true of EVERY offered attack:
 # above Advance (80), Turn (75) and a low-fatigue Rest (72), the moves the QA
 # run alternated through for 150 beats while the blade did nothing.
@@ -375,8 +379,9 @@ class TacticalState(TypedDict):
     # routine wind-up is not: it would clutter every line, every beat.
     incoming_move: Optional[str]
     incoming_flagged: bool
-    # "Dodge costs 25 fatigue; Jean has 5" when every defence that would meet
-    # the charge is priced out by fatigue, else None. See `_defence_lock_note`.
+    # e.g. "Dodge is fatigue-locked (costs 25, Jean has 5)" when no defence is
+    # on offer and at least one is locked by fatigue, else None. See
+    # `_defence_lock_note`.
     defence_lock_note: Optional[str]
     # Issue #688: every offered attack's damage_preview is 0 against every
     # target it can reach, and who those targets are (for the reasoning).
@@ -596,7 +601,7 @@ _ROUTINE_SEVERITY = "normal"
 
 def _charge_name(mip: Dict[str, Any]) -> str:
     """The name the player sees for a charging move ("Tidal Surge")."""
-    return mip.get("display_name") or mip.get("name") or "The enemy's attack"
+    return mip.get("display_name") or mip.get("name") or "the enemy's attack"
 
 
 def _is_telegraphed(mip: Dict[str, Any]) -> bool:
@@ -634,6 +639,34 @@ def _harmless_targets(move: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], bool]
         if isinstance(high, (int, float)) and not isinstance(high, bool) and high <= 0:
             harmless.append(t)
     return harmless, bool(targets) and len(harmless) == len(targets)
+
+
+def _harmless_reason(move: Dict[str, Any]) -> Optional[str]:
+    """The honest reason a damaging move can't hurt anyone it reaches, or None.
+
+    None whenever the move can hurt somebody or carries no previews at all.
+    """
+    harmless, all_harmless = _harmless_targets(move)
+    if not all_harmless:
+        return None
+    return (
+        f"{move.get('name', 'This move')} can't hurt "
+        f"{', '.join(_target_names(harmless))} with the equipped weapon -- "
+        "its damage preview is 0."
+    )
+
+
+def _swap_when_harmless_reason(target_names: List[str]) -> str:
+    """Why to swap when no offered attack can hurt anyone (#688).
+
+    weapon_options carries no per-weapon preview, so this must not promise the
+    other weapon works -- only that this one does not.
+    """
+    return (
+        f"No attack on offer can hurt {', '.join(target_names)} with the "
+        "equipped weapon; swap and check the new damage preview on the target "
+        "card before committing."
+    )
 
 
 def _target_names(targets: List[Dict[str, Any]]) -> List[str]:
@@ -961,11 +994,51 @@ class CombatStrategist:
             logger.debug("Using heuristic fallback for combat suggestions.")
             return self._get_fallback_suggestions(combat_context, max_suggestions)
 
+        self._clamp_harmless_suggestions(suggestions, combat_context)
         suggestions.sort(key=lambda x: x["score"], reverse=True)
         results = suggestions[:max_suggestions]
         self._ensure_target_ids(results, combat_context)
         logger.debug("CombatStrategist returning %s suggestions.", len(results))
         return results
+
+    @staticmethod
+    def _clamp_harmless_suggestions(
+        suggestions: List[Dict[str, Any]], ctx: Dict[str, Any]
+    ) -> None:
+        """Issue #688 on the LLM path: a proposed damaging move whose previews
+        say it can't hurt anyone it reaches is scored like the heuristic scores
+        it, with the same honest reason. The prompt carries no damage previews
+        (a prompt change needs a live A/B run), so this is enforced in code.
+        """
+        moves = {
+            m.get("name"): m
+            for m in ctx.get("available_moves", [])
+            if isinstance(m, dict) and m.get("category") in _DAMAGING_CATEGORIES
+        }
+        for s in suggestions:
+            move = moves.get(s.get("move_name"))
+            reason = _harmless_reason(move) if move else None
+            if reason and s.get("score", 0) > _HARMLESS_ATTACK_SCORE:
+                s["score"] = _HARMLESS_ATTACK_SCORE
+                s["reasoning"] = reason
+
+        # And, as the heuristic does, point at Swap Weapon when no offered
+        # attack can hurt anyone -- whether or not the model proposed it.
+        all_harmless, names = CombatStrategist._harmless_offense(ctx)
+        swap_offered = any(
+            m.get("name") == "Swap Weapon"
+            for m in _offerable_moves(ctx.get("available_moves", []))
+        )
+        if all_harmless and swap_offered:
+            swap = next(
+                (s for s in suggestions if s.get("move_name") == "Swap Weapon"), None
+            )
+            if swap is None:
+                swap = {"move_name": "Swap Weapon"}
+                suggestions.append(swap)
+            if swap.get("score", 0) < _SWAP_WHEN_HARMLESS_SCORE:
+                swap["score"] = _SWAP_WHEN_HARMLESS_SCORE
+                swap["reasoning"] = _swap_when_harmless_reason(names)
 
     # ------------------------------------------------------------------
     # Heuristic fallback
@@ -1069,30 +1142,32 @@ class CombatStrategist:
         locked = [
             m
             for m in ctx.get("fatigue_locked_moves", [])
-            if isinstance(m, dict) and m.get("name") in _DEFENSIVE_MOVE_NAMES
+            if isinstance(m, dict)
+            and m.get("name") in _DEFENSIVE_MOVE_NAMES
+            and isinstance(m.get("fatigue_cost"), (int, float))
         ]
         if not locked:
             return None
-        cheapest = min(locked, key=lambda m: m.get("fatigue_cost") or 0)
+        cheapest = min(locked, key=lambda m: m["fatigue_cost"])
         fatigue = _player_vitals(ctx.get("player") or {}).fatigue
         return (
             f"{cheapest.get('name')} is fatigue-locked (costs "
-            f"{cheapest.get('fatigue_cost') or 0}, Jean has {fatigue})"
+            f"{cheapest['fatigue_cost']}, Jean has {fatigue})"
         )
 
     @staticmethod
     def _harmless_offense(ctx: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Whether every offered attack is at 0 damage against everyone it reaches.
 
-        Issue #688. Requires at least one Offensive move, and every one of them
-        to carry previews that all read 0 -- a single attack with no preview
+        Issue #688. Requires at least one damaging (Offensive/Mastery) move, and
+        every one of them to carry previews that all read 0 -- a single attack with no preview
         (or one that can hurt somebody) means Jean still has an attack worth
         making, and the answer is False.
         """
         offense = [
             m
             for m in _offerable_moves(ctx.get("available_moves", []))
-            if m.get("category") == "Offensive"
+            if m.get("category") in _DAMAGING_CATEGORIES
         ]
         harmless: List[Dict[str, Any]] = []
         for m in offense:
@@ -1155,7 +1230,8 @@ class CombatStrategist:
         if beats is None or not state["incoming_flagged"]:
             return None
         lethal = " (potentially lethal)" if state["incoming_lethal"] else ""
-        lead = f"{state['incoming_move'] or 'A charge'}{lethal} lands in {beats} beat(s)"
+        charge = state["incoming_move"]
+        lead = f"{charge[:1].upper()}{charge[1:]}{lethal} lands in {beats} beat(s)"
         if beats > _LAST_DEFENSIBLE_BEAT:
             return (
                 f"{lead}; Dodge/Parry once it is {_LAST_DEFENSIBLE_BEAT} "
@@ -1213,9 +1289,17 @@ class CombatStrategist:
         # branch above is: surviving the next beat outranks refuelling, and
         # the reason must say WHY Dodge is not the answer.
         lock = state["defence_lock_note"]
-        if lock and (name, state["incoming_lethal"]) in _LOCKED_DEFENCE_SCORES:
+        # Only for a heavy/deadly telegraph or a potentially lethal hit
+        # (incoming_flagged): a routine jab inside the window is no reason to
+        # run, and "get clear" would overstate it.
+        if (
+            lock
+            and state["incoming_flagged"]
+            and (name, state["incoming_lethal"]) in _LOCKED_DEFENCE_SCORES
+        ):
             score = _LOCKED_DEFENCE_SCORES[(name, state["incoming_lethal"])]
-            charge = state["incoming_move"] or "the charge"
+            # Not implied by the lock: the lock note is derived on its own.
+            charge = state["incoming_move"] or "the enemy's attack"
             beats = state["incoming_beats"]
             if name == "Withdraw":
                 return score, (
@@ -1258,22 +1342,14 @@ class CombatStrategist:
         # resting enemy, heat): an attack that cannot hurt anyone it reaches
         # is not worth a beat whatever the heat says. A move with no previews
         # never reaches this -- `_harmless_targets` has no opinion on it.
-        if category == "Offensive":
-            harmless, all_harmless = _harmless_targets(move)
-            if all_harmless:
-                return _HARMLESS_ATTACK_SCORE, (
-                    f"{name} can't hurt {', '.join(_target_names(harmless))} "
-                    "with the equipped weapon -- its damage preview is 0."
-                )
+        if category in _DAMAGING_CATEGORIES:
+            harmless_reason = _harmless_reason(move)
+            if harmless_reason:
+                return _HARMLESS_ATTACK_SCORE, harmless_reason
 
         if name == "Swap Weapon" and state["offense_all_harmless"]:
-            # weapon_options carries no per-weapon preview, so this must not
-            # promise the other weapon works -- only that this one does not.
-            return _SWAP_WHEN_HARMLESS_SCORE, (
-                f"No attack on offer can hurt "
-                f"{', '.join(state['harmless_target_names'])} with the equipped "
-                "weapon; swap and check the new damage preview on the target "
-                "card before committing."
+            return _SWAP_WHEN_HARMLESS_SCORE, _swap_when_harmless_reason(
+                state["harmless_target_names"]
             )
 
         if state["dot_active"] and category == "Offensive":
@@ -2136,7 +2212,13 @@ class CombatStrategist:
                     # No richer enemy data available to rank by — fall back to the
                     # nearest of the move's own viable targets. Same dict guard as
                     # viable_ids above, in case a non-dict entry ever slips through.
-                    dict_targets = [t for t in viable_targets if isinstance(t, dict)]
+                    # Only targets still in viable_ids: the #688 filter above
+                    # may just have ruled the nearest one out.
+                    dict_targets = [
+                        t
+                        for t in viable_targets
+                        if isinstance(t, dict) and t.get("id") in viable_ids
+                    ]
                     new_target_id = (
                         min(dict_targets, key=lambda t: t.get("distance", 0)).get("id")
                         if dict_targets

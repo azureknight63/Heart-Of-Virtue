@@ -156,6 +156,28 @@ describe('AUTO-ADVANCE (issue #538 item 1)', () => {
         expect(screen.getByText('Beat two.')).toBeInTheDocument();
     });
 
+    // Scrub of #694: EventDialog keeps the stage mounted but hidden under LOG
+    // and passes `paused`. A paused stage must not walk on by itself, or LOG
+    // -> BACK lands on a later beat than the one the player left.
+    it('does not walk on while paused, and resumes once unpaused', () => {
+        usePreferences.mockReturnValue(prefs({ autoAdvance: true }));
+        const onComplete = vi.fn();
+        const { rerender } = render(
+            <ConversationStage segments={SEGMENTS} onComplete={onComplete} paused />
+        );
+
+        tick(BASE_MS_PER_CHAR * 20); // finish typing beat one
+        tick(autoAdvanceDelay('Beat one.') + 32); // a dwell elapses while hidden
+        tick(BASE_MS_PER_CHAR * 20);
+        expect(screen.getByText('Beat one.')).toBeInTheDocument();
+        expect(screen.queryByText('Beat two.')).toBeNull();
+
+        rerender(<ConversationStage segments={SEGMENTS} onComplete={onComplete} />);
+        tick(autoAdvanceDelay('Beat one.') + 32);
+        tick(BASE_MS_PER_CHAR * 20);
+        expect(screen.getByText('Beat two.')).toBeInTheDocument();
+    });
+
     it('waits at least the floor even for a one-word beat', () => {
         usePreferences.mockReturnValue(prefs({ autoAdvance: true }));
         render(

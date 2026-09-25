@@ -38,14 +38,14 @@ _GAME_SERVICE_PATH = (
 
 
 def _method_call_names():
-    """``{method_name: {names of module-level functions it calls}}`` for every
-    method defined directly on ``class GameService`` in the real source file."""
+    """``{method_name: {bare-name call targets}}`` for every method (sync or
+    async) defined directly on ``class GameService`` in the real source file."""
     tree = ast.parse(_GAME_SERVICE_PATH.read_text(encoding="utf-8"))
     calls_by_method = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef) and node.name == "GameService":
             for item in node.body:
-                if isinstance(item, ast.FunctionDef):
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     calls = {
                         sub.func.id
                         for sub in ast.walk(item)
@@ -73,22 +73,30 @@ MANUALLY_GUARDED_METHODS = frozenset(
 )
 
 
-def _guarded_methods(calls_by_method):
-    auto_derived = {
+def _auto_derived_guarded(calls_by_method):
+    """Every method already calling the mid-fight marker."""
+    return {
         name for name, calls in calls_by_method.items() if "_refused_mid_fight" in calls
     }
-    return auto_derived | MANUALLY_GUARDED_METHODS
+
+
+def _guarded_methods(calls_by_method):
+    return _auto_derived_guarded(calls_by_method) | MANUALLY_GUARDED_METHODS
 
 
 def test_guarded_method_table_is_derived_and_nonempty():
     """The table this test enforces is not hand-typed twice: it is (every
     method already calling the mid-fight marker) union (the small hand-kept
-    bespoke-shape list). Both halves must resolve to real GameService methods,
-    and the union must be non-empty, or this test would vacuously pass."""
+    bespoke-shape list). The DERIVED half must be non-empty on its own -- a
+    renamed marker would otherwise empty it while the hand-kept half kept the
+    union green -- and every name must resolve to a real GameService method."""
     calls_by_method = _method_call_names()
-    guarded = _guarded_methods(calls_by_method)
-    assert guarded, "expected at least one #690-guarded GameService method"
-    for name in guarded:
+    auto_derived = _auto_derived_guarded(calls_by_method)
+    assert auto_derived, (
+        "no GameService method calls _refused_mid_fight any more -- the marker "
+        "this derivation keys on was renamed or moved; update the derivation"
+    )
+    for name in _guarded_methods(calls_by_method):
         assert name in calls_by_method, f"{name!r} is not a GameService method"
 
 
@@ -107,14 +115,23 @@ def test_every_guarded_method_calls_the_death_guard():
     assert not missing, f"GameService methods missing the #690 death guard: {missing}"
 
 
-def test_level_up_allocate_is_deliberately_not_guarded():
-    """The triage brief calls out ``allocate_level_up_points`` as an
-    intentional exception: a final, fatal level-up still needs its points
-    spent. Pin that it is a real method and stays out of the guarded table,
-    so a future pass doesn't "fix" it by mistake."""
+#: The ways out of a defeat (#690): a dead player must still be able to spend
+#: pending points, list and load a save. Guarding any of them would strand a
+#: player on the death screen. (START OVER is SessionManager.start_new_game,
+#: outside GameService; the API test covers it.)
+RECOVERY_METHODS = frozenset({"allocate_level_up_points", "list_saves", "load_game"})
+
+
+def test_recovery_methods_never_call_the_death_guard():
+    """Positive pin, not absence from a table: each recovery method is a real
+    GameService method (sync or async) and does not call ``_refused_if_dead``,
+    so a future pass that "fixes" one by adding the guard fails here."""
     calls_by_method = _method_call_names()
-    assert "allocate_level_up_points" in calls_by_method
-    assert "allocate_level_up_points" not in _guarded_methods(calls_by_method)
+    for name in RECOVERY_METHODS:
+        assert name in calls_by_method, f"{name!r} is not a GameService method"
+        assert "_refused_if_dead" not in calls_by_method[name], (
+            f"{name} refuses a dead player -- that strands them on the death screen"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -201,10 +218,29 @@ def test_dead_player_triggers_no_tile_events(gs, world):
     assert gs.trigger_tile_events(player, tile, {}) == []
 
 
+class _RecordingEvent:
+    """Minimal tile event that records whether the pipeline processed it."""
+
+    name = "RecordingEvent"
+    needs_input = False
+    repeat = False
+
+    def __init__(self):
+        self.checked = False
+        self.player = None
+        self.tile = None
+
+    def check_conditions(self):
+        self.checked = True
+
+
 def test_alive_player_tile_events_not_short_circuited_by_death_guard(gs, world):
+    # An empty tile returns [] whether or not the guard misfires, so queue an
+    # event that records it ran: the live player's events must be processed.
     player, game_map = world
     assert player.hp > 0
     tile = game_map[(0, 0)]
-    # No events queued -> real early-return path, proving the death guard
-    # above it didn't misfire for a live player.
-    assert gs.trigger_tile_events(player, tile, {}) == []
+    event = _RecordingEvent()
+    tile.events_here = [event]
+    gs.trigger_tile_events(player, tile, {})
+    assert event.checked is True

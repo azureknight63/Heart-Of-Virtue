@@ -47,3 +47,19 @@ def test_battle_state_status_reflects_defeat_after_the_fight_ends():
 
     assert state["combat_active"] is False
     assert state["battle_state"]["status"] == "defeat"
+
+
+def test_battle_state_status_is_not_active_once_the_summary_is_cleared():
+    """Scrub of #689a: collect-loot, flee and load all clear
+    ``combat_end_summary``; the status fell back to the serializer's hardcoded
+    "active" beside ``combat_active: false`` again."""
+    adapter, player = _build_adapter()
+    player.combat_exp = {"Unarmed": 10}
+    player.combat_list.clear()
+    adapter.settle_victory([])
+    player.combat_end_summary = None  # what collect-loot / flee / load leave
+
+    state = adapter.get_combat_state()
+
+    assert state["combat_active"] is False
+    assert state["battle_state"]["status"] == "ended"

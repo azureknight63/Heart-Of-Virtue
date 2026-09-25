@@ -93,7 +93,7 @@ def test_locked_gate_declines_without_arming_a_confirmation():
         session_data={},
     )
 
-    assert result.get("success") is not False or "message" in result
+    assert "message" in result
     events = result.get("events_triggered") or []
     assert not any(
         e.get("name", "").startswith("Passage_") for e in events

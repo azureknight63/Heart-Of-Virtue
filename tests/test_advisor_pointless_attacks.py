@@ -198,3 +198,75 @@ class TestRealEngineStoneCreature:
         suggestions = strategist._get_fallback_suggestions(ctx, 3)
         assert suggestions[0]["move_name"] == "Swap Weapon", suggestions
         assert all(s["move_name"] != "Attack" for s in suggestions[:1])
+
+
+# ---------------------------------------------------------------------------
+# Scrub of #688: the harmless rule's reach.
+# ---------------------------------------------------------------------------
+
+
+class TestTheHarmlessRuleCoversEveryDamagingMove:
+    def test_a_harmless_mastery_move_is_scored_down_too(self, strategist):
+        # Mastery moves deal damage and carry previews like Offensive ones.
+        mastery = _attack(_target(STONE, 0, 0), name="Whirlwind Mastery")
+        mastery["category"] = "Mastery"
+        score, reason = _scores(strategist, _ctx([mastery, TURN]))["Whirlwind Mastery"]
+        assert score == 15
+        assert "0" in reason
+
+    def test_the_nearest_fallback_never_picks_a_target_it_just_ruled_out(
+        self, strategist
+    ):
+        # No enemy records to rank by -> the nearest-viable-target fallback.
+        # The nearest target is the harmless one; the pick must skip it.
+        near_stone = dict(_target(STONE, 0, 0), distance=1)
+        far_slime = dict(_target(SLIME, 20, 30), distance=4)
+        suggestions = [{"move_name": "Attack", "score": 85, "target_id": "nobody"}]
+        ctx = _ctx([_attack(near_stone, far_slime)], enemies=())
+        strategist._ensure_target_ids(suggestions, ctx)
+        assert suggestions[0]["target_id"] == "e_slime"
+
+
+class _ScriptedLLM:
+    """An available LLM client that proposes a fixed suggestion list."""
+
+    def __init__(self, suggestions):
+        self._suggestions = suggestions
+
+    def available(self):
+        return True
+
+    def generate_structured(self, _system, _user):
+        return {"suggestions": [dict(s) for s in self._suggestions]}
+
+
+class TestTheLLMPathCannotRecommendAHarmlessAttack:
+    def test_an_llm_attack_that_cannot_hurt_anyone_is_clamped(self):
+        # The #688 score-down lived only on the heuristic path; with the LLM
+        # on, its own 90 for a 0-damage Attack won the sort.
+        llm = _ScriptedLLM([
+            {"move_name": "Attack", "score": 90, "reasoning": "Hit it.", "target_id": "e_stone"},
+            {"move_name": "Swap Weapon", "score": 40, "reasoning": "Maybe."},
+        ])
+        strategist = CombatStrategist(client=llm)
+        ctx = _ctx([_attack(_target(STONE, 0, 0)), SWAP], enemies=(STONE,))
+        top = strategist.get_suggestions(ctx, max_suggestions=2)
+        by_name = {s["move_name"]: s for s in top}
+        assert by_name["Attack"]["score"] == 15
+        assert "0" in by_name["Attack"]["reasoning"]
+        assert top[0]["move_name"] == "Swap Weapon"
+
+    def test_the_llm_path_raises_swap_weapon_when_no_attack_can_hurt(self):
+        # #688 asks the advisor to point at Swap Weapon when every attack is at
+        # 0; on the LLM path the model may not propose it at all.
+        from ai.combat_strategist import _SWAP_WHEN_HARMLESS_SCORE
+
+        llm = _ScriptedLLM([
+            {"move_name": "Attack", "score": 90, "reasoning": "Hit it.", "target_id": "e_stone"},
+            {"move_name": "Rest", "score": 60, "reasoning": "Breathe."},
+        ])
+        strategist = CombatStrategist(client=llm)
+        ctx = _ctx([_attack(_target(STONE, 0, 0)), REST, SWAP], enemies=(STONE,))
+        top = strategist.get_suggestions(ctx, max_suggestions=1)
+        assert top[0]["move_name"] == "Swap Weapon"
+        assert top[0]["score"] == _SWAP_WHEN_HARMLESS_SCORE

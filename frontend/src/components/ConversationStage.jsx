@@ -481,6 +481,10 @@ function AutoAdvanceBar({ durationMs }) {
  * @param {boolean} [props.skipRequested] - rising-edge skip request: the parent
  *   raises it and leaves it raised for the rest of the stage, and this consumes
  *   the edge once by revealing the remaining beats and ending the scene
+ * @param {boolean} [props.paused] - the stage is mounted but hidden (EventDialog's
+ *   LOG view): it neither listens for Enter/Space nor advances itself (AUTO-
+ *   ADVANCE, blank-beat timer), so keys reach the visible controls and the
+ *   stage is still on the same beat when the player comes back
  */
 function ConversationStage({
     segments = [],
@@ -490,6 +494,7 @@ function ConversationStage({
     mode = 'authored',
     layout = 'default',
     skipRequested = false,
+    paused = false,
 }) {
     const isLive = mode === 'live'
     // TEXT SPEED / AUTO-ADVANCE, the player's narrative pacing settings
@@ -605,11 +610,13 @@ function ConversationStage({
     // Unconditional: a blank frame must always resolve on its own, whatever the
     // AUTO-ADVANCE setting says.
     useEffect(() => {
+        if (paused) return undefined
         if (isComplete && !(current.text || '').trim()) {
             const t = setTimeout(() => advance(), 450)
             return () => clearTimeout(t)
         }
-    }, [isComplete, current.text, advance])
+        return undefined
+    }, [isComplete, current.text, advance, paused])
 
     // AUTO-ADVANCE (issue #538 item 1): walk a finished beat on by itself after
     // a dwell scaled to how much there was to read. Off by default -- a scene
@@ -630,7 +637,7 @@ function ConversationStage({
     // `segments` makes the React Compiler assume `segments` may be mutated,
     // and it then refuses the `computeStage` memo above.
     const autoAdvanceText = String(current.text || '').trim()
-    const autoAdvanceArmed = Boolean(autoAdvance && !isLive && isComplete && !stageComplete && autoAdvanceText)
+    const autoAdvanceArmed = Boolean(autoAdvance && !isLive && !paused && isComplete && !stageComplete && autoAdvanceText)
     const autoAdvanceMs = autoAdvanceArmed ? autoAdvanceDelay(autoAdvanceText, textSpeed) : null
     useEffect(() => {
         if (autoAdvanceMs === null) return undefined
@@ -652,7 +659,7 @@ function ConversationStage({
     // pressed. Matches the document-level pattern BaseDialog's own Escape/Tab
     // trap and the glossary panels already use.
     useEffect(() => {
-        if (isLive) return undefined
+        if (isLive || paused) return undefined
         const onKey = (e) => {
             // Guards required by a document-scoped listener (issue #530):
             // without them, Enter/Space aimed at an unrelated focused text
@@ -678,7 +685,7 @@ function ConversationStage({
         }
         document.addEventListener('keydown', onKey)
         return () => document.removeEventListener('keydown', onKey)
-    }, [advance, isLive])
+    }, [advance, isLive, paused])
 
     const isThought = Boolean(current.thought)
     const isWide = layout === 'wide'

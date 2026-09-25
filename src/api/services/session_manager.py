@@ -810,8 +810,9 @@ class SessionManager:
         """Seed story-state flags from config.starting_story_flags onto player.
 
         Restores the semantics ``src/game.py`` had before the terminal
-        teardown (311a644e): a bare ``"flag"`` token sets it to ``"1"``, a
-        ``"flag=value"`` token sets it to ``value``. Written through
+        teardown (311a644e): a bare ``"flag"`` token sets it (to ``GATE_SET``),
+        a ``"flag=value"`` token sets it to ``value``; a token with no key is
+        skipped. Written through
         ``set_story_gate`` so a player with no story (e.g. ``MinimalPlayer``)
         is a silent no-op rather than an ``AttributeError``.
 
@@ -830,16 +831,16 @@ class SessionManager:
 
         applied = []
         for token in flags:
-            token = token.strip()
-            if not token:
+            key, has_value, value = token.partition("=")
+            key = key.strip()
+            if not key:
+                # "=value" or a stray "=" names no flag; never write story[""].
                 continue
-            if "=" in token:
-                key, value = token.split("=", 1)
-                key, value = key.strip(), value.strip()
-            else:
-                key, value = token, "1"
-            if set_story_gate(player, key, value):
-                applied.append(f"{key}={value}")
+            # A bare flag takes set_story_gate's own default (GATE_SET, what
+            # gate_is_set compares against) rather than a literal copied here.
+            args = (key, value.strip()) if has_value else (key,)
+            if set_story_gate(player, *args):
+                applied.append(token.strip())
         if applied:
             print(
                 f"[SessionManager] [OK] Applied starting_story_flags: {applied}",

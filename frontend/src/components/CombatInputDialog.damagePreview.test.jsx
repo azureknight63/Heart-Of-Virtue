@@ -67,4 +67,12 @@ describe('CombatInputDialog — damage preview on the target card (#688)', () =>
     const card = cardFor('Far Bat');
     expect(within(card).queryByText(/dmg|no damage/i)).toBeNull();
   });
+
+  it('renders nothing for a malformed preview rather than "undefined–undefined dmg"', () => {
+    renderCards([
+      makeTargetOption({ id: enemyId(1), name: 'Odd Bat', damage_preview: { lethal: false } }),
+    ]);
+    const card = cardFor('Odd Bat');
+    expect(within(card).queryByText(/undefined|dmg|no damage/i)).toBeNull();
+  });
 });

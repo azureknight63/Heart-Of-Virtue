@@ -200,3 +200,35 @@ class TestAdvisorReasonsAroundTheSurge:
         mip = ctx["enemies"][0]["move_in_process"]
         assert mip["target_id"] != ctx["player"]["id"], "premise"
         assert scores["Dodge"][0] < 80, scores["Dodge"]
+
+
+class TestTheLockBranchIsScopedToFlaggedCharges:
+    def test_a_routine_survivable_charge_does_not_trigger_the_withdraw_lock_score(
+        self, strategist
+    ):
+        """Scrub of #686: the fatigue-locked-defence branch (Withdraw 82 with a
+        'get clear' reason) is for a heavy/deadly telegraph. It fired for any
+        charge inside the window, so a routine jab also sent Jean running."""
+        from ai.combat_strategist import _LOCKED_DEFENCE_SCORES, _ROUTINE_SEVERITY
+
+        player, adapter = _fight([KingSlime()])
+        [king] = player.combat_list
+        _surge_at(adapter, king, 6)
+        player.fatigue = 5
+        player.hp = player.maxhp = 100000  # survivable
+
+        with patch("builtins.print"):
+            ctx, _ = adapter._build_strategist_context(None)
+        # Relabel the charge as a routine, non-telegraphed attack.
+        for enemy in ctx["enemies"]:
+            mip = enemy.get("move_in_process")
+            if mip:
+                mip["telegraph_severity"] = _ROUTINE_SEVERITY
+        state = strategist._derive_tactical_state(ctx)
+        assert state["incoming_beats"] is not None, "premise: a charge is in the window"
+        assert not state["incoming_flagged"], "premise: it is a routine charge"
+
+        withdraw = next(m for m in ctx["available_moves"] if m["name"] == "Withdraw")
+        score, reason = strategist._score_move(withdraw, state)
+        assert score != _LOCKED_DEFENCE_SCORES[("Withdraw", False)], reason
+        assert "fatigue-locked" not in reason, reason

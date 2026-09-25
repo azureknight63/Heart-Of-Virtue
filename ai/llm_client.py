@@ -794,8 +794,11 @@ def _post_within_turn(url: str, payload: Dict[str, Any], headers: Dict[str, str]
     timeout bounds the gap between bytes, so a provider trickling keep-alive
     whitespace ran one clipped call 38s past a 21s turn (#684). Past the
     deadline the connection is closed and ``ReadTimeout`` raised -- the same
-    exception a clipped timeout raises, so ``_openrouter_attempt`` treats it
-    as the turn running out, not the model failing.
+    exception a clipped timeout raises. ``_openrouter_attempt`` spares the
+    model only when its timeout WAS clipped to the turn; a call that started
+    with its full timeout and was cut here is still benched as a failure
+    (``_timeout_was_clipped``). Whether a deadline cut should ever bench is an
+    open follow-up, not decided here.
 
     The body read in pieces is put back as the response's content, so callers
     use ``.json()``/``.text`` as before. That is ``Response._content``, the

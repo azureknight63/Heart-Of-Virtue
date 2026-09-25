@@ -199,18 +199,11 @@ class Advance(Move):
         """Advance is viable when the target is beyond adjacent range.
 
         Targeting an ally closes distance for healing (no damage is dealt to
-        friendlies); targeting an enemy closes distance to attack. A live,
-        currently-selected target that is already adjacent means "don't
-        advance" even if some other combatant is farther away (#691's
-        ``test_advance_with_multiple_enemies_but_target_close`` pins this
-        deliberately: Advance moves toward ``self.target``, not toward
-        whichever combatant happens to be farthest, so reporting viable here
-        would just be a wasted beat). The real #691 bug was a *stale* target
-        left over from a previous cast/fight (``self.target`` is only
-        reassigned once a cast completes, never reset between fights) with an
-        EMPTY proximity dict -- fixed at the source in
-        ``ApiCombatAdapter``'s new-fight reset, not here: see
-        ``_reset_stale_move_targets``.
+        friendlies); targeting an enemy closes distance to attack. Advance
+        walks toward ``self.target`` specifically, so a live, selected target
+        that is already adjacent means "don't advance" even when another
+        combatant is farther away. Stale cross-fight targets are cleared at
+        new-fight init (``ApiCombatAdapter._reset_stale_move_targets``, #691).
         """
         if not hasattr(self.user, "combat_proximity"):
             return False
@@ -232,8 +225,8 @@ class Advance(Move):
         an EMPTY ``combat_proximity`` (the very first status poll right after
         a fight is joined, before positions have been computed) means nobody
         is on the field to advance toward, not "everyone is adjacent" --
-        reported #691. ``NO_OPPONENTS`` is the code this module's other
-        movement move already uses for exactly that state."""
+        reported #691. ``NO_OPPONENTS`` is the code ``TacticalRetreat`` already
+        uses for exactly that state."""
         if not hasattr(self.user, "combat_proximity"):
             return None
         proximity = self.user.combat_proximity

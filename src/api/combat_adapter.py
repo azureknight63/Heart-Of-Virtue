@@ -806,6 +806,21 @@ class CombatOutputCapture:
         self.log_entries = []
 
 
+def combat_adapter_state(player) -> dict:
+    """``player.combat_adapter_state``, created empty when missing.
+
+    The single home of the lazy init that five sites used to carry as their
+    own ``if not hasattr(...)`` copy; the adapter and GameService both read
+    through here. The dict lives on the player (not on the adapter) because
+    the adapter object is not the fight's lifetime -- see
+    ``ApiCombatAdapter.combat_id``.
+    """
+    state = getattr(player, "combat_adapter_state", None)
+    if not isinstance(state, dict):
+        state = player.combat_adapter_state = {}
+    return state
+
+
 class ApiCombatAdapter:
     """
     Adapts the terminal combat system for API use.
@@ -1090,15 +1105,9 @@ class ApiCombatAdapter:
     def _adapter_state(self) -> dict:
         """``player.combat_adapter_state``, created empty when missing.
 
-        The single home of the lazy init that five sites used to carry as
-        their own ``if not hasattr(...)`` copy. The dict lives on the player
-        (not on ``self``) because the adapter object is not the fight's
-        lifetime — see the ``combat_id`` property.
+        See :func:`combat_adapter_state`, the single home of the lazy init.
         """
-        state = getattr(self.player, "combat_adapter_state", None)
-        if not isinstance(state, dict):
-            state = self.player.combat_adapter_state = {}
-        return state
+        return combat_adapter_state(self.player)
 
     @property
     def combat_id(self):
@@ -1619,25 +1628,14 @@ class ApiCombatAdapter:
     def _reset_stale_move_targets(self, combatant) -> None:
         """Clear a move's ``target`` if it names someone outside THIS fight.
 
-        A move's ``target`` is only reassigned once a cast completes (the
-        three ``_execute_move`` call sites) and is never reset on its own, so
-        a target chosen in a PRIOR fight -- or a corpse from it -- can still
-        be sitting on a move when a brand new fight starts. A move that reads
-        ``self.target`` for its own viability (``Advance``, ``Withdraw``,
-        ``QuickSwap``, ...) then measures against that foreign combatant
-        instead of anyone actually present, which is how ``Advance`` could
-        report "No one is out of reach" moments after joining a fresh fight
-        with real enemies still 8-10 ft away (#691).
-
-        Scoped to targets OUTSIDE this fight's roster (``combat_list`` /
-        ``combat_list_allies``, already finalized by the time this runs --
-        see the top of :meth:`_initialize_combat_locked`) so a still-relevant,
-        currently-selected target from the fight actually starting is never
-        touched: ``Advance.viable()`` deliberately treats "my chosen target
-        is already adjacent" as *not viable* even when another enemy is
-        farther away (it walks toward ``self.target`` specifically, not
-        toward whichever combatant happens to be farthest), and that design
-        choice is intentional, not the bug here.
+        A move's ``target`` is only reassigned once a cast completes and is
+        never reset on its own, so a target from a PRIOR fight -- or a corpse
+        from it -- could still sit on a move when a new fight starts, and a
+        move that reads ``self.target`` for its viability (``Advance``) then
+        measured against a combatant who isn't there (#691). Only targets
+        outside this fight's roster (``combat_list`` / ``combat_list_allies``,
+        already final when this runs) are cleared; an in-fight target is left
+        alone (see ``Advance.viable``).
         """
         roster = self.player.combat_list + self.player.combat_list_allies
         for move in getattr(combatant, "known_moves", []):
@@ -4697,9 +4695,10 @@ class ApiCombatAdapter:
         # payload).
         if not self.player.in_combat:
             summary = getattr(self.player, "combat_end_summary", None) or {}
-            battle_state["status"] = summary.get(
-                "status", battle_state.get("status", "active")
-            )
+            # "ended" once collect-loot / flee / load has cleared the summary:
+            # the serializer's hardcoded "active" must never sit beside
+            # combat_active: false.
+            battle_state["status"] = summary.get("status", "ended")
         battle_state["combat_id"] = self.combat_id
         # Same reason: emitted top-level, map_size was dropped by
         # transformCombatData's whitelist, so Battlefield's `combat?.map_size`

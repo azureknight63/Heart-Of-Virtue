@@ -18,6 +18,9 @@ from unittest.mock import patch, MagicMock
 
 from src.narration import capture_narration
 from src.npc._eastern_descent import Anvil, NomadCamper, NomadScout, NomadTrader
+from src.story.ch03 import IronAndOathIntroEvent
+
+_IRON_AND_OATH_GATE = IronAndOathIntroEvent.GATE_KEY
 
 
 def _player_with_story(story=None):
@@ -135,7 +138,7 @@ def test_anvil_first_encounter_is_silent_and_sets_ready_flag(verb):
     (4, 3), Iron & Oath's intro firing on tile entry) -- it must already be
     set for this "first encounter" to be the real one (issue #695)."""
     npc = Anvil()
-    player = _player_with_story({"iron_and_oath_intro_done": "1"})
+    player = _player_with_story({_IRON_AND_OATH_GATE: "1"})
 
     texts = _narrated(getattr(npc, verb), player)
 
@@ -170,7 +173,7 @@ def test_anvil_first_encounter_before_iron_and_oath_intro_narrates_normally(
 
 def test_anvil_talk_after_first_encounter_narrates_normally():
     npc = Anvil()
-    player = _player_with_story({"iron_and_oath_intro_done": "1"})
+    player = _player_with_story({_IRON_AND_OATH_GATE: "1"})
 
     first = _narrated(npc.talk, player)   # first call: silent, sets the flag
     second = _narrated(npc.talk, player)  # second: flag set, normal flavor line
@@ -193,3 +196,17 @@ def test_anvil_known_moves_exception_falls_back_to_empty_list():
     with patch("src.npc._base.moves.NpcIdle", side_effect=RuntimeError("boom")):
         npc = Anvil()
     assert npc.known_moves == []
+
+
+def test_anvil_first_encounter_follows_the_iron_and_oath_gate_key(monkeypatch):
+    """Scrub of #695: Anvil gated its first encounter on a literal copy of
+    ``IronAndOathIntroEvent.GATE_KEY``. Renaming that key would leave Anvil
+    waiting on a gate nothing ever sets -- its intro silently dead. The gate
+    must be read from the event that owns it."""
+    from src.story.ch03 import IronAndOathIntroEvent
+
+    monkeypatch.setattr(IronAndOathIntroEvent, "GATE_KEY", "iron_and_oath_renamed")
+    anvil = Anvil()
+    player = _player_with_story({"iron_and_oath_renamed": "1"})
+
+    assert anvil._first_encounter(player) is True

@@ -1275,10 +1275,11 @@ _LOQUACITY_DRAIN = {"positive": 3, "neutral": 8, "negative": 15, "offensive": 30
 
 # What a turn the model could not produce costs: the reduced ("positive")
 # drain, not the "neutral" one a turn the NPC actually spoke would. The player
-# had no part in a provider outage, and at the scaled pool sizes the neutral 8
-# took Jambo from 9 to 1 -- past his threshold of 2 -- on one failed turn
-# (#684; maintainer decision 2026-09-24). A fully degraded conversation is
-# still bounded by _MAX_CONSECUTIVE_FALLBACK_REPLIES, not by this drain.
+# had no part in a provider outage, and at the scaled pool sizes the neutral
+# drain could end a conversation on a single failed turn (#684; maintainer
+# decision 2026-09-24; the worked numbers live in the test that pins them). A
+# fully degraded conversation is still bounded by
+# _MAX_CONSECUTIVE_FALLBACK_REPLIES, not by this drain.
 _FAILED_TURN_LOQUACITY_DRAIN = _LOQUACITY_DRAIN["positive"]
 
 # ---------------------------------------------------------------------------

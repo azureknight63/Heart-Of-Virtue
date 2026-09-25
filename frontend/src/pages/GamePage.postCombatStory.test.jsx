@@ -112,7 +112,7 @@ const EXPLORING = { success: true, combat_active: false, battle_state: null, log
  * the killing blow); from then on status serves the robbed victory, and after
  * collect-loot the world.
  */
-function routeTheApi({ collectLootEvents, victoryStatusEvents = [] }) {
+function routeTheApi({ collectLootEvents, victoryStatusEvents = [], pendingAfterWin = [] }) {
     const fight = { won: false, collected: false };
     apiClient.get.mockImplementation((url) => {
         if (url === '/combat/status') {
@@ -132,11 +132,18 @@ function routeTheApi({ collectLootEvents, victoryStatusEvents = [] }) {
             });
         }
         if (url === '/world') {
-            return Promise.resolve({
+            // A real round trip: resolving instantly lets React batch the
+            // loading flag's true -> false into one render, which hides the
+            // loading-keyed effect the combat-end refetch triggers.
+            return new Promise((resolve) => setTimeout(() => resolve({
                 data: { success: true, room: { name: 'Grondelith Arena', description: 'Still water.', x: 2, y: 6, exits: [] } },
-            });
+            }), 50));
         }
-        // /world/events/pending, /world/commands, /world/explored, ...
+        if (url === '/world/events/pending') {
+            const events = fight.won ? pendingAfterWin : [];
+            return Promise.resolve({ data: { success: true, events } });
+        }
+        // /world/commands, /world/explored, ...
         return Promise.resolve({ data: { success: true, events: [], commands: [], explored_tiles: [] } });
     });
     apiClient.post.mockImplementation((url) => {
@@ -204,5 +211,47 @@ describe('post-combat story rides collect-loot (issue #683)', () => {
 
         fireEvent.click(close);
         expect(await screen.findAllByText(SCENE.output_text, {}, { timeout: 8000 })).toHaveLength(1);
+    }, 30000);
+    it('keeps a pending story event from surfacing under the Victory dialog (scrub of #694 x #683)', async () => {
+        // #694 refetches the room as soon as the fight ends. That refetch
+        // toggles worldLoading, and the loading-keyed effect then polls
+        // /world/events/pending -- while Victory is still on screen. A
+        // needs-input post-combat event (the memory flash) must wait for the
+        // dialog to close, behind collect-loot's scene.
+        const FLASH = {
+            event_id: 'flash-1',
+            name: 'Ch02KingSlimeMemoryFlash',
+            needs_input: true,
+            input_type: 'choice',
+            input_options: [{ label: 'Continue', value: 'continue' }],
+            description: 'A MEMORY STIRS',
+            output_text: 'A MEMORY STIRS',
+        };
+        const fight = routeTheApi({ collectLootEvents: [SCENE], pendingAfterWin: [FLASH] });
+
+        render(
+            <MemoryRouter>
+                <GamePage />
+            </MemoryRouter>
+        );
+
+        fireEvent.click(await screen.findByText('FIGHT FOR YOUR LIFE', {}, { timeout: 8000 }));
+        const atWin = apiClient.get.mock.calls.length;
+        fight.won = true;
+
+        await screen.findByText('CLOSE', {}, { timeout: 12000 });
+        // Give the combat-end refetch and any loading-keyed poll time to land.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        // Non-vacuity: the combat-end room refetch really did run while the
+        // dialog was up (else this test proves nothing about it).
+        const afterWin = apiClient.get.mock.calls.slice(atWin).map(([u]) => u);
+        expect(afterWin).toContain('/world');
+        expect(screen.queryByText(FLASH.output_text)).toBeNull();
+
+        // And once Victory closes, collect-loot's scene plays first; the
+        // flash (which chains after it in the story) must not jump the queue.
+        fireEvent.click(screen.getByText('CLOSE'));
+        await screen.findByText(SCENE.output_text, {}, { timeout: 8000 });
+        expect(screen.queryByText(FLASH.output_text)).toBeNull();
     }, 30000);
 });

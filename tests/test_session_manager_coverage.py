@@ -1132,7 +1132,25 @@ def test_apply_starting_story_flags_bare_and_valued_tokens(monkeypatch):
 
     mgr._apply_starting_story_flags(player)
 
-    assert story == {"alpha": "1", "beta": "2", "gamma": "1", "delta": "5"}
+    # A bare flag is "set" by the same value gate_is_set() compares against,
+    # read from src.events rather than restated here.
+    from src.events import GATE_SET
+
+    assert story == {"alpha": GATE_SET, "beta": "2", "gamma": GATE_SET, "delta": "5"}
+
+
+def test_apply_starting_story_flags_skips_a_token_with_no_key(monkeypatch):
+    # "=value" (or a stray "=") names no flag; it must not write story[""].
+    mgr = _bare_manager(monkeypatch)
+    mgr.game_config = _make_game_config(starting_story_flags=["=orphan", "=", "alpha"])
+    player = MagicMock()
+    story = {}
+    player.universe.story = story
+
+    mgr._apply_starting_story_flags(player)
+
+    assert "" not in story
+    assert set(story) == {"alpha"}
 
 
 def test_apply_starting_story_flags_no_story_is_skipped(monkeypatch):
