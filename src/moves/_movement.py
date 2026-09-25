@@ -507,6 +507,10 @@ class BullCharge(Move):
 
     web_animation = "charge"
 
+    # Offensive, but a pure positioning move: execute() only narrates the
+    # impact (see preview_hit_chance), so it is never an incoming hit (#714).
+    deals_damage = False
+
     def __init__(self, user):
         description = "Charge at target with force, covering significant distance."
         prep = 1

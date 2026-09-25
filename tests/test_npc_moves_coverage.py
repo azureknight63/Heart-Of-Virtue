@@ -2796,3 +2796,143 @@ class TestStatustypeCategoryTable:
         wire = StateEffectSerializer.serialize_state(death)
         assert wire["type"] == "ailment"
         assert wire["severity"] == "severe"
+
+
+# ---------------------------------------------------------------------------
+# deals_damage — issue #714
+#
+# The Tactical Advisor priced every enemy move in progress as a hit, so an
+# enemy resting at low Jean HP read "Rest (potentially lethal) lands in 2
+# beat(s)" and Dodge was pushed against nothing. ``Move.deals_damage`` is the
+# engine's answer to "does this move take HP off its target?", shipped on the
+# wire so the advisor can skip the ones that do not.
+# ---------------------------------------------------------------------------
+
+
+def _npc_owned_move_population():
+    """``{move class: owner NPC class}`` for every move an NPC in the game uses.
+
+    Derived, not listed: every ``NPC`` subclass ``src.npc`` exports is built,
+    and its ``known_moves`` plus every ``NewMove`` its ``skill_schedule``
+    grants (Gorran's SeismicSlam and BullCharge, Mara's TwinFangs...) is
+    collected. A hostile owner is preferred where one exists, because the
+    advisor reads the moves ENEMIES have in progress; a move only an ally
+    knows is executed by that ally against a hostile dummy instead.
+    """
+    import src.npc as npc_pkg
+    from src.npc import NPC, Friend
+
+    owners = {}
+    for obj in vars(npc_pkg).values():
+        if not (inspect.isclass(obj) and issubclass(obj, NPC)):
+            continue
+        try:
+            with patch("builtins.print"):
+                npc = obj()
+        except TypeError:
+            continue  # the bare NPC base needs constructor arguments
+        found = [type(m) for m in npc.known_moves]
+        for grants in (getattr(npc, "skill_schedule", None) or {}).values():
+            found += [g[1] for g in grants if g[0] == "NewMove"]
+        for move_cls in found:
+            owners.setdefault(move_cls, set()).add(obj)
+
+    def rank(owner):
+        return (issubclass(owner, Friend), owner.__name__)
+
+    return {m: min(o, key=rank) for m, o in owners.items()}
+
+
+_NPC_MOVES = _npc_owned_move_population()
+
+
+def _hp_taken_by_execute(move_cls, owner_cls):
+    """Run one ``execute()`` of ``move_cls`` against a live target; did HP drop?
+
+    The to-hit roll is forced (``randint`` -> 0), power rolls sit at their
+    midpoint, and the two combatants stand at the move's minimum range facing
+    each other. Nobody holds a parry stance, so ``check_parry`` is False. The
+    target is a real default ``Player`` for an enemy's move -- the subject the
+    advisor is protecting -- with protection zeroed so a landed blow cannot
+    round to nothing, fatigue at 0 so DeathKnell's execute window is open, and
+    HP deep enough that no hit ends the fight mid-measurement.
+    """
+    from src import positions
+    from src.npc import Friend
+    from tests._combat_fixtures import engage, make_npc, make_player, place, repair_proximity
+
+    with patch("builtins.print"):
+        user = owner_cls()
+        player = make_player(protection=0, fatigue=0)
+        player.maxhp = player.hp = 10000
+        if issubclass(owner_cls, Friend):
+            target = make_npc(protection=0, maxhp=10000)
+            target.hp = 10000
+            engage(player, enemies=[target], allies=[user])
+            everyone = [player, user, target]
+            place(player, 1, 1)
+        else:
+            target = player
+            engage(player, enemies=[user])
+            everyone = [player, user]
+        user.target = target
+        distance = max(1, int(move_cls(user).mvrange[0]))
+        place(user, 20, 20)
+        place(target, 20 + distance, 20)
+        user.combat_position.facing = positions.turn_toward(
+            user.combat_position, target.combat_position
+        )
+        target.combat_position.facing = positions.turn_toward(
+            target.combat_position, user.combat_position
+        )
+        repair_proximity(everyone)
+
+        move = move_cls(user)
+        move.target = target
+        hp_before = target.hp
+        with patch("random.randint", return_value=0), patch(
+            "random.uniform", side_effect=lambda a, b: (a + b) / 2
+        ), patch("random.random", return_value=0.5):
+            move.evaluate()
+            move.execute(user)
+    return move, target.hp < hp_before
+
+
+class TestDealsDamageMatchesExecute:
+    """``Move.deals_damage`` must say what ``execute()`` actually does.
+
+    The advisor stops pricing a move as an incoming hit on this flag's word
+    alone, so a damaging move that declared False would silently delete the
+    warning for a real blow -- the worse failure. The expectation is measured
+    off ``execute()``, never a hand list: category is only the default, and
+    three ``Offensive`` moves (KeeningToll drains fatigue, DeathKnell inflicts
+    Death through Jean's resistance, BullCharge only moves) take no HP at all.
+    """
+
+    def test_the_population_is_real(self):
+        """Floor: an enumerator that silently found nothing would pass every
+        parametrized case below by having none."""
+        observed = {
+            cls.__name__: _hp_taken_by_execute(cls, owner)[1]
+            for cls, owner in _NPC_MOVES.items()
+        }
+        assert len(observed) >= 10, observed
+        assert any(observed.values()), "no damaging move found"
+        assert not all(observed.values()), "no non-damaging move found"
+        from src.moves import NpcIdle, NpcRest
+
+        assert {NpcRest, NpcIdle} <= set(_NPC_MOVES)
+
+    @pytest.mark.parametrize(
+        "move_cls",
+        sorted(_NPC_MOVES, key=lambda c: c.__name__),
+        ids=lambda c: c.__name__,
+    )
+    def test_declaration_matches_execute(self, move_cls):
+        move, took_hp = _hp_taken_by_execute(move_cls, _NPC_MOVES[move_cls])
+        declared = getattr(move, "deals_damage", None)
+        assert declared is took_hp, (
+            f"{move_cls.__name__} ({move.category}) declares deals_damage="
+            f"{declared!r} but execute() {'did' if took_hp else 'did NOT'} "
+            f"take HP off its target"
+        )

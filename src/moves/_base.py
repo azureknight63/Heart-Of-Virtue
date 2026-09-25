@@ -1278,6 +1278,11 @@ TELEGRAPH_SEVERITIES = ("normal", "heavy", "deadly")
 #: The quiet default; the serializer folds an out-of-vocabulary value to it.
 TELEGRAPH_SEVERITY_NORMAL = TELEGRAPH_SEVERITIES[0]
 
+#: Move categories whose moves take HP off a target: the default behind
+#: ``Move.deals_damage`` (issue #714). The Tactical Advisor imports this for
+#: its own "can this attack hurt anyone?" rule (#688) rather than keep a copy.
+DAMAGING_MOVE_CATEGORIES = frozenset({"Offensive", "Mastery"})
+
 
 class UnavailableReason(StrEnum):
     """Why a move cannot be cast right now: a closed vocabulary (issue #627).
@@ -1566,6 +1571,20 @@ class Move:  # master class for all moves
         Return a float/int to override mvrange[1] during target selection, or None to use mvrange[1].
         """
         return None
+
+    @property
+    def deals_damage(self):
+        """True when this move's ``execute()`` takes HP off its target.
+
+        Shipped on the wire so the Tactical Advisor prices only real blows as
+        incoming hits (issue #714: an enemy's Rest read "potentially lethal").
+        Category is the default; a move whose category lies about it -- an
+        ``Offensive`` move that drains fatigue or only repositions -- sets a
+        plain ``deals_damage = False`` class attribute, which shadows this.
+        tests/test_npc_moves_coverage.py::TestDealsDamageMatchesExecute
+        checks every NPC-used move against what ``execute()`` actually does.
+        """
+        return self.category in DAMAGING_MOVE_CATEGORIES
 
     def beats_until_resolve(self):
         """Beats from now until this move's effect lands, or None once it has.

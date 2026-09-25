@@ -1031,6 +1031,12 @@ ACTIVE_MOVE_CONTRACT = {
     "damage_multiplier": Read(
         "ai/combat_strategist.py", 'get("damage_multiplier"'
     ),
+    # NOT a frontend read either. _incoming_beats skips a move whose
+    # deals_damage is False (issue #714), so an enemy's Rest stops reading as
+    # a potentially lethal hit. Absent, the advisor falls back to pricing
+    # every move as a hit -- a silent regression, so the value is asserted
+    # below as well.
+    "deals_damage": Read("ai/combat_strategist.py", 'get("deals_damage")'),
     # Issue #586. telegraphSeverity() marks a heavy/deadly wind-up with a
     # glyph on the countdown badge, the enemies list and the beat timeline —
     # the non-colour cue that tells a Tidal Surge apart from a routine
@@ -1466,6 +1472,21 @@ class TestCombatantWireContract:
             "fixture is degenerate: this move must declare a NON-default "
             "multiplier or the test cannot distinguish carried from defaulted"
         )
+
+    def test_deals_damage_carries_the_moves_own_answer(self):
+        """Presence is not enough: True is the serializer's default.
+
+        A resting enemy must arrive as ``deals_damage: False`` (issue #714),
+        and a real blow as True. If ``Move.deals_damage`` is renamed, the
+        getattr default makes every move True again and the advisor goes back
+        to reading "Rest (potentially lethal)" with no missing key to show.
+        """
+        from src.moves import NpcRest, SlimeVolley
+
+        rest = _serialize_mid_cast(NpcRest, Slime)["current_move"]
+        volley = _serialize_mid_cast(SlimeVolley, Slime)["current_move"]
+        assert rest["deals_damage"] is False, rest
+        assert volley["deals_damage"] is True, volley
 
     def test_telegraph_severity_carries_the_moves_own_declaration(self):
         """Presence is not enough here either: "normal" is a valid severity

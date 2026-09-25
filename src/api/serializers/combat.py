@@ -492,6 +492,11 @@ class CombatantSerializer:
                 "damage_multiplier": (
                     CombatantSerializer._serialize_damage_multiplier(move)
                 ),
+                # Move.deals_damage (issue #714): the Tactical Advisor prices
+                # only a move that takes HP as an incoming hit. Defaults True
+                # so a legacy save placeholder, which carries none of Move's
+                # API, keeps today's warning rather than silently losing it.
+                "deals_damage": bool(getattr(move, "deals_damage", True)),
                 # TELEGRAPH_SEVERITIES — declared on Move (src/moves/_base.py)
                 # and read off it here so the badge, enemies list and beat
                 # timeline (telegraphSeverity in combatMoveStatus.js) share

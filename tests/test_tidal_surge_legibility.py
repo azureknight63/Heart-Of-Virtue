@@ -232,3 +232,90 @@ class TestTheLockBranchIsScopedToFlaggedCharges:
         score, reason = strategist._score_move(withdraw, state)
         assert score != _LOCKED_DEFENCE_SCORES[("Withdraw", False)], reason
         assert "fatigue-locked" not in reason, reason
+
+
+class TestOnlyDamagingMovesAreIncomingHits:
+    """Issue #714: the advisor priced ANY enemy move in progress as a hit.
+
+    ``damage_multiplier`` defaults to 1.0 for every move, so an enemy winding
+    up Rest at low Jean HP read "Rest (potentially lethal) lands in 2
+    beat(s)", flagged the fight, and pushed Dodge against nothing. Driven
+    through the real adapter so the serializer's ``deals_damage`` is what the
+    advisor reads.
+    """
+
+    @staticmethod
+    def _advice(strategist, adapter):
+        from ai.combat_strategist import _player_defenses, _player_vitals
+
+        ctx, scores = _all_scores(strategist, adapter)
+        state = strategist._derive_tactical_state(ctx)
+        suggestions = strategist._get_fallback_suggestions(ctx, 3)
+        _, alerts = strategist._enemy_block(
+            ctx["enemies"],
+            _player_vitals(ctx["player"]),
+            _player_defenses(ctx["player"]),
+        )
+        return ctx, scores, state, suggestions, alerts
+
+    @staticmethod
+    def _at_low_hp(player):
+        player.maxhp = 100
+        player.hp = 2  # any hit at all is "potentially lethal" here
+
+    @pytest.mark.parametrize(
+        "move_name,enemy_name,targeted",
+        [
+            ("NpcRest", "KingSlime", False),
+            ("NpcIdle", "KingSlime", False),
+            # Offensive by category, but it drains fatigue and never HP.
+            ("KeeningToll", "WailWraith", True),
+        ],
+    )
+    def test_a_resting_or_idle_enemy_is_not_an_incoming_hit(
+        self, strategist, move_name, enemy_name, targeted
+    ):
+        import src.moves as moves
+        import src.npc._enemies as enemies
+
+        player, adapter = _fight([getattr(enemies, enemy_name)()])
+        [enemy] = player.combat_list
+        move = _cast(
+            adapter, enemy, getattr(moves, move_name),
+            target=player if targeted else None,
+        )
+        assert move.beats_until_resolve() is not None, (
+            "premise: the move must still be winding up, or there is nothing "
+            "for the advisor to misread"
+        )
+        self._at_low_hp(player)
+
+        ctx, scores, state, suggestions, alerts = self._advice(strategist, adapter)
+        charge = ctx["enemies"][0]["move_in_process"]
+        assert charge is not None, "premise: the move is on the wire"
+        name = charge.get("display_name") or charge["name"]
+
+        assert state["incoming_beats"] is None, state
+        assert not state["incoming_lethal"], state
+        noisy = {
+            n: r for n, (_, r) in scores.items()
+            if "potentially lethal" in r.lower() or f"{name} lands in" in r
+            or f"{name} (potentially lethal)" in r
+        }
+        assert not noisy, noisy
+        assert suggestions[0]["move_name"] != "Dodge", suggestions
+        assert not [a for a in alerts if "INCOMING" in a], alerts
+
+    def test_a_tidal_surge_is_still_an_incoming_hit(self, strategist):
+        """Negative control: the filter must not silence a real blow."""
+        player, adapter = _fight([KingSlime()])
+        [king] = player.combat_list
+        _surge_at(adapter, king, 6)
+        self._at_low_hp(player)
+
+        _, scores, state, suggestions, alerts = self._advice(strategist, adapter)
+
+        assert state["incoming_beats"] == 6, state
+        assert state["incoming_lethal"], state
+        assert state["in_defensive_window"], state
+        assert [a for a in alerts if "INCOMING" in a and "Tidal Surge" in a], alerts

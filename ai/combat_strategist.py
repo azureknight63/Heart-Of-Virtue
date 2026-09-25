@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, List, Literal, NamedTuple, Optional, Tuple, TypedDict
 
 from ai.llm_client import GenericLLMClient
+from src.moves import DAMAGING_MOVE_CATEGORIES
 from src.text_format import pct as _pct
 
 logger = logging.getLogger(__name__)
@@ -129,8 +130,9 @@ _DEFENSIVE_MOVE_NAMES = ("Dodge", "Parry")
 _HARMLESS_ATTACK_SCORE = 15
 #: Move categories that deal damage and carry per-target damage previews, so
 #: the #688 "can this hurt anyone?" rule applies to all of them -- not just
-#: Offensive (Mastery moves strike too).
-_DAMAGING_CATEGORIES = frozenset({"Offensive", "Mastery"})
+#: Offensive (Mastery moves strike too). ENGINE-OWNED: the same set is the
+#: default behind ``Move.deals_damage``.
+_DAMAGING_CATEGORIES = DAMAGING_MOVE_CATEGORIES
 # ...and what Swap Weapon is worth once that is true of EVERY offered attack:
 # above Advance (80), Turn (75) and a low-fatigue Rest (72), the moves the QA
 # run alternated through for 150 beats while the blade did nothing.
@@ -584,8 +586,15 @@ def _incoming_beats(mip: Optional[Dict[str, Any]]) -> Optional[int]:
 
     The engine returns None for exactly that case; None here means "not
     incoming", and every caller must skip rather than substitute a sentinel.
+
+    A move the engine says deals no damage (``deals_damage`` False, from
+    ``Move.deals_damage``) is not incoming either (issue #714): an enemy's
+    Rest was priced at its user's full damage and read "Rest (potentially
+    lethal) lands in 2 beat(s)". Only an explicit False skips; a payload
+    without the key keeps the old behaviour, so a missing field can never
+    silence a real blow.
     """
-    if not mip:
+    if not mip or mip.get("deals_damage") is False:
         return None
     beats = mip.get("beats_until_resolve")
     if isinstance(beats, bool) or not isinstance(beats, int):
