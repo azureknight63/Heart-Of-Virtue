@@ -202,6 +202,20 @@ class TestSavesRoutes:
         data = rv.get_json()
         assert "Too many saves" in data["error"]
 
+    def test_create_save_while_dead_is_refused_at_403(self, app):
+        """#690 (maintainer decision 2026-09-25): a fallen Jean cannot write a
+        named save; the refusal is a declared type the player can act on, so
+        its message is echoed like the save limit's."""
+        from src.api.services.game_service import SaveRefusedWhileDead, _PLAYER_DEAD_MESSAGE
+
+        app._test_gs.save_game = AsyncMock(
+            side_effect=SaveRefusedWhileDead(_PLAYER_DEAD_MESSAGE)
+        )
+        with app.test_client() as c:
+            rv = c.post("/api/saves", headers=AUTH, json={"name": "Fallen"})
+        assert rv.status_code == 403
+        assert rv.get_json()["error"] == _PLAYER_DEAD_MESSAGE
+
     def test_create_save_infra_value_error_is_masked(self, app):
         """The other half of the contract, and the regression it closes.
 

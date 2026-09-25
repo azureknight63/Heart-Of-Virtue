@@ -75,6 +75,9 @@ def player(world):
 GAME_SERVICE_PUBLIC_API = {
     # Added with the combat abort control (master).
     "abort_move",
+    # Added by the 2026-09-24 triage architecture pass: the currency route's
+    # gold read moved off the player and onto GameService (#689).
+    "get_gold_amount",
     "allocate_level_up_points", "apply_tile_modifications",
     "capture_tile_object_baseline", "collect_combat_loot", "delete_save",
     "drop_item", "equip_item", "execute_move", "flee_combat",

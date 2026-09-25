@@ -366,6 +366,12 @@ _PLAYER_DEAD_MESSAGE = (
 )
 
 
+class SaveRefusedWhileDead(Exception):
+    """A named save refused because Jean has fallen (#690; maintainer decision
+    2026-09-25). A declared type, like ``SaveLimitReached``, so the saves
+    route echoes its message rather than masking it."""
+
+
 def _player_hp_is_nonpositive(player) -> bool:
     """``player.hp <= 0``, tolerant of a test double whose ``hp`` was never
     set. A bare ``MagicMock()`` auto-vivifies ``.hp`` as another Mock rather
@@ -4956,6 +4962,15 @@ class GameService:
         if is_autosave and game_config is not None and not game_config.autosave_enabled:
             return None
 
+        # #690 (maintainer decision 2026-09-25): a fallen Jean cannot write a
+        # named save over a good one. An autosave is skipped silently instead:
+        # defeat is a combat transition, so autosave fires on the death screen
+        # and a refusal there would only toast "Autosave failed".
+        if _refused_if_dead(player) is not None:
+            if is_autosave:
+                return None
+            raise SaveRefusedWhileDead(_PLAYER_DEAD_MESSAGE)
+
         # 1. Enforcement of manual save limit
         if not is_autosave:
             count_sql = (
@@ -5956,6 +5971,11 @@ class GameService:
             cannot be found — in which cases the drops, the victory and any
             held events are kept.
         """
+        # #690 (maintainer decision 2026-09-25): no loot for a fallen Jean.
+        refused = _refused_if_dead(player)
+        if refused is not None:
+            return refused
+
         # One lock hold across resolve, fire and take, so a racing status
         # poll either finishes firing-and-holding first (and this takes the
         # scene) or finds the fight already fired (and ships nothing).

@@ -69,6 +69,8 @@ MANUALLY_GUARDED_METHODS = frozenset(
         "drop_item",
         "use_item",
         "start_combat",
+        "collect_combat_loot",
+        "save_game",
     }
 )
 
@@ -180,6 +182,8 @@ _DICT_RETURNING_CASES = [
     ("drop_item", lambda gs, p: gs.drop_item(p, object())),
     ("use_item", lambda gs, p: gs.use_item(p, object())),
     ("start_combat", lambda gs, p: gs.start_combat(p, "nope")),
+    # Maintainer decision 2026-09-25: loot is not collected by a fallen Jean.
+    ("collect_combat_loot", lambda gs, p: gs.collect_combat_loot(p, [])),
 ]
 
 
@@ -251,8 +255,39 @@ def test_every_guarded_method_has_a_behavioural_refusal_case():
     method the derivation now guards needs a case in _DICT_RETURNING_CASES
     that actually calls it at hp 0 (trigger_tile_events returns a list and
     has its own test)."""
-    guarded = _guarded_methods(_method_call_names()) - {"trigger_tile_events"}
+    # trigger_tile_events returns a list and save_game is async with its own
+    # contract; each has dedicated tests below.
+    guarded = _guarded_methods(_method_call_names()) - {"trigger_tile_events", "save_game"}
     covered = {label for label, _ in _DICT_RETURNING_CASES}
     assert guarded, "premise: the derived table is empty"
     missing = sorted(guarded - covered)
     assert not missing, f"guarded but never exercised at hp 0: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# save_game (async): maintainer decision 2026-09-25 -- a fallen Jean cannot
+# write a named save over a good one. An AUTOSAVE is skipped silently instead
+# (defeat is a combat transition, so autosave fires on the death screen and a
+# refusal would toast "Autosave failed" there).
+# ---------------------------------------------------------------------------
+
+
+def test_a_manual_save_is_refused_while_dead(gs, world):
+    import asyncio
+
+    from src.api.services.game_service import SaveRefusedWhileDead
+
+    player, _game_map = world
+    player.hp = 0
+    with pytest.raises(SaveRefusedWhileDead) as refused:
+        asyncio.run(gs.save_game(player, "Fallen", "user-1"))
+    assert str(refused.value) == _PLAYER_DEAD_MESSAGE
+
+
+def test_an_autosave_is_skipped_silently_while_dead(gs, world):
+    import asyncio
+
+    player, _game_map = world
+    player.hp = 0
+    assert asyncio.run(gs.save_game(player, "auto", "user-1", is_autosave=True)) is None
+
