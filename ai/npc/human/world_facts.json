@@ -8,15 +8,18 @@
     "the western bank",
     "the Wailing Badlands",
     "the Echoing Caves",
-    "Grondia",
+    "Grondia (the Golemite city carved into a great bluff)",
+    "the Ecumerium (Grondia's market)",
+    "the Citadel (seat of Grondia's council)",
+    "the Grondelith Mineral Pools (southwest of Grondia)",
     "the eastern settlements",
     "the foothills"
   ],
   "factions_and_peoples": [
-    "Golemites (mechanical stone soldiers, not human)",
+    "Golemites (living stone people, not human; long-lived and patient)",
     "Pillar Readers (religious scholars of ruins)",
     "nomads (free travelers, no fixed home)",
-    "Grondites (stone-people of Grondia)",
+    "Grondites (the Golemites of Grondia)",
     "Conclave (scholarly order)"
   ],
   "known_npcs": [
@@ -26,19 +29,22 @@
     "Devet (camp cook, Mara's uncle by practice)",
     "Liss (young nomad, curious)",
     "Kaelen (weaponsmith, co-proprietor of Iron & Oath)",
-    "Vespera (armorer, co-proprietor of Iron & Oath)"
+    "Vespera (armorer, co-proprietor of Iron & Oath)",
+    "Jambo (travelling apothecary; keeps a tent in Grondia's Ecumerium and another at the east-bank camp)",
+    "Votha Krr (Golemite elder on Grondia's council)"
   ],
   "world_rules": [
     "No modern technology. Pre-gunpowder.",
     "Magic is rare and poorly understood, not commonplace.",
     "The world is dangerous but not gratuitously violent.",
-    "Religion exists but is personal, not institutional in this camp."
+    "Religion exists. Among the nomads it is personal; the Golemites of Grondia keep rites around their sacred mineral pools."
   ],
   "allowed_proper_nouns": [
     "Jean", "Gorran", "Mara", "Devet", "Liss", "Kaelen", "Vespera",
     "Aurelion", "Grondia", "Badlands", "Wailing Badlands", "Echoing Caves",
     "Golemites", "Pillar Readers", "Conclave", "Grondites",
-    "Iron", "Oath", "Nomad", "Camp", "Nomad Camp"
+    "Iron", "Oath", "Nomad", "Camp", "Nomad Camp",
+    "Jambo", "Votha Krr", "Ecumerium", "Citadel", "Grondelith"
   ],
   "prohibited_inventions": [
     "Do NOT invent new place names not on the allowed list.",

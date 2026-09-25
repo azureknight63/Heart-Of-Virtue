@@ -1,0 +1,309 @@
+"""Issue #685: every named conversational NPC on the beta route has an authored
+chat character file, and every such file satisfies what the loader reads.
+
+The live defect: ``JamboHealsU`` had no ``_chat_config_path``, so in his
+Grondia tent the mixin gave him a generated personality whose prompt says
+"You speak in first person", and the only setting he was shown was the shared
+``world_facts.json`` -- whose place list opens on the east-bank camp and the
+river. He gave river-crossing advice, in the first person, inside a cavern city.
+
+Both populations here are DERIVED rather than listed:
+
+* the NPCs come from the beta-route map files themselves (every class
+  reference a ``grondia*``, ``grondelith*`` or ``eastern-descent*`` map can
+  place, resolved through the loader's own ``map_placeholders.resolve_class``),
+  filtered to ``ConversationalNPCMixin`` hosts. A host is *named* -- and so owes
+  an authored config -- when it has a canon character profile in
+  ``docs/lore/character-profiles/`` or opts into ``_chat_keep_name``. The
+  generic nomads have neither, and a generated personality is their design.
+* the config keys come from ``src/npc/_chat_llm.py``'s own source: every
+  ``.get("<key>")`` it makes on a character config. A key the mixin starts
+  reading fails ``test_the_schema_covers_every_key_the_mixin_reads`` until it
+  is given a shape here, so the schema cannot silently fall behind the reader.
+"""
+
+import ast
+import json
+import re
+from pathlib import Path
+
+import pytest
+
+from src import map_placeholders
+from src.npc._chat_llm import _HUMAN_NPC_DIR, ConversationalNPCMixin
+
+_ROOT = Path(__file__).resolve().parent.parent
+_MAPS_DIR = _ROOT / "src" / "resources" / "maps"
+_PROFILES_DIR = _ROOT / "docs" / "lore" / "character-profiles"
+_MIXIN_SOURCE = _ROOT / "src" / "npc" / "_chat_llm.py"
+
+#: The beta route, by map-file prefix (issue #685's scope).
+_BETA_ROUTE_PREFIXES = ("grondia", "grondelith", "eastern-descent")
+
+
+# ---------------------------------------------------------------------------
+# Population 1: named conversational NPCs placed on the beta route
+# ---------------------------------------------------------------------------
+
+
+def _class_refs(node):
+    """Every class reference in a map payload, in the three shapes the loader
+    accepts: legacy ``__class__``/``__module__``, the ``__class_type__`` marker
+    (NPCSpawnerEvent's ``npc_cls``), and the authored-placeholder ``class``."""
+    if isinstance(node, dict):
+        if isinstance(node.get("__class__"), str) and isinstance(node.get("__module__"), str):
+            yield f"{node['__module__']}:{node['__class__']}"
+        if isinstance(node.get("__class_type__"), str):
+            yield node["__class_type__"]
+        if isinstance(node.get("class"), str):
+            yield node["class"]
+        for value in node.values():
+            yield from _class_refs(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _class_refs(value)
+
+
+def _beta_route_conversational_placements():
+    """``{class: sorted map names}`` for every conversational host the beta
+    route can place."""
+    placements = {}
+    for path in sorted(_MAPS_DIR.glob("*.json")):
+        if not path.name.startswith(_BETA_ROUTE_PREFIXES):
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for ref in _class_refs(payload):
+            try:
+                cls = map_placeholders.resolve_class(ref)
+            except map_placeholders.PlaceholderError:
+                continue  # objects/items the allow-list does not cover
+            if isinstance(cls, type) and issubclass(cls, ConversationalNPCMixin):
+                placements.setdefault(cls, set()).add(path.stem)
+    return {cls: sorted(maps) for cls, maps in placements.items()}
+
+
+def _has_canon_profile(name):
+    return (_PROFILES_DIR / (name.lower().replace(" ", "_") + ".md")).is_file()
+
+
+def _named_placements():
+    """``[(class, instance, maps)]`` for hosts with a canon identity."""
+    named = []
+    for cls, maps in _beta_route_conversational_placements().items():
+        npc = cls()
+        if cls._chat_keep_name or _has_canon_profile(npc.name):
+            named.append((cls, npc, maps))
+    return sorted(named, key=lambda entry: entry[0].__name__)
+
+
+_NAMED = _named_placements()
+
+
+class TestBetaRouteNamedNpcsHaveCharacterConfigs:
+    def test_the_population_is_non_empty_and_reaches_grondia(self):
+        """Non-vacuity: a moved maps directory or a broken resolver must fail
+        here, not parametrize the real check below to zero cases."""
+        assert _NAMED, "no named conversational NPC found on the beta route"
+        assert any(
+            m.startswith("grondia") for _cls, _npc, maps in _NAMED for m in maps
+        ), "the population never reaches a Grondia map"
+
+    def test_the_generic_nomads_are_the_control(self):
+        """The filter must actually filter: the camp's generic hosts are
+        conversational, placed on the route, and deliberately config-less."""
+        placed = _beta_route_conversational_placements()
+        named = {cls for cls, _npc, _maps in _NAMED}
+        generic = set(placed) - named
+        assert generic, "every placed host counted as named; the filter is inert"
+        for cls in generic:
+            assert cls().__dict__.get("_chat_char_config") is None, cls.__name__
+
+    @pytest.mark.parametrize(
+        "cls,npc,maps", _NAMED, ids=[entry[0].__name__ for entry in _NAMED]
+    )
+    def test_every_named_npc_resolves_its_own_config(self, cls, npc, maps):
+        config = npc._chat_char_config
+        assert isinstance(config, dict), (
+            f"{cls.__name__} (placed on {maps}) has no character config, so it "
+            "chats on a generated personality and the global world facts (#685)"
+        )
+        assert config.get("character_name") == npc.name
+
+
+class TestJambo:
+    """The NPC the live defect was observed on, pinned by name as well."""
+
+    @pytest.fixture(scope="class")
+    def jambo(self):
+        from src.npc._merchants import JamboHealsU
+
+        return JamboHealsU()
+
+    def test_jambo_is_placed_in_both_his_tents(self):
+        from src.npc._merchants import JamboHealsU
+
+        maps = _beta_route_conversational_placements().get(JamboHealsU, [])
+        assert "grondia-jambos_shop" in maps
+        assert "eastern-descent-jambos-tent" in maps
+
+    def test_jambo_resolves_his_character_config(self, jambo):
+        assert jambo._chat_char_config is not None
+        assert jambo._chat_char_config["character_name"] == "Jambo"
+
+    def test_his_prompt_does_not_tell_him_to_speak_in_first_person(self, jambo):
+        """The generated-personality prompt said "You speak in first person";
+        his authored voice is third person ("Jambo does not have a potion for
+        stone", ch02.py)."""
+        block = jambo._build_character_block()
+        assert "first person" not in block.lower()
+        assert "third person" in block.lower()
+
+    def _verbatim_lines(self, jambo):
+        """Lines the fallback path renders as-is, in whichever tent he is in."""
+        config = jambo._chat_char_config
+        lines = list(config["fallback_replies"]) + list(config["closing_lines_when_exhausted"])
+        for starters in config["conversation_starters_by_chapter"].values():
+            lines.extend(starters)
+        assert lines
+        return lines
+
+    def test_his_verbatim_lines_name_neither_tent(self, jambo):
+        """One class stands in two places and the prompt is not told which, so
+        a line shown unmodified must not claim a location (#685 observed river
+        talk in Grondia)."""
+        placeish = re.compile(
+            r"\b(?:river|crossing|ferry|camp|grondia|ecumerium|citadel|market)\b",
+            re.IGNORECASE,
+        )
+        for line in self._verbatim_lines(jambo):
+            assert not placeish.search(line), line
+
+    def test_his_quoted_speech_is_third_person(self, jambo):
+        """Speech is double-quoted in his file, as in his scripted ``talk``
+        (single quotes would collide with every "Jambo's")."""
+        first_person = re.compile(r"\b(?:I|I'm|I've|I'll|me|my|mine|myself)\b")
+        speeches = [
+            speech
+            for line in self._verbatim_lines(jambo)
+            for speech in re.findall(r'"([^"]*)"', line)
+        ]
+        assert speeches, "no quoted speech found; the check below is vacuous"
+        for speech in speeches:
+            assert not first_person.search(speech), speech
+
+
+# ---------------------------------------------------------------------------
+# Population 2: every key the mixin reads off a character config
+# ---------------------------------------------------------------------------
+
+
+def _config_keys_the_mixin_reads():
+    """``{key: first line}`` for every ``<config>.get("<key>")`` in the mixin,
+    where the receiver is the character config (``self._chat_char_config``
+    or one of the two local names the mixin binds it to)."""
+    source = _MIXIN_SOURCE.read_text(encoding="utf-8")
+    keys = {}
+    for node in ast.walk(ast.parse(source)):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            continue
+        receiver = node.func.value
+        is_config = any(
+            (isinstance(sub, ast.Attribute) and sub.attr == "_chat_char_config")
+            or (isinstance(sub, ast.Name) and sub.id in ("cfg", "config"))
+            for sub in ast.walk(receiver)
+        )
+        if is_config:
+            keys.setdefault(node.args[0].value, node.lineno)
+    return keys
+
+
+def _is_str_list(value):
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(isinstance(v, str) and v.strip() for v in value)
+    )
+
+
+#: The shape each read key must have. Keyed exactly by the derived set.
+_SHAPES = {
+    "role": lambda v: isinstance(v, str) and bool(v.strip()),
+    "system_prompt_snippet": lambda v: isinstance(v, str) and bool(v.strip()),
+    "voice_summary": lambda v: isinstance(v, str) and bool(v.strip()),
+    "loquacity_base": lambda v: isinstance(v, int) and not isinstance(v, bool) and v > 0,
+    "knowledge_scope": _is_str_list,
+    "personality_notes": _is_str_list,
+    "prohibited_phrases": _is_str_list,
+    "closing_lines_when_exhausted": _is_str_list,
+    "fallback_replies": _is_str_list,
+    "conversation_starters_by_chapter": lambda v: isinstance(v, dict)
+    and bool(v)
+    and all(isinstance(k, str) and k.isdigit() and _is_str_list(lines) for k, lines in v.items()),
+}
+
+
+def _persona_paths():
+    """Every character file the loader could be pointed at (``world_facts.json``
+    shares the directory and is not one)."""
+    return [
+        path
+        for path in sorted(_HUMAN_NPC_DIR.glob("*.json"))
+        if "character_name" in json.loads(path.read_text(encoding="utf-8"))
+    ]
+
+
+_PERSONAS = _persona_paths()
+
+
+class TestCharacterConfigsSatisfyTheLoader:
+    def test_the_scan_finds_the_reads(self):
+        assert len(_config_keys_the_mixin_reads()) >= 8
+
+    def test_the_schema_covers_every_key_the_mixin_reads(self):
+        read = _config_keys_the_mixin_reads()
+        assert set(read) == set(_SHAPES), {
+            "read but unshaped": sorted(set(read) - set(_SHAPES)),
+            "shaped but no longer read": sorted(set(_SHAPES) - set(read)),
+        }
+
+    def test_every_persona_name_is_an_allowed_proper_noun(self):
+        """The invented-name scrubber keeps only ``allowed_proper_nouns`` (plus
+        the speaker's own name), so a persona missing from the list is scrubbed
+        out of every OTHER NPC's line -- Votha Krr's "find Jambo, the trader"
+        would lose its subject."""
+        facts = json.loads((_HUMAN_NPC_DIR / "world_facts.json").read_text(encoding="utf-8"))
+        allowed = set(facts["allowed_proper_nouns"])
+        names = {
+            json.loads(path.read_text(encoding="utf-8"))["character_name"]
+            for path in _PERSONAS
+        }
+        assert names - allowed == set()
+
+    def test_the_new_personas_are_present(self):
+        stems = {path.stem for path in _PERSONAS}
+        assert {"jambo", "votha_krr", "gorran"} <= stems, stems
+
+    @pytest.mark.parametrize("path", _PERSONAS, ids=[p.stem for p in _PERSONAS])
+    def test_the_loader_reads_it_and_every_read_key_has_its_shape(self, path):
+        # The loader's own read: None on any failure, which it then caches.
+        config = ConversationalNPCMixin._read_json_config(path, "chat config")
+        assert isinstance(config, dict), path.name
+        assert isinstance(config.get("character_name"), str) and config["character_name"]
+        bad = {
+            key: config.get(key)
+            for key, shape in _SHAPES.items()
+            if not shape(config.get(key))
+        }
+        assert bad == {}, f"{path.name}: {bad}"
+        # _init_chat_attrs compiles these; an escaped literal always compiles,
+        # so the real check is that none is blank (a blank pattern matches
+        # everywhere and would strip every reply).
+        for phrase in config["prohibited_phrases"]:
+            assert re.compile(re.escape(phrase), re.IGNORECASE).pattern.strip()
