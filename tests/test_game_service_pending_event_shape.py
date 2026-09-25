@@ -493,6 +493,12 @@ class TestThePendingEntryHasOneBuilder:
         first = service.interact_with_target(
             player, handle, "loot", session_data=session_data
         )
+        # Since #713 an interaction is refused while a scene awaits input, so
+        # the open dialog itself would now block the reopen outright. Leave
+        # the entry stored but no longer awaiting (the stale shape that used
+        # to strand), so the second loot still reaches the writer under test.
+        (entry,) = session_data["pending_events"].values()
+        entry["event_data"]["completed"] = True
         second = service.interact_with_target(
             player, handle, "loot", session_data=session_data
         )

@@ -137,9 +137,13 @@ class TestOnlyThePassageConfirmationIsDropped:
 
     def test_a_pending_loot_event_survives_combat_start(self, world, game_service):
         player, tile, passage, slime = world
+        # Queue the confirmation first: since #713 an interaction is refused
+        # while another scene already awaits input.
+        session_data = {}
+        _queue_confirmation(game_service, player, passage, session_data)
         loot = LootEvent("Loot", player, tile, SimpleNamespace(nickname="chest"))
-        session_data = {
-            "pending_events": {
+        session_data["pending_events"].update(
+            {
                 "loot-1": {
                     "event": loot,
                     "event_data": {
@@ -157,8 +161,7 @@ class TestOnlyThePassageConfirmationIsDropped:
                     },
                 },
             }
-        }
-        _queue_confirmation(game_service, player, passage, session_data)
+        )
         tile.npcs_here.append(slime)
 
         game_service.start_combat(player, wire_handle(slime), session_data=session_data)

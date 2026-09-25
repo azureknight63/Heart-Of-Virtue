@@ -29,6 +29,9 @@ import { redirectToLogin } from '../utils/session'
 import { apiErrorMessage, autosaveErrorMessage } from '../utils/apiError'
 import { LOOT_COLLECT_REFUSED } from '../utils/lootCopy'
 
+/** Shown when a move fails and the response carries no reason of its own. */
+const MOVE_FAILED_MESSAGE = 'Jean could not move.'
+
 export default function GamePage() {
   const isMobile = useMobile()
 
@@ -375,7 +378,18 @@ export default function GamePage() {
    * Handle movement with event and combat checks
    */
   const handleMove = async (direction) => {
-    const result = await moveToLocation(direction)
+    let result
+    try {
+      result = await moveToLocation(direction)
+    } catch (err) {
+      // The server refused (e.g. a scene still awaits an answer, #713) or the
+      // request failed. Say why, bring back any dialog the client lost, and
+      // replace the cached room useWorld applied optimistically.
+      showError(apiErrorMessage(err, MOVE_FAILED_MESSAGE))
+      checkPendingEvents()
+      refetchWorld()
+      throw err
+    }
 
     // Handle events triggered by movement
     if (result.events_triggered && result.events_triggered.length > 0) {

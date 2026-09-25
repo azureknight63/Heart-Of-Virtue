@@ -398,6 +398,41 @@ def _refused_if_dead(player, key="error", include_success=True):
     return None
 
 
+def _blocking_pending_events(session_data):
+    """The pending-event entries that still wait for the player's answer:
+    ``needs_input`` and not ``completed``, read from each entry's
+    ``event_data``. One predicate for every action a scene in progress
+    blocks -- combat moves (``execute_move``), world moves and interactions
+    (#713)."""
+    return [
+        entry
+        for entry in ((session_data or {}).get("pending_events") or {}).values()
+        if entry.get("event_data", {}).get("needs_input")
+        and not entry.get("event_data", {}).get("completed")
+    ]
+
+
+#: Why a world move or interaction is refused while a scene awaits an answer
+#: (#713). ``{name}`` is the pending event's name, so the refusal says which.
+_SCENE_AWAITS_INPUT_MESSAGE = "Jean must first answer the scene in front of her ({name})."
+
+
+def _refused_while_scene_awaits_input(session_data, key="error", include_success=True):
+    """``{key: _SCENE_AWAITS_INPUT_MESSAGE}`` (plus ``"success": False``
+    unless ``include_success`` is False) while a pending event awaits input,
+    else None (#713). Walking off mid-scene let a later answer run the next
+    stage from the wrong place (``Ch02GuideToCitadel`` teleported Jean back),
+    and was the road into the #712 deadlock; the SPA's modal dialog was the
+    only guard. Each caller passes its own refusal shape."""
+    blocking = _blocking_pending_events(session_data)
+    if not blocking:
+        return None
+    name = blocking[0].get("event_data", {}).get("name") or "an open scene"
+    refusal = {"success": False} if include_success else {}
+    refusal[key] = _SCENE_AWAITS_INPUT_MESSAGE.format(name=name)
+    return refusal
+
+
 def _drop_passage_confirmations(session_data):
     """Remove every queued ``PassagewayTransitionEvent`` from
     ``session_data["pending_events"]`` (#712).
@@ -2092,6 +2127,12 @@ class GameService:
         if getattr(player, "in_combat", False):
             return {"error": "Cannot move while in combat"}
 
+        refused = _refused_while_scene_awaits_input(
+            session_data, key="error", include_success=False
+        )
+        if refused is not None:
+            return refused
+
         tile = player.universe.get_tile(player.location_x, player.location_y)
         if not tile:
             return {"error": "Cannot move from this location"}
@@ -3434,6 +3475,9 @@ class GameService:
         refused = _refused_if_dead(player, key="message")
         if refused is not None:
             return refused
+        refused = _refused_while_scene_awaits_input(session_data, key="message")
+        if refused is not None:
+            return refused
 
         tile, target = self._resolve_interaction_target(player, target_id, session_data)
         if target is None:
@@ -3983,12 +4027,7 @@ class GameService:
         # This prevents players from acting before event dialogs appear (e.g., rumbler announcement)
         if session_data and session_data.get("pending_events"):
             # Only block if there are events that actually need input (not stale/completed events)
-            blocking_events = [
-                e
-                for e in session_data["pending_events"].values()
-                if e.get("event_data", {}).get("needs_input")
-                and not e.get("event_data", {}).get("completed")
-            ]
+            blocking_events = _blocking_pending_events(session_data)
             if blocking_events:
                 return {
                     "success": False,
