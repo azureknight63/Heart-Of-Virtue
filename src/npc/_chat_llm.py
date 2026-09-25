@@ -2413,6 +2413,7 @@ class ConversationalNPCMixin:
             # Fenced (#716): Jean's options are written in this same call, and
             # an unlabelled sheet read to the model as common knowledge.
             f"{NPC_PRIVATE_BLOCK_LABEL}\n{character}" if character else "",
+            self._build_location_block(player),
             self._build_trade_block(),
             # Combat self-knowledge (progressing allies only) — the chat is the
             # sole surface for ally growth (no UI elements by design), so the
@@ -2424,6 +2425,22 @@ class ConversationalNPCMixin:
             self._build_jean_context_block(player, chapter),
         ]
         return "\n\n".join(block for block in blocks if block)
+
+    @staticmethod
+    def _build_location_block(player) -> str:
+        """Where this conversation happens, or "" when the map does not say.
+
+        Read from the ``place`` key of the map's authored ``metadata`` block,
+        which ``Universe._load_single_json_map`` copies onto ``player.map``;
+        chat opens only with an NPC on the player's own tile, so the player's
+        map is the NPC's. Map names ("grondia-jambos_shop") are ids, not
+        prose, and Jambo's two tents share every tile title, so the place is
+        authored rather than derived (#717: in Grondia he described the river).
+        """
+        game_map = getattr(player, "map", None)
+        metadata = game_map.get("metadata") if isinstance(game_map, dict) else None
+        place = metadata.get("place") if isinstance(metadata, dict) else None
+        return f"WHERE YOU ARE: {place}." if place else ""
 
     def _build_world_facts_block(self) -> str:
         """The shared setting: places, peoples, world rules, tone."""
@@ -2481,8 +2498,11 @@ class ConversationalNPCMixin:
     def _build_conduct_block(self, chapter: str) -> str:
         """What the NPC may not write, and how far into the story it may see."""
         return (
-            "Jean is he/him. Do not write Jean's dialogue. Do not describe Jean's "
-            "internal state.\n"
+            # "a grown man" (#717): Liss, a child, called him "child". The
+            # world_facts Jean entry says so too, but known_npcs is not
+            # rendered into this prompt, so it has to be said here.
+            "Jean is a grown man (he/him). Do not write Jean's dialogue. Do not "
+            "describe Jean's internal state.\n"
             # Prevention half of the state guard: nothing said in a chat reaches
             # the engine, so an offer or an appointment is a promise the game
             # cannot keep. Cheaper to not generate one than to catch and revise

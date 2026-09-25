@@ -350,3 +350,40 @@ def test_the_noun_filter_keeps_every_name_the_facts_give(given):
         f"the noun filter would rewrite {sorted(invented)} in {given!r}; "
         "add the word(s) to allowed_proper_nouns in world_facts.json"
     )
+
+
+# ---------------------------------------------------------------------------
+# Issue #717: the chat prompt's WHERE YOU ARE line, and the character-file
+# clauses the 2026-09-25 live run showed were missing. Populations derived from
+# the map files and the character files, as above.
+# ---------------------------------------------------------------------------
+
+
+def _maps_hosting_conversation():
+    return sorted(
+        {m for maps in _beta_route_conversational_placements().values() for m in maps}
+    )
+
+
+_CHAT_MAPS = _maps_hosting_conversation()
+
+
+def test_the_chat_map_population_includes_both_tents():
+    assert "grondia-jambos_shop" in _CHAT_MAPS
+    assert "eastern-descent-jambos-tent" in _CHAT_MAPS
+
+
+@pytest.mark.parametrize("map_name", _CHAT_MAPS)
+def test_every_map_with_a_conversation_names_its_place(map_name):
+    """``_build_location_block`` reads ``metadata.place``; a map without one
+    gives its NPCs no WHERE YOU ARE line, and Jambo guessed his tent (#717)."""
+    from src.npc._merchants import JamboHealsU
+
+    raw = json.loads((_MAPS_DIR / f"{map_name}.json").read_text(encoding="utf-8"))
+    place = (raw.get("metadata") or {}).get("place")
+    assert isinstance(place, str) and place.strip(), map_name
+    # The place is handed to the model, which will say it back: every name in
+    # it must survive the invented-noun filter, or the NPC's correct answer is
+    # rewritten to "someone".
+    invented = JamboHealsU()._find_invented_nouns(f"He said that {place} was near.")
+    assert invented == {}, (map_name, sorted(invented))
