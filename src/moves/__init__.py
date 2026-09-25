@@ -36,6 +36,7 @@ from ._base import (
     damage_bounds,
     TELEGRAPH_SEVERITIES,
     TELEGRAPH_SEVERITY_NORMAL,
+    DAMAGING_MOVE_CATEGORIES,
     UnavailableReason,
     UNAVAILABILITY_TEXT,
 )
@@ -140,6 +141,8 @@ __all__ = [
     # The telegraph vocabulary (issue #586) the serializer and tests read
     "TELEGRAPH_SEVERITIES",
     "TELEGRAPH_SEVERITY_NORMAL",
+    # The categories behind Move.deals_damage (issue #714)
+    "DAMAGING_MOVE_CATEGORIES",
     # Why a move is locked (issue #627): the code vocabulary and its copy
     "UnavailableReason",
     "UNAVAILABILITY_TEXT",

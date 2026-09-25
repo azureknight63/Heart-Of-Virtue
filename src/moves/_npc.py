@@ -1309,6 +1309,9 @@ class KeeningToll(NpcAttack):
 
     web_animation = "drain"
 
+    # Offensive, but the hit drains fatigue and never HP (issue #714).
+    deals_damage = False
+
     def __init__(self, npc):
         super().__init__(npc)
         self.name = "Keening Toll"
@@ -1452,6 +1455,10 @@ class DeathKnell(NpcAttack):
     display_name = 'Death Knell'
 
     web_animation = "death"
+
+    # Offensive, but it deals no damage: it only attempts states.Death, which
+    # Jean's default resistance refuses (issue #714, maintainer's call).
+    deals_damage = False
 
     FP_THRESHOLD = 0.10
 

@@ -241,6 +241,7 @@ export function makeActiveMove(overrides = {}) {
       mvrange: { min: 0, max: 5 },
       falloff: null,
       damage_multiplier: 1.0,
+      deals_damage: true,
       telegraph_severity: 'normal',
     },
     overrides
