@@ -571,23 +571,44 @@ export default function GamePage() {
   }, [mode, playSFX])
 
   /**
+   * Latches whether the CURRENT fight is a boss fight, for the BGM effect
+   * below. `combat?.enemies` is not a safe read at the moment that matters
+   * most: by the time an `end_state` appears the adapter has already emptied
+   * the roster, so re-deriving isBossFight from `combat?.enemies` on every
+   * render dropped a boss fight back to the ordinary 'battle' track the
+   * instant victory landed — before the VictoryDialog even had a chance to
+   * open (#718 item 4). Setting the flag only while entering combat with a
+   * non-empty roster, and clearing it on the way back to exploration, keeps
+   * the answer stable for the fight's whole lifetime instead of chasing a
+   * payload that goes empty at the worst possible moment.
+   */
+  const isBossFightRef = useRef(false)
+  useEffect(() => {
+    if (mode === 'combat') {
+      const enemies = combat?.enemies || []
+      if (enemies.length > 0) {
+        isBossFightRef.current = enemies.some((enemy) => enemy.is_boss)
+      }
+    } else {
+      isBossFightRef.current = false
+    }
+  }, [mode, combat?.enemies])
+
+  /**
    * Manage BGM based on mode and location metadata
    * (Does not override active event BGM)
    */
   useEffect(() => {
     if (!currentEvent) {
       if (mode === 'combat') {
-        // Boss fights (Lurker, King Slime, …) get their own track; the
-        // engine flags them via `is_boss` on the enemy combatant.
-        const isBossFight = (combat?.enemies || []).some((enemy) => enemy.is_boss)
-        playBGM(isBossFight ? 'boss_battle' : 'battle')
+        playBGM(isBossFightRef.current ? 'boss_battle' : 'battle')
       } else {
         // Use the BGM defined in map metadata, fallback to adventure
         const track = location?.bgm || 'adventure'
         playBGM(track)
       }
     }
-  }, [mode, location?.bgm, playBGM, currentEvent, combat?.enemies])
+  }, [mode, location?.bgm, playBGM, currentEvent])
 
   /**
    * Check combat status and pending events whenever player and world data

@@ -41,6 +41,20 @@ const STAGE_LABELS = {
     cooldown: 'Cooldown',
 };
 
+// The engine's own name for the one move whose commitment bar cannot be
+// drawn from stage_beats (#718 item 2): Wait ships a placeholder
+// stage_beat of [0,0,0,0] (src/moves/_utility.py) until AFTER it is clicked,
+// when the server switches to the number_input prompt and reveals the real
+// 3-10 beat range the player picks from (WAIT_DURATION_PROMPT,
+// src/api/combat_adapter.py). That range is never on the moves-list wire the
+// card renders from, so rather than inventing "3-10 beats" here (a second,
+// driftable copy of a number the engine owns) or rendering the misleading
+// "0 beats" the placeholder produces, the card says the honest thing: the
+// player picks the duration next. Matched by name, the same precedent as
+// SWAP_WEAPON_MOVE_NAME (utils/combatMoveStatus.js) — held to the engine by
+// tests/test_wire_field_contract.py.
+const DURATION_CHOICE_MOVE_NAME = 'Wait';
+
 // Width of the fullest bar in the visible list (the move at maxTotal beats).
 // Every other bar in the same panel is scaled relative to this, not to its
 // own total — see maxTotalStageBeats' docstring for why per-card
@@ -60,10 +74,15 @@ const COMMITMENT_BAR_MIN_WIDTH = 3;
 const MoveCommitmentBar = ({ move, maxTotal }) => {
     const stageBeats = getStageBeats(move);
     const total = totalStageBeats(stageBeats);
+    const isDurationChoice = move?.name === DURATION_CHOICE_MOVE_NAME;
 
     // Nothing in the visible list declares a duration (e.g. every move here
     // is missing stage_beats) — draw nothing rather than a row of empty bars.
-    if (maxTotal <= 0) return null;
+    // Wait is the one exception: its own stage_beats is the [0,0,0,0]
+    // placeholder (see DURATION_CHOICE_MOVE_NAME above), so with no other
+    // move to set maxTotal it would otherwise vanish along with its "you
+    // choose" label instead of just skipping the now-meaningless bar.
+    if (maxTotal <= 0 && !isDurationChoice) return null;
 
     const barWidth = total <= 0
         ? COMMITMENT_BAR_MIN_WIDTH
@@ -77,7 +96,7 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
         <div
             data-testid="move-commitment-bar"
             data-total-beats={total}
-            title={`${breakdown} (${formatBeats(total)} ${beatUnit(total)} total lockout)`}
+            title={isDurationChoice ? 'You choose the duration after selecting this move.' : `${breakdown} (${formatBeats(total)} ${beatUnit(total)} total lockout)`}
             style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}
         >
             <div
@@ -109,7 +128,7 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
                 </div>
             </div>
             <GameText variant="muted" size="xs" style={{ fontFamily: fonts.main, whiteSpace: 'nowrap' }}>
-                {formatBeats(total)} {beatUnit(total)}
+                {isDurationChoice ? 'you choose' : `${formatBeats(total)} ${beatUnit(total)}`}
             </GameText>
         </div>
     );

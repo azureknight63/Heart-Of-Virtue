@@ -150,10 +150,15 @@ describe('CombatLog', () => {
     expect(entries().getByText('Jean strikes.')).toBeInTheDocument()
   })
 
-  it('falls back to a generated timestamp when an entry has none', () => {
+  it('shows no timestamp when an entry has none, rather than a generated "now" (#718)', () => {
+    // Was: falls back to `new Date().toLocaleTimeString()`, a 12-hour
+    // locale "now" that both mixed formats with the server's 24h
+    // timestamps and misrepresented render time as the entry's own time.
     render(<CombatLog log={[{ message: 'no timestamp', type: 'combat' }]} />)
-    // Locale decides 12- vs 24-hour, so match the shape rather than the format.
-    expect(screen.getByText(/^\[\d{2}:\d{2}:\d{2}.*\]$/)).toBeInTheDocument()
+    expect(screen.queryByText(/^\[\d{1,2}:\d{2}:\d{2}.*\]$/)).not.toBeInTheDocument()
+    // Scoped: the hidden screen-reader announcer holds a second copy of the
+    // same text (issue #563 item 1), so an unscoped query matches twice.
+    expect(within(screen.getByTestId('combat-log-entries')).getByText('no timestamp')).toBeInTheDocument()
   })
 
   it('renders distinct entries that share a message and round', () => {

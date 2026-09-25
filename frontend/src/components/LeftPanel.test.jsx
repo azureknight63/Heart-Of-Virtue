@@ -1553,14 +1553,20 @@ describe('LeftPanel', () => {
             expect(mockPlaySFX).not.toHaveBeenCalledWith('attack_swipe');
         });
 
-        it('plays the victory sting for a victory log line', async () => {
+        // #718 item 3: this used to assert the log-playback layer itself
+        // played the fanfare on a "victory" log line, which duplicated
+        // useCombatCoordinator's own intentional, dialog-driven trigger — the
+        // sting played twice on every win. useCombatLogPlayback (which this
+        // panel's replay drives) must never call it, on this line or any other.
+        it('does not play the victory sting from the log replay — that is useCombatCoordinator\'s job', async () => {
             const { replay } = await renderWithSeededLog();
 
             replay([{ message: 'Victory! The battle is won.', round: 1, type: 'result' }]);
 
             await waitFor(() => {
-                expect(mockPlaySting).toHaveBeenCalledWith('fanfare');
+                expect(screen.getByText('Victory! The battle is won.')).toBeInTheDocument();
             }, { timeout: REPLAY_ASSERT_TIMEOUT });
+            expect(mockPlaySting).not.toHaveBeenCalledWith('fanfare');
         }, REPLAY_TEST_TIMEOUT);
     });
 

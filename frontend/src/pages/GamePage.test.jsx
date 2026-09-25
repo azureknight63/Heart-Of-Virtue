@@ -263,6 +263,65 @@ describe('GamePage', () => {
         });
     });
 
+    // #718 item 4: `combat?.enemies` is empty by the time an `end_state`
+    // shows up (the roster is already cleared), so recomputing isBossFight
+    // fresh from it on every BGM-effect run flips a boss fight back to the
+    // normal 'battle' track the instant victory lands — before the
+    // VictoryDialog even has a chance to open. The fix latches the boss flag
+    // for the whole fight instead of re-deriving it from a payload that goes
+    // empty at the worst possible moment.
+    it('never falls back to the normal battle track when a boss fight ends in victory', async () => {
+        const playBGM = vi.fn();
+        useAudio.mockReturnValue({ playSFX: vi.fn(), playBGM, stopBGM: vi.fn() });
+        useCombat.mockReturnValue({
+            combat: {
+                ...mockCombat,
+                combat_active: true,
+                enemies: [{ id: 'enemy_2', is_boss: true }]
+            },
+            inCombat: true,
+            loading: false,
+            fetchCombatStatus: vi.fn(),
+            performAction: vi.fn()
+        });
+
+        const { rerender } = renderGamePage();
+        fireEvent.click(screen.getByRole('button', { name: /FIGHT FOR YOUR LIFE/i }));
+
+        await waitFor(() => {
+            expect(playBGM).toHaveBeenCalledWith('boss_battle');
+        });
+        playBGM.mockClear();
+
+        // Victory: the adapter's roster is already empty and end_state is set,
+        // exactly the payload shape that used to race the BGM effect.
+        useCombat.mockReturnValue({
+            combat: {
+                ...mockCombat,
+                combat_active: false,
+                enemies: [],
+                end_state: { id: 'victory-1', status: 'victory' },
+                log: [{ message: 'Victory!', type: 'combat', round: 1, beat_index: 0 }]
+            },
+            inCombat: false,
+            loading: false,
+            fetchCombatStatus: vi.fn(),
+            performAction: vi.fn()
+        });
+
+        rerender(
+            <MemoryRouter>
+                <GamePage />
+            </MemoryRouter>
+        );
+
+        await waitFor(() => {
+            expect(screen.getByText(/Mode: combat/i)).toBeDefined();
+        });
+
+        expect(playBGM).not.toHaveBeenCalledWith('battle');
+    });
+
     it('handles movement and triggers events', async () => {
         const mockMoveToLocation = vi.fn().mockResolvedValue({
             combat_started: false,
