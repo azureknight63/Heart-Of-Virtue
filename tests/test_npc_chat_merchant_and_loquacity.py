@@ -28,9 +28,17 @@ import pytest
 from src.npc._chat_llm import (
     LOQUACITY_SCALE_PERCENT,
     _JEAN_FALLBACK_POOL,
+    _LOQUACITY_DRAIN,
     scale_loquacity,
 )
-from tests._npc_fixtures import chat_npc, chat_player, equipped_item, qc_npc
+from tests._npc_fixtures import (
+    ScriptedAdapter,
+    chat_npc,
+    chat_player,
+    equipped_item,
+    qc_npc,
+    wired_chat_npc,
+)
 from tests.llm_doubles import make_chat_adapter
 
 # A character config whose role puts the NPC in merchant context, the way
@@ -2686,3 +2694,39 @@ class TestOnePersistedFieldHasOneRescaler:
         assert (
             npc._rescale_persisted_loquacity(9, 18, entry["loquacity_scale"]) == 9
         )
+
+
+class TestAFailedTurnCostsTheReducedDrain:
+    """#684: one provider outage ended Jambo's conversation.
+
+    A turn the model could not produce fell through to the ``"neutral"`` drain
+    (8) -- the cost of a turn the NPC actually spoke. Jambo sat at 9 with a
+    threshold of 2, so one failed turn took him to 1 and ended the chat on an
+    outage the player had no part in. Maintainer decision (2026-09-24): a
+    failed turn charges the reduced (``"positive"``) drain instead.
+    """
+
+    def test_a_failed_turn_at_nine_leaves_six_and_the_conversation_open(self):
+        # raw=None: the adapter came back with no turn at all, which is what
+        # an exhausted provider rotation hands the mixin.
+        npc = wired_chat_npc(
+            ScriptedAdapter(raw=None),
+            loquacity_current=9, loquacity_max=12, loquacity_threshold=2,
+        )
+        resp = npc.chat_respond(chat_player(), "Tell me more.", "direct")
+
+        assert resp["llm_available"] is False, "the turn was meant to fail"
+        assert npc.loquacity_current == 9 - _LOQUACITY_DRAIN["positive"] == 6
+        assert resp["conversation_ended"] is False
+
+    def test_a_turn_the_model_produced_still_pays_its_own_quality(self):
+        """Control: only a FAILED turn is discounted. A neutral turn the model
+        actually served costs the neutral drain, as it always has."""
+        npc = wired_chat_npc(
+            ScriptedAdapter(quality="neutral"),
+            loquacity_current=12, loquacity_max=12, loquacity_threshold=2,
+        )
+        resp = npc.chat_respond(chat_player(), "Tell me more.", "direct")
+
+        assert resp["llm_available"] is True
+        assert npc.loquacity_current == 12 - _LOQUACITY_DRAIN["neutral"]

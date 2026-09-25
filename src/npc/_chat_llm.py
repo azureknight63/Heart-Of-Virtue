@@ -1269,8 +1269,17 @@ _MERCHANT_PRESENCE_ATTRS = ("stock_count",)
 #: Verbs that read as trade in a role description.
 _MERCHANT_ROLE_VERBS = {"buy", "sell", "trade"}
 # Fallback drain amounts keyed by conversation_quality — used only when the LLM
-# does not supply an explicit signed loquacity_delta (legacy adapter / fallback).
+# does not supply an explicit signed loquacity_delta (legacy adapter). A turn
+# the LLM failed outright is charged _FAILED_TURN_LOQUACITY_DRAIN below.
 _LOQUACITY_DRAIN = {"positive": 3, "neutral": 8, "negative": 15, "offensive": 30}
+
+# What a turn the model could not produce costs: the reduced ("positive")
+# drain, not the "neutral" one a turn the NPC actually spoke would. The player
+# had no part in a provider outage, and at the scaled pool sizes the neutral 8
+# took Jambo from 9 to 1 -- past his threshold of 2 -- on one failed turn
+# (#684; maintainer decision 2026-09-24). A fully degraded conversation is
+# still bounded by _MAX_CONSECUTIVE_FALLBACK_REPLIES, not by this drain.
+_FAILED_TURN_LOQUACITY_DRAIN = _LOQUACITY_DRAIN["positive"]
 
 # ---------------------------------------------------------------------------
 # Loquacity scale
@@ -4259,8 +4268,9 @@ class ConversationalNPCMixin:
 
         The LLM may signal a signed delta (usually a drain, occasionally a GAIN
         when Jean raises a topic the NPC finds interesting). When no explicit
-        delta is supplied (legacy adapter or deterministic fallback), the
-        quality-based drain applies so conversations still wind down.
+        delta is supplied (legacy adapter), the quality-based drain applies so
+        conversations still wind down. A failed turn arrives here with
+        ``-_FAILED_TURN_LOQUACITY_DRAIN`` already set by ``chat_respond``.
 
         The "ended" verdict is resolved here rather than separately for the
         fallback-line decision and the response payload, so the two can never
@@ -4802,8 +4812,9 @@ class ConversationalNPCMixin:
             # The defaults come off TurnOutcome rather than being re-spelled
             # here, thousands of lines below where it declares them.
             # conversation_quality keys _LOQUACITY_DRAIN, so a divergence
-            # between the two copies would silently change how fast every
-            # fallback conversation winds down.
+            # between the two copies would silently change how fast a
+            # conversation with a legacy adapter winds down. (A failed turn's
+            # cost is set explicitly below; #684.)
             outcome = model_turn if model_turn is not None else TurnOutcome(npc_text="")
             npc_flavor = outcome.npc_flavor
             conversation_quality = outcome.conversation_quality
@@ -4826,6 +4837,7 @@ class ConversationalNPCMixin:
                     "chat_respond LLM turn failed; will use deterministic fallback. npc=%s",
                     self.name,
                 )
+                loquacity_delta = -_FAILED_TURN_LOQUACITY_DRAIN
 
             loquacity = self._apply_loquacity_delta(
                 loquacity_delta, conversation_quality
