@@ -933,6 +933,21 @@ describe('LeftPanel', () => {
             await waitFor(() => expect(errorSpy).toHaveBeenCalled());
             errorSpy.mockRestore();
         });
+
+        // #694: `player` is fetched once by GamePage and handed down; a
+        // successful swap changed the engine's equipped weapon but nothing
+        // told GamePage to refetch it, so reopening the Weapons tab still
+        // read the pre-swap `is_equipped` flag off the stale `player` prop.
+        it('refetches player/combat state after a successful swap so "In hand" is not stale', async () => {
+            const onCombatAction = vi.fn().mockResolvedValue({});
+            const onRefetch = vi.fn().mockResolvedValue();
+            const combat = combatWith([swapOption()]);
+            render(<LeftPanel {...baseProps} mode="combat" combat={combat} onCombatAction={onCombatAction} onRefetch={onRefetch} />);
+            fireEvent.click(screen.getByText('Inventory Btn'));
+            fireEvent.click(screen.getByText('Draw Mock Weapon'));
+            await waitFor(() => expect(onCombatAction).toHaveBeenCalledWith('swap_weapon', { item_id: 'w-sword' }));
+            await waitFor(() => expect(onRefetch).toHaveBeenCalled());
+        });
     });
 
     // HeroPanel's base bounding box is 360x310; the wrapper scales by

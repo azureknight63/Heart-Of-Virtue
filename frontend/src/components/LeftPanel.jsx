@@ -239,6 +239,12 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     notifyMoveSubmitted()
     try {
       await onCombatAction('swap_weapon', { item_id: itemId })
+      // #694: the inventory's "In hand" label reads the `player` prop, which
+      // is fetched once by GamePage and only otherwise refreshed on combat
+      // end -- a successful swap changed the engine's equipped weapon with
+      // nothing telling GamePage to refetch it, so reopening the Weapons tab
+      // mid-fight still showed the pre-swap weapon.
+      if (onRefetch) await onRefetch()
     } catch (err) {
       console.error('Failed to swap weapon:', err)
     }

@@ -131,6 +131,50 @@ class TestExactlyOneTerminalStreamPerEnding:
         assert [ended for _beats, ended in streamed] == [True]
 
 
+class TestVictorySummaryCarriesEveryLevelUpAttribute:
+    """#694: the victory allocator listed "Faith" with no value.
+
+    ``combat_end_summary["attributes"]`` is hand-built in ``_handle_victory``
+    (and refreshed again in ``get_combat_state``) as a dict literal of six
+    keys -- everything in ``LEVEL_UP_ATTRIBUTES``
+    (``src/player/_leveling.py``) except ``faith_base``. The frontend's
+    ``AttributePointAllocator`` only appends " (n)" for a numeric value
+    (``frontend/src/components/AttributePointAllocator.jsx``), so the missing
+    key rendered as a bare "Faith" with nothing raised to compare against.
+    ``LevelUpModal`` never showed this because it reads straight off
+    ``player`` (which does carry ``faith_base``), not off this hand-copied
+    summary dict.
+    """
+
+    def test_victory_attributes_include_faith_base(self, adapter, player):
+        player.combat_list.clear()
+
+        adapter.settle_victory()
+
+        attributes = player.combat_end_summary["attributes"]
+        from src.player._leveling import LEVEL_UP_ATTRIBUTE_NAMES
+
+        assert set(LEVEL_UP_ATTRIBUTE_NAMES) <= set(attributes), (
+            "combat_end_summary['attributes'] is missing "
+            f"{set(LEVEL_UP_ATTRIBUTE_NAMES) - set(attributes)} -- every "
+            "attribute the LEVEL UP dialog can raise must also appear in the "
+            "victory allocator's payload"
+        )
+        assert attributes["faith_base"] == player.faith_base
+        assert isinstance(attributes["faith_base"], int)
+
+    def test_get_combat_state_refresh_also_includes_faith_base(self, adapter, player):
+        # get_combat_state() re-copies `attributes` onto the summary once
+        # combat has ended (the "Refresh dynamic values" branch) -- a second,
+        # separately hand-written dict literal with the same omission.
+        player.combat_list.clear()
+        adapter.settle_victory()
+
+        state = adapter.get_combat_state()
+
+        assert state["end_state"]["attributes"]["faith_base"] == player.faith_base
+
+
 class TestTheFoldedTailKeptEverythingTheInlineCopyDid:
     """The move loop's inline triple is gone; nothing it did may be gone with it."""
 
