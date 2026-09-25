@@ -296,7 +296,7 @@ def main():
     if py:
         r = subprocess.run([py, "-c", "from playwright.sync_api import sync_playwright\n"
                             "with sync_playwright() as p:\n b=p.chromium.launch(headless=True); print(b.version); b.close()"],
-                           capture_output=True, text=True, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", env={**os.environ, "PYTHONIOENCODING": "utf-8"})
         ok = r.returncode == 0
         failed |= line("PASS" if ok else "FAIL",
                        f"playwright + chromium: {r.stdout.strip() if ok else 'pip install playwright && python -m playwright install chromium'}")

@@ -210,3 +210,25 @@ def test_real_grondia_tile_title_and_occupant_derived_from_json():
     assert f"(14,5) {expected_title}" in line
     if expected_occupants:
         assert f"[{', '.join(expected_occupants)}]" in line
+
+
+def test_story_events_use_a_dotted_class_key():
+    """Story events are spelled {"class": "story.ch03.X"}, not "__class__"."""
+    tile = {"events": [{"class": "story.ch03.FerryLandingObjectiveEvent"}, {"__class__": "NPCSpawnerEvent"}]}
+    assert route_tiles.tile_event_classes(tile) == ["FerryLandingObjectiveEvent", "NPCSpawnerEvent"]
+
+
+def test_no_real_map_event_renders_as_unknown():
+    """Derived from every shipped map: an event the JSON names must never print as UnknownEvent."""
+    import json
+    maps = sorted((route_tiles.ROOT / "src" / "resources" / "maps").glob("*.json"))
+    seen = 0
+    for path in maps:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for key, tile in data.items():
+            if not isinstance(tile, dict) or key == "metadata":
+                continue
+            for name in route_tiles.tile_event_classes(tile):
+                seen += 1
+                assert name != "UnknownEvent", (path.name, key)
+    assert seen > 0
