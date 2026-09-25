@@ -105,7 +105,24 @@ describe('useCombatLogPlayback — reveal pacing', () => {
     expect(messages(result)).toEqual(['Jean swings', 'Victory!'])
     act(() => { vi.advanceTimersByTime(1) })
     expect(messages(result)).toEqual(['Jean swings', 'Victory!', 'after'])
-    expect(mockPlaySting).toHaveBeenCalledWith('fanfare')
+  })
+
+  // #718 item 3: this hook and useCombatCoordinator both matched the word
+  // "victory" and both called playSting('fanfare') — the fight ended with the
+  // sting playing twice. useCombatCoordinator's trigger is the intentional,
+  // dialog-driven one (it fires once, when the VictoryDialog actually opens);
+  // this log-reveal layer must never call it at all, on a victory line or any
+  // other message.
+  it('never plays the fanfare sting itself — that is useCombatCoordinator\'s job', () => {
+    const first = [entry('Jean swings')]
+    const { rerender } = mountThenReveal(first)
+    act(() => { vi.advanceTimersByTime(400) })
+
+    const batch = [...first, entry('Victory!'), entry('after')]
+    act(() => { rerender({ combat: { combat_id: 'fight-1', log: batch } }) })
+    act(() => { vi.advanceTimersByTime(2000) })
+
+    expect(mockPlaySting).not.toHaveBeenCalled()
   })
 
   it('holds the reveal for the animation duration and leaves its SFX to the battlefield', () => {

@@ -45,7 +45,7 @@ export default function useCombatLogPlayback(combat, {
   onDisplayedLogCountChange,
 } = {}) {
   // Audio context
-  const { playSFX, playSting } = useAudio()
+  const { playSFX } = useAudio()
 
   // Log processing state. `isProcessingLog` = a reveal loop is mid-batch;
   // `isBusyProcessing` (below) also covers "entries are queued but the loop
@@ -270,9 +270,12 @@ export default function useCombatLogPlayback(combat, {
           else if (msg.includes('miss')) playSFX('attack_miss')
           else if (msg.includes('parr')) playSFX('attack_parry')
           else if (msg.includes('defeated') || msg.includes('died')) playSFX('enemy_death')
-          else if (msg.includes('victory')) {
-            playSting('fanfare')
-          } else if (msg.includes('heal') || msg.includes('restores') || msg.includes('restored')) {
+          // No victory branch here (#718 item 3): useCombatCoordinator already
+          // plays the fanfare sting exactly once, gated on the dialog actually
+          // opening (immediately, or after any pre-victory narration is
+          // dismissed). This layer matching the same "victory" keyword on the
+          // log line made the sting fire a second time on every win.
+          else if (msg.includes('heal') || msg.includes('restores') || msg.includes('restored')) {
             playSFX('heal')
           } else if (msg.includes('poisoned') || msg.includes('burned') || msg.includes('paralyz') || msg.includes('stunned') || msg.includes('afflict') || msg.includes('inflict')) {
             playSFX('status_hit')
