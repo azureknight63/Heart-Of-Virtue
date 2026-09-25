@@ -16,6 +16,7 @@ from src.api.services.auth_service import SaveLimitReached
 from src.combatant import find_by_handle, index_by_handle, wire_handle
 from src.journal import Journal, existing_journal, journal_for
 from src.events import (
+    PassagewayTransitionEvent,
     map_name_for_tile,
     purge_orphaned_combat_events,
     story_gates,
@@ -395,6 +396,29 @@ def _refused_if_dead(player, key="error", include_success=True):
         refusal[key] = _PLAYER_DEAD_MESSAGE
         return refusal
     return None
+
+
+def _drop_passage_confirmations(session_data):
+    """Remove every queued ``PassagewayTransitionEvent`` from
+    ``session_data["pending_events"]`` (#712).
+
+    Called when a fight starts. The confirmation's only option is
+    ``continue``, which ``process_event_input`` refuses in combat (#543), and
+    ``execute_move`` refuses every combat action while it is pending -- so a
+    confirmation that outlives the fight's start is a permanent soft-lock.
+    Combat already wins over the passage, so it is dropped; the player can
+    re-enter the passageway afterwards. ONLY this type: a pending LootEvent
+    is answered after the fight, and combat's own needs-input events belong
+    to it.
+    """
+    pending = (session_data or {}).get("pending_events") or {}
+    dropped = [
+        event_id
+        for event_id, entry in pending.items()
+        if isinstance(entry.get("event"), PassagewayTransitionEvent)
+    ]
+    for event_id in dropped:
+        del pending[event_id]
 
 
 #: Why the free equip/unequip routes refuse a weapon mid-fight (#671). A
@@ -2439,7 +2463,9 @@ class GameService:
         # start (e.g. an aggro NPC on the same tile) *after* a confirmation
         # was queued and before the player submits this input -- so the
         # guard belongs here too, at the point where the teleport actually
-        # commits, not only at the point where it was first queued.
+        # commits, not only at the point where it was first queued. Since
+        # #712 the fight's start drops such a confirmation
+        # (_drop_passage_confirmations), so this is now a backstop.
         from src.events import LootEvent, PassagewayTransitionEvent
 
         if isinstance(event, PassagewayTransitionEvent) and getattr(
@@ -3529,6 +3555,16 @@ class GameService:
                     session_data=session_data,
                 )
                 combat_started = True
+                # This call may have queued a passage confirmation that the
+                # fight's start just dropped (#712); echoing it would show the
+                # client a dialog whose answer is "Event not found".
+                still_pending = (session_data or {}).get("pending_events") or {}
+                events_triggered = [
+                    e
+                    for e in events_triggered
+                    if e.get("type") != PassagewayTransitionEvent.__name__
+                    or e.get("event_id") in still_pending
+                ]
 
         return {
             "success": True,
@@ -5309,6 +5345,10 @@ class GameService:
         ]
         player.combat_list_allies = [player] + existing_allies
         player.in_combat = True
+        # Every API combat start passes through here, so this is the one
+        # place a queued passage confirmation can be retired before it
+        # deadlocks the fight (#712).
+        _drop_passage_confirmations(session_data)
 
         # Initialize last move tracking for "DO IT AGAIN" button
         player.last_move_name = None

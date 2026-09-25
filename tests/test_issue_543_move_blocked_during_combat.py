@@ -119,11 +119,17 @@ class TestInteractPassagewayBlockedDuringCombat:
 
 
 class TestPassagewayConfirmBlockedDuringCombat:
-    """A queue-time-only guard leaves a gap: combat can start *after* a
-    passageway confirmation was queued (e.g. an aggro NPC on the same tile
-    engages on the very interact call that queued it) and *before* the
-    player submits the confirming input. ``process_event_input`` must also
-    reject the confirm step in that case, not just the initial queuing.
+    """The confirm step is refused in combat, as a backstop to the queue-time
+    guard.
+
+    Since #712 a queued confirmation does not normally survive into a fight:
+    ``GameService._initialize_combat``, which every API combat start passes
+    through, drops it (the confirmation's only option is ``continue``, so a
+    surviving one deadlocked the session -- see
+    ``tests/test_issue_712_passageway_confirmation_dropped_on_combat.py``).
+    This class sets ``player.in_combat`` directly, bypassing that start, to
+    pin the backstop on its own: if a confirmation ever does reach the
+    confirm step mid-fight, the teleport still does not run.
     """
 
     def test_confirm_is_rejected_if_combat_started_after_queuing(
@@ -145,17 +151,18 @@ class TestPassagewayConfirmBlockedDuringCombat:
         assert queued["success"] is True
         event_id = next(iter(session_data["pending_events"]))
 
-        # Combat starts (e.g. an aggro NPC on the tile) after the
-        # confirmation was already queued.
+        # Flag the fight directly -- NOT through a combat start, which would
+        # drop the confirmation (#712) before this backstop is reached.
         player.in_combat = True
 
         result = game_service.process_event_input(player, event_id, "continue", session_data)
 
         assert result["success"] is False
         assert "combat" in result.get("error", "").lower()
-        # The player must not have been teleported off the battlefield, and
-        # the pending confirmation must still be there for a later, in-combat
-        # retry to reject the same way (not silently dropped).
+        # The player must not have been teleported off the battlefield. The
+        # refusal itself does not consume the entry: retiring a confirmation
+        # is the job of the fight's start (#712), not of this guard, so a
+        # refused answer leaves the store exactly as it found it.
         assert (player.location_x, player.location_y) == (0, 0)
         assert event_id in session_data["pending_events"]
 
