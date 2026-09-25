@@ -4656,7 +4656,9 @@ class ApiCombatAdapter:
         # payload).
         if not self.player.in_combat:
             summary = getattr(self.player, "combat_end_summary", None) or {}
-            battle_state["status"] = summary.get("status", battle_state["status"])
+            battle_state["status"] = summary.get(
+                "status", battle_state.get("status", "active")
+            )
         battle_state["combat_id"] = self.combat_id
         # Same reason: emitted top-level, map_size was dropped by
         # transformCombatData's whitelist, so Battlefield's `combat?.map_size`
