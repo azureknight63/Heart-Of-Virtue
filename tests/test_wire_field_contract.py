@@ -1075,6 +1075,9 @@ TARGET_CONTRACT = {
     # that comment (and this contract) goes stale silently unless something
     # asserts the magnitude, which the dedicated test below does.
     "hit_chance": Read("CombatInputDialog.jsx", "target.hit_chance"),
+    # Issue #688: {min, max, lethal} from Move.preview_damage, rendered as
+    # "min–max dmg" / "no damage" / LETHAL on each card.
+    "damage_preview": Read("CombatInputDialog.jsx", "target.damage_preview"),
 }
 
 

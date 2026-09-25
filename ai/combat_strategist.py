@@ -119,6 +119,32 @@ _DEFENSIVE_STANCE_BEATS = 7
 # See tests/test_combat_strategist_coverage.py::TestDefensiveWindowMatchesTheEngine.
 _LAST_DEFENSIBLE_BEAT = _DEFENSIVE_WINDOW_BEATS + _DEFENSIVE_STANCE_BEATS - 1
 
+# The two stances the window above is measured for.
+_DEFENSIVE_MOVE_NAMES = ("Dodge", "Parry")
+
+# Issue #688: what an attack is worth when its own damage_preview says it
+# cannot hurt anyone it can reach -- below every zero-cost maneuver, above
+# Wait/Check (20), because a swing still costs the enemy nothing but it also
+# teaches the player nothing new that Check would.
+_HARMLESS_ATTACK_SCORE = 15
+# ...and what Swap Weapon is worth once that is true of EVERY offered attack:
+# above Advance (80), Turn (75) and a low-fatigue Rest (72), the moves the QA
+# run alternated through for 150 beats while the blade did nothing.
+_SWAP_WHEN_HARMLESS_SCORE = 88
+
+# Issue #686: Withdraw/Rest when a charge is inside the defensive window but
+# Dodge/Parry is priced out by fatigue. Withdraw leads -- it is the only move
+# left that can change where Jean stands when the blow arrives -- and clears
+# Advance (80) even against a survivable hit. Rest is only re-priced against a
+# lethal one; against a survivable hit its usual fatigue scoring is honest and
+# the lock is still named, through `_charge_note`.
+_LOCKED_DEFENCE_SCORES = {
+    # (move, incoming hit potentially lethal) -> score
+    ("Withdraw", True): 92,
+    ("Withdraw", False): 82,
+    ("Rest", True): 86,
+}
+
 # Below both of these Jean's defenses will not meaningfully absorb a hit.
 #
 # `defense` here is the serializer's name for the engine's `protection`, which
@@ -344,6 +370,18 @@ class TacticalState(TypedDict):
     # Pre-rendered "low–high" band, not a number: it is prompt/reasoning text.
     estimated_damage: str
     incoming_lethal: bool
+    # Issue #686: the charge's display name, and whether it is worth naming in
+    # EVERY reason (a heavy/deadly telegraph, or a potentially lethal hit). A
+    # routine wind-up is not: it would clutter every line, every beat.
+    incoming_move: Optional[str]
+    incoming_flagged: bool
+    # "Dodge costs 25 fatigue; Jean has 5" when every defence that would meet
+    # the charge is priced out by fatigue, else None. See `_defence_lock_note`.
+    defence_lock_note: Optional[str]
+    # Issue #688: every offered attack's damage_preview is 0 against every
+    # target it can reach, and who those targets are (for the reasoning).
+    offense_all_harmless: bool
+    harmless_target_names: List[str]
 
 
 class IncomingThreat(TypedDict):
@@ -373,6 +411,10 @@ class WorstThreat(TypedDict):
     beats_until_resolve: Optional[int]
     estimated_damage: str
     potentially_lethal: bool
+    # The charging move's display name and whether it is a heavy/deadly
+    # telegraph (issue #686); None/False when nothing is incoming.
+    move_name: Optional[str]
+    telegraphed: bool
 
 
 class PlayerVitals(NamedTuple):
@@ -544,6 +586,64 @@ def _incoming_beats(mip: Optional[Dict[str, Any]]) -> Optional[int]:
     if isinstance(beats, bool) or not isinstance(beats, int):
         return None
     return beats
+
+
+# ENGINE-OWNED: the routine member of `TELEGRAPH_SEVERITIES` (src/moves/_base.py),
+# which the serializer folds every unknown value into. Anything else on the
+# wire ("heavy", "deadly") is a telegraph the player is meant to answer.
+_ROUTINE_SEVERITY = "normal"
+
+
+def _charge_name(mip: Dict[str, Any]) -> str:
+    """The name the player sees for a charging move ("Tidal Surge")."""
+    return mip.get("display_name") or mip.get("name") or "The enemy's attack"
+
+
+def _is_telegraphed(mip: Dict[str, Any]) -> bool:
+    """True for a heavy/deadly wind-up, per the wire's ``telegraph_severity``."""
+    severity = mip.get("telegraph_severity")
+    return isinstance(severity, str) and severity not in ("", _ROUTINE_SEVERITY)
+
+
+def _aimed_elsewhere(mip: Optional[Dict[str, Any]], player_id: Any) -> bool:
+    """True when a charge's ``target_id`` names someone other than Jean.
+
+    Issue #686: King Slime's surge at Gorran scored Jean's Dodge 95-97. Both
+    ids must be present to conclude anything -- an untargeted move or a
+    hand-built context without ids is still treated as aimed at Jean, which
+    is how every charge was treated before.
+    """
+    target_id = (mip or {}).get("target_id")
+    return bool(player_id and target_id and target_id != player_id)
+
+
+def _harmless_targets(move: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], bool]:
+    """Issue #688: the viable targets this move cannot hurt, and whether that is all of them.
+
+    Reads the per-target ``damage_preview`` the adapter publishes from the
+    engine's ``Move.preview_damage`` -- no damage is derived here. A target
+    with no preview (``None``, absent, or a move with no ``viable_targets`` at
+    all) is never called harmless: the scorer has no opinion on what it
+    cannot see, which keeps every preview-less move scoring exactly as before.
+    """
+    targets = [t for t in move.get("viable_targets") or [] if isinstance(t, dict)]
+    harmless = []
+    for t in targets:
+        preview = t.get("damage_preview")
+        high = preview.get("max") if isinstance(preview, dict) else None
+        if isinstance(high, (int, float)) and not isinstance(high, bool) and high <= 0:
+            harmless.append(t)
+    return harmless, bool(targets) and len(harmless) == len(targets)
+
+
+def _target_names(targets: List[Dict[str, Any]]) -> List[str]:
+    """Display names for target entries, de-duplicated, in order."""
+    names: List[str] = []
+    for t in targets:
+        name = str(t.get("name") or t.get("id"))
+        if name not in names:
+            names.append(name)
+    return names
 
 
 # What a status effect MEANS for Jean, from both sides of the fight.
@@ -895,8 +995,10 @@ class CombatStrategist:
         # Beats-until-impact and estimated damage for the charge Jean's next
         # beat should answer — NOT simply the soonest one. See
         # `_threat_worth_defending`.
-        threat = self._threat_worth_defending(enemies, vitals.hp)
+        threat = self._threat_worth_defending(enemies, vitals.hp, player.get("id"))
         incoming_beats = threat["beats_until_resolve"]
+        in_window = _defense_lands_in_time(incoming_beats)
+        harmless_offense, harmless_names = self._harmless_offense(ctx)
 
         return {
             "heat": vitals.heat,
@@ -936,10 +1038,69 @@ class CombatStrategist:
                 for e in enemies
             ),
             "incoming_beats": incoming_beats,
-            "in_defensive_window": _defense_lands_in_time(incoming_beats),
+            "in_defensive_window": in_window,
             "estimated_damage": threat["estimated_damage"],
             "incoming_lethal": threat["potentially_lethal"],
+            "incoming_move": threat["move_name"],
+            "incoming_flagged": incoming_beats is not None
+            and (threat["telegraphed"] or threat["potentially_lethal"]),
+            "defence_lock_note": (
+                self._defence_lock_note(ctx) if in_window else None
+            ),
+            "offense_all_harmless": harmless_offense,
+            "harmless_target_names": harmless_names,
         }
+
+    @staticmethod
+    def _defence_lock_note(ctx: Dict[str, Any]) -> Optional[str]:
+        """Why Jean cannot Dodge/Parry this beat, when fatigue is the reason.
+
+        None when either defence is on offer, or when neither is locked by
+        fatigue (a cooldown or an unlearned Parry is a different story, and
+        not one this note tells). Reads ``fatigue_locked_moves``, the list the
+        adapter supplies precisely because ``available_moves`` has already had
+        the unaffordable moves stripped out.
+        """
+        offered = {
+            m.get("name") for m in _offerable_moves(ctx.get("available_moves", []))
+        }
+        if offered & set(_DEFENSIVE_MOVE_NAMES):
+            return None
+        locked = [
+            m
+            for m in ctx.get("fatigue_locked_moves", [])
+            if isinstance(m, dict) and m.get("name") in _DEFENSIVE_MOVE_NAMES
+        ]
+        if not locked:
+            return None
+        cheapest = min(locked, key=lambda m: m.get("fatigue_cost") or 0)
+        fatigue = _player_vitals(ctx.get("player") or {}).fatigue
+        return (
+            f"{cheapest.get('name')} is fatigue-locked (costs "
+            f"{cheapest.get('fatigue_cost') or 0}, Jean has {fatigue})"
+        )
+
+    @staticmethod
+    def _harmless_offense(ctx: Dict[str, Any]) -> Tuple[bool, List[str]]:
+        """Whether every offered attack is at 0 damage against everyone it reaches.
+
+        Issue #688. Requires at least one Offensive move, and every one of them
+        to carry previews that all read 0 -- a single attack with no preview
+        (or one that can hurt somebody) means Jean still has an attack worth
+        making, and the answer is False.
+        """
+        offense = [
+            m
+            for m in _offerable_moves(ctx.get("available_moves", []))
+            if m.get("category") == "Offensive"
+        ]
+        harmless: List[Dict[str, Any]] = []
+        for m in offense:
+            targets, all_harmless = _harmless_targets(m)
+            if not all_harmless:
+                return False, []
+            harmless.extend(targets)
+        return bool(offense), _target_names(harmless)
 
     @staticmethod
     def _score_defensive_move(name: str, state: TacticalState) -> Tuple[int, str]:
@@ -983,7 +1144,52 @@ class CombatStrategist:
         )
 
     @staticmethod
+    def _charge_note(state: TacticalState) -> Optional[str]:
+        """One sentence naming the flagged charge and when a defence meets it.
+
+        Issue #686: a deadly surge 14 beats out left every other move reading
+        "No situational modifiers apply", which is false. None when nothing
+        flagged is incoming (a routine wind-up would clutter every reason).
+        """
+        beats = state["incoming_beats"]
+        if beats is None or not state["incoming_flagged"]:
+            return None
+        lethal = " (potentially lethal)" if state["incoming_lethal"] else ""
+        lead = f"{state['incoming_move'] or 'A charge'}{lethal} lands in {beats} beat(s)"
+        if beats > _LAST_DEFENSIBLE_BEAT:
+            return (
+                f"{lead}; Dodge/Parry once it is {_LAST_DEFENSIBLE_BEAT} "
+                "beats out or closer."
+            )
+        if beats < _DEFENSIVE_WINDOW_BEATS:
+            return f"{lead}, too soon for Dodge/Parry to meet it."
+        if state["defence_lock_note"]:
+            return f"{lead} and {state['defence_lock_note']}."
+        return f"{lead}; Dodge/Parry cast now meets it."
+
+    @staticmethod
     def _score_move(move: Dict[str, Any], state: TacticalState) -> Tuple[int, str]:
+        """Score one move, then make sure its reason mentions a flagged charge.
+
+        The ladder below decides the score; this adds `_charge_note` to any
+        reason that does not already name the incoming move, so no move's
+        advice can read as though the deadly telegraph were not there. The
+        in-window Dodge/Parry reasons are the answer to the charge and already
+        describe it.
+        """
+        score, reason = CombatStrategist._score_move_ladder(move, state)
+        note = CombatStrategist._charge_note(state)
+        name = move.get("name")
+        answers_it = state["in_defensive_window"] and name in _DEFENSIVE_MOVE_NAMES
+        charge = state["incoming_move"]
+        if note and not answers_it and not (charge and charge in reason):
+            reason = f"{reason} {note}"
+        return score, reason
+
+    @staticmethod
+    def _score_move_ladder(
+        move: Dict[str, Any], state: TacticalState
+    ) -> Tuple[int, str]:
         """Score one available move against the derived tactical state.
 
         Returns ``(score, reasoning)``. Branches are ordered by CONSEQUENCE,
@@ -999,8 +1205,29 @@ class CombatStrategist:
         category = move.get("category", "Miscellaneous")
         base_score = _CATEGORY_BASE_SCORES.get(category, _DEFAULT_CATEGORY_SCORE)
 
-        if state["in_defensive_window"] and name in ("Dodge", "Parry"):
+        if state["in_defensive_window"] and name in _DEFENSIVE_MOVE_NAMES:
             return CombatStrategist._score_defensive_move(name, state)
+
+        # Issue #686: inside the window with every defence priced out by
+        # fatigue. Tested before critical fatigue for the same reason the
+        # branch above is: surviving the next beat outranks refuelling, and
+        # the reason must say WHY Dodge is not the answer.
+        lock = state["defence_lock_note"]
+        if lock and (name, state["incoming_lethal"]) in _LOCKED_DEFENCE_SCORES:
+            score = _LOCKED_DEFENCE_SCORES[(name, state["incoming_lethal"])]
+            charge = state["incoming_move"] or "the charge"
+            beats = state["incoming_beats"]
+            if name == "Withdraw":
+                return score, (
+                    f"{lock}; Withdraw to try to get clear before {charge} "
+                    f"lands in {beats} beat(s)."
+                )
+            # Hedged on purpose: whether a Rest-then-Dodge still meets the
+            # blow depends on stage timings this module does not model.
+            return score, (
+                f"{lock}; Rest restores fatigue so a Dodge can follow, if there "
+                f"is still time before {charge} lands in {beats} beat(s)."
+            )
 
         if state["fatigue_critical"] and name == "Rest":
             return 90, (
@@ -1026,6 +1253,28 @@ class CombatStrategist:
 
         if state["hp_critical"] and name == "UseItem":
             return 88, "HP critically low; use a healing consumable before engaging."
+
+        # Issue #688, before every branch that would bid an attack UP (DoT,
+        # resting enemy, heat): an attack that cannot hurt anyone it reaches
+        # is not worth a beat whatever the heat says. A move with no previews
+        # never reaches this -- `_harmless_targets` has no opinion on it.
+        if category == "Offensive":
+            harmless, all_harmless = _harmless_targets(move)
+            if all_harmless:
+                return _HARMLESS_ATTACK_SCORE, (
+                    f"{name} can't hurt {', '.join(_target_names(harmless))} "
+                    "with the equipped weapon -- its damage preview is 0."
+                )
+
+        if name == "Swap Weapon" and state["offense_all_harmless"]:
+            # weapon_options carries no per-weapon preview, so this must not
+            # promise the other weapon works -- only that this one does not.
+            return _SWAP_WHEN_HARMLESS_SCORE, (
+                f"No attack on offer can hurt "
+                f"{', '.join(state['harmless_target_names'])} with the equipped "
+                "weapon; swap and check the new damage preview on the target "
+                "card before committing."
+            )
 
         if state["dot_active"] and category == "Offensive":
             # Player DoT ticking — reward aggression to end the fight
@@ -1067,6 +1316,21 @@ class CombatStrategist:
             return score, _HEAT_OFFENSIVE_NOTE[heat_band].format(
                 heat=state["heat"], name=name
             )
+
+        if state["incoming_flagged"]:
+            # Issue #686: a flagged charge IS a situational modifier, so the
+            # catch-all must not say none applies. `_score_move` appends the
+            # charge itself; a stance outside the window says why not yet.
+            beats = state["incoming_beats"]
+            if name in _DEFENSIVE_MOVE_NAMES and beats > _LAST_DEFENSIBLE_BEAT:
+                return base_score, (
+                    f"Too early: a {name} cast now expires before the blow lands."
+                )
+            if name in _DEFENSIVE_MOVE_NAMES and beats < _DEFENSIVE_WINDOW_BEATS:
+                return base_score, (
+                    f"Too late: a {name} cast now resolves after the blow lands."
+                )
+            return base_score, f"{name} is a baseline choice while the charge builds."
 
         return base_score, _NO_TACTICAL_READ.format(name=name)
 
@@ -1625,6 +1889,8 @@ class CombatStrategist:
             "beats_until_resolve": None,
             "estimated_damage": "0–0",
             "potentially_lethal": False,
+            "move_name": None,
+            "telegraphed": False,
         }
         for e in enemies:
             mip = e.get("move_in_process")
@@ -1644,11 +1910,16 @@ class CombatStrategist:
                     "beats_until_resolve": bui,
                     "estimated_damage": threat["estimated_damage"],
                     "potentially_lethal": threat["potentially_lethal"],
+                    "move_name": _charge_name(mip),
+                    "telegraphed": _is_telegraphed(mip),
                 }
         return best
 
     def _threat_worth_defending(
-        self, enemies: List[Dict[str, Any]], player_hp: int
+        self,
+        enemies: List[Dict[str, Any]],
+        player_hp: int,
+        player_id: Any = None,
     ) -> WorstThreat:
         """The charge the tactical state should be built around.
 
@@ -1669,7 +1940,17 @@ class CombatStrategist:
         in. That fallback is what keeps `estimated_damage` honest in the common
         case where nothing is defensible and the state exists only to describe
         what is about to land.
+
+        A charge whose ``target_id`` names someone other than Jean is not his
+        to defend (issue #686: a surge at Gorran scored Jean's Dodge 95-97),
+        so it is dropped before either selection. ``player_id`` None keeps
+        every charge, as before.
         """
+        enemies = [
+            e
+            for e in enemies
+            if not _aimed_elsewhere(e.get("move_in_process"), player_id)
+        ]
         defensible = [
             e
             for e in enemies
@@ -1828,6 +2109,15 @@ class CombatStrategist:
                     s.get("move_name"),
                 )
                 continue
+
+            # Issue #688: never aim at a target the move's own damage_preview
+            # says it cannot hurt while another in reach can be hurt. When
+            # EVERY target is harmless the set is left whole -- the move was
+            # already scored down for it, and emptying the set would silently
+            # drop a suggestion the scorer chose to keep.
+            harmless, all_harmless = _harmless_targets(move)
+            if harmless and not all_harmless:
+                viable_ids -= {t.get("id") for t in harmless}
 
             if s.get("target_id") not in viable_ids:
                 # Rank only the enemies THIS move can actually reach — not every
