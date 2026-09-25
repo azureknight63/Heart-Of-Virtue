@@ -111,3 +111,14 @@ def test_since_filter_excludes_old_api_log_entries(tmp_path):
     _write_api_log(log, [old_line])
     stats = cc.analyze_stack_log(log, since_minutes=5)
     assert stats["origin_fault"] == 0
+
+
+def test_since_skips_tester_files_with_nothing_in_the_window(tmp_path, capsys):
+    """Archived testers from old runs used to print as PASS lines under --since."""
+    old = tmp_path / "old_events.jsonl"
+    old.write_text(json.dumps({"ts": "00:00:01", "kind": "console", "level": "error", "text": "x"}) + "\n",
+                   encoding="utf-8")
+    cc.report([tmp_path], since_minutes=0.001)
+    out = capsys.readouterr().out
+    assert "old:" not in out
+    assert "skipped 1 tester file" in out

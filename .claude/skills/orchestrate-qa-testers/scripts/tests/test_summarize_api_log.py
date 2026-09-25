@@ -135,3 +135,14 @@ def test_directory_input_resolves_all_jsonl_files(tmp_path):
     _write(tmp_path / "B_api.jsonl", [_move_turn_record("10:00:00")])
     files = sal._resolve_inputs([str(tmp_path)])
     assert len(files) == 2
+
+
+def test_refusals_group_by_error_when_there_is_no_message(tmp_path):
+    """Combat/event refusals say why under "error"; the first live run grouped ~750 as "(no message)"."""
+    log = tmp_path / "X_api.jsonl"
+    rows = [{"t": "10:00:00", "m": "POST", "path": "/api/combat/move", "req": {}, "status": 200,
+             "body": {"success": False, "error": "Event pending"}}] * 3
+    log.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    summary = sal.summarize_file(log)
+    assert summary["success_false"].get("Event pending") == 3
+    assert "(no message)" not in summary["success_false"]

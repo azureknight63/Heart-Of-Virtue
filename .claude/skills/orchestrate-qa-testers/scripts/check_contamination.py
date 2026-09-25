@@ -192,9 +192,14 @@ def report(dirs, since_minutes=None):
         failed |= line("WARN", f"nothing found under {', '.join(str(d) for d in dirs)}")
 
     print("== testers (browser events) ==")
+    quiet = 0
     for f in events_files:
         stats = analyze_events_file(f, since_minutes)
         name = f.stem.replace("_events", "")
+        if since_minutes is not None and not stats["total"]:
+            # Old runs' archives: nothing in the window, nothing to say.
+            quiet += 1
+            continue
         if stats["socketio_fault"]:
             msg = f"{name}: {stats['socketio_fault']} socket.io origin failure(s) -- {f}"
             failed |= line("FAIL", msg)
@@ -205,6 +210,9 @@ def report(dirs, since_minutes=None):
         status = "WARN" if stats["console_errors"] else "PASS"
         msg = f"{name}: {stats['console_errors']} console error(s) ({stats['total']} events total)"
         line(status, msg)
+
+    if quiet:
+        print(f"(skipped {quiet} tester file(s) with no events in the last {since_minutes:g} min)")
 
     print("== stacks (api.log) ==")
     for f in stack_logs:

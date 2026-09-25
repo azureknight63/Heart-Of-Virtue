@@ -182,7 +182,9 @@ def summarize_file(path, repeat_n=DEFAULT_REPEAT_N):
     for r in records:
         body = r.get("body")
         if isinstance(body, dict) and body.get("success") is False:
-            msg = body.get("message", "(no message)")
+            # Refusals carry their text under "error" at least as often as
+            # "message" (combat and events use "error"); read both.
+            msg = body.get("message") or body.get("error") or "(no message)"
             success_false[msg] = success_false.get(msg, 0) + 1
 
     not_found = {}
