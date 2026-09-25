@@ -58,10 +58,26 @@ from src.moves._base import (
     weapon_code_for,
 )
 from src.events import purge_orphaned_combat_events
+from src.player._leveling import LEVEL_UP_ATTRIBUTE_NAMES
 from src.story import gorran_flavor
 
 if TYPE_CHECKING:
     from src.player import Player
+
+
+def _victory_attribute_snapshot(player) -> Dict[str, int]:
+    """The victory allocator's per-attribute base values (#694).
+
+    Built from ``LEVEL_UP_ATTRIBUTE_NAMES`` -- the engine's own list of
+    everything the LEVEL UP dialog can raise -- rather than a hand-copied set
+    of keys, which is what let ``faith_base`` go missing here twice (once at
+    combat end, once in ``get_combat_state``'s refresh) while the LEVEL UP
+    dialog itself (reading straight off ``player``) never lost it.
+    """
+    return {
+        name: int(getattr(player, name, 0) or 0) for name in LEVEL_UP_ATTRIBUTE_NAMES
+    }
+
 
 #: Reach, in feet, above which a move earns a drawn range ring in the client.
 #: Every melee swing reaches about 5 ft, so a ring at that distance is drawn on
@@ -3948,16 +3964,7 @@ class ApiCombatAdapter:
                 (getattr(self.player, "exp_to_level", 0) or 0)
                 - (getattr(self.player, "exp", 0) or 0)
             ),
-            "attributes": {
-                "strength_base": int(getattr(self.player, "strength_base", 0) or 0),
-                "finesse_base": int(getattr(self.player, "finesse_base", 0) or 0),
-                "speed_base": int(getattr(self.player, "speed_base", 0) or 0),
-                "endurance_base": int(getattr(self.player, "endurance_base", 0) or 0),
-                "charisma_base": int(getattr(self.player, "charisma_base", 0) or 0),
-                "intelligence_base": int(
-                    getattr(self.player, "intelligence_base", 0) or 0
-                ),
-            },
+            "attributes": _victory_attribute_snapshot(self.player),
         }
 
         # Check for beta end: player just defeated the Lurker in Verdette Caverns.
@@ -4770,18 +4777,7 @@ class ApiCombatAdapter:
                     (getattr(self.player, "exp_to_level", 0) or 0)
                     - (getattr(self.player, "exp", 0) or 0)
                 )
-                summary["attributes"] = {
-                    "strength_base": int(getattr(self.player, "strength_base", 0) or 0),
-                    "finesse_base": int(getattr(self.player, "finesse_base", 0) or 0),
-                    "speed_base": int(getattr(self.player, "speed_base", 0) or 0),
-                    "endurance_base": int(
-                        getattr(self.player, "endurance_base", 0) or 0
-                    ),
-                    "charisma_base": int(getattr(self.player, "charisma_base", 0) or 0),
-                    "intelligence_base": int(
-                        getattr(self.player, "intelligence_base", 0) or 0
-                    ),
-                }
+                summary["attributes"] = _victory_attribute_snapshot(self.player)
             result["end_state"] = summary
 
         return result
