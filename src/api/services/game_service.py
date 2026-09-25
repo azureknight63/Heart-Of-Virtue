@@ -16,6 +16,7 @@ from src.api.services.auth_service import SaveLimitReached
 from src.combatant import find_by_handle, index_by_handle, wire_handle
 from src.journal import Journal, existing_journal, journal_for
 from src.events import (
+    PassagewayTransitionEvent,
     map_name_for_tile,
     purge_orphaned_combat_events,
     story_gates,
@@ -395,6 +396,64 @@ def _refused_if_dead(player, key="error", include_success=True):
         refusal[key] = _PLAYER_DEAD_MESSAGE
         return refusal
     return None
+
+
+def _blocking_pending_events(session_data):
+    """The pending-event entries that still wait for the player's answer:
+    ``needs_input`` and not ``completed``, read from each entry's
+    ``event_data``. One predicate for every action a scene in progress
+    blocks -- combat moves (``execute_move``), world moves and interactions
+    (#713)."""
+    return [
+        entry
+        for entry in ((session_data or {}).get("pending_events") or {}).values()
+        if entry.get("event_data", {}).get("needs_input")
+        and not entry.get("event_data", {}).get("completed")
+    ]
+
+
+#: Why a world move or interaction is refused while a scene awaits an answer
+#: (#713). ``{name}`` is the pending event's name, so the refusal says which.
+_SCENE_AWAITS_INPUT_MESSAGE = "Jean must first answer the scene in front of her ({name})."
+
+
+def _refused_while_scene_awaits_input(session_data, key="error", include_success=True):
+    """``{key: _SCENE_AWAITS_INPUT_MESSAGE}`` (plus ``"success": False``
+    unless ``include_success`` is False) while a pending event awaits input,
+    else None (#713). Walking off mid-scene let a later answer run the next
+    stage from the wrong place (``Ch02GuideToCitadel`` teleported Jean back),
+    and was the road into the #712 deadlock; the SPA's modal dialog was the
+    only guard. Each caller passes its own refusal shape."""
+    blocking = _blocking_pending_events(session_data)
+    if not blocking:
+        return None
+    name = blocking[0].get("event_data", {}).get("name") or "an open scene"
+    refusal = {"success": False} if include_success else {}
+    refusal[key] = _SCENE_AWAITS_INPUT_MESSAGE.format(name=name)
+    return refusal
+
+
+def _drop_passage_confirmations(session_data):
+    """Remove every queued ``PassagewayTransitionEvent`` from
+    ``session_data["pending_events"]`` (#712).
+
+    Called when a fight starts. The confirmation's only option is
+    ``continue``, which ``process_event_input`` refuses in combat (#543), and
+    ``execute_move`` refuses every combat action while it is pending -- so a
+    confirmation that outlives the fight's start is a permanent soft-lock.
+    Combat already wins over the passage, so it is dropped; the player can
+    re-enter the passageway afterwards. ONLY this type: a pending LootEvent
+    is answered after the fight, and combat's own needs-input events belong
+    to it.
+    """
+    pending = (session_data or {}).get("pending_events") or {}
+    dropped = [
+        event_id
+        for event_id, entry in pending.items()
+        if isinstance(entry.get("event"), PassagewayTransitionEvent)
+    ]
+    for event_id in dropped:
+        del pending[event_id]
 
 
 #: Why the free equip/unequip routes refuse a weapon mid-fight (#671). A
@@ -2068,6 +2127,12 @@ class GameService:
         if getattr(player, "in_combat", False):
             return {"error": "Cannot move while in combat"}
 
+        refused = _refused_while_scene_awaits_input(
+            session_data, key="error", include_success=False
+        )
+        if refused is not None:
+            return refused
+
         tile = player.universe.get_tile(player.location_x, player.location_y)
         if not tile:
             return {"error": "Cannot move from this location"}
@@ -2439,7 +2504,9 @@ class GameService:
         # start (e.g. an aggro NPC on the same tile) *after* a confirmation
         # was queued and before the player submits this input -- so the
         # guard belongs here too, at the point where the teleport actually
-        # commits, not only at the point where it was first queued.
+        # commits, not only at the point where it was first queued. Since
+        # #712 the fight's start drops such a confirmation
+        # (_drop_passage_confirmations), so this is now a backstop.
         from src.events import LootEvent, PassagewayTransitionEvent
 
         if isinstance(event, PassagewayTransitionEvent) and getattr(
@@ -3408,6 +3475,9 @@ class GameService:
         refused = _refused_if_dead(player, key="message")
         if refused is not None:
             return refused
+        refused = _refused_while_scene_awaits_input(session_data, key="message")
+        if refused is not None:
+            return refused
 
         tile, target = self._resolve_interaction_target(player, target_id, session_data)
         if target is None:
@@ -3529,6 +3599,16 @@ class GameService:
                     session_data=session_data,
                 )
                 combat_started = True
+                # This call may have queued a passage confirmation that the
+                # fight's start just dropped (#712); echoing it would show the
+                # client a dialog whose answer is "Event not found".
+                still_pending = (session_data or {}).get("pending_events") or {}
+                events_triggered = [
+                    e
+                    for e in events_triggered
+                    if e.get("type") != PassagewayTransitionEvent.__name__
+                    or e.get("event_id") in still_pending
+                ]
 
         return {
             "success": True,
@@ -3947,12 +4027,7 @@ class GameService:
         # This prevents players from acting before event dialogs appear (e.g., rumbler announcement)
         if session_data and session_data.get("pending_events"):
             # Only block if there are events that actually need input (not stale/completed events)
-            blocking_events = [
-                e
-                for e in session_data["pending_events"].values()
-                if e.get("event_data", {}).get("needs_input")
-                and not e.get("event_data", {}).get("completed")
-            ]
+            blocking_events = _blocking_pending_events(session_data)
             if blocking_events:
                 return {
                     "success": False,
@@ -5309,6 +5384,10 @@ class GameService:
         ]
         player.combat_list_allies = [player] + existing_allies
         player.in_combat = True
+        # Every API combat start passes through here, so this is the one
+        # place a queued passage confirmation can be retired before it
+        # deadlocks the fight (#712).
+        _drop_passage_confirmations(session_data)
 
         # Initialize last move tracking for "DO IT AGAIN" button
         player.last_move_name = None

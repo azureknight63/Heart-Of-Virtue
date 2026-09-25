@@ -324,6 +324,36 @@ describe('GamePage handler wiring', () => {
         expect(triggerTick).not.toHaveBeenCalled();
     });
 
+    it('a move the server refuses (#713) is surfaced, resurfaces the scene and resyncs the room', async () => {
+        // The /world/move route answers a refusal with a 400 and prose in
+        // `error`; axios rejects with it under `response.data`.
+        const refusal = 'Jean must first answer the scene in front of her (Passage_Eastern Gate).';
+        const err = Object.assign(new Error('Request failed with status code 400'), {
+            response: { status: 400, data: { success: false, error: refusal } },
+        });
+        moveToLocation.mockRejectedValue(err);
+        const showError = mockToastError();
+        const checkPendingEvents = vi.fn().mockResolvedValue();
+        useEventManager.mockReturnValue(makeEventManagerReturn({ checkPendingEvents }));
+        renderGamePage();
+        // Mount runs its own pending-events check and world fetch; count only
+        // what the refused move causes.
+        checkPendingEvents.mockClear();
+        refetchWorld.mockClear();
+
+        await clickAndSettle('Move North');
+
+        // Told why, rather than a silent console.log in MovementStar.
+        expect(showError).toHaveBeenCalledWith(refusal);
+        // A dialog that was lost client-side comes back...
+        expect(checkPendingEvents).toHaveBeenCalledTimes(1);
+        // ...and useWorld's optimistic cached room is replaced by the real one.
+        expect(refetchWorld).toHaveBeenCalledTimes(1);
+        // Still a failed move: none of the success-path side effects.
+        expect(refetchPlayer).not.toHaveBeenCalled();
+        expect(triggerTick).not.toHaveBeenCalled();
+    });
+
     it('starts combat mode when the combat_init event is confirmed', async () => {
         const setMode_setCurrentEvent = vi.fn();
         const setCombatDialogShown = vi.fn();

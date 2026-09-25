@@ -55,8 +55,14 @@ def start_combat():
         if gs_error:
             return gs_error
 
+        # session_data: the fight's start retires a queued passage
+        # confirmation from it (#712), and the adapter's event callback
+        # persists interactive combat events into it (#335).
         result = game_service.start_combat(
-            player, enemy_id, session_id=session.session_id
+            player,
+            enemy_id,
+            session_id=session.session_id,
+            session_data=session.data,
         )
 
         if "error" in result:
