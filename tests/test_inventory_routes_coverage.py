@@ -21,6 +21,8 @@ db.py targets:
 """
 
 import pytest
+
+from src.api.services.game_service import GameService
 from unittest.mock import MagicMock, patch, AsyncMock
 from flask import Flask
 
@@ -822,6 +824,7 @@ class TestGetCurrency:
 
         player = _make_player(items=[Gold(150)])
         app, _, _, _ = make_inventory_app(player=player)
+        app.game_service.get_gold_amount.side_effect = GameService().get_gold_amount
         with app.test_client() as c:
             resp = c.get("/inventory/currency", headers={"Authorization": AUTH})
         assert resp.status_code == 200
@@ -829,10 +832,13 @@ class TestGetCurrency:
         assert data["success"] is True
         assert data["currency"]["gold"] == 150
         assert "platinum" not in data["currency"]
+        # Architecture pin: the route delegates, it does not read the player.
+        app.game_service.get_gold_amount.assert_called_once_with(player)
 
     def test_zero_when_no_gold_item_in_inventory(self, make_inventory_app):
         player = _make_player(items=[])
         app, _, _, _ = make_inventory_app(player=player)
+        app.game_service.get_gold_amount.side_effect = GameService().get_gold_amount
         with app.test_client() as c:
             resp = c.get("/inventory/currency", headers={"Authorization": AUTH})
         assert resp.status_code == 200
@@ -1300,3 +1306,23 @@ class TestDatabaseClass:
             await db.close()
         mock_get.assert_not_called()
         assert db._client is None
+
+
+class TestGetGoldAmountLivesInGameService:
+    """Architecture (CLAUDE.md): routes never reach into player internals.
+    The currency route used to read ``player.inventory`` itself; the gold
+    read now lives on GameService and the route delegates to it."""
+
+    def test_game_service_reads_gold_from_the_inventory(self):
+        from src.api.services.game_service import GameService
+        from src.items import Gold
+
+        player = _make_player(items=[Gold(150)])
+        assert GameService().get_gold_amount(player) == 150
+
+    def test_no_inventory_reads_as_zero(self):
+        from types import SimpleNamespace
+
+        from src.api.services.game_service import GameService
+
+        assert GameService().get_gold_amount(SimpleNamespace()) == 0

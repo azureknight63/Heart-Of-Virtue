@@ -93,8 +93,8 @@ def execute_move():
 
     ``move_type`` (the real set GameService.execute_move answers; anything
     else is rejected as "Unknown move type"):
-        "move"                   — cast a named move by id (uses "move_id")
-        "target"                 — select a target for the pending move
+        "move"                    — cast a named move by id (uses "move_id")
+        "target"                  — select a target for the pending move
         "direction"               — select a direction for the pending move
         "number"                  — select a numeric parameter (e.g. duration)
         "attack"                  — basic attack

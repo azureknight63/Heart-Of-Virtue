@@ -24,7 +24,6 @@ from src.api.serializers.inventory import (
 )
 from src.api.middleware.auth import get_session_and_player, require_game_service
 from src.api.utils.inventory import get_inventory_list
-from src.inventory_utils import get_gold
 from src.api.serializers.combat import ALLY_ID_PREFIX
 from src.combatant import find_by_handle, index_by_handle
 
@@ -581,12 +580,15 @@ def get_currency():
     if error:
         return error
 
+    game_service, gs_error = require_game_service()
+    if gs_error:
+        return gs_error
+
     try:
-        # `player.gold` does not exist -- gold lives in the inventory as a
-        # `Gold` item and is read through `get_gold`, same as game_service.py's
-        # shop_buy/shop_sell (#689c). "platinum" was dropped: nothing in
-        # src/ or frontend/src/ ever read it.
-        currency = {"gold": get_gold(player.inventory)}
+        # #689c: `player.gold` never existed, so this always said 0. The read
+        # lives on GameService (routes never reach into the player). "platinum"
+        # was dropped: nothing in src/ or frontend/src/ ever read it.
+        currency = {"gold": game_service.get_gold_amount(player)}
 
         return (
             jsonify({"success": True, "currency": currency}),

@@ -4492,7 +4492,7 @@ class GameService:
             "max_hp": getattr(player, "maxhp", 0),
             "fatigue": getattr(player, "fatigue", 0),
             "max_fatigue": getattr(player, "maxfatigue", 0),
-            "gold": get_gold(getattr(player, "inventory", [])),
+            "gold": self.get_gold_amount(player),
             "weight": weight,
             "max_weight": max_weight,
             "weight_pct": weight_pct,
@@ -4561,7 +4561,7 @@ class GameService:
         stats["carrying_capacity"] = max_weight
         stats["weight"] = weight
         stats["max_weight"] = max_weight
-        stats["gold"] = get_gold(getattr(player, "inventory", []))
+        stats["gold"] = self.get_gold_amount(player)
         stats["protection"] = round(getattr(player, "protection", 0))
 
         # Calculate combat stats
@@ -6835,6 +6835,12 @@ class GameService:
         if not hasattr(player, "universe") or player.universe is None:
             return None
         return player.universe.get_tile(player.location_x, player.location_y)
+
+    def get_gold_amount(self, player: "player_module.Player") -> int:
+        """How much gold Jean carries. ``player.gold`` does not exist: gold is
+        a ``Gold`` item in the inventory, read through ``get_gold`` -- the one
+        place routes and stats ask, so none of them reaches into the player."""
+        return get_gold(getattr(player, "inventory", []))
 
     def is_player_dead(self, player: "player_module.Player") -> bool:
         """Return True if the player's HP has dropped to zero or below.
