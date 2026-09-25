@@ -4649,6 +4649,14 @@ class ApiCombatAdapter:
         # combat_id rides in battle_state (not the top level) so the client's
         # transformCombatData spread carries it through on every poll; a
         # top-level key would be dropped by its whitelist.
+        # serialize_combat_state hardcodes "active" -- it has no way to know
+        # the fight just ended. Once combat_active goes false, reflect the
+        # real outcome (issue #689a: this used to stay "active" through both
+        # victory and defeat, contradicting combat_active in the same
+        # payload).
+        if not self.player.in_combat:
+            summary = getattr(self.player, "combat_end_summary", None) or {}
+            battle_state["status"] = summary.get("status", battle_state["status"])
         battle_state["combat_id"] = self.combat_id
         # Same reason: emitted top-level, map_size was dropped by
         # transformCombatData's whitelist, so Battlefield's `combat?.map_size`
