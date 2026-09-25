@@ -1411,6 +1411,19 @@ class Passageway(Object):
         )
         return True
 
+    def story_locked(self, player):
+        """True while ``locked_until_flag`` holds this passageway shut.
+
+        The pure question behind ``crossing_locked``: it narrates nothing, so
+        a payload may ask it on every poll (issue #718 -- the API reported
+        ``locked: false`` while the Eastern Gate refused to open). The guard
+        and its reasons are ``crossing_locked``'s, below.
+        """
+        flag = self.locked_until_flag
+        if not (isinstance(flag, str) and flag):
+            return False
+        return not gate_is_set(player, flag)
+
     def crossing_locked(self, player):
         """True, after narrating a decline, when a story gate blocks crossing.
 
@@ -1429,10 +1442,7 @@ class Passageway(Object):
         value (``None``, a list, ...) must read as "not locked" rather than
         raise.
         """
-        flag = self.locked_until_flag
-        if not (isinstance(flag, str) and flag):
-            return False
-        if gate_is_set(player, flag):
+        if not self.story_locked(player):
             return False
         stops_at = f"Jean stops at {self.build_article_phrase(self.name)}"
         narrate(

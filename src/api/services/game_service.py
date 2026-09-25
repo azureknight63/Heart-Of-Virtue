@@ -1713,7 +1713,7 @@ class GameService:
         # Serialize objects in room
         objects_data = []
         if hasattr(tile, "objects_here"):
-            objects_data = ObjectSerializer.serialize_list(tile.objects_here)
+            objects_data = ObjectSerializer.serialize_list(tile.objects_here, player)
 
         bgm = self._resolve_bgm(tile, player)
 
@@ -1769,7 +1769,7 @@ class GameService:
         # Serialize objects
         objects_data = []
         if hasattr(tile, "objects_here"):
-            objects_data = ObjectSerializer.serialize_list(tile.objects_here)
+            objects_data = ObjectSerializer.serialize_list(tile.objects_here, player)
 
         player.explored_tiles[tile_key] = {
             "items": items_data,
@@ -2674,7 +2674,7 @@ class GameService:
         items_data = ItemSerializer.serialize_list(getattr(tile, "items_here", []))
         npcs_data = NPCSerializer.serialize_list(getattr(tile, "npcs_here", []))
         objects_data = ObjectSerializer.serialize_list(
-            getattr(tile, "objects_here", [])
+            getattr(tile, "objects_here", []), player
         )
         events_data = EventSerializer.serialize_list(getattr(tile, "events_here", []))
 
@@ -3540,7 +3540,8 @@ class GameService:
             "combat_state": combat_state,
             "object_state": {
                 "keywords": self._object_state_keywords(target),
-                "locked": getattr(target, "locked", False),
+                # The key lock or a story gate (#718), as the room payload says.
+                "locked": ObjectSerializer.locked_for(target, player),
                 "state": getattr(target, "state", ""),
             },
             "teleported": teleported,
@@ -6841,7 +6842,7 @@ class GameService:
             "items": ItemSerializer.serialize_list(getattr(tile, "items_here", [])),
             "npcs": NPCSerializer.serialize_list(getattr(tile, "npcs_here", [])),
             "objects": ObjectSerializer.serialize_list(
-                getattr(tile, "objects_here", [])
+                getattr(tile, "objects_here", []), player
             ),
         }
 
