@@ -736,9 +736,12 @@ def _fit_to_turn(read: float) -> _Timeout:
     and read keeps its nominal length when there is room for it.
 
     ``read`` bounds the wait for each chunk, not the whole body, so a response
-    trickled a byte at a time can still outrun the pair. Chat completions are
-    not streamed here, so the body arrives in one piece once generated; the
-    turn-budget tests keep one whole call of margin for the rest.
+    trickled a byte at a time can still outrun the pair -- OpenRouter keeps a
+    slow non-streamed completion alive exactly that way (#684: a clipped
+    (2.66, 6.0) call ran 38s). :func:`_post_within_turn` closes that gap by
+    reading the body against the turn's deadline; what remains is the one read
+    timeout a single late byte can take, which the turn-budget tests keep one
+    whole call of margin for.
     """
     left = _turn_budget_left()
     if left is None:
@@ -774,6 +777,52 @@ def _timeout_was_clipped(timeout: _Timeout, nominal: float) -> bool:
     return timeout < nominal
 
 
+#: How much of a body :func:`_post_within_turn` reads between deadline checks.
+#: A keep-alive trickle arrives chunk-encoded, and urllib3 hands each HTTP
+#: chunk over as it lands whatever this is; the size only matters for a body
+#: with no length and no chunking, where a read blocks until it is full. Small
+#: enough that a trickle is checked often, large enough that a normal ~2KB
+#: completion is a few dozen reads.
+_TURN_READ_CHUNK_BYTES = 64
+
+
+def _post_within_turn(url: str, payload: Dict[str, Any], headers: Dict[str, str], timeout: _Timeout) -> Any:
+    """``requests.post``, with the body held to this thread's turn deadline.
+
+    Outside a turn this is exactly ``requests.post``. Inside one the body is
+    streamed and the clock checked after every chunk: ``requests``' read
+    timeout bounds the gap between bytes, so a provider trickling keep-alive
+    whitespace ran one clipped call 38s past a 21s turn (#684). Past the
+    deadline the connection is closed and ``ReadTimeout`` raised -- the same
+    exception a clipped timeout raises, so ``_openrouter_attempt`` treats it
+    as the turn running out, not the model failing.
+
+    The body read in pieces is put back as the response's content, so callers
+    use ``.json()``/``.text`` as before. That is ``Response._content``, the
+    attribute ``Response.content`` itself fills; ``requests`` has no public
+    setter, and the other route -- a stand-in response object -- would have
+    to copy every attribute the metering reads (status, headers) by hand.
+    """
+    deadline = getattr(_TURN_BUDGET, "deadline", None)
+    if deadline is None:
+        return requests.post(url, json=payload, headers=headers, timeout=timeout)
+    resp = requests.post(url, json=payload, headers=headers, timeout=timeout, stream=True)
+    chunks = []
+    try:
+        for chunk in resp.iter_content(chunk_size=_TURN_READ_CHUNK_BYTES):
+            chunks.append(chunk)
+            if time.monotonic() > deadline:
+                raise requests.exceptions.ReadTimeout(
+                    "the NPC chat turn's deadline passed while the body was "
+                    "still arriving (%d bytes read)" % sum(map(len, chunks))
+                )
+    except BaseException:
+        resp.close()
+        raise
+    resp._content = b"".join(chunks)
+    return resp
+
+
 def _post_chat_completion(
     url: str,
     payload: Dict[str, Any],
@@ -807,7 +856,7 @@ def _post_chat_completion(
     """
     if requests is None:
         raise RuntimeError("requests is not installed; cannot reach the provider")
-    resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
+    resp = _post_within_turn(url, payload, headers, timeout)
     if resp.status_code != 400:
         return resp
 
@@ -846,7 +895,7 @@ def _post_chat_completion(
         # Before the retry, not after: if the retry raises, the request we
         # already spent still has to be on the books.
         on_discarded(resp)
-    return requests.post(url, json=retry, headers=headers, timeout=timeout)
+    return _post_within_turn(url, retry, headers, timeout)
 
 
 def _reasoning_params(provider: str) -> Dict[str, Any]:

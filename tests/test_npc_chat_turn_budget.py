@@ -393,9 +393,10 @@ def test_a_turn_fits_inside_the_production_worker_timeout():
 
     Inside a turn each call's (connect, read) timeout pair is sized to fit
     what the turn has left, but ``requests``' read timeout bounds the gap
-    between bytes, not the whole body, so a trickling response can still run
-    past the deadline. The margin kept for that is one whole call at the
-    clamp: budget plus the widest call must stay inside.
+    between bytes, not the whole body. Since #684 the body is read against the
+    deadline, so a trickle is cut there -- but the wait for the one byte that
+    crosses it is still a whole read timeout. The margin kept for that is one
+    whole call at the clamp: budget plus the widest call must stay inside.
     """
     worst = chat_llm._TURN_CEILING_SECONDS + _widest_call()
     assert worst < _production_gunicorn()["timeout"]
@@ -516,10 +517,10 @@ def test_a_connect_timeout_benches_only_when_connect_was_not_clipped(
     assert adapter._is_model_failed("vendor/model:free") is benched
 
 
-class _Response:
-    def __init__(self, status_code, text=""):
-        self.status_code = status_code
-        self.text = text
+def _response(clock, status_code, text=""):
+    """A real response whose body arrives at once. Inside a turn the body is
+    streamed (#684), so a double without ``iter_content`` no longer serves."""
+    return _completion(clock, pings=0, gap=0.0, body=text.encode(), status=status_code)
 
 
 def test_the_400_retry_is_held_to_what_the_turn_has_left(clock, monkeypatch):
@@ -530,10 +531,12 @@ def test_the_400_retry_is_held_to_what_the_turn_has_left(clock, monkeypatch):
 
     sent = []
 
-    def post(_url, json, headers, timeout):
+    def post(_url, json, headers, timeout, **_kwargs):
         sent.append(timeout)
-        clock.now += 4.0
-        return _Response(400, "reasoning is mandatory for this endpoint")
+        # The retry answers inside the timeout it was given: one that landed
+        # past the deadline would now (#684) be cut, which is not under test.
+        clock.now += 4.0 if len(sent) == 1 else _total(timeout) / 2
+        return _response(clock, 400, "reasoning is mandatory for this endpoint")
 
     monkeypatch.setattr(llm.requests, "post", post)
     adapter = _adapter(["openrouter"])
@@ -549,10 +552,10 @@ def test_the_400_retry_is_not_sent_once_the_turn_is_spent(clock, monkeypatch):
 
     sent = []
 
-    def post(_url, json, headers, timeout):
+    def post(_url, json, headers, timeout, **_kwargs):
         sent.append(timeout)
         clock.now += 5.0
-        return _Response(400, "reasoning is mandatory for this endpoint")
+        return _response(clock, 400, "reasoning is mandatory for this endpoint")
 
     monkeypatch.setattr(llm.requests, "post", post)
     adapter = _adapter(["openrouter"])
@@ -598,3 +601,161 @@ def test_the_turn_clock_starts_before_the_adapter_is_built(clock):
     deadline, _scope = chat_llm.ConversationalNPCMixin._turn_budget(_ColdNpc())
 
     assert deadline == pytest.approx(started + chat_llm._TURN_CEILING_SECONDS)
+
+
+# ---------------------------------------------------------------------------
+# A trickled body is held to the turn (#684)
+# ---------------------------------------------------------------------------
+
+
+class _TricklingRaw:
+    """The raw stream of a response OpenRouter keeps alive while it generates.
+
+    A non-streamed completion can be held open with a keep-alive byte every
+    few seconds. Each byte resets ``requests``' read timeout -- it bounds the
+    gap BETWEEN bytes, not the body -- so a clipped (connect, read) pair never
+    fires. ``pings`` whitespace bytes ``gap`` seconds apart on the fake clock,
+    then ``body``.
+    """
+
+    def __init__(self, clock, pings, gap, body):
+        self.clock = clock
+        self.pings = pings
+        self.gap = gap
+        self.body = body
+        self.closed = False
+
+    def stream(self, chunk_size, decode_content=True):
+        for _ in range(self.pings):
+            self.clock.now += self.gap
+            yield b" "
+        yield self.body
+
+    def close(self):
+        self.closed = True
+
+
+_EMPTY_COMPLETION = b'{"choices": [{"message": {"content": ""}}]}'
+
+
+def _completion(clock, pings, gap, body=_EMPTY_COMPLETION, status=200):
+    """A real ``requests.Response`` over a :class:`_TricklingRaw` body."""
+    import requests
+
+    resp = requests.Response()
+    resp.status_code = status
+    resp.raw = _TricklingRaw(clock, pings, gap, body)
+    return resp
+
+
+def test_a_trickled_body_cannot_carry_a_turn_past_its_deadline(
+    clock, monkeypatch, fresh_bench
+):
+    """The 2026-09-24 QA turn (#684), replayed on the fake clock.
+
+    Two free models answered empty in ~5s each; the third started with ~10.6s
+    of a 21s turn left, got a correctly clipped (2.66, 6.0) timeout, and still
+    took 38s: 200, empty content, a body trickled out a byte at a time. The
+    turn ran 48s and the client (28s) gave up on it.
+
+    The turn may overrun its deadline by at most one read timeout -- the gap
+    ``requests`` waits for the next byte -- and no model is dialled once the
+    deadline has passed.
+    """
+    import requests
+
+    import ai.llm_client as llm
+
+    monkeypatch.setenv("NPC_CHAT_LLM_TIMEOUT", "6")
+    adapter = _adapter(["openrouter"])
+    adapter._openrouter_api_key = "test-key"
+    adapter._get_openrouter_model = lambda: "a:free"
+    adapter._openrouter_candidates = lambda primary: ["a:free", "b:free", "c:free", "d:free"]
+    adapter._build_openrouter_headers = lambda: {}
+    adapter._chat_payload = lambda **kw: {"model": kw["model"]}
+
+    posted = []
+    responses = {
+        "a:free": lambda: _completion(clock, pings=1, gap=5.3),
+        "b:free": lambda: _completion(clock, pings=1, gap=5.0),
+        "c:free": lambda: _completion(clock, pings=12, gap=4.0),
+    }
+
+    def post(_url, json, headers, timeout, **kwargs):
+        posted.append(json["model"])
+        return responses[json["model"]]()
+
+    monkeypatch.setattr(requests, "post", post)
+    started = clock.now
+    with adapter.bounded_by(started + chat_llm._TURN_CEILING_SECONDS):
+        assert adapter._call_openrouter("system", "user", 64, 0.5) is None
+
+    elapsed = clock.now - started
+    assert elapsed <= chat_llm._TURN_CEILING_SECONDS + llm._DEFAULT_ROUND_TIMEOUT_SECONDS, (
+        f"the turn ran {elapsed:.1f}s: a trickled body outlived the deadline"
+    )
+    assert posted == ["a:free", "b:free", "c:free"], (
+        "a model was dialled after the turn's deadline had passed"
+    )
+
+
+def test_a_body_cut_at_the_deadline_is_closed(clock, monkeypatch):
+    """The connection a cut body was read from goes back closed, not left
+    half-read in the pool."""
+    import requests
+
+    import ai.llm_client as llm
+
+    resp = _completion(clock, pings=12, gap=4.0)
+    monkeypatch.setattr(requests, "post", lambda *_a, **_kw: resp)
+    adapter = _adapter(["openrouter"])
+    with adapter.bounded_by(clock.now + 10.0):
+        with pytest.raises(requests.exceptions.ReadTimeout):
+            llm._post_chat_completion("url", {"model": "m"}, {}, (2.5, 6.0))
+
+    assert resp.raw.closed
+
+
+def test_a_body_that_arrives_in_time_parses_as_before(clock, monkeypatch):
+    """Inside a turn the body is read in pieces; what the caller gets back
+    still answers ``.json()`` and ``.text`` like any response."""
+    import requests
+
+    import ai.llm_client as llm
+
+    body = b'{"choices": [{"message": {"content": "hello"}}]}'
+    sent = []
+
+    def post(_url, json, headers, timeout, **kwargs):
+        sent.append(kwargs)
+        return _completion(clock, pings=2, gap=1.0, body=body)
+
+    monkeypatch.setattr(requests, "post", post)
+    adapter = _adapter(["openrouter"])
+    with adapter.bounded_by(clock.now + 21.0):
+        resp = llm._post_chat_completion("url", {"model": "m"}, {}, (3.05, 6.0))
+
+    assert resp.json()["choices"][0]["message"]["content"] == "hello"
+    assert resp.text.strip() == body.decode()
+    assert sent == [{"stream": True}]
+
+
+def test_outside_a_turn_a_slow_body_is_read_to_the_end(clock, monkeypatch):
+    """Control: with no turn deadline (combat, Mynx, tests) nothing is cut and
+    nothing about how the request is sent changes."""
+    import requests
+
+    import ai.llm_client as llm
+
+    body = b'{"choices": [{"message": {"content": "hello"}}]}'
+    sent = []
+
+    def post(_url, json, headers, timeout, **kwargs):
+        sent.append(kwargs)
+        return _completion(clock, pings=12, gap=4.0, body=body)
+
+    monkeypatch.setattr(requests, "post", post)
+    resp = llm._post_chat_completion("url", {"model": "m"}, {}, 6.0)
+
+    assert resp.json()["choices"][0]["message"]["content"] == "hello"
+    assert sent == [{}], "a call outside a turn changed how it is sent"
