@@ -417,9 +417,10 @@ class TestTheClassMatchesItsAuthority:
         # subset check above already sweeps its whole Cc/Cf/Zl/Zp half live.
         #
         # This was an equality pin, which could not be green in both places at
-        # once. `.python-version` is 3.11 and every CI workflow matches it
-        # (Unicode 14.0.0), while a developer box on 3.13 ships 15.1.0 — so the
-        # pin passed locally and failed in CI from the moment it was written.
+        # once. When it was written, `.python-version` was 3.11 and every CI
+        # workflow matched it (Unicode 14.0.0), while a developer box on 3.13
+        # shipped 15.1.0 — so the pin passed locally and failed in CI from the
+        # moment it was written.
         # An assertion that cannot hold on the interpreter CI actually uses is
         # not a stricter guard, it is a broken one.
         assert _release(vendored.group(1)) >= _release(unicodedata.unidata_version), (
