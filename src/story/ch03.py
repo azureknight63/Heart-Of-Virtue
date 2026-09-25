@@ -413,7 +413,7 @@ class JamboTentNoticeEvent(Event):
 
 class MaraFirstContactEvent(Event):
     """
-    Fires once on Jean's first entry to RiversEdge (1,0) in the nomad camp sub-map.
+    Fires once on Jean's first entry to RiversEdge (1,2) in the nomad camp sub-map.
     Mara clocked them fifty paces out, already back to her pack by the time Jean arrives.
 
     Beat 1: "Crossing west?" — the fee, named flat, not negotiated.
@@ -575,7 +575,7 @@ class MaraFirstContactEvent(Event):
 
 class DevetIntroEvent(Event):
     """
-    Fires once on Jean's first entry to FireRing (1,1) in the nomad camp sub-map.
+    Fires once on Jean's first entry to FireRing (3,2) in the nomad camp sub-map.
     Devet tends the fire. He offers food wordlessly — not a question — then two
     short, dry exchanges give the player a sense of him without breaking his
     terseness: he deflects a direct question about himself and declines a
@@ -662,7 +662,7 @@ class DevetIntroEvent(Event):
 
 class LissObservingEvent(Event):
     """
-    Fires once on Jean's first entry to CampFarEdge (2,1) in the nomad camp sub-map.
+    Fires once on Jean's first entry to CampFarEdge (3,4) in the nomad camp sub-map.
     Liss is not-approaching Gorran at the camp's boundary — three rapid-fire bursts
     of unfiltered curiosity, each met with total Gorran stillness (the comedic
     engine here: her chatter against his total silence — he is Stage 1 language
