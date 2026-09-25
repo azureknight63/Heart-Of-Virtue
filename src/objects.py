@@ -1127,6 +1127,10 @@ class Passageway(Object):
     locked_until_flag = None
     locked_message = None
 
+    #: Words that end a passageway name's generic head and introduce its
+    #: destination ("Path TO Grondia"); see ``build_article_phrase``.
+    _DESTINATION_PREPOSITIONS = frozenset({"to", "into", "toward", "towards"})
+
     #: Extra verbs that CROSS this placement, beyond ``enter``, its delegators
     #: and the words of its own name -- authored per placement (#630): the
     #: Eastern Gates' ``east``/``west`` and The Guesthold's ``inside``. They
@@ -1527,11 +1531,19 @@ class Passageway(Object):
         Possessives (Jambo's Tent) are proper nouns — no article.
         Names starting with "The" strip the duplicate and preserve rest.
         Generic noun phrases (Archive Door, Tent Flap) get "the " prepended.
+        Only the generic head is lowercased: after a preposition comes the
+        destination, a place name kept as authored -- "Path to Grondia" is
+        "the path to Grondia", never "...grondia" (issue #718).
         """
         if "'" in name:
             return name
         if name.lower().startswith("the "):
             return f"the {name[4:]}"
+        words = name.split(" ")
+        for i, word in enumerate(words[1:], start=1):
+            if word.lower() in Passageway._DESTINATION_PREPOSITIONS:
+                head = " ".join(words[: i + 1]).lower()
+                return f"the {head} {' '.join(words[i + 1:])}".rstrip()
         return f"the {name.lower()}"
 
     # Class-level aliases, not delegator methods (#626): each IS `enter`, so it
