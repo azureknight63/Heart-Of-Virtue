@@ -4180,42 +4180,109 @@ class GameService:
                     adapter.refresh_suggestions(adapter.available_options)
 
         # After combat ends, surface any post-combat tile events (e.g.
-        # AfterDefeatingKingSlime) through the standard trigger_tile_events
-        # pipeline so print_slow output is captured as event dialog text.
-        # The flag prevents re-firing on subsequent polls; the event removes
-        # itself from tile.events_here, so duplicate calls are also harmless.
-        _adapter = getattr(player, "_combat_adapter", None)
-        if (
-            _adapter is not None
-            and not getattr(player, "in_combat", False)
-            and not getattr(_adapter, "_post_combat_tile_events_fired", False)
-        ):
-            _adapter._post_combat_tile_events_fired = True
-            # Use the tile captured at victory time, not the current room —
-            # the player may have moved before this poll.
-            _tile = next(
-                (t for t in self._fight_tile_candidates(player) if t), None
-            )
-            if _tile:
-                if session_data is None:
-                    _log.warning(
-                        "post-combat tile events fired without session_data; "
-                        "interactive events cannot be queued"
-                    )
-                try:
-                    post_events = self.trigger_tile_events(player, _tile, session_data)
-                    if post_events:
-                        if not hasattr(player, "combat_adapter_state"):
-                            player.combat_adapter_state = {}
-                        existing = player.combat_adapter_state.get(
-                            "events_triggered", []
-                        )
-                        existing.extend(post_events)
-                        player.combat_adapter_state["events_triggered"] = existing
-                except Exception:
-                    _log.exception("Post-combat tile event processing failed")
+        # AfterDefeatingKingSlime). Outside a won fight's loot phase they ride
+        # this response once, as they always have; inside it they are HELD for
+        # collect-loot and only echoed here (issue #683) -- see
+        # _fire_post_combat_tile_events.
+        post_events = self._fire_post_combat_tile_events(player, session_data)
+        if post_events and not victory_loot_pending(player):
+            state = self._combat_adapter_state(player)
+            state["events_triggered"] = state.get("events_triggered", []) + post_events
 
-        return player._combat_adapter.get_combat_state()
+        result = player._combat_adapter.get_combat_state()
+        held = self._held_post_combat_events(player)
+        if held:
+            shipped = result.get("events_triggered") or []
+            result["events_triggered"] = shipped + [
+                e for e in held if not any(e is s for s in shipped)
+            ]
+        return result
+
+    #: Where a won fight's post-combat story waits for collect-loot (issue
+    #: #683). On ``player.combat_adapter_state``, which pickles with the
+    #: player and which flee/load discard along with the victory itself
+    #: (:meth:`_discard_fight_state`), so the hold never outlives the loot
+    #: phase it belongs to.
+    _HELD_POST_COMBAT_EVENTS_KEY = "held_post_combat_events"
+
+    @staticmethod
+    def _combat_adapter_state(player: Any) -> Dict[str, Any]:
+        """``player.combat_adapter_state``, created empty when missing."""
+        state = getattr(player, "combat_adapter_state", None)
+        if not isinstance(state, dict):
+            state = player.combat_adapter_state = {}
+        return state
+
+    def _fire_post_combat_tile_events(
+        self, player: Any, session_data: Optional[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Fire the finished fight's tile events once; returns what fired.
+
+        Runs the standard :meth:`trigger_tile_events` pipeline on the tile the
+        fight was fought on (the player may have moved since), so the scene's
+        narration is captured as event dialog text. Both readers of a finished
+        fight call this -- ``GET /combat/status`` and collect-loot -- and
+        whichever comes first fires; the adapter's
+        ``_post_combat_tile_events_fired`` flag (reset per fight in
+        :meth:`_initialize_combat`) makes the second a no-op.
+
+        When the fight was a victory still awaiting its loot call, what fired
+        is also HELD (tagged ``post_combat``) until collect-loot takes it
+        (:meth:`_take_post_combat_events`). A no-input scene such as
+        ``AfterDefeatingKingSlime`` is never in ``pending_events``, so before
+        issue #683 its only copy rode the first status response, and any stray
+        reader of that GET -- a second tab, devtools, a harness -- consumed it
+        before the browser, which reads a victory through collect-loot, ever
+        asked.
+        """
+        adapter = getattr(player, "_combat_adapter", None)
+        if adapter is None or getattr(player, "in_combat", False):
+            return []
+        # Check-and-set under the player's lock: a status poll racing
+        # collect-loot must not fire the scene twice. The events themselves
+        # run outside it, as every other tile-event trigger does.
+        with _player_mutation_lock(player):
+            if getattr(adapter, "_post_combat_tile_events_fired", False):
+                return []
+            adapter._post_combat_tile_events_fired = True
+        tile = next((t for t in self._fight_tile_candidates(player) if t), None)
+        if not tile:
+            return []
+        if session_data is None:
+            _log.warning(
+                "post-combat tile events fired without session_data; "
+                "interactive events cannot be queued"
+            )
+        try:
+            fired = self.trigger_tile_events(player, tile, session_data) or []
+        except Exception:
+            _log.exception("Post-combat tile event processing failed")
+            return []
+        if fired and victory_loot_pending(player):
+            for event in fired:
+                event["post_combat"] = True
+            with _player_mutation_lock(player):
+                state = self._combat_adapter_state(player)
+                state[self._HELD_POST_COMBAT_EVENTS_KEY] = (
+                    state.get(self._HELD_POST_COMBAT_EVENTS_KEY, []) + fired
+                )
+        return fired
+
+    def _held_post_combat_events(self, player: Any) -> List[Dict[str, Any]]:
+        """The post-combat events held for collect-loot, left in place."""
+        state = getattr(player, "combat_adapter_state", None)
+        if not isinstance(state, dict):
+            return []
+        return list(state.get(self._HELD_POST_COMBAT_EVENTS_KEY) or [])
+
+    def _take_post_combat_events(self, player: Any) -> List[Dict[str, Any]]:
+        """Hand over and clear everything held for collect-loot -- the only
+        reader that clears the hold (issue #683)."""
+        with _player_mutation_lock(player):
+            state = getattr(player, "combat_adapter_state", None)
+            if not isinstance(state, dict):
+                return []
+            return list(state.pop(self._HELD_POST_COMBAT_EVENTS_KEY, None) or [])
 
     def get_available_moves(self, player: "player_module.Player") -> Dict[str, Any]:
         """Get available combat moves."""
@@ -5138,6 +5205,13 @@ class GameService:
         # victory even when the adapter object is reused across fights.
         player._combat_adapter._post_combat_tile_events_fired = False
         player._combat_adapter._combat_tile = None
+        # A new fight also orphans whatever the last victory still held for
+        # collect-loot: starting it cleared that victory, so no collect is
+        # coming for it, and a status poll would echo it all fight long.
+        if not is_reinit:
+            self._combat_adapter_state(player).pop(
+                self._HELD_POST_COMBAT_EVENTS_KEY, None
+            )
 
         # Initialize combat through the adapter
         # This will set up all combat state, process initial NPC turns if needed,
@@ -5705,7 +5779,12 @@ class GameService:
             },
         }
 
-    def collect_combat_loot(self, player: Any, item_names: list) -> Dict[str, Any]:
+    def collect_combat_loot(
+        self,
+        player: Any,
+        item_names: list,
+        session_data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Move selected post-combat drops from the fight's tile into the player's inventory.
 
         ``item_names`` comes from the client, so only names the fight offered
@@ -5730,18 +5809,39 @@ class GameService:
         and ends nothing, so the player can retry or skip (issue #610). It is
         refused outright during combat, when there is no victory to resolve.
 
+        It is also where the browser receives the fight's post-combat story
+        (issue #683): a successful call fires the fight's tile events if no
+        status poll has yet, and returns them together with any a poll fired
+        and held (:meth:`_fire_post_combat_tile_events`) as
+        ``events_triggered``. They fire after the loot is taken, so a scene
+        that hands Jean an item cannot crowd the drops out of his capacity.
+
         Args:
             player: The Player instance.
             item_names: List of item names the player chose to take.
+            session_data: The session's data, where an interactive post-combat
+                event is queued as pending.
 
         Returns:
-            ``{"success": True, "collected": [...], "skipped": [...]}``, each
-            skipped entry ``{"name", "reason"}`` with reason ``not_offered``,
-            ``not_found`` or ``over_capacity``; or ``{"success": False,
-            "error": ...}`` for a malformed request, a call during combat, or a
-            fight tile that cannot be found — in which cases the drops and the
-            victory are kept.
+            ``{"success": True, "collected": [...], "skipped": [...],
+            "events_triggered": [...]}``, each skipped entry ``{"name",
+            "reason"}`` with reason ``not_offered``, ``not_found`` or
+            ``over_capacity``; or ``{"success": False, "error": ...}`` for a
+            malformed request, a call during combat, or a fight tile that
+            cannot be found — in which cases the drops, the victory and any
+            held events are kept.
         """
+        result = self._resolve_combat_loot(player, item_names)
+        if result.get("success"):
+            fired = self._fire_post_combat_tile_events(player, session_data)
+            held = self._take_post_combat_events(player)
+            result["events_triggered"] = held + [
+                e for e in fired if not any(e is h for h in held)
+            ]
+        return result
+
+    def _resolve_combat_loot(self, player: Any, item_names: list) -> Dict[str, Any]:
+        """:meth:`collect_combat_loot`'s take-and-resolve, without the events."""
         if item_names is None:
             item_names = []
         invalid = self._loot_request_error(item_names)

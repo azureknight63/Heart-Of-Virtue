@@ -255,7 +255,9 @@ class TestAnUnresolvableTileNeverCostsTheLoot:
         """An empty selection picks nothing up, so it can always resolve."""
         result = game_service.collect_combat_loot(lost_fight.player, [])
 
-        assert result == {"success": True, "collected": [], "skipped": []}
+        assert result == {
+            "success": True, "collected": [], "skipped": [], "events_triggered": []
+        }
         assert "end_state" not in lost_fight.adapter.get_combat_state()
 
 
@@ -939,3 +941,100 @@ def test_the_victory_dialog_describes_the_drop_not_a_twin(won_fight, game_servic
     assert taken is not twin
     assert (entry["value"], entry["description"]) == (taken.value, taken.description)
 
+
+class _AfterTheFightScene:
+    """A post-combat tile event shaped like ``AfterDefeatingKingSlime``: it
+    needs no input, narrates once, completes and leaves the tile -- so it is
+    never in ``pending_events`` and ``events_triggered`` is its only carrier."""
+
+    name = "AfterTheFightScene"
+    TEXT = "The churning stilled."
+
+    def __init__(self, tile):
+        self.tile = tile
+        self.player = None
+        self.needs_input = False
+        self.completed = False
+
+    def check_conditions(self):
+        from src.narration import narrate
+
+        if self.player.in_combat or self.completed:
+            return
+        narrate(self.TEXT)
+        self.completed = True
+        self.tile.events_here.remove(self)
+
+
+class TestThePostCombatStoryRidesCollectLoot:
+    """Issue #683: a won fight's no-input scene is delivered by collect-loot.
+
+    ``GET /combat/status`` used to pop the scene out of adapter state on the
+    first read after the kill, so a stray reader consumed its only copy and
+    the browser -- which reads a victory through collect-loot -- never saw it.
+    """
+
+    @pytest.fixture
+    def fight(self, won_fight):
+        fight = won_fight()
+        fight.fight_tile.events_here = [_AfterTheFightScene(fight.fight_tile)]
+        return fight
+
+    @staticmethod
+    def _scenes(events):
+        return [e for e in events or [] if e.get("name") == _AfterTheFightScene.name]
+
+    def test_a_status_read_echoes_the_scene_without_consuming_it(
+        self, fight, game_service
+    ):
+        first = game_service.get_combat_status(fight.player, session_data={})
+        second = game_service.get_combat_status(fight.player, session_data={})
+
+        for status in (first, second):
+            (scene,) = self._scenes(status.get("events_triggered"))
+            assert scene["output_text"].startswith(_AfterTheFightScene.TEXT)
+            assert scene["post_combat"] is True
+
+    def test_collect_loot_hands_over_what_a_status_read_fired(self, fight, game_service):
+        game_service.get_combat_status(fight.player, session_data={})
+
+        result = game_service.collect_combat_loot(fight.player, [], session_data={})
+
+        (scene,) = self._scenes(result["events_triggered"])
+        assert scene["output_text"].startswith(_AfterTheFightScene.TEXT)
+        after = game_service.get_combat_status(fight.player, session_data={})
+        assert self._scenes(after.get("events_triggered")) == []
+
+    def test_collect_loot_fires_the_scene_when_nothing_polled_first(
+        self, fight, game_service
+    ):
+        result = game_service.collect_combat_loot(fight.player, [], session_data={})
+
+        (scene,) = self._scenes(result["events_triggered"])
+        assert scene["output_text"].startswith(_AfterTheFightScene.TEXT)
+        assert self._scenes(
+            game_service.collect_combat_loot(fight.player, [])["events_triggered"]
+        ) == []
+
+    def test_a_refused_collect_keeps_the_scene_held(self, fight, game_service):
+        game_service.get_combat_status(fight.player, session_data={})
+        fight.player.in_combat = True
+        refused = game_service.collect_combat_loot(fight.player, [])
+        fight.player.in_combat = False
+
+        assert refused["success"] is False
+        assert "events_triggered" not in refused
+        result = game_service.collect_combat_loot(fight.player, [])
+        assert len(self._scenes(result["events_triggered"])) == 1
+
+    def test_a_new_fight_drops_what_the_last_victory_held(self, fight, game_service):
+        game_service.get_combat_status(fight.player, session_data={})
+        assert GameService._HELD_POST_COMBAT_EVENTS_KEY in (
+            fight.player.combat_adapter_state
+        )
+
+        game_service._initialize_combat(fight.player, [Slime()])
+
+        assert GameService._HELD_POST_COMBAT_EVENTS_KEY not in (
+            fight.player.combat_adapter_state
+        )

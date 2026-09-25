@@ -429,7 +429,9 @@ class TestCollectCombatLoot:
         dagger = RustedDagger()
         tile.items_here = [dagger]
         result = game_service.collect_combat_loot(player, [])
-        assert result == {"success": True, "collected": [], "skipped": []}
+        assert result == {
+            "success": True, "collected": [], "skipped": [], "events_triggered": []
+        }
         assert tile.items_here == [dagger]
 
     def test_none_selection_is_treated_as_empty(self, game_service, player, tile):
