@@ -47,6 +47,14 @@ jobs:
       - name: Run skill rules tests
         run: python -m pytest .claude/skills/_shared/review_rules/ -q -n0
 
+      # Same reason: the QA skill's helper scripts (config lint, log mining,
+      # teardown planning) are tested code that norecursedirs would skip.
+      - name: Run QA skill script tests
+        run: python -m pytest .claude/skills/orchestrate-qa-testers/scripts/tests/ -q -n0
+        env:
+          MYNX_LLM_ENABLED: "0"
+          MYNX_LLM_PROVIDER: "none"
+
       - name: Lint (flake8)
         run: flake8 --extend-ignore=E501 src/
 
