@@ -498,7 +498,12 @@ class MaraFirstContactEvent(Event):
                 "skeptical",
             )
             time.sleep(0.8)
-            say("No idea. At least he only eats rocks. Small consolation. \n\nWe're headed to a place called the Wailing Badlands.", "Jean", "neutral")
+            say(
+                "No idea. At least he only eats rocks. Small consolation. "
+                "We're headed to a place called the Wailing Badlands.",
+                "Jean",
+                "neutral",
+            )
             time.sleep(1)
 
             # Beat 3 — the crucifix, nothing spoken
@@ -526,7 +531,7 @@ class MaraFirstContactEvent(Event):
             time.sleep(0.8)
             react("Mara", "skeptical")
             print_slow(
-                "She turns back to Jean, holding his gaze for an uncomfortable moment."
+                "She turned back to Jean, holding his gaze for an uncomfortable moment."
             )
             time.sleep(1.5)
             say(
@@ -855,7 +860,7 @@ class IronAndOathIntroEvent(Event):
             time.sleep(0.3)
             print_slow(
                 "The metallic scraping of a hand file against steel and the sharp snap of waxed thread "
-                "echoed beneath the canvas awning. A man in an oil-cured leather apron was sharpening a pommel "
+                "echoed beneath the canvas awning. A man in an oil-cured leather apron was filing a pommel "
                 "while a sharp-eyed woman beside him inspected the buckle alignment of a leather cuirass."
             )
             time.sleep(1)
@@ -888,11 +893,9 @@ class IronAndOathIntroEvent(Event):
                 "curious",
             )
             time.sleep(1)
-            say(
+            print_slow(
                 "A low, subsonic vibration rolled through the gravel underfoot as Gorran shifted his weight. "
-                "The tools hanging from the counter rack chimed softly against one another.",
-                "Gorran",
-                "neutral",
+                "The tools hanging from the counter rack chimed softly against one another."
             )
             time.sleep(1)
             say("Gorran travels with me. He isn't armor.", "Jean", "neutral")
@@ -980,7 +983,7 @@ class IronAndOathIntroEvent(Event):
             )
             time.sleep(1.5)
             print_slow(
-                "Kaelen noticed her shift instantly. He set the fallen spear down, stepped over, and quietly "
+                "Kaelen noticed her shift instantly. He stepped over and quietly "
                 "rested a warm, soot-stained hand on the small of her back."
             )
             time.sleep(1)
