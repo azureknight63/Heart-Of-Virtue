@@ -4342,6 +4342,9 @@ class GameService:
         # take. Firing outside the lock let a collect-loot land between the
         # fire and the hold: it found nothing to take and the scene left on
         # the stray status response instead -- the #683 hole, narrowed.
+        # Lock order: player lock -> (a tile event re-starting combat may take
+        # the adapter's _beat_lock). The reverse only happens while in_combat,
+        # which is refused below, so the two orders never meet.
         with _player_mutation_lock(player):
             if getattr(player, "in_combat", False):
                 return []

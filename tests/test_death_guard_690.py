@@ -244,3 +244,15 @@ def test_alive_player_tile_events_not_short_circuited_by_death_guard(gs, world):
     tile.events_here = [event]
     gs.trigger_tile_events(player, tile, {})
     assert event.checked is True
+
+
+def test_every_guarded_method_has_a_behavioural_refusal_case():
+    """The structural table and the behavioural cases must not drift apart: a
+    method the derivation now guards needs a case in _DICT_RETURNING_CASES
+    that actually calls it at hp 0 (trigger_tile_events returns a list and
+    has its own test)."""
+    guarded = _guarded_methods(_method_call_names()) - {"trigger_tile_events"}
+    covered = {label for label, _ in _DICT_RETURNING_CASES}
+    assert guarded, "premise: the derived table is empty"
+    missing = sorted(guarded - covered)
+    assert not missing, f"guarded but never exercised at hp 0: {missing}"

@@ -1060,8 +1060,6 @@ class TestPostCombatDeliverySerialisesWithCollectLoot:
     def test_collect_loot_racing_a_status_poll_still_delivers_the_scene(
         self, fight, game_service
     ):
-        import threading
-
         entered, release = threading.Event(), threading.Event()
         real_trigger = game_service.trigger_tile_events
 
@@ -1109,8 +1107,6 @@ class TestPostCombatDeliverySerialisesWithCollectLoot:
         it. It used to re-ask ``victory_loot_pending`` after releasing the
         lock, read False (collect had cleared the victory) and copy the same
         events onto the status response: a second delivery."""
-        import threading
-
         paused, release = threading.Event(), threading.Event()
         real_fire = game_service._fire_post_combat_tile_events
 

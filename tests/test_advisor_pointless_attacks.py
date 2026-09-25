@@ -270,3 +270,23 @@ class TestTheLLMPathCannotRecommendAHarmlessAttack:
         top = strategist.get_suggestions(ctx, max_suggestions=1)
         assert top[0]["move_name"] == "Swap Weapon"
         assert top[0]["score"] == _SWAP_WHEN_HARMLESS_SCORE
+
+    def test_the_llm_path_always_gives_the_honest_reasons(self):
+        # The model's own words must not survive where they would lie: a Swap
+        # it already ranked high may promise the other weapon works, and a
+        # harmless Attack it already ranked low may claim it deals damage.
+        from ai.combat_strategist import _SWAP_WHEN_HARMLESS_SCORE
+
+        llm = _ScriptedLLM([
+            {"move_name": "Swap Weapon", "score": 95, "reasoning": "The mace will crush it."},
+            {"move_name": "Attack", "score": 10, "reasoning": "Big damage.", "target_id": "e_stone"},
+        ])
+        strategist = CombatStrategist(client=llm)
+        ctx = _ctx([_attack(_target(STONE, 0, 0)), SWAP], enemies=(STONE,))
+        by_name = {s["move_name"]: s for s in strategist.get_suggestions(ctx, max_suggestions=2)}
+        assert by_name["Swap Weapon"]["score"] == 95  # never lowered
+        assert "crush" not in by_name["Swap Weapon"]["reasoning"]
+        assert "check the new damage preview" in by_name["Swap Weapon"]["reasoning"]
+        assert by_name["Attack"]["score"] == 10  # never raised
+        assert "Big damage" not in by_name["Attack"]["reasoning"]
+        assert _SWAP_WHEN_HARMLESS_SCORE <= 95

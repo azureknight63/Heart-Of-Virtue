@@ -1018,9 +1018,11 @@ class CombatStrategist:
         for s in suggestions:
             move = moves.get(s.get("move_name"))
             reason = _harmless_reason(move) if move else None
-            if reason and s.get("score", 0) > _HARMLESS_ATTACK_SCORE:
-                s["score"] = _HARMLESS_ATTACK_SCORE
+            if reason:
+                # The honest reason always replaces the model's (which may
+                # claim damage); the score is only ever lowered, never raised.
                 s["reasoning"] = reason
+                s["score"] = min(s.get("score", 0), _HARMLESS_ATTACK_SCORE)
 
         # And, as the heuristic does, point at Swap Weapon when no offered
         # attack can hurt anyone -- whether or not the model proposed it.
@@ -1036,9 +1038,10 @@ class CombatStrategist:
             if swap is None:
                 swap = {"move_name": "Swap Weapon"}
                 suggestions.append(swap)
-            if swap.get("score", 0) < _SWAP_WHEN_HARMLESS_SCORE:
-                swap["score"] = _SWAP_WHEN_HARMLESS_SCORE
-                swap["reasoning"] = _swap_when_harmless_reason(names)
+            # Always the honest reason -- the model's may promise the other
+            # weapon works -- and the score is only ever raised to the floor.
+            swap["score"] = max(swap.get("score", 0), _SWAP_WHEN_HARMLESS_SCORE)
+            swap["reasoning"] = _swap_when_harmless_reason(names)
 
     # ------------------------------------------------------------------
     # Heuristic fallback
