@@ -339,6 +339,50 @@ def _refused_mid_fight(player, key="error"):
     return None
 
 
+#: Why any mutating action is refused once Jean has fallen (#690). Combat
+#: defeat publishes ``end_state {"status": "defeat", "game_over": True}`` and
+#: ends the fight, but until this guard existed nothing except
+#: ``submit_event_input``'s post-hoc annotation ever consulted
+#: ``GameService.is_player_dead`` again -- so a corpse could still walk,
+#: search, interact, learn a skill, chat, shop, and even heal itself back to
+#: full HP with ``POST /inventory/use``. There is no legitimate out-of-combat
+#: revival (``check_revive`` is combat-pipeline only), so every mutating
+#: GameService method refuses outright once ``player.hp <= 0``. The client's
+#: ``DefeatDialog`` ("START OVER") is the only way forward -- ``POST
+#: /game/new``, ``POST /saves/<id>/load``, every read-only route, and
+#: ``/level-up/allocate`` are deliberately NOT guarded (a dead player must
+#: still be able to start over, load a save, or read state; unspent
+#: attribute points from a final, fatal level-up are not this bug).
+_PLAYER_DEAD_MESSAGE = (
+    "Jean has fallen. There is nothing more to do until you start over."
+)
+
+
+def _player_hp_is_nonpositive(player) -> bool:
+    """``player.hp <= 0``, tolerant of a test double whose ``hp`` was never
+    set. A bare ``MagicMock()`` auto-vivifies ``.hp`` as another Mock rather
+    than raising, so a plain ``getattr(player, "hp", 1) <= 0`` throws
+    ``TypeError: '<=' not supported between instances of 'MagicMock' and
+    'int'`` for every one of the many existing tests that pass a player
+    double with no ``hp`` set. Only a real ``int``/``float`` can make this
+    True -- an un-set-up double defaults to "alive", matching how every other
+    guard in this module treats an absent attribute via ``getattr(..., False)``.
+    """
+    hp = getattr(player, "hp", 1)
+    return isinstance(hp, (int, float)) and hp <= 0
+
+
+def _refused_if_dead(player, key="error", include_success=True):
+    """``{key: _PLAYER_DEAD_MESSAGE}`` (plus ``"success": False`` unless
+    ``include_success`` is False) when ``player.hp <= 0``, else None -- the
+    guard every mutating GameService method runs (#690)."""
+    if _player_hp_is_nonpositive(player):
+        refusal = {"success": False} if include_success else {}
+        refusal[key] = _PLAYER_DEAD_MESSAGE
+        return refusal
+    return None
+
+
 #: Why the free equip/unequip routes refuse a weapon mid-fight (#671). A
 #: weapon change in combat is the ``SwapWeapon`` move, which costs beats; left
 #: open, these routes would make that cost optional. Names the move so the
@@ -1973,6 +2017,12 @@ class GameService:
         Returns:
             Dictionary with result of movement
         """
+        # #690: a dead player (hp <= 0) is refused before anything else --
+        # see _refused_if_dead.
+        refused = _refused_if_dead(player, key="error", include_success=False)
+        if refused is not None:
+            return refused
+
         # FIX 5: Add defensive checks at method start
         if not hasattr(player, "universe") or player.universe is None:
             return {"error": "Player universe not initialized"}
@@ -2166,6 +2216,9 @@ class GameService:
         """
         if getattr(player, "in_combat", False):
             return []
+        # #690: a dead player triggers no room events (route: POST /world/events).
+        if _refused_if_dead(player) is not None:
+            return []
 
         events_triggered = []
 
@@ -2342,6 +2395,14 @@ class GameService:
         """
         import contextlib
         from src.api.serializers.event_serializer import EventSerializer
+
+        # #690: a dead player cannot answer any pending event -- folded in
+        # from what used to be a route-level-only is_player_dead check
+        # (routes/world.py's submit_event_input) so the guard lives with the
+        # rest of GameService's mutating methods.
+        refused = _refused_if_dead(player)
+        if refused is not None:
+            return refused
 
         # Validate event exists
         if "pending_events" not in session_data:
@@ -2623,6 +2684,9 @@ class GameService:
         The engine decides what prayer costs and cures; this captures its
         narration and reports the new fatigue so the HUD can redraw.
         """
+        refused = _refused_if_dead(player)
+        if refused is not None:
+            return refused
         refused = _refused_mid_fight(player)
         if refused is not None:
             return refused
@@ -2650,6 +2714,9 @@ class GameService:
         Returns:
             Dictionary with search results
         """
+        refused = _refused_if_dead(player, key="message")
+        if refused is not None:
+            return refused
         refused = _refused_mid_fight(player, key="message")
         if refused is not None:
             return refused
@@ -3302,6 +3369,9 @@ class GameService:
         Returns:
             Dictionary with interaction result and output text
         """
+        refused = _refused_if_dead(player, key="message")
+        if refused is not None:
+            return refused
 
         tile, target = self._resolve_interaction_target(player, target_id, session_data)
         if target is None:
@@ -3669,6 +3739,10 @@ class GameService:
         events into ``session["pending_events"]`` (#335). Omitting it leaves the
         callback bound to ``None``, which silently drops those events.
         """
+        # #690: a dead player cannot start a new fight.
+        refused = _refused_if_dead(player, key="error", include_success=False)
+        if refused is not None:
+            return refused
         # A fight is already on: the client never starts a second one, and
         # doing so would re-roster this fight around another NPC.
         if getattr(player, "in_combat", False):
@@ -4509,6 +4583,9 @@ class GameService:
         Returns:
             Dictionary with result
         """
+        refused = _refused_if_dead(player)
+        if refused is not None:
+            return refused
         refused = _refused_mid_fight(player)
         if refused is not None:
             return refused
@@ -5426,6 +5503,9 @@ class GameService:
         self, player: "player_module.Player", npc_id: str
     ) -> Dict[str, Any]:
         """Start a conversation, one turn per player at a time (``_npc_chat_open``)."""
+        refused = _refused_if_dead(player)
+        if refused is not None:
+            return refused
         refused = _refused_mid_fight(player)
         if refused is not None:
             return refused
@@ -5525,6 +5605,9 @@ class GameService:
         game-state answer decided before the turn, and is not charged. The route validates the id;
         ``None`` keeps the pre-#636 behaviour.
         """
+        refused = _refused_if_dead(player)
+        if refused is not None:
+            return refused
         refused = _refused_mid_fight(player)
         if refused is not None:
             return refused
@@ -6082,6 +6165,9 @@ class GameService:
         Returns:
             Dict with success, shop_state, and sell_inventory.
         """
+        refused = _refused_if_dead(player)
+        if refused is not None:
+            return refused
         refused = _refused_mid_fight(player)
         if refused is not None:
             return refused
@@ -6176,6 +6262,9 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
+        refused = _refused_if_dead(player)
+        if refused is not None:
+            return refused
         refused = _refused_mid_fight(player)
         if refused is not None:
             return refused
@@ -6271,6 +6360,9 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
+        refused = _refused_if_dead(player)
+        if refused is not None:
+            return refused
         refused = _refused_mid_fight(player)
         if refused is not None:
             return refused
@@ -6414,6 +6506,9 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
+        refused = _refused_if_dead(player)
+        if refused is not None:
+            return refused
         refused = _refused_mid_fight(player)
         if refused is not None:
             return refused
@@ -6639,6 +6734,11 @@ class GameService:
         Returns:
             Dictionary with ``success``/``message`` or ``error``
         """
+        # #690: a dead player cannot equip/unequip -- checked before the lock,
+        # no mutation to serialize against if we're about to refuse.
+        refused = _refused_if_dead(player, key="error", include_success=False)
+        if refused is not None:
+            return refused
         # #641: guards the whole toggle, including the delegated unequip
         # below -- `_player_mutation_lock` is an `RLock` precisely so that
         # reentrant call does not deadlock.
@@ -6677,6 +6777,10 @@ class GameService:
         Returns:
             Dictionary with ``success``/``message`` or ``error``
         """
+        # #690: a dead player cannot equip/unequip.
+        refused = _refused_if_dead(player, key="error", include_success=False)
+        if refused is not None:
+            return refused
         # #641: reentrant so `equip_item`'s toggle-off call lands inside an
         # already-held lock rather than deadlocking on it.
         with _player_mutation_lock(player):
@@ -6710,6 +6814,9 @@ class GameService:
         Returns:
             Dictionary with drop result or ``error``
         """
+        refused = _refused_if_dead(player, key="error", include_success=False)
+        if refused is not None:
+            return refused
         if getattr(player, "in_combat", False):
             # Floor piles hold still mid-fight (#621; see _moves_floor_items).
             return {"error": _FLOOR_ITEMS_IN_COMBAT_MESSAGE}
@@ -6779,6 +6886,13 @@ class GameService:
         # second `inventory.remove(self)` on an already-removed item raises
         # an uncaught ValueError. Split into `_use_item_locked` so the lock
         # wraps one call rather than reindenting the whole body.
+        #
+        # #690: a dead player cannot use an item -- checked here, before the
+        # lock, so a tester can no longer heal a corpse back to full HP with
+        # a Restorative (the reported reproduction for this bug).
+        refused = _refused_if_dead(player, key="error", include_success=False)
+        if refused is not None:
+            return refused
         with _player_mutation_lock(player):
             return self._use_item_locked(player, item, target=target, user=user)
 

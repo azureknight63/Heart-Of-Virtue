@@ -1,0 +1,210 @@
+"""Issue #690: the server kept accepting world/player mutations after a
+combat defeat (Jean at 0 HP could still walk, search, interact, chat, shop,
+and heal herself with a Restorative).
+
+``GameService.is_player_dead`` existed but was consulted only by
+``submit_event_input`` (routes/world.py), and even there only to annotate the
+response after the fact -- nothing ever REFUSED an action because the player
+was dead. There is no legitimate out-of-combat revival (``check_revive`` is
+combat-pipeline only), so every mutating ``GameService`` method now runs
+``_refused_if_dead`` before doing anything else.
+
+Two guards, twin shape: ``_refused_mid_fight`` (in-combat) and
+``_refused_if_dead`` (post-defeat). This file has two halves:
+
+1. A structural check that derives the guarded-method table from the source
+   itself (every method already calling ``_refused_mid_fight``, since that is
+   this codebase's existing marker for "mutating, exploration-gated route")
+   plus a small hand-kept list for methods with a bespoke response shape that
+   has no such marker to grep for. A future mutator that copies the
+   `_refused_mid_fight` pattern is caught automatically; one that doesn't
+   copy any existing pattern still needs a human to add it to the hand-kept
+   list -- exactly the situation #690 was.
+2. Behavioural checks: hp <= 0 -> refused, hp > 0 -> unchanged (the death
+   refusal is never returned).
+"""
+
+import ast
+from pathlib import Path
+
+import pytest
+
+from src.api.services.game_service import GameService, _PLAYER_DEAD_MESSAGE
+from tests._gs_fixtures import live_world
+
+_GAME_SERVICE_PATH = (
+    Path(__file__).resolve().parent.parent / "src" / "api" / "services" / "game_service.py"
+)
+
+
+def _method_call_names():
+    """``{method_name: {names of module-level functions it calls}}`` for every
+    method defined directly on ``class GameService`` in the real source file."""
+    tree = ast.parse(_GAME_SERVICE_PATH.read_text(encoding="utf-8"))
+    calls_by_method = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == "GameService":
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef):
+                    calls = {
+                        sub.func.id
+                        for sub in ast.walk(item)
+                        if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name)
+                    }
+                    calls_by_method[item.name] = calls
+    return calls_by_method
+
+
+#: Mutating GameService methods that return a bespoke ``{"error": ...}``
+#: shape (no ``success`` key) instead of the shared ``_refused_mid_fight``
+#: marker, so the AST derivation below cannot find them on its own. Hand-kept
+#: on purpose -- see the module docstring. If you add a new mutating method
+#: with its own response shape, add it here in the same commit.
+MANUALLY_GUARDED_METHODS = frozenset(
+    {
+        "move_player",
+        "trigger_tile_events",
+        "equip_item",
+        "unequip_item",
+        "drop_item",
+        "use_item",
+        "start_combat",
+    }
+)
+
+
+def _guarded_methods(calls_by_method):
+    auto_derived = {
+        name for name, calls in calls_by_method.items() if "_refused_mid_fight" in calls
+    }
+    return auto_derived | MANUALLY_GUARDED_METHODS
+
+
+def test_guarded_method_table_is_derived_and_nonempty():
+    """The table this test enforces is not hand-typed twice: it is (every
+    method already calling the mid-fight marker) union (the small hand-kept
+    bespoke-shape list). Both halves must resolve to real GameService methods,
+    and the union must be non-empty, or this test would vacuously pass."""
+    calls_by_method = _method_call_names()
+    guarded = _guarded_methods(calls_by_method)
+    assert guarded, "expected at least one #690-guarded GameService method"
+    for name in guarded:
+        assert name in calls_by_method, f"{name!r} is not a GameService method"
+
+
+def test_every_guarded_method_calls_the_death_guard():
+    """A method that calls ``_refused_mid_fight`` (or is in the hand-kept
+    list) must also call ``_refused_if_dead`` -- this is the check that
+    catches a *future* mutator added without the #690 guard, automatically,
+    for anything following the existing mid-fight pattern."""
+    calls_by_method = _method_call_names()
+    guarded = _guarded_methods(calls_by_method)
+    missing = sorted(
+        name
+        for name in guarded
+        if "_refused_if_dead" not in calls_by_method.get(name, set())
+    )
+    assert not missing, f"GameService methods missing the #690 death guard: {missing}"
+
+
+def test_level_up_allocate_is_deliberately_not_guarded():
+    """The triage brief calls out ``allocate_level_up_points`` as an
+    intentional exception: a final, fatal level-up still needs its points
+    spent. Pin that it is a real method and stays out of the guarded table,
+    so a future pass doesn't "fix" it by mistake."""
+    calls_by_method = _method_call_names()
+    assert "allocate_level_up_points" in calls_by_method
+    assert "allocate_level_up_points" not in _guarded_methods(calls_by_method)
+
+
+# ---------------------------------------------------------------------------
+# Behavioural: hp <= 0 -> refused, hp > 0 -> the guard never fires.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def gs():
+    return GameService()
+
+
+@pytest.fixture
+def world():
+    return live_world()
+
+
+def _refusal_values(result):
+    """Every string value in a result dict, flattened, for a substring check."""
+    if not isinstance(result, dict):
+        return []
+    return [v for v in result.values() if isinstance(v, str)]
+
+
+#: (label, invocation). Each invocation takes ``(gs, player)`` and returns
+#: whatever the real method returns. Args are deliberately nonsense (bogus
+#: ids, no setup) -- the whole point of the guard running FIRST is that none
+#: of that ever gets resolved when the player is dead.
+_DICT_RETURNING_CASES = [
+    ("move_player", lambda gs, p: gs.move_player(p, "north")),
+    ("process_event_input", lambda gs, p: gs.process_event_input(
+        p, "nope", "", {"pending_events": {}}
+    )),
+    ("pray", lambda gs, p: gs.pray(p)),
+    ("search", lambda gs, p: gs.search(p)),
+    ("interact_with_target", lambda gs, p: gs.interact_with_target(p, "nope", "take")),
+    ("learn_skill", lambda gs, p: gs.learn_skill(p, "Slash", "Basic")),
+    ("npc_chat_open", lambda gs, p: gs.npc_chat_open(p, "nope")),
+    ("npc_chat_respond", lambda gs, p: gs.npc_chat_respond(p, "nope", "hi")),
+    ("get_shop_state", lambda gs, p: gs.get_shop_state(p, "nope")),
+    ("shop_buy", lambda gs, p: gs.shop_buy(p, "nope", "nope", 1)),
+    ("shop_sell", lambda gs, p: gs.shop_sell(p, "nope", "nope", 1)),
+    ("shop_buyback", lambda gs, p: gs.shop_buyback(p, "nope", "nope")),
+    ("equip_item", lambda gs, p: gs.equip_item(p, object())),
+    ("unequip_item", lambda gs, p: gs.unequip_item(p, object())),
+    ("drop_item", lambda gs, p: gs.drop_item(p, object())),
+    ("use_item", lambda gs, p: gs.use_item(p, object())),
+    ("start_combat", lambda gs, p: gs.start_combat(p, "nope")),
+]
+
+
+@pytest.mark.parametrize("label,invoke", _DICT_RETURNING_CASES, ids=[c[0] for c in _DICT_RETURNING_CASES])
+def test_dead_player_is_refused(gs, world, label, invoke):
+    player, _game_map = world
+    player.hp = 0
+    result = invoke(gs, player)
+    assert isinstance(result, dict), f"{label} did not return a dict: {result!r}"
+    assert result.get("success") is False or "success" not in result
+    assert _PLAYER_DEAD_MESSAGE in _refusal_values(result), (
+        f"{label} did not carry the #690 death-refusal message: {result!r}"
+    )
+
+
+@pytest.mark.parametrize("label,invoke", _DICT_RETURNING_CASES, ids=[c[0] for c in _DICT_RETURNING_CASES])
+def test_alive_player_is_never_death_refused(gs, world, label, invoke):
+    """hp > 0 -> unchanged behaviour: whatever the method does next (a
+    different validation error, since args are still nonsense), it must not
+    be the #690 death refusal."""
+    player, _game_map = world
+    assert player.hp > 0, "live_world() should hand back a freshly-alive Player"
+    result = invoke(gs, player)
+    assert _PLAYER_DEAD_MESSAGE not in _refusal_values(result)
+
+
+def test_dead_player_triggers_no_tile_events(gs, world):
+    """trigger_tile_events (routes/world.py's POST /world/events) returns a
+    list, not a dict, so it can't carry the shared refusal message -- but a
+    dead player must still get an empty list back, same as the existing
+    in-combat guard."""
+    player, game_map = world
+    player.hp = 0
+    tile = game_map[(0, 0)]
+    tile.events_here = [object()]  # would explode if actually processed
+    assert gs.trigger_tile_events(player, tile, {}) == []
+
+
+def test_alive_player_tile_events_not_short_circuited_by_death_guard(gs, world):
+    player, game_map = world
+    assert player.hp > 0
+    tile = game_map[(0, 0)]
+    # No events queued -> real early-return path, proving the death guard
+    # above it didn't misfire for a live player.
+    assert gs.trigger_tile_events(player, tile, {}) == []
