@@ -1227,32 +1227,37 @@ class CombatStrategist:
         min_bui = state["incoming_beats"]
         est_damage = state["estimated_damage"]
         est_lethal = state["incoming_lethal"]
+        # Issue #718: every reason names the charge it answers, as
+        # `_charge_note` does outside the window -- the name `_charge_name`
+        # already resolved into the state, never a second naming path.
+        charge = state["incoming_move"] or "The enemy's attack"
+        charge = f"{charge[:1].upper()}{charge[1:]}"
 
         if state["dodge_impaired"] and not est_lethal:
             # Status effect reduces defensive move value when the hit is survivable
             return 60, (
-                f"Attack in ~{min_bui} beat(s) but status effect impairs {name} "
+                f"{charge} in ~{min_bui} beat(s) but status effect impairs {name} "
                 "reliability; consider UseItem or accepting the hit."
             )
         if state["dodge_impaired"] and est_lethal:
             # Even impaired, better than a one-shot
             return 88, (
-                f"Incoming hit is potentially lethal in ~{min_bui} beat(s); "
+                f"{charge} is potentially lethal in ~{min_bui} beat(s); "
                 f"{name} reliability is reduced by status effect but still "
                 "preferable to dying."
             )
         if est_lethal:
             return 97, (
-                f"Potentially lethal hit (~{est_damage} dmg) landing in "
+                f"{charge} is potentially lethal (~{est_damage} dmg), landing in "
                 f"~{min_bui} beat(s); {name} is critical."
             )
         if state["defensively_vulnerable"]:
             return 95, (
-                f"Attack landing in ~{min_bui} beat(s) and Jean's defenses are "
+                f"{charge} landing in ~{min_bui} beat(s) and Jean's defenses are "
                 f"low (~{est_damage} estimated dmg); {name} now."
             )
         return 80, (
-            f"Attack in ~{min_bui} beat(s) (~{est_damage} estimated dmg); "
+            f"{charge} in ~{min_bui} beat(s) (~{est_damage} estimated dmg); "
             f"{name} is advisable but Jean's defenses may absorb it."
         )
 

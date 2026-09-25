@@ -189,6 +189,22 @@ class TestAdvisorReasonsAroundTheSurge:
         assert "fatigue" in top["reasoning"].lower() and \
             "Dodge" in top["reasoning"], top
 
+    # Issue #718: at 14 beats every reason named the Tidal Surge, then inside
+    # the window Dodge fell back to "Potentially lethal hit ... Dodge is
+    # critical" -- the one reason that answers the charge no longer said which.
+    @pytest.mark.parametrize("hp", [100, 100000], ids=["lethal", "survivable"])
+    def test_the_in_window_dodge_reason_names_the_surge(self, strategist, hp):
+        player, adapter = _fight([KingSlime()])
+        [king] = player.combat_list
+        _surge_at(adapter, king, 6)
+        player.hp = player.maxhp = hp
+
+        _, scores = _all_scores(strategist, adapter)
+        assert "Dodge" in scores, "premise: Dodge must be on offer"
+        score, reason = scores["Dodge"]
+        assert score >= 80, "premise: inside the window, Dodge is the answer"
+        assert "Tidal Surge" in reason, reason
+
     def test_a_surge_aimed_at_an_ally_does_not_make_jean_dodge(self, strategist):
         player, adapter = _fight([KingSlime()], allies=[Gorran()])
         [king] = player.combat_list
