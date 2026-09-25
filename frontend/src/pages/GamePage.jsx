@@ -49,6 +49,13 @@ export default function GamePage() {
   // refresh (issue #505). Surface it, and remember an "Event pending" refusal
   // so the recovery poll below can go re-fetch the event the client lost.
   const pendingEventRefusalRef = useRef(false)
+  // #694: the room behind the VICTORY/DEFEAT modal kept listing dead enemies
+  // as HOSTILE until loot was collected -- the world refetch only ran in
+  // returnToExploration/finishLoot, both well after the modal (and the
+  // exploration panel underneath it) had already rendered on the stale room.
+  // Tracks the end_state id already refetched-for, so a re-render of this
+  // effect (it runs on every combat poll) doesn't refetch the room repeatedly.
+  const worldRefetchedForEndStateRef = useRef(null)
   const handleCombatActionRefused = useCallback((refusal) => {
     if (refusal?.error === 'Event pending') pendingEventRefusalRef.current = true
     showError(refusal?.message || refusal?.error || 'That action is not available right now.')
@@ -500,6 +507,16 @@ export default function GamePage() {
 
       if (maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
         setEndState(maybeEnd)
+
+        // Refetch the room as soon as combat end is detected, not only once the
+        // player leaves it: the exploration panel can render underneath the
+        // victory/defeat modal (mode flips to 'exploration' below while the
+        // dialog is still pending) and it reads `location`, which otherwise
+        // still carries the pre-fight, everyone-hostile room state.
+        if (maybeEnd.id && worldRefetchedForEndStateRef.current !== maybeEnd.id) {
+          worldRefetchedForEndStateRef.current = maybeEnd.id
+          refetchWorld()
+        }
 
         // Keep mode locked to 'combat' while the dialog is pending (timer running)
         // or while the dialog is open. endStatePendingRef.current is a ref so it

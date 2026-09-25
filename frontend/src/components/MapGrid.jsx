@@ -186,7 +186,7 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
         fontFamily: 'monospace',
       }}>
         ⛰️ {location.map_name
-          ? location.map_name.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+          ? location.map_name.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
           : (location.name || 'World Map')}
       </div>
 

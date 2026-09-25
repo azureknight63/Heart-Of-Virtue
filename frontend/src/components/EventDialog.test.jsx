@@ -912,6 +912,42 @@ describe('EventDialog', () => {
       fireEvent.click(screen.getByText('Jean opens the door.'));
       expect(mockOnClose).not.toHaveBeenCalled();
     });
+
+    // #694: LOG -> BACK restarted a staged conversation from its first beat.
+    // EventDialog only ever rendered ConversationStage in the branch it took
+    // when showHistory was false, so opening the log unmounted it; React
+    // remounted a fresh instance on BACK, whose beatIndex/completedRef both
+    // reset to their initial values (see the ConversationStage reset trap in
+    // .claude/rules/frontend.md).
+    it('keeps ConversationStage on its current beat across LOG -> BACK (#694)', () => {
+      const stagedWithHistory = {
+        event_id: 'guide-9',
+        name: 'Ch02GuideToCitadel',
+        needs_input: false,
+        segments: [
+          { text: 'Votha Krr waved a hand...', speaker: 'Votha Krr', in_conversation: true },
+          { text: 'The gate groaned open.', speaker: 'Votha Krr', in_conversation: true },
+          { text: 'Come, Jean Claire.', speaker: 'Votha Krr', in_conversation: true },
+        ],
+        conversation: { cast: [{ id: 'Votha Krr', name: 'Votha Krr', side: 'right' }] },
+      };
+      renderDialog(stagedWithHistory, { history });
+
+      const stage = screen.getByTestId('conversation-stage');
+      fireEvent.click(stage); // finish beat one's typewriter
+      fireEvent.click(stage); // advance to beat two
+      fireEvent.click(stage); // finish beat two's typewriter
+      expect(screen.getByText('The gate groaned open.').textContent).toBe('The gate groaned open.');
+      expect(screen.queryByText('Votha Krr waved a hand...')).toBeNull();
+
+      fireEvent.click(screen.getByText(/Log \(2\)/i));
+      expect(screen.getByText('Jean opens the door.').textContent).toBe('Jean opens the door.');
+
+      fireEvent.click(screen.getByText(/↩ Back/i));
+      expect(screen.getByTestId('conversation-stage')).toBe(stage);
+      expect(screen.getByText('The gate groaned open.').textContent).toBe('The gate groaned open.');
+      expect(screen.queryByText('Votha Krr waved a hand...')).toBeNull();
+    });
   });
 
   // The one corner of this file the click gesture cannot settle: the damage

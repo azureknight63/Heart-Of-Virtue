@@ -680,14 +680,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                             {eventText}
                         </pre>
                     </div>
-                ) : hasSegments ? (
-                    <ConversationStage
-                        segments={segments}
-                        conversation={event?.conversation || null}
-                        onComplete={handleStageComplete}
-                        skipRequested={skipRequested}
-                    />
-                ) : (
+                ) : hasSegments ? null : (
                     <div style={{ position: 'relative', flex: 1 }}>
                         <div ref={scrollRef} style={{ maxHeight: '450px', overflowY: 'auto' }}>
                             <TypewriterOutput
@@ -710,6 +703,24 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                         </div>
                         {showTop && <ScrollFadeIndicator position="top" color={colors.secondary} bgColor="rgb(5, 10, 5)" />}
                         {showBottom && <ScrollFadeIndicator position="bottom" color={colors.secondary} bgColor="rgb(5, 10, 5)" />}
+                    </div>
+                )}
+
+                {/* Staged (portrait) dialogue stays mounted while LOG is open, hidden via
+                    CSS rather than unmounted: EventDialog previously rendered it only in
+                    the branch above, so toggling to the history view and back remounted
+                    ConversationStage, which reset `beatIndex` to 0 and replayed the stage
+                    from its first beat (#694). See the "ConversationStage reset trap" in
+                    .claude/rules/frontend.md -- this is the same instance-reuse hazard,
+                    just triggered by an unmount/remount instead of a stale prop. */}
+                {hasSegments && (
+                    <div style={{ display: showHistory ? 'none' : 'contents' }}>
+                        <ConversationStage
+                            segments={segments}
+                            conversation={event?.conversation || null}
+                            onComplete={handleStageComplete}
+                            skipRequested={skipRequested}
+                        />
                     </div>
                 )}
 
