@@ -1211,6 +1211,27 @@ def copy_item_state(source, target):
                 pass
 
 
+def as_stack_of(item, count):
+    """A detached copy of stackable ``item`` restated as a pile of ``count``.
+
+    For describing several piles as one (issue #718: the victory summary
+    sums a name's drops, and read "42 gold pieces" off one pile beside a
+    quantity of 115). The copy goes through the item's own
+    ``stack_grammar()``, so its description and -- for gold -- value are the
+    engine's text for that count, never re-derived by a caller. ``item``
+    itself is untouched; a non-stackable ``item``, or one already of that
+    count, comes back as is.
+    """
+    if not hasattr(item, "count") or getattr(item, "count", None) == count:
+        return item
+    pile = item.__class__.__new__(item.__class__)
+    copy_item_state(item, pile)
+    pile.count = count
+    if callable(getattr(pile, "stack_grammar", None)):
+        pile.stack_grammar()
+    return pile
+
+
 def remove_by_identity(items, obj, hint=None):
     """Remove ``obj`` itself from ``items``; return False if it is not there.
 

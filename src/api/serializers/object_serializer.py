@@ -10,7 +10,24 @@ class ObjectSerializer:
     """Serialize world objects to JSON-safe dictionaries."""
 
     @staticmethod
-    def _serialize_base(obj: Any) -> Dict[str, Any]:
+    def locked_for(obj: Any, player: Any = None) -> bool:
+        """Whether ``obj`` is locked, as ``player`` would find it.
+
+        The key lock (``locked``) or, given a player, a story gate the engine
+        holds it by -- ``story_locked``, the side-effect-free half of
+        ``Passageway.crossing_locked`` (issue #718: the Eastern Gate read
+        ``locked: false`` while refusing to open). Without a player a story
+        gate cannot be judged and only the key lock counts.
+        """
+        if isinstance(obj, dict):
+            return bool(obj.get("locked", False))
+        if getattr(obj, "locked", False):
+            return True
+        story_locked = getattr(obj, "story_locked", None)
+        return bool(player is not None and callable(story_locked) and story_locked(player))
+
+    @staticmethod
+    def _serialize_base(obj: Any, player: Any = None) -> Dict[str, Any]:
         """Internal method for basic object serialization to avoid recursion."""
         if not obj:
             return {}
@@ -62,9 +79,12 @@ class ObjectSerializer:
         if has_attr("keywords"):
             obj_data["keywords"] = get_attr("keywords")
 
-        # Specific object states
+        # Specific object states. A story gate counts only when there is a
+        # player to judge it by (#718); a passageway without one reports none.
         if has_attr("locked"):
             obj_data["locked"] = get_attr("locked")
+        if player is not None and callable(get_attr("story_locked")):
+            obj_data["locked"] = ObjectSerializer.locked_for(obj, player)
 
         # Handle state/opened flag consistently
         if has_attr("state"):
@@ -81,7 +101,10 @@ class ObjectSerializer:
 
             if has_locked or has_opened_attr:
                 current_k = obj_data["keywords"]
-                is_locked = obj_data.get("locked", False)
+                # The KEY lock only: UNLOCK is a verb a key answers, and a
+                # story gate (#718) has no key -- advertising it would be a
+                # button that can never work.
+                is_locked = bool(get_attr("locked", False))
                 is_opened = obj_data.get("opened", False)
 
                 # Filter out state-dependent keywords to avoid duplicates or inconsistencies
@@ -176,11 +199,13 @@ class ObjectSerializer:
         return result
 
     @staticmethod
-    def serialize(obj: Any) -> Dict[str, Any]:
+    def serialize(obj: Any, player: Any = None) -> Dict[str, Any]:
         """Serialize a single world object.
 
         Args:
             obj: World object to serialize (Container, Chest, Door, Shrine, etc.)
+            player: The viewing player, when known -- a story-gated lock
+                depends on their story (see ``locked_for``).
 
         Returns:
             Dictionary with object data
@@ -192,16 +217,17 @@ class ObjectSerializer:
         from src.objects import Container
 
         if isinstance(obj, Container):
-            return ObjectSerializer.serialize_container(obj)
+            return ObjectSerializer.serialize_container(obj, player)
 
-        return ObjectSerializer._serialize_base(obj)
+        return ObjectSerializer._serialize_base(obj, player)
 
     @staticmethod
-    def serialize_list(objects: List[Any]) -> List[Dict[str, Any]]:
+    def serialize_list(objects: List[Any], player: Any = None) -> List[Dict[str, Any]]:
         """Serialize multiple world objects.
 
         Args:
             objects: List of world objects
+            player: The viewing player, when known (see ``serialize``)
 
         Returns:
             List of serialized object dictionaries
@@ -209,10 +235,10 @@ class ObjectSerializer:
         if not objects:
             return []
 
-        return [ObjectSerializer.serialize(obj) for obj in objects]
+        return [ObjectSerializer.serialize(obj, player) for obj in objects]
 
     @staticmethod
-    def serialize_container(obj: Any) -> Dict[str, Any]:
+    def serialize_container(obj: Any, player: Any = None) -> Dict[str, Any]:
         """Serialize a container object with its contents.
 
         Args:
@@ -221,7 +247,7 @@ class ObjectSerializer:
         Returns:
             Dictionary with container data and items
         """
-        obj_data = ObjectSerializer._serialize_base(obj)
+        obj_data = ObjectSerializer._serialize_base(obj, player)
 
         # Container-specific info
         obj_data["is_container"] = True

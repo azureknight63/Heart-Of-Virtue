@@ -55,7 +55,7 @@ from src.player import Player  # noqa: E402
 from src.npc import NPC, Merchant  # noqa: E402
 from src.items import Longsword, LeatherArmor, GoldRing, Restorative, Gold  # noqa: E402
 from src.states import State  # noqa: E402
-from src.objects import Shrine, Crate  # noqa: E402
+from src.objects import Shrine, Crate, Passageway  # noqa: E402
 from src.events import Event  # noqa: E402
 from src import secure_pickle as sp  # noqa: E402
 
@@ -343,6 +343,18 @@ def _fuzz_object(seed, i, rng, findings):
           lambda: ObjectSerializer.serialize_list([obj]), findings)
     _call(seed, i, "ObjectSerializer.serialize_container",
           lambda: ObjectSerializer.serialize_container(obj), findings)
+
+    # Issue #718: the player-aware lock. `locked_for` is not a serialize*
+    # method, so the hardening wrapper does not cover it, and the interact
+    # response calls it directly -- a raise there is a 500.
+    gate = degrade(Passageway(None, None, locked_until_flag="fuzz_gate"), rng)
+    viewer = degrade(_mk_player(), rng)
+    _call(seed, i, "ObjectSerializer.serialize(player=)",
+          lambda: ObjectSerializer.serialize(gate, player=viewer), findings)
+    _call(seed, i, "ObjectSerializer.serialize_list(player=)",
+          lambda: ObjectSerializer.serialize_list([gate, obj], viewer), findings)
+    _call(seed, i, "ObjectSerializer.locked_for",
+          lambda: ObjectSerializer.locked_for(gate, viewer), findings)
 
     # Dict-shaped "object" (the is_dict branch in ObjectSerializer._serialize_base)
     dict_obj = {"name": rng.choice([None, 123]), "keywords": rng.choice([None, "nope"])}

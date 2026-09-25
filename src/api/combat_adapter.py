@@ -3952,6 +3952,9 @@ class ApiCombatAdapter:
             )
             if obj is None:
                 return {}
+            # The entry's quantity is summed over every pile of this name
+            # (#718): describe that whole amount, not the first pile's.
+            obj = functions.as_stack_of(obj, drops_by_name[name])
             return {
                 "type": getattr(obj, "type", getattr(obj, "maintype", "")),
                 "subtype": getattr(obj, "subtype", ""),

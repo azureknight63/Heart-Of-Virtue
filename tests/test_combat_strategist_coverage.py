@@ -407,6 +407,68 @@ class TestFallbackSuggestions:
         assert result[0]["move_name"] == "Advance"
         assert "Close the distance" in result[0]["reasoning"]
 
+    # Issue #718: O1 was told to Advance with an enemy at 1 ft. "Within reach"
+    # is read off the payload the advisor already has -- an offered damaging
+    # move's `viable_targets` is the engine's own in-range verdict -- never
+    # recomputed from distances here.
+    _RUMBLER_AT_1FT = {"id": "enemy_r1", "name": "Rock Rumbler", "distance": 1}
+
+    def _reach_ctx(self, attack_targets):
+        moves = [
+            {"name": "Advance", "category": "Maneuver", "available": True},
+            {"name": "Turn", "category": "Maneuver", "available": True},
+            # A targeted NON-damaging move with a target in reach: it must not
+            # count as "an attack can reach someone".
+            {
+                "name": "MarkedQuarry", "category": "Tactical", "available": True,
+                "targeted": True, "viable_targets": [dict(self._RUMBLER_AT_1FT)],
+            },
+        ]
+        if attack_targets is not None:
+            moves.append({
+                "name": "Attack", "category": "Offensive", "available": True,
+                "targeted": True, "viable_targets": attack_targets,
+            })
+        return _base_ctx(
+            enemies=[{"id": "enemy_r1", "name": "Rock Rumbler", "hp": 50,
+                      "max_hp": 50, "fatigue": 100, "max_fatigue": 100,
+                      "distance": 1, "status_effects": []}],
+            available_moves=moves,
+        )
+
+    # Cold heat is O1's case: Attack drops to 75 there and Advance's flat 80
+    # took the top slot.
+    @pytest.mark.parametrize("heat", [_HEAT_COLD - 0.1, 1.0])
+    def test_advance_is_not_urged_with_an_enemy_already_in_reach(self, strategist, heat):
+        ctx = self._reach_ctx([dict(self._RUMBLER_AT_1FT)])
+        ctx["player"]["heat"] = heat
+        result = strategist._get_fallback_suggestions(ctx, 4)
+        assert result[0]["move_name"] != "Advance"
+        # The fallback returns only the top few, so price Advance directly.
+        state = strategist._derive_tactical_state(ctx)
+        moves = {m["name"]: m for m in ctx["available_moves"]}
+        adv_score, adv_reason = CombatStrategist._score_move(moves["Advance"], state)
+        atk_score, _ = CombatStrategist._score_move(moves["Attack"], state)
+        assert adv_score < atk_score
+        assert adv_score <= 50
+        assert "Close the distance" not in adv_reason
+        assert "Rock Rumbler is already within reach" in adv_reason
+
+    def test_advance_stays_high_when_no_attack_reaches_anyone(self, strategist):
+        # The adapter drops a targeted move with no viable target from
+        # available_moves, so "every enemy out of reach" is: no attack offered.
+        ctx = self._reach_ctx(None)
+        result = strategist._get_fallback_suggestions(ctx, 4)
+        assert result[0]["move_name"] == "Advance"
+        assert result[0]["score"] == 80
+        assert "Close the distance" in result[0]["reasoning"]
+
+    def test_advance_stays_high_for_an_attack_with_an_empty_target_list(self, strategist):
+        ctx = self._reach_ctx([])
+        result = strategist._get_fallback_suggestions(ctx, 4)
+        assert result[0]["move_name"] == "Advance"
+        assert result[0]["score"] == 80
+
     def test_wait_check_low_priority(self, strategist):
         ctx = _base_ctx(available_moves=[{"name": "Check", "category": "Miscellaneous", "available": True}])
         result = strategist._get_fallback_suggestions(ctx, 1)

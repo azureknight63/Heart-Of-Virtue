@@ -137,6 +137,11 @@ _DAMAGING_CATEGORIES = DAMAGING_MOVE_CATEGORIES
 # above Advance (80), Turn (75) and a low-fatigue Rest (72), the moves the QA
 # run alternated through for 150 beats while the blade did nothing.
 _SWAP_WHEN_HARMLESS_SCORE = 88
+# Issue #718: what Advance is worth when an offered attack already reaches
+# somebody -- below every baseline maneuver (Turn 75) so it never outbids an
+# attack Jean can already make, but above Wait/Check (20): closing on a second,
+# farther enemy is not worthless, just not what this beat is for.
+_ADVANCE_IN_REACH_SCORE = 30
 
 # Issue #686: Withdraw/Rest when a charge is inside the defensive window but
 # Dodge/Parry is priced out by fatigue. Withdraw leads -- it is the only move
@@ -389,6 +394,10 @@ class TacticalState(TypedDict):
     # target it can reach, and who those targets are (for the reasoning).
     offense_all_harmless: bool
     harmless_target_names: List[str]
+    # Issue #718: who an offered damaging move can already reach, read off
+    # each move's `viable_targets` (the engine's in-range verdict). Empty
+    # means no attack reaches anyone, which is when Advance is the answer.
+    reachable_target_names: List[str]
 
 
 class IncomingThreat(TypedDict):
@@ -648,6 +657,22 @@ def _harmless_targets(move: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], bool]
         if isinstance(high, (int, float)) and not isinstance(high, bool) and high <= 0:
             harmless.append(t)
     return harmless, bool(targets) and len(harmless) == len(targets)
+
+
+def _reachable_target_names(ctx: Dict[str, Any]) -> List[str]:
+    """Issue #718: who some offered damaging move can hit from where Jean stands.
+
+    Reads only ``viable_targets``, which ApiCombatAdapter fills from the
+    engine's own range check (``_get_available_targets``) -- no distance is
+    compared here. A move without that list has no opinion.
+    """
+    targets: List[Dict[str, Any]] = []
+    for m in _offerable_moves(ctx.get("available_moves", [])):
+        if m.get("category") in _DAMAGING_CATEGORIES:
+            targets.extend(
+                t for t in m.get("viable_targets") or [] if isinstance(t, dict)
+            )
+    return _target_names(targets)
 
 
 def _harmless_reason(move: Dict[str, Any]) -> Optional[str]:
@@ -1134,6 +1159,7 @@ class CombatStrategist:
             ),
             "offense_all_harmless": harmless_offense,
             "harmless_target_names": harmless_names,
+            "reachable_target_names": _reachable_target_names(ctx),
         }
 
     @staticmethod
@@ -1201,32 +1227,37 @@ class CombatStrategist:
         min_bui = state["incoming_beats"]
         est_damage = state["estimated_damage"]
         est_lethal = state["incoming_lethal"]
+        # Issue #718: every reason names the charge it answers, as
+        # `_charge_note` does outside the window -- the name `_charge_name`
+        # already resolved into the state, never a second naming path.
+        charge = state["incoming_move"] or "The enemy's attack"
+        charge = f"{charge[:1].upper()}{charge[1:]}"
 
         if state["dodge_impaired"] and not est_lethal:
             # Status effect reduces defensive move value when the hit is survivable
             return 60, (
-                f"Attack in ~{min_bui} beat(s) but status effect impairs {name} "
+                f"{charge} in ~{min_bui} beat(s) but status effect impairs {name} "
                 "reliability; consider UseItem or accepting the hit."
             )
         if state["dodge_impaired"] and est_lethal:
             # Even impaired, better than a one-shot
             return 88, (
-                f"Incoming hit is potentially lethal in ~{min_bui} beat(s); "
+                f"{charge} is potentially lethal in ~{min_bui} beat(s); "
                 f"{name} reliability is reduced by status effect but still "
                 "preferable to dying."
             )
         if est_lethal:
             return 97, (
-                f"Potentially lethal hit (~{est_damage} dmg) landing in "
+                f"{charge} is potentially lethal (~{est_damage} dmg), landing in "
                 f"~{min_bui} beat(s); {name} is critical."
             )
         if state["defensively_vulnerable"]:
             return 95, (
-                f"Attack landing in ~{min_bui} beat(s) and Jean's defenses are "
+                f"{charge} landing in ~{min_bui} beat(s) and Jean's defenses are "
                 f"low (~{est_damage} estimated dmg); {name} now."
             )
         return 80, (
-            f"Attack in ~{min_bui} beat(s) (~{est_damage} estimated dmg); "
+            f"{charge} in ~{min_bui} beat(s) (~{est_damage} estimated dmg); "
             f"{name} is advisable but Jean's defenses may absorb it."
         )
 
@@ -1390,6 +1421,14 @@ class CombatStrategist:
             return (
                 72,
                 f"Fatigue is low; {name} conserves resources for a better opportunity.",
+            )
+
+        if name == "Advance" and state["reachable_target_names"]:
+            names = state["reachable_target_names"]
+            verb = "is" if len(names) == 1 else "are"
+            return _ADVANCE_IN_REACH_SCORE, (
+                f"{', '.join(names)} {verb} already within reach of Jean's attacks; "
+                "Advance gains nothing this beat."
             )
 
         if name == "Advance":

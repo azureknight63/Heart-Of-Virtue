@@ -210,3 +210,59 @@ def test_anvil_first_encounter_follows_the_iron_and_oath_gate_key(monkeypatch):
     player = _player_with_story({"iron_and_oath_renamed": "1"})
 
     assert anvil._first_encounter(player) is True
+
+
+# ---------------------------------------------------------------------------
+# Issue #718: through the API, the first pet hands off to AnvilIntro -- and
+# the generic "successfully completes" line must not ride along with it.
+# ---------------------------------------------------------------------------
+
+_GENERIC_FALLBACK = "successfully completes"
+
+
+def _anvil_world(with_intro=True):
+    """A real world: Anvil on the tile, AnvilIntroEvent armed beside him, and
+    Iron & Oath's intro done so the first pet is the first encounter."""
+    from src.events import set_story_gate
+    from src.story.ch03 import AnvilIntroEvent
+    from tests._gs_fixtures import live_world
+
+    player, game_map = live_world()
+    tile = game_map[(0, 0)]
+    anvil = Anvil()
+    anvil.current_room = tile
+    tile.npcs_here.append(anvil)
+    if with_intro:
+        tile.events_here.append(AnvilIntroEvent(player, tile))
+    set_story_gate(player, _IRON_AND_OATH_GATE)
+    return player, anvil
+
+
+def _interact(player, target, action):
+    from src.api.services.game_service import GameService
+    from src.combatant import wire_handle
+
+    return GameService().interact_with_target(
+        player, wire_handle(target), action, session_data={}
+    )
+
+
+def test_a_pet_that_starts_anvil_intro_carries_no_generic_fallback():
+    player, anvil = _anvil_world()
+    result = _interact(player, anvil, "pet")
+
+    assert result["success"] is True, result
+    names = [e.get("name") for e in result["events_triggered"]]
+    assert "AnvilIntro" in names, "premise: the pet must start AnvilIntro"
+    assert _GENERIC_FALLBACK not in result["message"], result["message"]
+
+
+def test_an_action_with_no_narration_and_no_event_still_gets_its_fallback():
+    """Negative control: the fallback exists for exactly this -- a first
+    encounter swallowed its own line and nothing picked it up (no intro on
+    the tile), so without it the player would see nothing at all."""
+    player, anvil = _anvil_world(with_intro=False)
+    result = _interact(player, anvil, "pet")
+
+    assert result["events_triggered"] == [], "premise: nothing fired"
+    assert _GENERIC_FALLBACK in result["message"], result["message"]
