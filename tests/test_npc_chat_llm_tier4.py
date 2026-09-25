@@ -2417,7 +2417,12 @@ class TestIntegrationChatFlow:
 class TestCacheManagement:
     """Test class-level cache management."""
 
-    def test_world_facts_cache_shared(self):
+    # Both tests replace a CLASS-level cache, which outlives the test: an
+    # unrestored {"cached": True} left every later chat NPC in the process with
+    # no allowed_proper_nouns, so test_npc_chat_character_configs' noun-filter
+    # tests failed whenever this file ran first in the same process. monkeypatch
+    # puts the real cache back.
+    def test_world_facts_cache_shared(self, monkeypatch):
         """Two hosts see one cache object, not two equal copies.
 
         This built ``npc1`` and ``npc2``, used neither, and then asserted that
@@ -2425,7 +2430,7 @@ class TestCacheManagement:
         to it -- true of any implementation, including a per-instance cache.
         Identity through both instances is the claim the name makes.
         """
-        ConversationalNPCMixin._world_facts_cache = {"cached": True}
+        monkeypatch.setattr(ConversationalNPCMixin, "_world_facts_cache", {"cached": True})
 
         npc1 = chat_npc(init=False, name="NPC1")
         npc2 = chat_npc(init=False, name="NPC2")
@@ -2433,9 +2438,9 @@ class TestCacheManagement:
         assert npc1._world_facts_cache is ConversationalNPCMixin._world_facts_cache
         assert npc2._world_facts_cache is npc1._world_facts_cache
 
-    def test_char_config_cache(self):
+    def test_char_config_cache(self, monkeypatch):
         """Test character config cache."""
-        ConversationalNPCMixin._char_config_cache = {}
+        monkeypatch.setattr(ConversationalNPCMixin, "_char_config_cache", {})
 
         chat_npc(config_path="/nonexistent/path.json")
         # Cache should be populated even on error
