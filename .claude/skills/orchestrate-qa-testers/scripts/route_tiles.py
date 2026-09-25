@@ -132,7 +132,11 @@ def tile_event_classes(tile_data):
     names = []
     for entry in tile_data.get("events") or []:
         if isinstance(entry, dict):
-            names.append(entry.get("__class__") or "UnknownEvent")
+            # Two spellings in the map JSON: "__class__" (engine events) and
+            # a dotted "class" path (story events, e.g.
+            # "story.ch03.FerryLandingObjectiveEvent").
+            dotted = entry.get("class") or ""
+            names.append(entry.get("__class__") or dotted.rsplit(".", 1)[-1] or "UnknownEvent")
         else:
             names.append(str(entry))
     return names
