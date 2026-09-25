@@ -108,7 +108,7 @@ still drawn behind the victory dialog).
 | #684 | Med | NPC chat turn breached its 21 s ceiling (48 s); client 28 s timeout → 6× 409 → chat dies silently | API log + structured request log timestamps |
 | #685 | Med | Jambo / Votha Krr / Gorran have no chat character file; camp-only world facts | `ai/npc/human/` listing + `world_facts.json` geography |
 | #686 | Med | Tidal Surge wind-up drops the "get clear" cue; advisor suggests Turn | source (`src/moves/_npc.py:414` vs `:505-509`) + O1/A2 payloads |
-| #687 | Med | `starting_story_flags` never applied on the web path | source (only consumer was deleted `src/game.py`) + shim A/B on a clean client |
+| #687 | Med | `starting_story_flags` never applied on the web path | source (its only consumer was the terminal game loop, removed with the teardown; see 311a644e) + shim A/B on a clean client |
 | #688 | Med | Advisor recommends 0-damage attacks; target card hides `damage_preview` | source (`ai/combat_strategist.py:986-1070` ignores `combat_adapter.py:4414`) + A2/O1 payloads |
 | #689 | Med | Wire fields contradict state: `battle_state.status`, `new_position`, `/inventory/currency` | orchestrator clean client x2; `hasattr(Player(), "gold") is False` |
 | #690 | Low | Server accepts world actions at 0 HP after a defeat (API-only) | orchestrator forced defeat; browser DefeatDialog verified safe across 2 reloads |
