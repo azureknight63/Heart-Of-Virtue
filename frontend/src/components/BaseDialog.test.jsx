@@ -62,6 +62,18 @@ describe('BaseDialog', () => {
       expect(closeButton).toHaveTextContent('✕')
     })
 
+    // #718 item 8: the close button renders only a "✕" glyph as its content,
+    // which is not read as text by assistive tech (it's a symbol, not a
+    // word) — the button had no accessible name at all.
+    it('gives the close button an accessible name (#718)', () => {
+      render(
+        <BaseDialog onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument()
+    })
+
     it('grows the close button to the 44px touch-target minimum on mobile (issue #542)', () => {
       mobileMock.isMobile = true
       render(
