@@ -10,8 +10,8 @@
  * arrives with its `events_triggered` already stolen, and the scene can only
  * come from collect-loot.
  */
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import GamePage from './GamePage';
 import apiClient from '../api/client';
@@ -112,6 +112,14 @@ const EXPLORING = { success: true, combat_active: false, battle_state: null, log
  * the killing blow); from then on status serves the robbed victory, and after
  * collect-loot the world.
  */
+/**
+ * Delayed `/world` responses still in flight. Closing Victory refetches the
+ * room, so a test can pass while that 50ms response is pending; left alone it
+ * lands after the environment is torn down and fails the run with an
+ * unhandled "window is not defined". afterEach drains them.
+ */
+const worldInFlight = new Set();
+
 function routeTheApi({ collectLootEvents, victoryStatusEvents = [], pendingAfterWin = [] }) {
     const fight = { won: false, collected: false };
     apiClient.get.mockImplementation((url) => {
@@ -135,9 +143,12 @@ function routeTheApi({ collectLootEvents, victoryStatusEvents = [], pendingAfter
             // A real round trip: resolving instantly lets React batch the
             // loading flag's true -> false into one render, which hides the
             // loading-keyed effect the combat-end refetch triggers.
-            return new Promise((resolve) => setTimeout(() => resolve({
+            const response = new Promise((resolve) => setTimeout(() => resolve({
                 data: { success: true, room: { name: 'Grondelith Arena', description: 'Still water.', x: 2, y: 6, exits: [] } },
             }), 50));
+            worldInFlight.add(response);
+            response.finally(() => worldInFlight.delete(response));
+            return response;
         }
         if (url === '/world/events/pending') {
             const events = fight.won ? pendingAfterWin : [];
@@ -165,6 +176,13 @@ describe('post-combat story rides collect-loot (issue #683)', () => {
         useExits.mockReturnValue({ exits: [], loading: false, refetch: vi.fn() });
         useAutosave.mockReturnValue({ triggerTick: vi.fn() });
         useAudio.mockReturnValue({ playSFX: vi.fn(), playBGM: vi.fn(), stopBGM: vi.fn() });
+    });
+
+    afterEach(async () => {
+        // A refetch can start while the last one drains, so loop until quiet.
+        while (worldInFlight.size) {
+            await act(async () => { await Promise.all([...worldInFlight]); });
+        }
     });
 
     it('shows the victory scene collect-loot returns after a stray status read stole it', async () => {
