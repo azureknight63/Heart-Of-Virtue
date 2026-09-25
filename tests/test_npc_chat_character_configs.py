@@ -168,9 +168,10 @@ class TestJambo:
         return lines
 
     def test_his_verbatim_lines_name_neither_tent(self, jambo):
-        """One class stands in two places and the prompt is not told which, so
-        a line shown unmodified must not claim a location (#685 observed river
-        talk in Grondia)."""
+        """One class stands in two places. The prompt is told which (#717's
+        WHERE YOU ARE line), but these lines are rendered verbatim in either
+        tent, so they must not claim a location (#685 observed river talk in
+        Grondia)."""
         placeish = re.compile(
             r"\b(?:river|crossing|ferry|camp|grondia|ecumerium|citadel|market)\b",
             re.IGNORECASE,
@@ -387,3 +388,54 @@ def test_every_map_with_a_conversation_names_its_place(map_name):
     # rewritten to "someone".
     invented = JamboHealsU()._find_invented_nouns(f"He said that {place} was near.")
     assert invented == {}, (map_name, sorted(invented))
+
+
+def _persona(name):
+    return json.loads((_HUMAN_NPC_DIR / f"{name}.json").read_text(encoding="utf-8"))
+
+
+_CHILD_AGE = re.compile(r"\byears old\b", re.IGNORECASE)
+
+
+def _child_personas():
+    return [
+        p.stem for p in _PERSONAS
+        if _CHILD_AGE.search(_persona(p.stem).get("system_prompt_snippet", ""))
+    ]
+
+
+def test_liss_is_in_the_child_population():
+    assert "liss" in _child_personas()
+
+
+@pytest.mark.parametrize("name", _child_personas())
+def test_a_child_knows_jean_is_a_grown_man_and_never_calls_anyone_child(name):
+    """A5: Liss, about nine, answered "They can be both, child." (#717)."""
+    snippet = _persona(name)["system_prompt_snippet"]
+    assert "Jean is a grown man" in snippet
+    assert re.search(r"never call anyone ['\"]child['\"]", snippet, re.IGNORECASE)
+
+
+_GUIDE_ROLE = re.compile(r"\b(?:ferry|guide)\b", re.IGNORECASE)
+
+
+def _guide_personas():
+    return [p.stem for p in _PERSONAS if _GUIDE_ROLE.search(_persona(p.stem).get("role", ""))]
+
+
+def test_mara_is_in_the_guide_population():
+    assert "mara" in _guide_personas()
+
+
+@pytest.mark.parametrize("name", _guide_personas())
+def test_a_guide_gives_no_routes_distances_or_travel_times(name):
+    """O1: Mara gave "two days' drift downstream, about three leagues" --
+    a route, a distance and a time, none of them canon (#717)."""
+    snippet = _persona(name)["system_prompt_snippet"]
+    assert re.search(r"no routes, distances or travel times", snippet, re.IGNORECASE)
+
+
+def test_jambo_is_told_to_trust_the_where_line_not_to_guess():
+    snippet = _persona("jambo")["system_prompt_snippet"]
+    assert "not told which tent" not in snippet
+    assert "WHERE YOU ARE" in snippet
