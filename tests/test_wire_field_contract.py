@@ -2784,6 +2784,70 @@ class TestNpcChatWireContract:
         assert refused["pending"] is True
 
 
+# ============================================================================
+# Post-combat story (issue #683)
+# ============================================================================
+# collect-loot is where the browser receives a won fight's post-combat story:
+# `finishLoot` queues `result?.events_triggered`. The status poll echoes the
+# same held events tagged `post_combat`, and GamePage's status effect skips
+# those so the scene is not shown twice -- or under the Victory dialog.
+COLLECT_LOOT_CONTRACT = {
+    "events_triggered": Read("GamePage.jsx", "result?.events_triggered"),
+}
+
+HELD_POST_COMBAT_EVENT_CONTRACT = {
+    "post_combat": Read("GamePage.jsx", "event.post_combat"),
+}
+
+
+class TestPostCombatStoryWireContract:
+    class _Scene:
+        """A no-input post-combat tile event, as ``AfterDefeatingKingSlime`` is."""
+
+        name = "AfterTheFightScene"
+
+        def __init__(self, tile):
+            self.tile = tile
+            self.player = None
+            self.needs_input = False
+            self.completed = False
+
+        def check_conditions(self):
+            from src.narration import narrate
+
+            if not self.completed:
+                narrate("The churning stilled.")
+                self.completed = True
+                self.tile.events_here.remove(self)
+
+    def _won_fight(self):
+        from tests._gs_fixtures import live_world
+
+        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
+        tile = game_map[(0, 0)]
+        tile.events_here = [self._Scene(tile)]
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            player._combat_adapter = ApiCombatAdapter(player)
+        player._combat_adapter._combat_tile = tile
+        player.in_combat = False
+        player.combat_drops = []
+        player.combat_end_summary = {"status": "victory"}
+        return player
+
+    def test_the_status_echo_tags_the_held_scene(self):
+        status = GameService().get_combat_status(self._won_fight(), session_data={})
+
+        (scene,) = status["events_triggered"]
+        _assert_contract(scene, HELD_POST_COMBAT_EVENT_CONTRACT, "held post-combat event")
+        assert scene["post_combat"] is True
+
+    def test_collect_loot_carries_the_scene(self):
+        result = GameService().collect_combat_loot(self._won_fight(), [], session_data={})
+
+        _assert_contract(result, COLLECT_LOOT_CONTRACT, "collect_combat_loot()")
+        assert [e["name"] for e in result["events_triggered"]] == ["AfterTheFightScene"]
+
+
 # The citations themselves
 # ============================================================================
 # Everything above asserts that the SERIALIZER still emits what the client

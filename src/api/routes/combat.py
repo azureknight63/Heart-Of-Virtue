@@ -289,7 +289,8 @@ def collect_loot():
         {
             "success": bool,
             "collected": [...],
-            "skipped": [...]
+            "skipped": [...],
+            "events_triggered": [...]   # the fight's post-combat story (#683)
         }
     """
     try:
@@ -309,7 +310,9 @@ def collect_loot():
         if gs_error:
             return gs_error
 
-        result = game_service.collect_combat_loot(player, item_names)
+        result = game_service.collect_combat_loot(
+            player, item_names, session_data=session.data
+        )
         return jsonify(result), 200
 
     except Exception:
