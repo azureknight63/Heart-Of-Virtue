@@ -21,7 +21,7 @@
 ## Resume here, in order
 
 1. **bug_hunt baseline.** `python tools/bug_hunt.py --scenario combat --headless` on the tip
-   reported **21** findings (`scratchpad/scrub/bh_combat_after.json`), while the implementers
+   reported **21** findings (saved in that session's scratchpad as `bh_combat_after.json`), while the implementers
    saw 0 before/after — probably a different config. Re-run on the base (check out 37f76a7c in
    a scratch worktree) with the SAME command and config, diff the two JSONs, and investigate
    anything new before calling the branch clean.
@@ -48,7 +48,8 @@
    section (one `Closes #N` per line: 683, 684, 686, 687, 688, 689, 690, 691, 692, 693, 694,
    695 — **not** 685 until the maintainer approves the drafts, and not the partially-handled
    parts of 695). Verify `closingIssuesReferences` before merge, re-query every issue after.
-   The PR also fixes master's red CI (`48be5647`, the stale `src/game.py` path in the QA report).
+   Master's red CI was fixed separately (an exemption in `test_instruction_files_are_accurate`);
+   this branch rewords the report instead (`48be5647`) and drops that now-stale exemption.
 
 ## Findings worth surfacing in the final report
 
