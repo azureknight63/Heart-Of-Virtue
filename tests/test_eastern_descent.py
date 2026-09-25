@@ -128,10 +128,14 @@ def test_anvil_talk_and_pet_draw_from_different_pools():
 
 @pytest.mark.parametrize("verb", ["talk", "pet"])
 def test_anvil_first_encounter_is_silent_and_sets_ready_flag(verb):
-    """The first talk()/pet() call defers to AnvilIntroEvent (src/story/ch03.py)
-    instead of narrating a flavor line, so it must emit nothing itself."""
+    """The first talk()/pet() call *after Jean has met Kaelen & Vespera*
+    defers to AnvilIntroEvent (src/story/ch03.py) instead of narrating a
+    flavor line, so it must emit nothing itself. ``iron_and_oath_intro_done``
+    is AnvilIntroEvent's own precondition (both gates on the same tile
+    (4, 3), Iron & Oath's intro firing on tile entry) -- it must already be
+    set for this "first encounter" to be the real one (issue #695)."""
     npc = Anvil()
-    player = _player_with_story()
+    player = _player_with_story({"iron_and_oath_intro_done": "1"})
 
     texts = _narrated(getattr(npc, verb), player)
 
@@ -139,9 +143,34 @@ def test_anvil_first_encounter_is_silent_and_sets_ready_flag(verb):
     assert player.universe.story["anvil_conversation_ready"] == "1"
 
 
+@pytest.mark.parametrize("verb,pool_attr", [("talk", "_TALK_LINES"),
+                                            ("pet", "_PET_LINES")])
+def test_anvil_first_encounter_before_iron_and_oath_intro_narrates_normally(
+        verb, pool_attr):
+    """Issue #695: petting/talking to Anvil before Jean has met Kaelen &
+    Vespera used to burn the one-shot ``CONVERSATION_READY_FLAG`` for
+    nothing -- AnvilIntroEvent's own ``check_conditions`` also requires
+    ``iron_and_oath_intro_done``, so the "first encounter" narrated nothing
+    (deferring to a conversation that could never fire) and the API's
+    generic ''Jean successfully completes the 'pet' action.'' fallback
+    reached the player instead of an Anvil line. It must fall open to the
+    ambient flavor line and leave the ready flag unset, so a later
+    talk()/pet() call -- once Jean HAS met them -- is still the genuine first
+    encounter that hands off to AnvilIntroEvent.
+    """
+    npc = Anvil()
+    player = _player_with_story()  # iron_and_oath_intro_done unset
+
+    texts = _narrated(getattr(npc, verb), player)
+
+    assert len(texts) == 1
+    assert texts[0] in getattr(Anvil, pool_attr)
+    assert "anvil_conversation_ready" not in player.universe.story
+
+
 def test_anvil_talk_after_first_encounter_narrates_normally():
     npc = Anvil()
-    player = _player_with_story()
+    player = _player_with_story({"iron_and_oath_intro_done": "1"})
 
     first = _narrated(npc.talk, player)   # first call: silent, sets the flag
     second = _narrated(npc.talk, player)  # second: flag set, normal flavor line
