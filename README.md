@@ -186,7 +186,7 @@ flake8 --extend-ignore=E501 src/       # backend (as CI runs it)
 cd frontend && npm run lint            # frontend
 ```
 
-`black` formats `src/` only — never run it across `tests/`.
+There is no autoformatter; match the surrounding file's formatting by hand (see CLAUDE.md, issue #501).
 
 ### Debug logging
 
