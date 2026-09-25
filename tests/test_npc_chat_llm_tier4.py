@@ -940,8 +940,10 @@ class TestBuildSystemPrompt:
 
         prompt = npc._build_system_prompt(player)
 
+        from ai.llm_client import NPC_PRIVATE_BLOCK_LABEL
+
         assert "WORLD:" not in prompt
-        assert prompt.startswith("You are Ren, a nomad.")
+        assert prompt.startswith(NPC_PRIVATE_BLOCK_LABEL + "\nYou are Ren, a nomad.")
 
     @pytest.mark.parametrize("chapter", ["1", "2", "7"])
     def test_the_real_story_chapter_reaches_the_spoiler_guard(self, player, chapter):
@@ -959,6 +961,49 @@ class TestBuildSystemPrompt:
 
         assert f"It is currently chapter {chapter}." in prompt
         assert f"JEAN'S KNOWN CONTEXT (chapter {chapter})" in prompt
+
+    def test_the_character_block_is_labelled_private_to_the_npc(self, player):
+        """Issue #716. Jean's options are generated in the SAME completion as
+        the NPC's line, under this prompt, so the model read Liss's sheet
+        ("You adore Gorran the Golemite") and had Jean quote it back to her.
+        The sheet is fenced with a label saying Jean does not know it, directly
+        above the authored text, and the options rule names that label."""
+        from ai.llm_client import (
+            NPC_PRIVATE_BLOCK_LABEL,
+            NPC_PRIVATE_BLOCK_NAME,
+            _JEAN_OPTION_KNOWLEDGE_RULE,
+        )
+
+        snippet = "You adore Gorran the Golemite."
+        npc = chat_npc(
+            init=False,
+            name="Liss",
+            _chat_world_facts={},
+            _chat_char_config={"system_prompt_snippet": snippet},
+            _chat_personality=None,
+        )
+
+        prompt = npc._build_system_prompt(player)
+
+        assert NPC_PRIVATE_BLOCK_LABEL + "\n" + snippet in prompt
+        assert NPC_PRIVATE_BLOCK_NAME in NPC_PRIVATE_BLOCK_LABEL
+        assert "Jean" in NPC_PRIVATE_BLOCK_LABEL
+        assert NPC_PRIVATE_BLOCK_NAME in _JEAN_OPTION_KNOWLEDGE_RULE
+
+    def test_a_generic_persona_is_labelled_private_too(self, player):
+        from ai.llm_client import NPC_PRIVATE_BLOCK_LABEL
+
+        npc = chat_npc(
+            init=False,
+            name="Nomad",
+            _chat_world_facts={},
+            _chat_char_config=None,
+            _chat_personality={"given_name": "Ren", "voice": "sparse"},
+        )
+
+        prompt = npc._build_system_prompt(player)
+
+        assert NPC_PRIVATE_BLOCK_LABEL + "\nYou are Ren, a nomad." in prompt
 
     def test_chapter_defaults_to_one_for_a_fresh_game(self, player):
         npc = chat_npc(
