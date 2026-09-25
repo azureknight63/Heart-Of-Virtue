@@ -28,6 +28,14 @@ Read this before starting stacks. Each entry says what happened, why, and what t
 
 **`previous_tile` is only set by directional moves.** `GameService.move_player` sets it; `Player.teleport()` (every passageway) does not. Events gated on it (`GorranGestureEvent`) fire on the real route because the player walked to the gate, but never for a session that *starts* on the gate tile. Start Leg-style configs one tile before the transition.
 
+**A seeded flag must come with everything its event grants.** On 2026-09-24 a leg config set `king_slime_defeated` but not the `MineralFragment` that `AfterDefeatingKingSlime` grants alongside it. `AfterKingSlimeReturn` (`src/story/ch02.py`) silently waits for the fragment, so Votha Krr never responded, the #669-locked Eastern Gate never opened, and the tester spent its whole leg blocked. For every flag you seed, read the event that sets it and seed its items and follow-on flags too.
+
+**`starting_story_flags` was a dead key until #687.** Its only consumer was `src/game.py`, deleted in the terminal teardown, so from the teardown until #687 every seeded config started with an empty story. Nothing failed loudly, because no gate on the old route checked the flags. It is now applied in `SessionManager._apply_starting_story_flags`: `flag` sets the default gate value and `flag=v` sets `v`. Whatever the engine does, confirm at the start of each leg that one seeded gate actually holds (for example, the gate opens) before dispatching.
+
+**Git Bash rewrites `/api/...` arguments too**, not only env vars: `list_routes.py /api/combat` arrives as `C:/Program Files/Git/api/combat`. The bundled scripts undo it. Anything new you write that takes an API path on the command line has to undo it the same way, or be run with `MSYS_NO_PATHCONV=1`.
+
+**Check the LLM providers, not just the quota.** On 2026-09-24 there was no Groq/Cerebras key and no Ollama, so once OpenRouter was exhausted every NPC fell back to canned lines. The only LLM tester lost its chat after two turns (that became #684). Before offering an LLM-scoped run, list which providers have keys. With OpenRouter alone, cap LLM to one tester and budget its exchanges against the remaining quota.
+
 **Encounters are probabilistic.** The Rock Rumbler at eastern-descent (1,2) engaged on one API move and not on the next; do not build routes that assume either.
 
 **The API accepts `/world/move` during active combat** (#543). A tester that "walked away" from a fight via the API has a session with `combat_active: true` on another tile and a confused UI after reload.

@@ -38,6 +38,7 @@ Bundled with this skill:
 | `scripts/start_stack.py` | one backend (reloader-free, `GITHUB_TOKEN` blanked, `FLASK_ENV=testing`) + one Vite on an accepted port, per start config; refuses ports Socket.IO would reject |
 | `scripts/qa_driver.py` / `scripts/qa.py` | a persistent Playwright browser per tester behind a local HTTP port, with `where()`, `aria()`, `shot()`, `hit_test()`, `raw_click()` and automatic console/network capture |
 | `scripts/qa_api_client.py` | REST tester client (no browser): `login PORT`, `where`, `get`, `post`, `exec` with a persisted session and a JSONL request log under `logs/qa/api-runs/` (`HOV_QA_RUNS` overrides). API testers need no Vite port, so any number can share one backend; extra backends run `qa_api.py` directly |
+| `scripts/list_routes.py` | the API's real route table (`list_routes.py /api/combat`); every endpoint a primer or brief names comes from here |
 | `scripts/file_issues.py` | idempotent `gh issue create` from a spec module, label and title checks |
 | `assets/TESTER_PRIMER.template.md` | the primer every tester reads first — fill the `{{…}}` slots |
 | `assets/issues_spec_template.py` | issue body template |
@@ -68,7 +69,7 @@ State the defaults you'll assume for everything else (branch, ports, models, tes
 
 ## Phase 2 — primer and dispatch
 
-1. Render `assets/TESTER_PRIMER.template.md` into the session scratchpad with absolute paths, the stacks table, verified UI facts from your smoke (button names, dialog shapes, panel names), known noise, the severity scale, LLM exchange budgets, and the report directory.
+1. Render `assets/TESTER_PRIMER.template.md` into the session scratchpad with absolute paths, the stacks table, verified UI facts from your smoke (button names, dialog shapes, panel names), known noise, the severity scale, LLM exchange budgets, and the report directory. Paste endpoints from `scripts/list_routes.py`, not from memory. REST testers additionally need the brief facts in `references/tester-roles.md`: which fields are authoritative, the 200 + `success:false` refusal convention, and what `input_type` expects.
 2. Write one brief per tester from `references/tester-roles.md`: route as tile list with titles and occupants, named events, exchange counts, budget cap, report path, summary request. Opus for the full route and the UX reviewer, Sonnet for breadth/leg/mobile.
 3. Dispatch all Playwright testers in one message (`Agent`, background). Give the pane reviewer the login recipe from `gotchas.md` and one stack only.
 4. Within five minutes, grep each `<name>_events.jsonl` for `"status": 400` and `socket.io`. If a stack is faulty you cannot redirect running testers; fix the stack, mark the contaminated testers, and plan re-verification.

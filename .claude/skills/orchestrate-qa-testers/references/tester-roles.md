@@ -11,6 +11,7 @@ Five to six concurrent testers was the right size for a two-map story arc on a 1
 | Leg (pre-seeded start past a blocker, story scenes + LLM talk) | sonnet | 170 calls / 75 min | the story team's half; scripted scenes + voice grading |
 | Same leg on a phone viewport (`--mobile`) | sonnet | 150 calls / 75 min | pillar check; measures targets with `bounding_box()`, taps with `page.touchscreen.tap` |
 | UI/UX reviewer in the in-app Browser pane | opus | 130 calls / 75 min | designer's eye; describes screenshots since the pane can't save files; one stack only (shared cookie jar) |
+| REST API tester (`scripts/qa_api_client.py`, no browser) | sonnet | 170 calls / 75 min | engine and story coverage at volume; needs no Vite port, so any number can share one backend and the two-accepted-origins limit only binds browser stacks |
 | Orchestrator verification | you | as needed | re-runs every Critical/High that is contested or came from a suspect stack |
 
 Budgets are caps, not targets: "stop and write the report even if incomplete; a partial report with evidence beats a complete run without it." Testers reliably honoured this.
@@ -42,6 +43,17 @@ Things that made briefs work:
 - **LLM exchange counts per NPC** — otherwise a curious tester spends tokens freely.
 - **A restart rule** for the full-route tester: "if Jean dies or is trapped, report it, quit the driver, start a fresh one with the same command and continue".
 - **Reviewer briefs get the pane login recipe verbatim** and the instruction to stay on one stack.
+
+## REST API testers — what their brief must say
+
+On 2026-09-24, five Sonnet REST testers covered the whole route in breadth, but they also filed five Criticals, and none of them survived triage. Every false Critical came from a gap in the brief. A REST brief (or the primer) must state these up front:
+
+- **Which fields are authoritative.** The combat response's top-level `combat_active` and `end_state` are the truth. `battle_state` is a snapshot. A tester that read the stale `battle_state.status` after the last kill reported "combat never ends, 7/7 fights". Defeat is `end_state.status == "defeat"` with `game_over: true`; HP 0 plus that end state *is* the game recognising defeat.
+- **The refusal convention.** A game-condition refusal is `200` + `success: false` + a message (`routes/world.py`, `routes/combat.py`). Only malformed requests are 4xx. Otherwise testers file every refusal as "returns 200 on failure".
+- **`input_type` decides the next request.** A `direction_selection` prompt wants a direction, not the move name again, and `cancel` clears it. One tester re-sent `move "Turn"` 1,200 times and reported a freeze. A move marked `available: false` ("Available in 5 beats") advances only when a *different* move spends beats.
+- **Endpoints come from `scripts/list_routes.py`, never from memory.** That primer named `/api/combat/end` and `/api/combat/pray`; neither exists (Pray is a move), and the 404s were filed.
+- **Their own reads can change state.** Tell them to log every request (the client does, in `logs/qa/api-runs/`) and to report "state changed after my GET" as a finding in itself. That is how #683's destructive status GET was eventually found.
+- **Exchange caps for LLM talk, and which tester owns LLM.** With no fallback provider configured, one tester's quota is everyone's (see `gotchas.md`).
 
 ## Staggering and contamination
 

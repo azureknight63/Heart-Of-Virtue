@@ -8,7 +8,10 @@ Tester reports are leads, not verdicts. Before anything reaches the tracker:
 2. **Read the source for every "event never fires" / "state wrong" claim.** Find the trigger condition (`check_conditions`, the key a cache is stored under, the guard a route lacks). Half of these are config artefacts; the real ones are found faster in code than in a browser. Quote file:line in the issue.
 3. **Re-run every Critical/High on a clean client.** Start your own driver (`V1`, port 7009+) on a healthy stack; reproduce with `where()` cross-checks, `hit_test()` and `raw_click()` for anything "unclickable", request logging around the failing action (`page.on("request", …)`), and screenshots. Two reproductions in independent sessions is the bar for Critical.
 4. **Classify each contested finding** as one of: verified (yours + theirs), verified-by-source, kept with caveat (seen once, mechanism plausible from code — say which), dropped as setup artefact, dropped as not reproduced. The report lists the dropped ones too, with the reason — the next run should not re-investigate them.
-5. **Dedupe against the tracker.** `gh issue list --state all --search "<keyword>"` for each candidate; cite related closed issues in the body.
+5. **A method artefact can still point at a real defect.** Before dropping "the tester caused it", ask whether the product should have allowed the tester to cause it. On 2026-09-24, a victory scene "never shown" turned out to have been consumed by the tester's own `GET /combat/status`. My first verdict was "the client drops it", and that was wrong. The real defect was a GET that consumes state (#683). Mine the tester's request log (`logs/qa/api-runs/*.jsonl`) for the request just before the state changed.
+6. **Prove delivery from the browser log, not a replay.** `logs/browser/<date>_bucket*.jsonl` records `event.received` and `event.recovered`, with event names per client session. That settled "scene never shown" without replaying a boss fight.
+7. **A "loop" or "freeze" is a tester bug until its request log says otherwise.** Find the stage it was stuck at and the `input_type` it kept ignoring.
+8. **Dedupe against the tracker.** `gh issue list --state all --search "<keyword>"` for each candidate; cite related closed issues in the body.
 
 ## Severity (the beta plan's scale)
 
