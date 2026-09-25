@@ -985,6 +985,60 @@ describe('EventDialog', () => {
       expect(screen.getByText('The gate groaned open.').textContent).toBe('The gate groaned open.');
       expect(screen.queryByText('Come, Jean Claire.')).toBeNull();
     });
+
+    // Issue #715: EventDialog's own document keydown handler (the one that
+    // reads inputOptions and fires handleChoiceSelect/handleSubmit) checked
+    // showInput, isSubmitting, typing targets, modifiers and e.repeat, but
+    // never showHistory. Unlike ConversationStage's advance listener (already
+    // guarded via `paused={showHistory}`, see the tests above), this handler
+    // kept firing while the LOG view covered a plain (non-staged) prompt: a
+    // sole "Continue" option took Enter, and a multi-choice prompt took a
+    // number key, even though the player could not see either option.
+    it('does not submit on Enter for a sole option while LOG is open (#715)', () => {
+      const soleOptionEvent = {
+        ...mockEvent,
+        input_prompt: 'Your choice:',
+        input_options: [{ label: 'Continue', value: 'go' }],
+      };
+      renderDialog(soleOptionEvent, { history });
+      finishText();
+      expect(screen.getByText('Continue')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText(/Log \(2\)/i));
+      const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      document.dispatchEvent(enter);
+
+      expect(mockOnSubmitInput).not.toHaveBeenCalled();
+    });
+
+    it('does not submit on a number key for a multi-choice prompt while LOG is open (#715)', () => {
+      renderDialog(mockEvent, { history });
+      finishText();
+      expect(screen.getByText('Touch it')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText(/Log \(2\)/i));
+      const one = new KeyboardEvent('keydown', { key: '1', bubbles: true, cancelable: true });
+      document.dispatchEvent(one);
+
+      expect(mockOnSubmitInput).not.toHaveBeenCalled();
+    });
+
+    // Negative control: with LOG closed, the same keys DO submit — this must
+    // stay true both before and after the #715 fix, or the two tests above
+    // would be vacuous (the handler doing nothing for unrelated reasons).
+    it('still submits on Enter/number keys when LOG is closed (negative control)', () => {
+      const soleOptionEvent = {
+        ...mockEvent,
+        input_prompt: 'Your choice:',
+        input_options: [{ label: 'Continue', value: 'go' }],
+      };
+      renderDialog(soleOptionEvent, { history });
+      finishText();
+
+      const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      document.dispatchEvent(enter);
+      expect(mockOnSubmitInput).toHaveBeenCalledWith('event-123', 'go');
+    });
   });
 
   // The one corner of this file the click gesture cannot settle: the damage
