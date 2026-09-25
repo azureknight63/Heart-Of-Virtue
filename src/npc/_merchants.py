@@ -213,20 +213,28 @@ class JamboHealsU(ConversationalNPCMixin, Merchant):
 
     ConversationalNPCMixin is mixed in (as on Kaelen and Vespera) so the
     frontend's Talk action opens the LLM Conversation dialog instead of the
-    bare scripted line. No ``jambo.json`` is authored: like the generic
-    nomads, Jambo falls back to a generated personality (see
-    ``_ensure_personality``), so the chat identity is a working generic/story
-    one without prompting another agent's authored config. ``talk`` stays as
-    the deterministic fallback for when the chat is unavailable, and the
-    shop (buy/sell/trade) is unchanged.
+    bare scripted line. His voice comes from ``ai/npc/human/jambo.json``
+    (issue #685): on a generated personality he spoke in the first person and
+    knew only the camp-first world facts, so in his Grondia tent he gave
+    river-crossing advice. One class stands in both his tents
+    (``grondia-jambos_shop`` and ``eastern-descent-jambos-tent``) and the
+    prompt is not told which, so that file keeps him inside the tent.
+    ``talk`` stays as the deterministic fallback for when the chat is
+    unavailable, and the shop (buy/sell/trade) is unchanged.
 
-    Unlike the generic nomads, Jambo is a named character: ``_chat_keep_name``
-    keeps the speaker label and the system prompt on "Jambo" whatever
-    ``given_name`` the generated (or LLM-off fallback) seed carries -- the
-    portrait is keyed on the class, and issue #599 was Jambo's portrait over
-    "Mara's" dialogue. ``_chat_generic_role`` is what the prompt calls him.
+    ``_chat_config_path`` is a class attribute (read by ``_init_chat_attrs``
+    through ``getattr``) rather than an ``__init__`` assignment, so a test can
+    patch it away to exercise the config-less path below.
+
+    ``_chat_keep_name`` still matters when that file is absent or unreadable:
+    the mixin then falls back to a generated seed, and this keeps the speaker
+    label and the system prompt on "Jambo" whatever ``given_name`` the seed
+    carries -- the portrait is keyed on the class, and issue #599 was Jambo's
+    portrait over "Mara's" dialogue. ``_chat_generic_role`` is what that
+    fallback prompt calls him.
     """
 
+    _chat_config_path = str(_HUMAN_NPC_DIR / "jambo.json")
     _chat_keep_name = True
     _chat_generic_role = "a nomad healer and potion merchant"
 
@@ -259,9 +267,8 @@ class JamboHealsU(ConversationalNPCMixin, Merchant):
             intelligence=14,
         )
         self.shop_name = "Jambo Heals U"
-        # No ``_chat_config_path``: Jambo uses the generic/story chat identity
-        # (generated personality) rather than an authored config. Keeping this
-        # call is what makes him a ConversationalNPCMixin instance the
+        # ``_chat_config_path`` is the class attribute above. This call loads
+        # it, and is what makes him a ConversationalNPCMixin instance the
         # serializer reports as ``llm_chat_enabled`` and the frontend routes to
         # the LLM Conversation dialog on Talk.
         self._init_chat_attrs()

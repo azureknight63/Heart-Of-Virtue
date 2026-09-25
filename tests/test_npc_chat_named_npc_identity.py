@@ -1,10 +1,14 @@
 """Issue #599: Jambo's portrait, Mara's dialogue.
 
-``JamboHealsU`` has no authored chat config, so the mixin treated him as a
+``JamboHealsU`` had no authored chat config, so the mixin treated him as a
 generic nomad and let a *generated* personality seed supply his name. The
 generation prompt lists the story cast as reference proper nouns, the model
 read the list as a name pool, and Jean opened a conversation with "Mara" under
 Jambo's portrait. With the LLM off the same path labelled him "Ren".
+
+He has an authored config now (#685); that generic path is still what he runs
+on if the file is missing or unreadable, so it is pinned here with the config
+patched away (see ``_jambo_without_his_config``).
 
 Three layers, each pinned here:
 
@@ -28,6 +32,16 @@ from src.npc._merchants import JamboHealsU
 from src.text_safety import neutralise_model_text
 
 from tests._npc_fixtures import ScriptedAdapter, chat_player
+
+
+@pytest.fixture(autouse=True)
+def _jambo_without_his_config(monkeypatch):
+    """Since #685 Jambo ships ``ai/npc/human/jambo.json``, and an authored
+    config bypasses the generated seed entirely. Every test here is about the
+    path he falls back to when that file is absent or unreadable -- which is
+    exactly when ``_chat_keep_name`` still has work to do -- so the class
+    attribute the mixin reads is patched away for the whole module."""
+    monkeypatch.setattr(JamboHealsU, "_chat_config_path", None)
 
 
 @pytest.fixture(autouse=True)
