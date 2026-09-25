@@ -806,6 +806,46 @@ class SessionManager:
                 flush=True,
             )
 
+    def _apply_starting_story_flags(self, player) -> None:
+        """Seed story-state flags from config.starting_story_flags onto player.
+
+        Restores the semantics ``src/game.py`` had before the terminal
+        teardown (311a644e): a bare ``"flag"`` token sets it to ``"1"``, a
+        ``"flag=value"`` token sets it to ``value``. Written through
+        ``set_story_gate`` so a player with no story (e.g. ``MinimalPlayer``)
+        is a silent no-op rather than an ``AttributeError``.
+
+        Note: seeding ``king_slime_defeated`` also needs ``MineralFragment``
+        in ``starting_items`` — ``AfterKingSlimeReturn``
+        (``src/story/ch02.py``) waits for the fragment that
+        ``AfterDefeatingKingSlime`` would otherwise have granted.
+        """
+        if not self.game_config:
+            return
+        flags = getattr(self.game_config, "starting_story_flags", None)
+        if not flags:
+            return
+
+        from src.events import set_story_gate
+
+        applied = []
+        for token in flags:
+            token = token.strip()
+            if not token:
+                continue
+            if "=" in token:
+                key, value = token.split("=", 1)
+                key, value = key.strip(), value.strip()
+            else:
+                key, value = token, "1"
+            if set_story_gate(player, key, value):
+                applied.append(f"{key}={value}")
+        if applied:
+            print(
+                f"[SessionManager] [OK] Applied starting_story_flags: {applied}",
+                flush=True,
+            )
+
     def _create_player_for_session(self, username: str) -> object:
         """Create a fresh player instance for a session.
 
@@ -970,6 +1010,9 @@ class SessionManager:
             # Apply starting party members (e.g. Gorran) from config
             self._apply_starting_party_members(player)
 
+            # Apply starting story flags (issue #687)
+            self._apply_starting_story_flags(player)
+
             return player
         except Exception as e:
             _warn(f"[SessionManager] Error creating player: {e}")
@@ -1008,6 +1051,9 @@ class SessionManager:
 
             # Apply starting party members (e.g. Gorran) from config
             self._apply_starting_party_members(player)
+
+            # Apply starting story flags (issue #687)
+            self._apply_starting_story_flags(player)
 
             return player
 

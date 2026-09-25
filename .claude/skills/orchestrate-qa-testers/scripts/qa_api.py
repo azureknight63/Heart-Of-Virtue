@@ -40,43 +40,6 @@ from src.api.app import create_app  # noqa: E402
 from src.api.config import config_for_env, normalized_env  # noqa: E402
 
 
-def _install_story_flag_shim():
-    """Apply the config's ``starting_story_flags`` to each new web session.
-
-    The engine parses ``starting_story_flags`` (src/config_manager.py) but, since
-    the terminal teardown deleted src/game.py -- its only consumer -- nothing
-    applies it on the web path, so every seeded leg/camp config silently starts
-    with an empty story (found 2026-09-24; filed as an issue). This shim restores
-    game.py's exact semantics ("flag" -> "1", "flag=value" -> value) for QA
-    stacks only, and logs every seed so the gap stays visible. Remove it once the
-    engine applies the flags itself. HOV_QA_NO_FLAG_SHIM=1 disables it.
-    """
-    if os.environ.get("HOV_QA_NO_FLAG_SHIM") == "1":
-        print("[qa_api] story-flag shim DISABLED", flush=True)
-        return
-    from src.api.services.session_manager import SessionManager
-    from src.events import set_story_gate
-
-    original = SessionManager._create_player_for_session
-
-    def create_with_flags(self, username):
-        player = original(self, username)
-        tokens = getattr(self.game_config, "starting_story_flags", None) or []
-        seeded = {}
-        for token in tokens:
-            key, _, value = token.partition("=")
-            key, value = key.strip(), (value.strip() if _ else "1")
-            if key and set_story_gate(player, key, value):
-                seeded[key] = value
-        if tokens:
-            print(f"[qa_api] story-flag shim seeded {seeded} for {username}", flush=True)
-        return player
-
-    SessionManager._create_player_for_session = create_with_flags
-
-
-_install_story_flag_shim()
-
 env = normalized_env()
 app, socketio = create_app(config_for_env(env))
 port = int(os.environ["PORT"])

@@ -2161,9 +2161,14 @@ class GameService:
                 )
                 combat_started = True
 
+        # Read the player's ACTUAL position rather than the requested exit
+        # tile (new_x/new_y): a tile-entry event fired by trigger_tile_events
+        # above (e.g. EasternRoadTurnbackEvent) can move the player again
+        # before this response is built, and new_position must agree with
+        # "room" -- both come from wherever Jean really ended up (#689b).
         return {
             "success": True,
-            "new_position": {"x": new_x, "y": new_y},
+            "new_position": {"x": player.location_x, "y": player.location_y},
             "events_triggered": events_triggered,
             "room": self.get_current_room(player),
             "combat_started": combat_started,

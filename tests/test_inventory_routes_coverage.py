@@ -814,9 +814,13 @@ class TestGetStats:
 
 class TestGetCurrency:
     def test_success(self, make_inventory_app):
-        player = _make_player()
-        player.gold = 150
-        player.platinum = 3
+        """Issue #689c: ``player.gold`` does not exist -- gold lives in the
+        inventory as a ``Gold`` item, read through ``get_gold`` like every
+        other route (``game_service.py``'s ``shop_buy``/``shop_sell``).
+        """
+        from src.items import Gold
+
+        player = _make_player(items=[Gold(150)])
         app, _, _, _ = make_inventory_app(player=player)
         with app.test_client() as c:
             resp = c.get("/inventory/currency", headers={"Authorization": AUTH})
@@ -824,12 +828,10 @@ class TestGetCurrency:
         data = resp.get_json()
         assert data["success"] is True
         assert data["currency"]["gold"] == 150
-        assert data["currency"]["platinum"] == 3
+        assert "platinum" not in data["currency"]
 
-    def test_default_zero_when_attrs_missing(self, make_inventory_app):
-        player = _make_player()
-        del player.gold
-        del player.platinum
+    def test_zero_when_no_gold_item_in_inventory(self, make_inventory_app):
+        player = _make_player(items=[])
         app, _, _, _ = make_inventory_app(player=player)
         with app.test_client() as c:
             resp = c.get("/inventory/currency", headers={"Authorization": AUTH})

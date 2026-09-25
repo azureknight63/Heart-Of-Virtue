@@ -85,11 +85,28 @@ def execute_move():
 
     Request body:
         {
-            "move_type": "attack|defend|cast|item|swap_weapon",
+            "move_type": one of the values below,
             "move_id": str,
             "target_id": str (optional),
             "item_id": str (optional; move_type "swap_weapon" only)
         }
+
+    ``move_type`` (the real set GameService.execute_move answers; anything
+    else is rejected as "Unknown move type"):
+        "move"                   — cast a named move by id (uses "move_id")
+        "target"                 — select a target for the pending move
+        "direction"               — select a direction for the pending move
+        "number"                  — select a numeric parameter (e.g. duration)
+        "attack"                  — basic attack
+        "defend"                  — defend this beat
+        "cancel"                  — abort the move awaiting input
+        "flee"                    — attempt to flee combat
+        "swap_weapon"             — swap equipped weapon (uses "item_id")
+        "select_move_and_target"  — combined move + target selection in one call
+
+    Consumables in combat go through the "UseItem" move (move_type "move")
+    or the separate ``POST /api/inventory/use`` route, not a dedicated
+    "item" move_type -- there is no "cast" or "item" move_type.
 
     Returns:
         {
