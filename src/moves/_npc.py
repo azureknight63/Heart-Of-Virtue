@@ -397,7 +397,12 @@ class TelegraphedSurge(NpcAttack):
                                      a boss-tier member overrides to "deadly".
                                      Documented on ``Move``.
         _prep_text(npc)     str    — yellow telegraph line shown during wind-up
-        _hit_text(npc, target_name)  str  — red line shown on impact
+        _release_text(npc, target_name)  str — red line shown as the surge is
+                                     let go, BEFORE the to-hit roll: it must
+                                     describe intent, never contact
+        _hit_text(npc, target_name)  str  — red line shown on impact; narrated
+                                     from ``hit()``, so a miss or a parry
+                                     never prints it (issue #686)
         _recoil_text(npc)   str    — plain line shown after surge
     """
     display_name = 'Telegraphed Surge'
@@ -413,8 +418,11 @@ class TelegraphedSurge(NpcAttack):
     def _prep_text(self, npc):
         return f"{npc.name} coils in preparation — now is the time to get clear."
 
+    def _release_text(self, npc, target_name):
+        return f"{npc.name} surges outward at {target_name}!"
+
     def _hit_text(self, npc, target_name):
-        return f"{npc.name} surges outward and strikes {target_name}!"
+        return f"The surge strikes {target_name}!"
 
     def _recoil_text(self, npc):
         return f"{npc.name} recoils, spent by the effort."
@@ -431,8 +439,20 @@ class TelegraphedSurge(NpcAttack):
     def refresh_announcements(self, npc):
         target_name = self.target.name if self.target else "its target"
         self.stage_announce[0] = colored(self._prep_text(npc), "yellow")
-        self.stage_announce[1] = colored(self._hit_text(npc, target_name), "red")
+        # Narrated by execute() before the roll, so it says what the surge is
+        # AIMED at. The contact line is hit()'s (issue #686: a dodged surge
+        # printed "slams into Jean!" and then "just missed!").
+        self.stage_announce[1] = colored(self._release_text(npc, target_name), "red")
         self.stage_announce[2] = self._recoil_text(npc)
+
+    def hit(self, damage, glance):
+        # Before super().hit(): the base publishes the outcome and narrates the
+        # damage line straight after it, and the adapter pairs a published
+        # outcome with the NEXT narration line -- this line goes out ahead of
+        # the publication, exactly where the old pre-roll announce sat.
+        target_name = self.target.name if self.target else "its target"
+        narrate(colored(self._hit_text(self.user, target_name), "red"))
+        super().hit(damage, glance)
 
 
 class SlimeVolley(TelegraphedSurge):
@@ -458,11 +478,14 @@ class SlimeVolley(TelegraphedSurge):
             f"Now is the time to get clear."
         )
 
-    def _hit_text(self, npc, target_name):
+    def _release_text(self, npc, target_name):
         return (
-            f"{npc.name} erupts outward with a sound like a wave breaking on stone! "
-            f"A crashing surge of corrupted slime strikes {target_name}!"
+            f"{npc.name} erupts outward with a sound like a wave breaking on stone, "
+            f"hurling a surge of corrupted slime at {target_name}!"
         )
+
+    def _hit_text(self, npc, target_name):
+        return f"The crashing surge of corrupted slime strikes {target_name}!"
 
     def _recoil_text(self, npc):
         return f"{npc.name} trembles, spent by the effort."
@@ -504,14 +527,18 @@ class TidalSurge(TelegraphedSurge):
     def _prep_text(self, npc):
         return (
             f"{npc.name}'s entire mass draws inward — the pool around it recedes with a "
-            f"terrifying suction. The arena floor shudders. It is about to surge."
+            f"terrifying suction. The arena floor shudders. It is about to surge — "
+            f"get clear, or brace for it."
+        )
+
+    def _release_text(self, npc, target_name):
+        return (
+            f"{npc.name} erupts — a solid wall of corrupted mass crashes across the stone "
+            f"toward {target_name}!"
         )
 
     def _hit_text(self, npc, target_name):
-        return (
-            f"{npc.name} erupts — a solid wall of corrupted mass crashes across the stone "
-            f"and slams into {target_name}!"
-        )
+        return f"The wall of corrupted mass slams into {target_name}!"
 
     def _recoil_text(self, npc):
         return f"{npc.name} settles back, the surge spent."
@@ -1367,6 +1394,9 @@ class WailStrike(TelegraphedSurge):
 
     def _prep_text(self, npc):
         return f"{npc.name} opens wide — the wail floods through it, building."
+
+    def _release_text(self, npc, target_name):
+        return f"{npc.name} looses the wail at {target_name}!"
 
     def _hit_text(self, npc, target_name):
         return f"The wail tears through {target_name} — armor is no shelter from this!"
