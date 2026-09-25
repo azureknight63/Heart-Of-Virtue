@@ -37,7 +37,7 @@ Write your report to <absolute path>/T3.md in the primer's format, then `quit` y
 ```
 
 Things that made briefs work:
-- **Tile lists with titles and occupants** from the map JSON (`src/resources/maps/*.json`), e.g. `(1,2) HighLedge [Rock Rumbler]`. Testers navigate by `where()`; naming the destination tile saves them the BFS.
+- **Tile lists with titles and occupants** from the map JSON (`src/resources/maps/*.json`), e.g. `(1,2) HighLedge [Rock Rumbler]`; `scripts/route_tiles.py` prints them. Testers navigate by `where()`; naming the destination tile saves them the BFS.
 - **Tell them what the beta plan gets wrong** ("some tile coordinates in it are stale — trust the map JSON") so they don't file the plan's errors as bugs.
 - **Name the scenes** (`MaraFirstContactEvent`, `DevetIntroEvent`) so they can read the source for expected behaviour.
 - **LLM exchange counts per NPC** — otherwise a curious tester spends tokens freely.

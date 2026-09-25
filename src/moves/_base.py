@@ -1968,7 +1968,11 @@ class Move:  # master class for all moves
         if self.viable():
             return None
         try:
-            return UnavailableReason(self._unavailability_code())
+            code = self._unavailability_code()
+            if code is None:
+                # The documented "cannot name it" answer, not a fault: no log.
+                return UnavailableReason.UNAVAILABLE
+            return UnavailableReason(code)
         except Exception:  # an unknown code or a diagnosis that raises
             # Folded, not raised -- but logged, so a buggy diagnosis shows up
             # somewhere other than a vague "Cannot use this move".
