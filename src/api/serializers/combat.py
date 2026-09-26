@@ -590,9 +590,26 @@ class CombatantSerializer:
         ``tests/test_npc_moves_coverage.py::TestDeclaredDamageMultiplier``
         discovers the declaring classes by reflection and pins each against
         what ``evaluate()`` really rolls, so it cannot go stale by omission.
+
+        The wire does NOT ship ``_DAMAGE_MULTIPLIER`` raw, though: it ships
+        ``Move.effective_damage_multiplier()``, which also folds in the scale
+        a hand-rolled ``execute()`` applies to the evaluated power
+        (``_EXECUTE_DAMAGE_SCALE``, issue #721). Shipping the raw attribute
+        overstated three moves to the advisor: a spray at 0.4 of its swing and
+        a drain at 0.6 went out as 1.0, and a surge that loses 0.7 of its 1.8
+        for ignoring protection went out as 1.8. This method only reads the
+        engine's answer; the arithmetic is the move's.
+        ``TestWireMultiplierMatchesExecuteDamage`` in the same test file
+        measures the wire value against the damage ``execute()`` deals.
+
+        A move with no such method -- a legacy placeholder restored from a
+        save (see :meth:`_move_method`) -- reports the neutral 1.0.
         """
         try:
-            return float(getattr(move, "_DAMAGE_MULTIPLIER", 1.0))
+            value = CombatantSerializer._call_move_method(
+                move, "effective_damage_multiplier"
+            )
+            return 1.0 if value is None else float(value)
         except (TypeError, ValueError):
             return 1.0
 
