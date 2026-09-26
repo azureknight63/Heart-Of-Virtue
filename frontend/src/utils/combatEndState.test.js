@@ -43,6 +43,23 @@ describe('resolvableEndState', () => {
         expect(spy).toHaveBeenCalledWith('combat.end_state.dropped', { has_id: true, status: null })
     })
 
+    // The dropped payload came off the wire; the log must not carry whatever
+    // the server put in `status` verbatim.
+    it('clamps a long string status to 32 characters in the log', () => {
+        const spy = vi.spyOn(logger, 'eventOnChange')
+        expect(resolvableEndState({ id: 'e-1', status: 'x'.repeat(500) })).toBeNull()
+        expect(spy).toHaveBeenCalledWith('combat.end_state.dropped', { has_id: true, status: 'x'.repeat(32) })
+    })
+
+    it.each([
+        ['an object', { nested: 'secret' }, 'object'],
+        ['a number', 7, 'number'],
+    ])('logs only the type of a non-string status (%s)', (_label, status, logged) => {
+        const spy = vi.spyOn(logger, 'eventOnChange')
+        expect(resolvableEndState({ id: 'e-1', status })).toBeNull()
+        expect(spy).toHaveBeenCalledWith('combat.end_state.dropped', { has_id: true, status: logged })
+    })
+
     it('stays silent when there is no end state at all (every ordinary poll)', () => {
         const spy = vi.spyOn(logger, 'eventOnChange')
         expect(resolvableEndState(undefined)).toBeNull()

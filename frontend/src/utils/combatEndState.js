@@ -30,9 +30,11 @@ export function isResolvableEndState(endState) {
 
 /**
  * `combat.end_state` if it is resolvable, otherwise null. A present but
- * unresolvable payload is logged (once per distinct payload -- the callers
- * run on every combat poll) so a backend regression shows up in the logs
- * rather than as a silently ignored fight end.
+ * unresolvable payload is logged (when the dropped payload's shape changes --
+ * eventOnChange compares against the last payload only, and the callers run
+ * on every combat poll) so a backend regression shows up in the logs rather
+ * than as a silently ignored fight end. `status` came off the wire, so only a
+ * short prefix of a string (or the type of anything else) is logged.
  *
  * @param {*} endState - `combat.end_state` as polled.
  * @returns {Object|null}
@@ -42,8 +44,15 @@ export function resolvableEndState(endState) {
     if (endState) {
         logger.eventOnChange('combat.end_state.dropped', {
             has_id: Boolean(endState.id),
-            status: endState.status ?? null,
+            status: loggableStatus(endState.status),
         })
     }
     return null
+}
+
+const MAX_LOGGED_STATUS_LENGTH = 32
+
+function loggableStatus(status) {
+    if (status == null) return null
+    return typeof status === 'string' ? status.slice(0, MAX_LOGGED_STATUS_LENGTH) : typeof status
 }
