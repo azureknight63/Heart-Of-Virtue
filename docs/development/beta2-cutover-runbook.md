@@ -131,8 +131,10 @@ undone**, and a rollback does not bring saves back.
 
 ## 6. Test on production (here, a browser)
 
-Open the preview URL from step 4. A reload or a sign-out lands on the maintenance page; reopen the
-preview URL to get back in.
+Open the preview URL from step 4 **in a fresh private window**. A browser still holding an old
+sign-in takes the app straight to the game; if the new server rejects that session (401), it is sent to
+`/login` by a full page load, which serves the maintenance page. A reload or a sign-out does the
+same; reopen the preview URL to get back in.
 
 - Sign in with an existing account. The save list is empty.
 - New game: Jean starts in Grondia. The beta briefing's tester notice includes "Saves from the

@@ -196,12 +196,14 @@ before the window on the two marked ★):
 ### Keeping the page up for a private test
 
 For a release you want to play on production before anyone else does (the
-beta-2 cutover: raise the page, wipe the old saves, deploy, play-test, lift):
+beta-2 cutover: raise the page, deploy, wipe the old saves, play-test, lift;
+the full sequence is [beta2-cutover-runbook.md](beta2-cutover-runbook.md)):
 
 ```powershell
 .\deploy.ps1 -Maintenance On      # 1. raise the page (if it is not already up)
-                                  # 2. wipe the old saves (outside this script)
-.\deploy.ps1 -KeepMaintenance     # 3. deploy; the page stays up; prints the preview URL
+.\deploy.ps1 -KeepMaintenance     # 2. deploy; the page stays up; prints the preview URL
+                                  # 3. one-off server work that needs the new code (the
+                                  #    cutover's save wipe ships with this deploy)
                                   # 4. play-test through that URL
 .\deploy.ps1 -Maintenance Off     # 5. lift; also deletes the preview
 ```
