@@ -793,6 +793,7 @@ describe('GamePage handler wiring', () => {
     describe('an id-less end_state (#704)', () => {
         const idlessDefeat = { status: 'defeat', message: 'You have been defeated.' };
         let storedEndState, setEndState, checkPendingEvents, worldLoading;
+        const rerenderPage = (rerender) => rerender(<MemoryRouter><GamePage /></MemoryRouter>);
 
         beforeEach(() => {
             storedEndState = null;
@@ -817,7 +818,7 @@ describe('GamePage handler wiring', () => {
 
         it('is never stored', () => {
             const { rerender } = renderGamePage();
-            rerender(<MemoryRouter><GamePage /></MemoryRouter>);
+            rerenderPage(rerender);
 
             expect(setEndState).not.toHaveBeenCalledWith(idlessDefeat);
             expect(storedEndState).toBeNull();
@@ -825,13 +826,12 @@ describe('GamePage handler wiring', () => {
 
         it('does not stop a world reload from polling pending events', () => {
             const { rerender } = renderGamePage();
-            const rerenderPage = () => rerender(<MemoryRouter><GamePage /></MemoryRouter>);
 
             worldLoading = true;
-            rerenderPage();
+            rerenderPage(rerender);
             checkPendingEvents.mockClear();
             worldLoading = false;
-            rerenderPage();
+            rerenderPage(rerender);
 
             expect(checkPendingEvents).toHaveBeenCalledTimes(1);
         });

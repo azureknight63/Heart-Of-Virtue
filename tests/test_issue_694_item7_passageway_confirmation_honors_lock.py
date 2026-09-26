@@ -32,7 +32,7 @@ from tests._gate_fixtures import GATE_WORLD_COORD, LOCK_FLAG, build_gate_world
 
 
 def test_locked_gate_declines_without_arming_a_confirmation():
-    player, _tile, gate = build_gate_world()
+    player, _game_map, gate = build_gate_world()
     game_service = GameService()
 
     result = game_service.interact_with_target(
@@ -55,7 +55,7 @@ def test_locked_gate_declines_without_arming_a_confirmation():
 
 
 def test_unlocked_gate_still_arms_the_confirmation():
-    player, _tile, gate = build_gate_world()
+    player, _game_map, gate = build_gate_world()
     set_story_gate(player, LOCK_FLAG)
     game_service = GameService()
 

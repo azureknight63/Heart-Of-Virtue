@@ -26,13 +26,14 @@ Tests cover:
 - All edge cases and error paths
 """
 
-from ai.llm_client import NPC_LOCATION_BLOCK_NAME
-from types import SimpleNamespace
-import pytest
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from ai.llm_client import NPC_LOCATION_BLOCK_NAME
 from src.npc._chat_llm import (
     JEAN_TONES,
     MAX_OPTION_CHARS,
@@ -44,16 +45,16 @@ from src.npc._chat_llm import (
     scale_loquacity,
 )
 from tests._gs_fixtures import live_world
-from tests._source_scan import MAP_DIR
 from tests._npc_fixtures import (
     ScriptedAdapter,
     chat_npc,
     chat_player,
+    equipped_item,
     qc_npc,
     ready_npc,
     wired_chat_npc,
-    equipped_item,
 )
+from tests._source_scan import MAP_DIR
 
 
 @pytest.fixture

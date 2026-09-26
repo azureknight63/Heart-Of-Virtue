@@ -230,6 +230,10 @@ export function apiErrorDetail(err) {
     return typeof detail === 'string' ? detail : describeBodyField(detail)
 }
 
+// Statuses a reverse proxy answers with when the app behind it is down,
+// overloaded or mid-restart, as opposed to the app itself failing a request.
+const GATEWAY_UNAVAILABLE_STATUSES = new Set([502, 503, 504])
+
 /**
  * The player-facing message for a failed cloud autosave.
  *
@@ -239,11 +243,12 @@ export function apiErrorDetail(err) {
  * as "check your connection" sends the player chasing their wifi for a
  * refusal their connection had no part in.
  *
- * #731: the same was true of a 5xx. A response of any status means the
- * connection worked, so only a failure with no `response` at all (a dropped
- * connection or timeout) keeps the network-flavored copy. 502/503/504 are
- * the gateway saying the app is down or restarting (a deploy, a worker
- * recycle); any other 5xx is the app itself failing the save.
+ * #731: the same was true of a 5xx. 502/503/504 are the gateway saying the
+ * app is down or restarting (a deploy, a worker recycle); any other 5xx is
+ * the app itself failing the save. So 403 and 5xx get their own copy, and
+ * every other failure keeps the network-flavored copy — a dropped
+ * connection or timeout (no `response` at all), but also any other 4xx
+ * (400/401/409/413), even though the server did answer those.
  *
  * None of the copy promises the lost save will be retried: there is no retry
  * queue. useAutosave resets its tick counter whether or not the write landed,
@@ -269,6 +274,3 @@ export function autosaveErrorMessage(err) {
     return 'Failed to save your progress. Check your connection.'
 }
 
-// Statuses a reverse proxy answers with when the app behind it is down,
-// overloaded or mid-restart, as opposed to the app itself failing a request.
-const GATEWAY_UNAVAILABLE_STATUSES = new Set([502, 503, 504])

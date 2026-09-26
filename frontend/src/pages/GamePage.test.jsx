@@ -222,7 +222,7 @@ describe('GamePage', () => {
 
     // An active fight against ``enemies`` as useCombat reports it, and a
     // re-render of the page after the mock changes -- shared by the BGM tests.
-    const bossPhase = (enemies) => ({
+    const combatPhase = (enemies) => ({
         combat: { ...mockCombat, combat_active: true, enemies },
         inCombat: true,
         loading: false,
@@ -234,7 +234,7 @@ describe('GamePage', () => {
     it('plays the ordinary battle BGM against a non-boss enemy', async () => {
         const playBGM = vi.fn();
         useAudio.mockReturnValue({ playSFX: vi.fn(), playBGM, stopBGM: vi.fn() });
-        useCombat.mockReturnValue(bossPhase([{ id: 'enemy_1', is_boss: false }]));
+        useCombat.mockReturnValue(combatPhase([{ id: 'enemy_1', is_boss: false }]));
 
         renderGamePage();
         fireEvent.click(screen.getByRole('button', { name: /FIGHT FOR YOUR LIFE/i }));
@@ -248,7 +248,7 @@ describe('GamePage', () => {
     it('plays the boss BGM when a boss enemy is in the fight', async () => {
         const playBGM = vi.fn();
         useAudio.mockReturnValue({ playSFX: vi.fn(), playBGM, stopBGM: vi.fn() });
-        useCombat.mockReturnValue(bossPhase([
+        useCombat.mockReturnValue(combatPhase([
             { id: 'enemy_1', is_boss: false }, { id: 'enemy_2', is_boss: true },
         ]));
 
@@ -274,7 +274,7 @@ describe('GamePage', () => {
     it('never falls back to the normal battle track when a boss fight ends in victory', async () => {
         const playBGM = vi.fn();
         useAudio.mockReturnValue({ playSFX: vi.fn(), playBGM, stopBGM: vi.fn() });
-        useCombat.mockReturnValue(bossPhase([{ id: 'enemy_2', is_boss: true }]));
+        useCombat.mockReturnValue(combatPhase([{ id: 'enemy_2', is_boss: true }]));
 
         const { rerender } = renderGamePage();
         fireEvent.click(screen.getByRole('button', { name: /FIGHT FOR YOUR LIFE/i }));
@@ -309,18 +309,19 @@ describe('GamePage', () => {
         expect(playBGM).not.toHaveBeenCalledWith('battle');
     });
 
-    // Scrub finding on #718 item 4: the latch was a ref the BGM effect read but
-    // did not depend on, so a roster that arrives after combat mode began, or
-    // a boss that dies before its minions, was never (re)played correctly.
+    // Scrub finding on #718 item 4 (this test and the next): the latch was a
+    // ref the BGM effect read but did not depend on, so a roster that arrives
+    // after combat mode began, or a boss that dies before its minions, was
+    // never (re)played correctly.
     it('upgrades to the boss track when the boss roster arrives after combat began', async () => {
         const playBGM = vi.fn();
         useAudio.mockReturnValue({ playSFX: vi.fn(), playBGM, stopBGM: vi.fn() });
-        useCombat.mockReturnValue(bossPhase([]));
+        useCombat.mockReturnValue(combatPhase([]));
         const { rerender } = renderGamePage();
         fireEvent.click(screen.getByRole('button', { name: /FIGHT FOR YOUR LIFE/i }));
         await waitFor(() => expect(playBGM).toHaveBeenCalledWith('battle'));
 
-        useCombat.mockReturnValue(bossPhase([{ id: 'enemy_2', is_boss: true }]));
+        useCombat.mockReturnValue(combatPhase([{ id: 'enemy_2', is_boss: true }]));
         rerenderPage(rerender);
 
         await waitFor(() => expect(playBGM).toHaveBeenLastCalledWith('boss_battle'));
@@ -329,7 +330,7 @@ describe('GamePage', () => {
     it('keeps the boss track after the boss falls while its minions fight on', async () => {
         const playBGM = vi.fn();
         useAudio.mockReturnValue({ playSFX: vi.fn(), playBGM, stopBGM: vi.fn() });
-        useCombat.mockReturnValue(bossPhase([
+        useCombat.mockReturnValue(combatPhase([
             { id: 'enemy_1', is_boss: false }, { id: 'enemy_2', is_boss: true },
         ]));
         const { rerender } = renderGamePage();
@@ -337,7 +338,7 @@ describe('GamePage', () => {
         await waitFor(() => expect(playBGM).toHaveBeenCalledWith('boss_battle'));
         playBGM.mockClear();
 
-        useCombat.mockReturnValue(bossPhase([{ id: 'enemy_1', is_boss: false }]));
+        useCombat.mockReturnValue(combatPhase([{ id: 'enemy_1', is_boss: false }]));
         rerenderPage(rerender);
         await waitFor(() => expect(screen.getByText(/Mode: combat/i)).toBeDefined());
 

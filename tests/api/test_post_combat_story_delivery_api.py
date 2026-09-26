@@ -24,7 +24,8 @@ import random
 
 import pytest
 
-from tools.harness.scenarios.base import pick_move_body
+from tests.api._http import auth_headers
+from tools.harness.move_picker import pick_move_body
 
 # The scene's first words (src/story/ch02.py, AfterDefeatingKingSlime).
 SCENE = "AfterDefeatingKingSlime"
@@ -64,7 +65,7 @@ def king_slime_session(app, client, tmp_path, monkeypatch):
     session_id = resp.get_json()["session_id"]
     player = app.session_manager.get_player(session_id)
     assert player.map.get("name") == "grondelith-mineral-pools"
-    return {"Authorization": f"Bearer {session_id}"}, player
+    return auth_headers(session_id), player
 
 
 def _kill_king_slime(client, headers, player):

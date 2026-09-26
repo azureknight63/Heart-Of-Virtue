@@ -302,6 +302,13 @@ describe('autosaveErrorMessage', () => {
     );
   });
 
+  // Pins what the docstring says: only 403 and 5xx get their own copy, so any
+  // other 4xx still gets the connection wording even though the server answered.
+  it('keeps the network-flavored copy for a 401 (any 4xx other than 403)', () => {
+    const msg = autosaveErrorMessage({ response: { status: 401 } });
+    expect(msg).toBe('Failed to save your progress. Check your connection.');
+  });
+
   it.each([502, 503, 504])('reports a %i as the server being busy or restarting', (status) => {
     const msg = autosaveErrorMessage({ response: { status } });
     expect(msg).not.toMatch(/connection/i);

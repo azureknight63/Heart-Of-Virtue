@@ -22,8 +22,8 @@ Focus areas:
 14. Fountain repeat event (951-952, 955-956, 959)
 15. NoticeBoard event repeat (1009)
 16. NoticeBoard use alias (1020-1022)
-17. PrayerCandleRack use (1077) -- the alias identity check moved to
-    tests/test_object_synonym_aliases.py (issue #681)
+17. PrayerCandleRack use (1077) -- the alias identity check here duplicated
+    the one in tests/test_object_synonym_aliases.py and was removed (#681)
 18. StreetLantern inspect (1126)
 19. MarketGong repeat (1164)
 20. GeminateGeode examine (1254)
