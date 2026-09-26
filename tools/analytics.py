@@ -31,19 +31,13 @@ def _load_report_api():
     return analytics_report
 
 
-def _not_configured_error():
-    from src.api.db import DatabaseNotConfigured
-
-    return DatabaseNotConfigured
-
-
 def _account_id(report_api, username):
     """The account id for an exact ``username``, or None."""
     rows = report_api.run_query("SELECT id FROM users WHERE username = ?", [username])
     return rows[0][0] if rows else None
 
 
-def main(argv=None, out=sys.stdout):
+def main(argv=None, out=None, err=None):
     report_api = _load_report_api()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -57,21 +51,26 @@ def main(argv=None, out=sys.stdout):
     if not 1 <= args.days <= report_api.MAX_WINDOW_DAYS:
         parser.error("--days must be 1-%d" % report_api.MAX_WINDOW_DAYS)
 
-    DatabaseNotConfigured = _not_configured_error()
+    out, err = out or sys.stdout, err or sys.stderr
+    from src.api.db import DatabaseNotConfigured  # importable once _load_report_api has run
+
     try:
         if args.whoami:
             account = _account_id(report_api, args.whoami)
-            print(account or "No account named %r." % args.whoami, file=out)
-            return 0 if account else 1
+            if not account:
+                print("No account named %r." % args.whoami, file=err)
+                return 1
+            print(account, file=out)
+            return 0
         report = report_api.fetch_report(days=args.days)
     except DatabaseNotConfigured as exc:
         # Its text names the missing setting and carries no secret.
-        print("Analytics report failed: %s" % exc, file=out)
+        print("Analytics report failed: %s" % exc, file=err)
         return 1
     except Exception as exc:
         # The type only: a libsql connection error can echo the database URL,
         # which may carry an auth token.
-        print("Analytics report failed: %s" % type(exc).__name__, file=out)
+        print("Analytics report failed: %s" % type(exc).__name__, file=err)
         return 1
 
     if args.json:

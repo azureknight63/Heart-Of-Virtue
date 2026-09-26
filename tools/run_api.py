@@ -45,9 +45,9 @@ if os.environ.get("FLASK_ENV", "development").lower() != "production":
 
 from src.api.app import create_app  # noqa: E402
 
-# `env_flag` is imported across the module boundary on purpose: it is the one place that spells which values mean "off" (including
+# `env_flag` is the one place that spells which values mean "off" (including
 # the exported-but-blank case), and that list has already been duplicated and
-# drifted once — see the `_FALSEY_ENV_VALUES` comment in src/api/config.py.
+# drifted once -- see the `_FALSEY_ENV_VALUES` comment in src/api/config.py.
 # A fourth copy of the truthiness rule here would be the same mistake again.
 from src.api.config import (  # noqa: E402
     config_for_env,

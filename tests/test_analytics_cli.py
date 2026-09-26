@@ -41,8 +41,14 @@ def api(monkeypatch):
 
 
 def run(argv):
-    out = io.StringIO()
-    return cli.main(argv, out=out), out.getvalue()
+    """(exit code, stdout); an error on stdout would corrupt --json output."""
+    code, out, _err = run_split(argv)
+    return code, out
+
+
+def run_split(argv):
+    out, err = io.StringIO(), io.StringIO()
+    return cli.main(argv, out=out, err=err), out.getvalue(), err.getvalue()
 
 
 def test_text_report(api):
@@ -72,22 +78,22 @@ def test_configuration_errors_are_shown(api):
     from src.api.db import DatabaseNotConfigured
 
     api.seen["error"] = DatabaseNotConfigured("TURSO_DATABASE_URL is not set")
-    code, text = run([])
-    assert code == 1 and "TURSO_DATABASE_URL is not set" in text
+    code, out, err = run_split([])
+    assert code == 1 and out == "" and "TURSO_DATABASE_URL is not set" in err
 
 
 def test_a_driver_value_error_shows_only_its_type(api):
     # Only the not-configured error is known to be safe to print.
     api.seen["error"] = ValueError("bad url libsql://db.example?authToken=SECRET")
-    code, text = run([])
-    assert code == 1 and "SECRET" not in text
+    code, out, err = run_split([])
+    assert code == 1 and out == "" and "ValueError" in err and "SECRET" not in err
 
 
 def test_other_errors_show_only_their_type(api):
     # A connection error can echo the database URL, which may carry a token.
     api.seen["error"] = ConnectionError("libsql://db.example?authToken=SECRET")
-    code, text = run([])
-    assert code == 1 and "ConnectionError" in text and "SECRET" not in text
+    code, out, err = run_split([])
+    assert code == 1 and out == "" and "ConnectionError" in err and "SECRET" not in err
 
 
 def test_whoami_queries_by_exact_username(api):
@@ -103,7 +109,7 @@ def test_whoami_queries_by_exact_username(api):
     assert seen["query"] == ("SELECT id FROM users WHERE username = ?", ["azure"])
 
 
-def test_whoami_unknown_user(api, monkeypatch):
-    monkeypatch.setattr(cli, "_account_id", lambda _api, name: None)
-    code, text = run(["--whoami", "nobody"])
-    assert code == 1 and "No account named 'nobody'" in text
+def test_whoami_unknown_user(api):
+    api.run_query = lambda sql, params: []  # the real lookup, finding no row
+    code, out, err = run_split(["--whoami", "nobody"])
+    assert code == 1 and out == "" and "No account named 'nobody'" in err

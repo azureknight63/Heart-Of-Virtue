@@ -8,7 +8,7 @@ coordinates, and the stall report groups and shows them.
 import asyncio
 import re
 import sqlite3
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -21,14 +21,19 @@ DAY = report.DAY
 
 
 def _columns_to_params(sql, params):
-    """{column: value} for an INSERT ... VALUES or UPDATE ... SET statement."""
+    """{column: value} for an INSERT ... VALUES or UPDATE ... SET statement.
+
+    For the UPDATE, only assignments whose right-hand side is ``?`` take a
+    param (``timestamp = CURRENT_TIMESTAMP`` takes none).
+    """
     sql = " ".join(sql.split())
     insert = re.search(r"INSERT INTO saves \(([^)]*)\)", sql)
     if insert:
         return dict(zip([c.strip() for c in insert.group(1).split(",")], params))
-    assignments = re.search(r"SET (.*) WHERE", sql).group(1)
-    names = [a.split("=")[0].strip() for a in assignments.split(",")]
-    names = [n for n in names if n != "timestamp"]  # CURRENT_TIMESTAMP, no param
+    update = re.search(r"SET (.*) WHERE", sql)
+    assert update, "not an INSERT INTO saves or UPDATE ... SET: %s" % sql
+    assignments = [a.split("=") for a in update.group(1).split(",")]
+    names = [name.strip() for name, value in assignments if value.strip() == "?"]
     return dict(zip(names, params))
 
 
@@ -94,13 +99,15 @@ class TestSchema:
         mock_db.batch = AsyncMock()
         mock_db.execute = AsyncMock()
         mock_db.close = AsyncMock()
-        from unittest.mock import patch
-
         with patch("src.api.migrations.db", mock_db):
             asyncio.run(migrations.init_db())
         run = [c.args[0] for c in mock_db.execute.call_args_list]
         assert "ALTER TABLE saves ADD COLUMN location_x INTEGER" in run
         assert "ALTER TABLE saves ADD COLUMN location_y INTEGER" in run
+
+
+def test_a_tile_without_a_room_name_shows_a_dash():
+    assert report.room_label({"room": None, "x": 3, "y": 4}) == "- (3, 4)"
 
 
 class TestStallReport:
@@ -119,11 +126,14 @@ class TestStallReport:
             [uid, uid, NOW - days_ago * DAY, room, x, y],
         )
 
-    def stalled(self, conn):
+    def report_for(self, conn):
         async def execute(sql, params=None):
             return conn.execute(sql, params or []).fetchall()
 
-        return asyncio.run(report.build_report(execute, now=NOW))["progress"]["stalled"]
+        return asyncio.run(report.build_report(execute, now=NOW))
+
+    def stalled(self, conn):
+        return self.report_for(conn)["progress"]["stalled"]
 
     def test_same_room_name_on_two_tiles_is_two_rows(self, db):
         self.autosave(db, "a", "Cave Entrance", 14, 5)
@@ -142,10 +152,6 @@ class TestStallReport:
 
     def test_text_and_digest_show_the_coordinates(self, db):
         self.autosave(db, "a", "Cave Entrance", 14, 5)
-
-        async def execute(sql, params=None):
-            return db.execute(sql, params or []).fetchall()
-
-        r = asyncio.run(report.build_report(execute, now=NOW))
-        assert "Cave Entrance (14, 5)" in report.format_text(r)
-        assert "dark-grotto / Cave Entrance (14, 5) (1)" in report.format_digest(r, 1024)
+        built = self.report_for(db)
+        assert "Cave Entrance (14, 5)" in report.format_text(built)
+        assert "dark-grotto / Cave Entrance (14, 5) (1)" in report.format_digest(built, 1024)

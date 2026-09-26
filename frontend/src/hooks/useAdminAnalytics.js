@@ -4,6 +4,9 @@ import { admin as adminApi } from '../api/endpoints'
 import { apiErrorMessage } from '../utils/apiError'
 
 export const ANALYTICS_LOAD_FAILED = 'Could not load analytics. Please try again.'
+// The windows the page offers; DEFAULT_DAYS must be one of them, or no
+// window shows as selected on first load.
+export const ANALYTICS_WINDOWS = [7, 30, 90]
 export const DEFAULT_DAYS = 30
 
 /**

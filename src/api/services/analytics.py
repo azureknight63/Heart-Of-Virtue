@@ -52,6 +52,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 import threading
 import time
@@ -94,8 +95,12 @@ ALL_EVENTS = frozenset(v for k, v in vars(Event).items() if not k.startswith("_"
 CHAT_EVENTS = (Event.CHAT_OPEN, Event.CHAT_TURN, Event.CHAT_END)
 
 
-# The encounter label before a fight's roster is known.
-UNKNOWN_ENCOUNTER = "unknown"
+# The label for a name that could not be read: an NPC chat key, or a fight's
+# roster (UNKNOWN_ENCOUNTER, before it is known). The reports fall back to it too.
+UNKNOWN_LABEL = "unknown"
+UNKNOWN_ENCOUNTER = UNKNOWN_LABEL
+# The label for a roster that is known and empty.
+NO_ENCOUNTER = "none"
 
 
 class Outcome:
@@ -130,6 +135,9 @@ FLUSH_INTERVAL_SECONDS = 10
 # Bounds one flush, including the one at process exit: an unreachable database
 # must not hold up a deploy's restart.
 WRITE_TIMEOUT_SECONDS = 10
+# Bounds the client close on its own, since after a timed-out write it runs
+# where the write's bound no longer reaches.
+CLOSE_TIMEOUT_SECONDS = 2
 
 # Caps what one flush interval can queue. Every flush empties the buffer, a
 # failed one included (it logs and drops), so this is reached only by more
@@ -204,20 +212,24 @@ def _sanitize_props(props):
             logger.debug("analytics prop %r is not in ALLOWED_PROPS; dropped", key)
         elif isinstance(value, str):
             clean[key] = value[:MAX_PROP_CHARS]
+        elif isinstance(value, float) and not math.isfinite(value):
+            # json.dumps would write a bare NaN, which SQLite's json functions reject.
+            logger.debug("analytics prop %r is not finite; dropped", key)
         elif value is None or isinstance(value, (bool, int, float)):
             clean[key] = value
     return clean
 
 
 def npc_label(npc_key):
-    """The NPC's name from a chat key such as ``Gorran_4f2a``.
+    """The NPC's name from a chat key such as ``Gorran_0``.
 
-    The suffix is a per-instance handle; it would split one NPC's numbers
-    across every save that ever met them.
+    Keys are ``f"{class_name}_{instance_count}"`` (``src/npc/_chat_llm.py``).
+    The count is per instance; kept, it would split one NPC's numbers across
+    every save that ever met them.
     """
     if not isinstance(npc_key, str) or not npc_key:
-        return "unknown"
-    return npc_key.split("_")[0]
+        return UNKNOWN_LABEL
+    return npc_key.rsplit("_", 1)[0]
 
 
 def encounter_label(enemies):
@@ -228,7 +240,7 @@ def encounter_label(enemies):
     """
     counts = Counter(type(e).__name__ for e in enemies or ())
     if not counts:
-        return "none"
+        return NO_ENCOUNTER
     return "+".join(
         name if counts[name] == 1 else f"{name} x{counts[name]}" for name in sorted(counts)
     )
@@ -246,12 +258,16 @@ def run_with_private_client(work, timeout=None):
     async def _run():
         client = create_client_from_env()
         try:
-            pending = work(client)
-            return await (asyncio.wait_for(pending, timeout) if timeout else pending)
+            return await work(client)
         finally:
-            await client.close()
+            # Bounded on its own: after a timed-out write the close runs
+            # inside the cancellation, where the outer bound no longer reaches.
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(client.close(), CLOSE_TIMEOUT_SECONDS)
 
-    return asyncio.run(_run())
+    # A hung write or close would park the flush thread, or the exit-time
+    # flush, so both are bounded.
+    return asyncio.run(asyncio.wait_for(_run(), timeout) if timeout is not None else _run())
 
 
 def _turso_writer(statements):
@@ -320,7 +336,11 @@ class AnalyticsRecorder:
         return None
 
     def configure(self, testing, database_url):
-        """Decide whether this process records. Returns the decision."""
+        """Decide whether this process records. Returns the decision.
+
+        Sets ``enabled`` on this recorder, which for the module's ``recorder``
+        is process-wide: the last ``create_app`` to call it decides.
+        """
         self.enabled = bool(
             not testing
             and database_url
@@ -399,11 +419,11 @@ class AnalyticsRecorder:
             return 0
         statements = [] if self._schema_ready else [(s, []) for s in SCHEMA_STATEMENTS]
         statements.extend((_INSERT_SQL, list(row)) for row in rows)
+        # Deliberately not @_best_effort: that logs the traceback, and a libsql
+        # error can carry the database URL. Only the type is logged here.
         try:
             self._writer(statements)
         except Exception as exc:
-            # The exception type only: a libsql error can carry the database
-            # URL, and this lands in the plain log file.
             logger.warning(
                 "Analytics flush failed (%s); dropped %d events.", type(exc).__name__, len(rows)
             )
@@ -415,17 +435,18 @@ class AnalyticsRecorder:
         """Start the flush thread once. Returns True when a thread started."""
         if not self.enabled or self._thread is not None:
             return False
-
-        def _loop():
-            while True:
-                time.sleep(FLUSH_INTERVAL_SECONDS)
-                self.flush()
-
-        self._thread = threading.Thread(target=_loop, name="analytics-flush", daemon=True)
+        self._thread = threading.Thread(target=self._flush_forever, name="analytics-flush", daemon=True)
         self._thread.start()
         atexit.register(self.flush)
         logger.info("Analytics recorder started.")
         return True
+
+    def _flush_forever(self, sleep=time.sleep):
+        """The flush thread's body: one failed flush must not end recording."""
+        while True:
+            sleep(FLUSH_INTERVAL_SECONDS)
+            with _swallowed("flush"):
+                self.flush()
 
     # -- instrumentation helpers --------------------------------------------
 
@@ -467,7 +488,7 @@ class AnalyticsRecorder:
         state = self._state(session)
         with self._state_lock:
             baseline = state.progress
-            emits = [] if baseline is None else self._diff_progress(baseline, markers)
+            emits = [] if baseline is None else self._advance_progress(baseline, markers)
         if baseline is None:
             self.reset_progress(session, markers)
             return
@@ -475,7 +496,7 @@ class AnalyticsRecorder:
             self.record(event, session, **props)
 
     @staticmethod
-    def _diff_progress(baseline, markers):
+    def _advance_progress(baseline, markers):
         """Events for what ``markers`` adds to ``baseline``; advances the baseline.
 
         Flags only accumulate: two overlapping requests can observe out of
@@ -579,6 +600,16 @@ def rebaseline(session, player, game_service=None):
         recorder.reset_progress(session, service.analytics_markers(player))
 
 
+def _session_player(session_manager, session):
+    """The player behind ``session``, read from ``session_manager.players``.
+
+    Not ``get_player``: that re-runs session lookup, reaping and the access
+    bump, which an after-request hook must not do, and logout may already
+    have removed the session.
+    """
+    return session_manager.players.get(session.player_id)
+
+
 def on_sign_in(session, session_manager, event):
     """Record a sign-in (``Event.LOGIN``/``Event.REGISTER``) for a new session.
 
@@ -590,7 +621,7 @@ def on_sign_in(session, session_manager, event):
         return
     recorder.record(event, session)
     recorder.heartbeat(session)
-    rebaseline(session, session_manager.players.get(session.player_id))
+    rebaseline(session, _session_player(session_manager, session))
 
 
 def observe_request_progress(session_manager, game_service):
@@ -598,10 +629,7 @@ def observe_request_progress(session_manager, game_service):
 
     Registered after every request by ``_init_analytics``, which covers every
     path that can move the player or set a story flag without instrumenting
-    each of them. Reads ``session_manager.players`` directly rather than
-    ``get_player``: that would re-run session lookup, reaping and the access
-    bump in an after-request hook, and logout may already have removed the
-    session.
+    each of them.
     """
     if not recorder.enabled:
         return
@@ -609,6 +637,6 @@ def observe_request_progress(session_manager, game_service):
     if session is None:
         return
     with _swallowed("progress observation"):
-        player = session_manager.players.get(session.player_id)
+        player = _session_player(session_manager, session)
         if player is not None:
             recorder.observe_progress(session, game_service.analytics_markers(player))

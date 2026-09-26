@@ -109,6 +109,17 @@ class TestBuildDigest:
         assert any("Saturation" in n for n in names)
         assert not any("Reliability" in n for n in names)
 
+    def test_a_failed_section_logs_only_the_error_type(self, monkeypatch, caplog):
+        def leaky(_snapshot):
+            raise ConnectionError("libsql://db.example?authToken=SECRET")
+
+        monkeypatch.setitem(digest._FORMATTERS, "saturation", ("Saturation", leaky))
+        monkeypatch.setenv("HOV_ANALYTICS_SECTIONS", "saturation")
+        with caplog.at_level("WARNING", logger="ai.provider_digest"):
+            digest.build_digest(self._snapshot())
+        logged = "\n".join(r.getMessage() for r in caplog.records)
+        assert "ConnectionError" in logged and "SECRET" not in logged
+
     def test_unknown_section_names_are_ignored(self, monkeypatch):
         monkeypatch.setenv("HOV_ANALYTICS_SECTIONS", "saturation,nonsense")
         assert digest.build_digest(self._snapshot())["fields"]

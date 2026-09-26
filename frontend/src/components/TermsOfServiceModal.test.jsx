@@ -25,6 +25,9 @@ describe('TermsOfServiceModal', () => {
         const text = document.body.textContent
         expect(text).not.toMatch(/We plan to add/i)
         expect(text).toMatch(/pseudonymous/i)
+        expect(text).toMatch(/where you are in the world \(map, room and position\)/i)
+        expect(text).toMatch(/which enemies, where,/i)
+        expect(text).toMatch(/how many turns/i)
         expect(text).toMatch(/None of it carries your\s+username, email address or IP address/i)
         // Where the data goes, and what else is counted (the digest and the
         // autosave tables would otherwise contradict "not shared").

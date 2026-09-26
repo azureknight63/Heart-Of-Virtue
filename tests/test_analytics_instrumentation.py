@@ -15,7 +15,7 @@ import pytest
 from flask import Flask
 
 from src.api.services import analytics
-from src.api.services.analytics import AnalyticsRecorder, Event, Outcome
+from src.api.services.analytics import UNKNOWN_ENCOUNTER, AnalyticsRecorder, Event, Outcome
 from tests._analytics_doubles import FakeWriter, enabled_recorder, flushed, real_session
 
 
@@ -42,8 +42,10 @@ def rows(rec, writer, name=None):
 
 class TestMiddlewareBindsTheSession:
     def _app(self, session):
+        from src.api.services.session_manager import SessionManager
+
         app = Flask(__name__)
-        sm = MagicMock()
+        sm = MagicMock(spec=SessionManager)  # a misspelled manager method fails, not answers
         sm.get_session.return_value = session
         sm.get_player.return_value = MagicMock()
         app.session_manager = sm
@@ -58,13 +60,14 @@ class TestMiddlewareBindsTheSession:
             getattr(auth, resolver)()
             assert analytics.request_session() is session
 
-    def test_a_player_action_records_a_heartbeat(self, rec, writer):
-        from src.api.middleware.auth import resolve_session
+    @pytest.mark.parametrize("resolver", ["get_session_and_player", "resolve_session"])
+    def test_a_player_action_records_a_heartbeat(self, rec, writer, resolver):
+        from src.api.middleware import auth
 
         with self._app(real_session()).test_request_context(
             method="POST", headers={"Authorization": "Bearer sid_1"}
         ):
-            resolve_session()
+            getattr(auth, resolver)()
         assert flushed(rec, writer, include_heartbeats=True) == [(Event.HEARTBEAT, {})]
 
 
@@ -122,6 +125,15 @@ class TestCombat:
         adapter.settle_defeat()
         [(_, props)] = rows(rec, writer, Event.COMBAT_END)
         assert props["outcome"] == Outcome.DEFEAT
+
+    def test_health_above_max_reports_as_full(self, rec, writer, request_bound):
+        # A buff can lift hp over maxhp; the report reads hp_pct as 0-100.
+        adapter, player, slimes = _fight()
+        adapter.initialize_combat(slimes)
+        player.hp = player.maxhp + 50
+        adapter.settle_defeat()
+        [(_, props)] = rows(rec, writer, Event.COMBAT_END)
+        assert props["hp_pct"] == 100
 
     @staticmethod
     def _fled_fight():
@@ -192,6 +204,7 @@ class TestCombat:
 
         adapter, player, slimes = _fight()
         adapter.initialize_combat(slimes)
+        player.combat_list = []  # so the roster fallback cannot supply the label
         replacement = ApiCombatAdapter(player)
         replacement._stream_combat_result = lambda *a, **k: None
         replacement.inherit_fight_identity(adapter)
@@ -211,6 +224,22 @@ class TestCombat:
         bootstrapped.settle_defeat()
         [(_, props)] = rows(rec, writer, Event.COMBAT_END)
         assert props["encounter"] == "Slime x2"
+
+    def test_a_bootstrapped_adapter_with_no_roster_left_records_unknown(self, rec, writer, request_bound):
+        """Victory removes the dead from combat_list before settling, so a
+        bootstrapped adapter can find the roster empty: that is an unknown
+        encounter, not one called "none"."""
+        from src.api.combat_adapter import ApiCombatAdapter
+
+        adapter, player, slimes = _fight()
+        adapter.initialize_combat(slimes)
+        rows(rec, writer)  # drain the start
+        player.combat_list = []
+        bootstrapped = ApiCombatAdapter(player)
+        bootstrapped._stream_combat_result = lambda *a, **k: None
+        bootstrapped.settle_defeat()
+        [(_, props)] = rows(rec, writer, Event.COMBAT_END)
+        assert props["encounter"] == UNKNOWN_ENCOUNTER
 
     def test_the_deferred_resume_passes_the_identity_on(self):
         # The swap site is in GameService.get_combat_status; pin that it hands over.
@@ -232,7 +261,7 @@ class TestCombat:
 
 
 AUTH = {"Authorization": "Bearer sid_1"}
-KEY = "Gorran_4f2a"
+KEY = "Gorran_0"
 
 
 class TestNpcChatRoutes:
@@ -473,7 +502,9 @@ class TestGameServiceMarkers:
             raise RuntimeError("story unreadable")
 
         monkeypatch.setattr(gs_module.GameService, "_story", staticmethod(boom))
-        assert gs_module.GameService().analytics_markers(object()) == {"map": None, "flags": set()}
+        # None, not an empty marker set: a baseline taken from "no flags" would
+        # make the next good read report every flag the player already had.
+        assert gs_module.GameService().analytics_markers(object()) is None
 
 
 # ---------------------------------------------------------------------------

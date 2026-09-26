@@ -5,17 +5,20 @@ reach Turso, and nothing here may depend on wall time.
 """
 
 import asyncio
+import inspect
+from pathlib import Path
 import hashlib
 import hmac
 import json
 import re
 import string
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from flask import Flask
 
-from src.api.services import analytics
+from src.api.services import analytics, analytics_report
 from src.api.services.analytics import AnalyticsRecorder, Event
 from tests._analytics_doubles import (
     FakeClock,
@@ -26,7 +29,8 @@ from tests._analytics_doubles import (
     real_session,
 )
 
-NPC_KEY = "Gorran_4f2a"
+SRC = Path(__file__).resolve().parent.parent / "src"
+NPC_KEY = "Gorran_0"  # the engine's f"{class_name}_{instance_count}"
 
 
 @pytest.fixture
@@ -148,7 +152,9 @@ class TestRecord:
         rec.record(Event.FEEDBACK, session, type="bug")
         rec.flush()
         flat = json.dumps(writer.batches)
-        assert len(inserted(writer)) >= 7
+        # heartbeat, baseline map, map + flag, open, turn, end, feedback: every
+        # entry point wrote, so the scan below covers each of them.
+        assert len(inserted(writer)) == 8
         for identifier in ("user-1", "sess-1", "player_1", "jean_claire", "jean@example.com"):
             assert identifier not in flat
 
@@ -196,6 +202,15 @@ class TestRecord:
             "abandoned": True,
             "level": None,
         }
+
+    @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_numbers_are_dropped(self, rec, writer, bad):
+        # json.dumps would write a bare NaN, which SQLite's json functions
+        # reject -- failing a whole report section, not just this row.
+        rec.record(Event.COMBAT_END, real_session(), hp_pct=bad, beats=3)
+        rec.flush()
+        [(_, _, _, props)] = inserted(writer)
+        assert props == {"beats": 3}
 
     def test_buffer_is_bounded_and_keeps_the_newest(self, rec, writer):
         session = real_session()
@@ -250,6 +265,54 @@ class TestFlush:
         monkeypatch.setattr(analytics, "run_with_private_client", fake_run)
         analytics._turso_writer([("SELECT 1", [])])
         assert seen["timeout"] == analytics.WRITE_TIMEOUT_SECONDS
+
+    def test_the_timeout_also_covers_closing_the_client(self, monkeypatch):
+        class HangingClose:
+            async def batch(self, statements):
+                return None
+
+            async def close(self):
+                await asyncio.sleep(30)
+
+        monkeypatch.setattr(analytics, "create_client_from_env", HangingClose)
+        with pytest.raises(asyncio.TimeoutError):
+            analytics.run_with_private_client(lambda c: c.batch([]), timeout=0.05)
+
+    def test_a_close_after_a_timed_out_write_is_bounded_too(self, monkeypatch):
+        # The write times out; the close then runs inside the cancellation,
+        # where the outer bound no longer reaches it.
+        class Unreachable:
+            async def batch(self, statements):
+                await asyncio.sleep(30)
+
+            async def close(self):
+                await asyncio.sleep(30)
+
+        monkeypatch.setattr(analytics, "create_client_from_env", Unreachable)
+        monkeypatch.setattr(analytics, "CLOSE_TIMEOUT_SECONDS", 0.05)
+        started = time.monotonic()
+        with pytest.raises(asyncio.TimeoutError):
+            analytics.run_with_private_client(lambda c: c.batch([]), timeout=0.05)
+        assert time.monotonic() - started < 5
+
+    def test_the_flush_loop_survives_a_failing_flush(self, rec, monkeypatch):
+        class Stop(BaseException):
+            pass
+
+        sleeps = []
+
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+            if len(sleeps) == 3:
+                raise Stop
+
+        def broken_flush():
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(rec, "flush", broken_flush)
+        with pytest.raises(Stop):
+            rec._flush_forever(sleep=fake_sleep)
+        assert len(sleeps) == 3  # two failed flushes did not end the loop
 
 
 class TestHeartbeat:
@@ -322,6 +385,14 @@ class TestProgress:
 
     def test_observe_without_a_baseline_takes_one_silently_for_flags(self, rec, writer):
         rec.observe_progress(real_session(), self.markers(flags={"old_flag"}))
+        assert flushed(rec, writer) == [(Event.PROGRESS_MAP, {"map": "dark-grotto"})]
+
+    def test_no_markers_takes_no_baseline(self, rec, writer):
+        # analytics_markers answers None when it cannot read the player; a
+        # baseline of "no flags" would make every existing flag look new.
+        session = real_session()
+        rec.reset_progress(session, None)
+        rec.observe_progress(session, self.markers(flags={"old_flag"}))
         assert Event.PROGRESS_FLAG not in [e for e, _ in flushed(rec, writer)]
 
     def test_an_older_observation_cannot_undo_a_newer_one(self, rec, writer):
@@ -405,22 +476,33 @@ class TestLabels:
         assert analytics.encounter_label([Slime(), CaveBat(), Slime()]) == "CaveBat+Slime x2"
 
     def test_empty_roster(self):
-        assert analytics.encounter_label([]) == "none"
+        assert analytics.encounter_label([]) == analytics.NO_ENCOUNTER
 
-    @pytest.mark.parametrize("key, label", [(NPC_KEY, "Gorran"), ("", "unknown"), (None, "unknown")])
+    @pytest.mark.parametrize(
+        "key, label",
+        [
+            (NPC_KEY, "Gorran"),
+            # Keys are f"{class_name}_{instance_count}": only the last part is the instance.
+            ("Old_Hermit_3", "Old_Hermit"),
+            ("", analytics.UNKNOWN_LABEL),
+            (None, analytics.UNKNOWN_LABEL),
+        ],
+    )
     def test_npc_label(self, key, label):
         assert analytics.npc_label(key) == label
 
 
 class TestVocabulary:
-    def test_every_event_the_reports_read_is_one_the_recorder_accepts(self):
-        # An independent authority: the event names the report module queries.
-        import inspect
-        from src.api.services import analytics_report
-
-        source = inspect.getsource(analytics_report)
-        read = {getattr(Event, name) for name in re.findall(r"Event\.([A-Z_]+)", source)}
-        assert read and read <= analytics.ALL_EVENTS
+    def test_every_event_the_reports_read_is_emitted_somewhere(self):
+        # The authority is the emit sites: a report section reading an event
+        # nothing records would show zeros forever.
+        read = set(re.findall(r"Event\.([A-Z_]+)", inspect.getsource(analytics_report)))
+        emitted = set()
+        for path in SRC.rglob("*.py"):
+            if path.name != "analytics_report.py":
+                emitted |= set(re.findall(r"Event\.([A-Z_]+)", path.read_text(encoding="utf-8")))
+        assert read and emitted, "the scan matched nothing"
+        assert read <= emitted, "read but never recorded: %s" % sorted(read - emitted)
 
 
 class TestMigration:

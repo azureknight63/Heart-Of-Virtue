@@ -56,7 +56,7 @@ def inserted(writer, include_heartbeats=True):
 
 
 def flushed(recorder, writer, include_heartbeats=False):
-    """Flush ``recorder`` and return (event, props) pairs, heartbeats excluded."""
+    """Flush ``recorder`` and return (event, props) pairs; heartbeats only if asked."""
     recorder.flush()
     return [(event, props) for event, _, _, props in inserted(writer, include_heartbeats)]
 

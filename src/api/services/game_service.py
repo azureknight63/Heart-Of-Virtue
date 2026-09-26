@@ -931,8 +931,8 @@ class GameService:
         """The story-gate dict ``player`` carries (``src.events.story_gates``)."""
         return story_gates(player)
 
-    def analytics_markers(self, player) -> Dict[str, Any]:
-        """Where ``player`` is, for the analytics progress diff.
+    def analytics_markers(self, player) -> Optional[Dict[str, Any]]:
+        """Where ``player`` is, for the analytics progress diff; None if unreadable.
 
         ``flags`` are the story gates that are set: a gate holding one of
         ``_UNSET_GATE_VALUES`` has been cleared or never fired, and counting it
@@ -942,10 +942,13 @@ class GameService:
         try:
             story = self._story(player) or {}
             flags = {key for key, value in story.items() if value not in _UNSET_GATE_VALUES}
+            # A Player carries the same ``.map`` dict a MapTile does.
             return {"map": map_name_for_tile(player), "flags": flags}
         except Exception:
+            # None, not an empty set: a baseline taken from "no flags" would
+            # make the next good read report every flag the player already had.
             _log.debug("analytics_markers failed", exc_info=True)
-            return {"map": None, "flags": set()}
+            return None
 
     @staticmethod
     def _game_tick(player):

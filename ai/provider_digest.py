@@ -283,9 +283,8 @@ def fetch_players_section(snapshot: Dict[str, Any]) -> str:
     here rather than at module top so the digest keeps no import-time
     dependency on the API package.
     """
-    from src.api.services import analytics_report
-
     from src.api.db import DatabaseNotConfigured
+    from src.api.services import analytics_report
 
     days = max(1, round(_baseline_interval_seconds() / analytics_report.DAY))
     try:
@@ -332,7 +331,9 @@ def build_digest(snapshot: Dict[str, Any], alert: bool = False) -> Dict[str, Any
         try:
             value = formatter(snapshot)
         except Exception as e:  # a broken section must not lose the digest
-            logger.warning("Digest section %s failed: %s", key, e)
+            # The type only: the players section reaches the database, and a
+            # libsql error can carry its URL, token included.
+            logger.warning("Digest section %s failed (%s)", key, type(e).__name__)
             value = "unavailable"
         fields.append({"name": name, "value": value[:DISCORD_FIELD_LIMIT] or "—", "inline": False})
 

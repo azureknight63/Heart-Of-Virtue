@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 
-import useAdminAnalytics from '../hooks/useAdminAnalytics'
+import useAdminAnalytics, { ANALYTICS_WINDOWS } from '../hooks/useAdminAnalytics'
 import { accessibility, colors, fonts, spacing } from '../styles/theme'
 
 /**
@@ -16,13 +16,14 @@ import { accessibility, colors, fonts, spacing } from '../styles/theme'
  * value the report does not carry renders as MISSING rather than crashing.
  */
 
-const WINDOWS = [7, 30, 90]
 
 // A day with any activity keeps a visible sliver rather than rounding to nothing.
 const MIN_VISIBLE_BAR_PCT = 3
 
 // Shown for any value the report did not carry (or had nothing to average).
 const MISSING = '—'
+
+const panel = { background: colors.bg.panel, padding: spacing.lg, marginBottom: spacing.lg }
 
 const styles = {
     page: {
@@ -69,18 +70,8 @@ const styles = {
         alignItems: 'center',
         fontSize: '0.85rem',
     },
-    section: {
-        border: `1px solid ${colors.border.main}`,
-        background: colors.bg.panel,
-        padding: spacing.lg,
-        marginBottom: spacing.lg,
-    },
-    errorBox: {
-        border: `1px solid ${colors.danger}`,
-        background: colors.bg.panel,
-        padding: spacing.lg,
-        marginBottom: spacing.lg,
-    },
+    section: { ...panel, border: `1px solid ${colors.border.main}` },
+    errorBox: { ...panel, border: `1px solid ${colors.danger}` },
     errorText: { color: colors.danger, marginTop: 0 },
     heading: { color: colors.secondary, margin: `0 0 ${spacing.md} 0`, fontSize: '1rem', letterSpacing: '0.08em' },
     scope: { color: colors.text.muted, fontSize: '0.8rem', letterSpacing: 0 },
@@ -155,7 +146,8 @@ function oneDecimal(value) {
 
 /** `Cave Entrance (14, 5)`, or just the room for a save without a tile. */
 function roomLabel(stall) {
-    return isNumber(stall.x) && isNumber(stall.y) ? `${stall.room} (${stall.x}, ${stall.y})` : (stall.room ?? MISSING)
+    const room = stall.room ?? MISSING
+    return isNumber(stall.x) && isNumber(stall.y) ? `${room} (${stall.x}, ${stall.y})` : room
 }
 
 function scopeLabel(scope, windowDays) {
@@ -243,12 +235,22 @@ function Table({ label, columns, rows }) {
     )
 }
 
+/** The failure message with a Retry; `style` frames it once the page is showing. */
+function ErrorRetry({ error, onRetry, style }) {
+    return (
+        <div role="alert" style={style}>
+            <p style={styles.errorText}>⚠ {error}</p>
+            <button type="button" onClick={onRetry} style={styles.button(false)}>Retry</button>
+        </div>
+    )
+}
+
 /** A titled table, or "No data yet" when it has no rows (or none were sent). */
-function SubTable({ title, label = title, columns, rows = [] }) {
+function SubTable({ title, label = title, columns, rows }) {
     return (
         <>
             <h3 style={styles.subheading}>{title}</h3>
-            {rows.length ? <Table label={label} columns={columns} rows={rows} /> : <Empty />}
+            {rows?.length ? <Table label={label} columns={columns} rows={rows} /> : <Empty />}
         </>
     )
 }
@@ -282,9 +284,9 @@ const PLAYERS_COLUMN = { key: 'players', label: 'Players', numeric: true }
 
 // -- sections, in report order -----------------------------------------------
 
-function PlayersSection({ report }) {
+function PlayersSection({ id, report }) {
     return (
-        <Section id="players" title="Players" report={report}>
+        <Section id={id} title="Players" report={report}>
             {(players) => (
                 <div style={styles.tiles}>
                     <Tile value={players.total_accounts} label="accounts" />
@@ -299,9 +301,9 @@ function PlayersSection({ report }) {
     )
 }
 
-function DailySection({ report }) {
+function DailySection({ id, report }) {
     return (
-        <Section id="daily" title="Daily" report={report}>
+        <Section id={id} title="Daily" report={report}>
             {(daily) => (
                 <>
                     <DailyBars title="Active players" daily={daily} field="active" unit="active players" />
@@ -326,9 +328,9 @@ function DailySection({ report }) {
     )
 }
 
-function RetentionSection({ report }) {
+function RetentionSection({ id, report }) {
     return (
-        <Section id="retention" title="Retention" report={report}>
+        <Section id={id} title="Retention" report={report}>
             {(retention) => (
                 <>
                     <p style={styles.muted}>
@@ -337,7 +339,7 @@ function RetentionSection({ report }) {
                     <Table
                         label="Retention"
                         columns={[
-                            { key: 'day', label: 'Day', render: (r) => `D${r.day}` },
+                            { key: 'day', label: 'Back after', render: (r) => `D${r.day}+` },
                             { key: 'rate', label: 'Returned', numeric: true, render: (r) => share(r.returned, r.eligible) },
                             { key: 'of', label: 'Players', numeric: true, render: (r) => `${r.returned ?? MISSING} of ${r.eligible ?? MISSING}` },
                         ]}
@@ -349,9 +351,9 @@ function RetentionSection({ report }) {
     )
 }
 
-function ProgressSection({ report }) {
+function ProgressSection({ id, report }) {
     return (
-        <Section id="progress" title="Progress" report={report}>
+        <Section id={id} title="Progress" report={report}>
             {(progress) => (
                 <>
                     <SubTable title="Maps reached" columns={[{ key: 'map', label: 'Map' }, PLAYERS_COLUMN]} rows={progress.maps} />
@@ -363,7 +365,9 @@ function ProgressSection({ report }) {
                         rows={progress.levels}
                     />
                     <SubTable
-                        title={`Stalled: autosave untouched ${progress.stalled_after_days ?? MISSING}+ days, where it sits`}
+                        title={isNumber(progress.stalled_after_days)
+                            ? `Stalled: autosave untouched ${progress.stalled_after_days}+ days, where it sits`
+                            : 'Stalled: where autosaves sit'}
                         label="Stalled players"
                         columns={[{ key: 'map', label: 'Map' }, { key: 'room', label: 'Room (x, y)', render: roomLabel }, PLAYERS_COLUMN]}
                         rows={progress.stalled}
@@ -374,9 +378,9 @@ function ProgressSection({ report }) {
     )
 }
 
-function CombatSection({ report }) {
+function CombatSection({ id, report }) {
     return (
-        <Section id="combat" title="Combat" report={report}>
+        <Section id={id} title="Combat" report={report}>
             {(combat) => (
                 <Table
                     label="Combat by encounter"
@@ -399,9 +403,9 @@ function CombatSection({ report }) {
     )
 }
 
-function SessionsSection({ report }) {
+function SessionsSection({ id, report }) {
     return (
-        <Section id="sessions" title="Sessions" report={report}>
+        <Section id={id} title="Sessions" report={report}>
             {(sessions) => (
                 <div style={styles.tiles}>
                     <Tile value={sessions.count} label="sessions" />
@@ -415,9 +419,9 @@ function SessionsSection({ report }) {
     )
 }
 
-function NpcChatSection({ report }) {
+function NpcChatSection({ id, report }) {
     return (
-        <Section id="npc_chat" title="NPC chat" report={report}>
+        <Section id={id} title="NPC chat" report={report}>
             {(chat) => (
                 <>
                     <div style={styles.tiles}>
@@ -446,11 +450,14 @@ function NpcChatSection({ report }) {
     )
 }
 
+// Each id is the report key the section reads; it is passed down, not repeated.
 const SECTIONS = [
     ['players', PlayersSection], ['daily', DailySection], ['retention', RetentionSection],
     ['progress', ProgressSection], ['combat', CombatSection], ['sessions', SessionsSection],
     ['npc_chat', NpcChatSection],
 ]
+
+export const SECTION_IDS = SECTIONS.map(([id]) => id)
 
 // -- page --------------------------------------------------------------------
 
@@ -483,10 +490,7 @@ export default function AdminAnalyticsPage() {
         return (
             <PageShell>
                 {error ? (
-                    <div role="alert">
-                        <p style={styles.errorText}>⚠ {error}</p>
-                        <button type="button" onClick={reload} style={styles.button(false)}>Retry</button>
-                    </div>
+                    <ErrorRetry error={error} onRetry={reload} />
                 ) : (
                     <p style={styles.muted}>Loading…</p>
                 )}
@@ -499,7 +503,7 @@ export default function AdminAnalyticsPage() {
             <header style={styles.header}>
                 <h1 style={styles.title}>ANALYTICS</h1>
                 <div style={styles.controls}>
-                    {WINDOWS.map((w) => (
+                    {ANALYTICS_WINDOWS.map((w) => (
                         <button key={w} type="button" aria-pressed={days === w} onClick={() => selectDays(w)} style={styles.button(days === w)}>
                             {w} days
                         </button>
@@ -511,16 +515,11 @@ export default function AdminAnalyticsPage() {
                 </div>
             </header>
 
-            {error && (
-                <div role="alert" style={styles.errorBox}>
-                    <p style={styles.errorText}>⚠ {error}</p>
-                    <button type="button" onClick={reload} style={styles.button(false)}>Retry</button>
-                </div>
-            )}
+            {error && <ErrorRetry error={error} onRetry={reload} style={styles.errorBox} />}
 
             {!report && isLoading && <p style={styles.muted}>Loading analytics…</p>}
 
-            {report && SECTIONS.map(([id, SectionView]) => <SectionView key={id} report={report} />)}
+            {report && SECTIONS.map(([id, SectionView]) => <SectionView key={id} id={id} report={report} />)}
         </PageShell>
     )
 }

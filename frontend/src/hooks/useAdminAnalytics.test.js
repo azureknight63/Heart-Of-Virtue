@@ -1,7 +1,7 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import useAdminAnalytics, { ANALYTICS_LOAD_FAILED, DEFAULT_DAYS } from './useAdminAnalytics';
+import useAdminAnalytics, { ANALYTICS_LOAD_FAILED, ANALYTICS_WINDOWS, DEFAULT_DAYS } from './useAdminAnalytics';
 import { admin as adminApi } from '../api/endpoints';
 
 vi.mock('../api/endpoints', () => ({
@@ -16,6 +16,11 @@ beforeEach(() => {
 });
 
 describe('useAdminAnalytics', () => {
+    it('defaults to a window the page offers', () => {
+        // Otherwise no window button shows as selected on first load.
+        expect(ANALYTICS_WINDOWS).toContain(DEFAULT_DAYS);
+    });
+
     it('fetches the default window on mount', async () => {
         const { result } = renderHook(() => useAdminAnalytics());
         expect(result.current.isLoading).toBe(true);

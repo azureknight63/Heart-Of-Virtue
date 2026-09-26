@@ -3779,20 +3779,22 @@ class ApiCombatAdapter:
     def _record_fight_start(self, enemies) -> None:
         """Analytics for a genuinely new fight; called beside the ``combat_id`` mint.
 
-        The roster label and start time are kept for :meth:`record_fight_end`.
+        The roster label and start time are kept for :meth:`_record_fight_end`.
         The label is the first wave's: reinforcements and later waves join the
         same fight (same combat_id) and do not change which encounter it counts as.
         """
+        # Reset first, so a failure below cannot carry the last fight's
+        # "end recorded" into this one and silence its end.
+        self._analytics_end_recorded = False
         try:
             analytics = _analytics()
             self._analytics_encounter = analytics.encounter_label(enemies)
             self._analytics_started_at = time.time()
-            self._analytics_end_recorded = False
             analytics.record(
                 analytics.Event.COMBAT_START,
                 encounter=self._analytics_encounter,
                 level=getattr(self.player, "level", None),
-                map=map_name_for_tile(self.player),
+                map=map_name_for_tile(self.player),  # Player.map is the tile's map dict
             )
         except Exception:
             logger.debug("combat.start analytics failed", exc_info=True)
@@ -3815,11 +3817,15 @@ class ApiCombatAdapter:
             if encounter == analytics.UNKNOWN_ENCOUNTER:
                 # An adapter built into a fight already under way (the status
                 # bootstrap, e.g. after a restart) never saw it start: label it
-                # from whoever is still in the fight.
-                encounter = analytics.encounter_label(getattr(self.player, "combat_list", None))
+                # from whoever is still in the fight. Victory has removed the
+                # dead by now, so an empty roster stays unknown, not "none".
+                roster = analytics.encounter_label(getattr(self.player, "combat_list", None))
+                if roster != analytics.NO_ENCOUNTER:
+                    encounter = roster
             maxhp = getattr(self.player, "maxhp", 0) or 0
             hp = max(0, getattr(self.player, "hp", 0) or 0)
-            hp_pct = int(round(100.0 * hp / maxhp)) if maxhp else None
+            # Capped: a buff can lift hp over maxhp, and the report reads 0-100.
+            hp_pct = min(100, int(round(100.0 * hp / maxhp))) if maxhp else None
             analytics.record(
                 analytics.Event.COMBAT_END,
                 outcome=outcome,

@@ -334,7 +334,7 @@ class TestFormatting:
         text = report.format_digest(populated, 1024)
         assert "**1** accounts" in text
         assert "Combat (last 30 days): 1 fights, 1 deaths (most: KingSlime, 1)" in text
-        assert "Retention (all time):" in text
+        assert "Retention (all time): D1+ " in text  # cumulative: back 1 or more days later
         assert "Most stalled at: dark-grotto / Wall Depression (1)" in text
 
     def test_digest_drops_whole_lines_to_fit(self, populated):
@@ -352,7 +352,12 @@ class TestFormatting:
         for key in report.SECTIONS:
             r[key] = dict(report.UNAVAILABLE)
         assert report.format_text(r).count("unavailable") == len(report.SECTIONS)
-        assert report.format_digest(r, 1024) == "No player data yet."
+        assert report.format_digest(r, 1024) == "Analytics unavailable."
+
+    def test_an_empty_game_is_not_an_outage(self, db):
+        assert report.format_digest(build(db), 1024) != "Analytics unavailable."
+
+    def test_missing_sections_read_unavailable(self):
         assert report.format_text({"window_days": 7}).count("unavailable") == len(report.SECTIONS)
 
 
@@ -360,12 +365,13 @@ class TestFormatting:
 # Checked two ways: the real report must emit each path
 # (test_every_listed_field_is_emitted), and the page must still read each field
 # name in an access form -- `.field`, `['field']`, a Table column `key: 'field'`,
-# a DailyBars `field="field"`, or for `scope` a `<Section id="field">`
+# a DailyBars `field="field"`, or for `scope` a `SECTIONS` entry `['field', View]`
 # (test_every_listed_read_is_still_in_the_page). That second check is by name,
 # not path: a name several sections read ("players") passes while any of them
-# still reads it. A bare substring would match "day" inside "daily" and could
-# never fail at all.
+# still reads it. A bare substring would match "day" inside "days" and could
+# never fail at all. The "" container is the report's top level.
 ADMIN_PAGE_READS = {
+    "": ["window_days"],
     "scope": ["players", "daily", "retention", "progress", "combat", "sessions", "npc_chat"],
     "players": ["total_accounts", "started_playing", "new_accounts.7d", "active.dau", "active.wau", "active.mau"],
     "daily[]": ["day", "signups", "active", "chat_turns"],
@@ -386,14 +392,15 @@ PAGE = Path(__file__).resolve().parent.parent / "frontend" / "src" / "pages" / "
 
 
 def _resolve(obj, path):
-    for part in path.split("."):
+    for part in filter(None, path.split(".")):
         obj = obj[part]
     return obj
 
 
 def _read_forms(leaf):
+    # `.leaf` not followed by "(": `rows.map(` is a method call, not a read of "map".
     return re.compile(
-        r"\.{0}\b|\['{0}'\]|key: '{0}'|field=\"{0}\"|\bid=\"{0}\"".format(re.escape(leaf))
+        r"\.{0}\b(?!\s*\()|\['{0}'\]|key: '{0}'|field=\"{0}\"|\['{0}', [A-Z]\w*Section\]".format(re.escape(leaf))
     )
 
 
@@ -429,4 +436,25 @@ class TestAdminPageContract:
     def test_the_read_check_can_fail(self):
         # Non-vacuity: a name the page does not read must not match.
         assert not _read_forms("no_such_field").search(PAGE.read_text(encoding="utf-8"))
-        assert not _read_forms("day").search("const daily = report.dailyish")
+        # ...and a name that is only a prefix of what the page reads must not either.
+        assert not _read_forms("day").search("const span = report.days")
+        # ...and a method call is not a field read.
+        assert not _read_forms("map").search("rows.map((r) => r)")
+
+
+class TestReadsAreBounded:
+    # The digest runs fetch_report on its scheduler thread: an unreachable
+    # database must not park it (and the provider-usage alerts with it).
+    @pytest.mark.parametrize("call", [
+        lambda: report.fetch_report(days=7),
+        lambda: report.run_query("SELECT 1"),
+    ])
+    def test_every_read_passes_a_timeout(self, monkeypatch, call):
+        seen = {}
+
+        def fake_run(work, timeout=None):
+            seen["timeout"] = timeout
+
+        monkeypatch.setattr(report, "run_with_private_client", fake_run)
+        call()
+        assert seen["timeout"] == report.READ_TIMEOUT_SECONDS

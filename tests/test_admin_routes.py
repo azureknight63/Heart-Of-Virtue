@@ -67,9 +67,12 @@ class TestTheGate:
         assert get(app).status_code == 404
         assert app.report_calls == []
 
-    @pytest.mark.parametrize("configured", ["", " , ", ","])
+    @pytest.mark.parametrize("configured", [None, "", " , ", ","])
     def test_an_empty_allow_list_means_nobody(self, app_with, monkeypatch, configured):
-        monkeypatch.setenv(ADMIN_USER_IDS_ENV, configured)
+        if configured is None:  # unset: the state of every fresh deploy
+            monkeypatch.delenv(ADMIN_USER_IDS_ENV, raising=False)
+        else:
+            monkeypatch.setenv(ADMIN_USER_IDS_ENV, configured)
         app = app_with(real_session(db_user_id=ADMIN_ID))
         assert get(app).status_code == 404
         assert app.report_calls == []
@@ -79,6 +82,17 @@ class TestTheGate:
         app = app_with(real_session(db_user_id="other-account"))
         assert get(app, "/admin/analytics?days=abc").status_code == 404
         assert app.report_calls == []
+
+    def test_a_refused_read_is_logged_pseudonymously(self, app_with, monkeypatch, caplog):
+        monkeypatch.setenv("HOV_ANALYTICS_SECRET", "k" * 32)
+        app = app_with(real_session(db_user_id="other-account"))
+        with caplog.at_level("INFO", logger="src.api.routes.admin"):
+            get(app)
+        logged = "\n".join(r.getMessage() for r in caplog.records)
+        from src.api.services.analytics import recorder
+
+        assert "refused" in logged and "other-account" not in logged
+        assert recorder.pid_for("other-account") in logged
 
     def test_no_credentials(self, app_with):
         app = app_with(real_session(db_user_id=ADMIN_ID))
@@ -104,16 +118,29 @@ class TestParameters:
         assert get(app, "/admin/analytics?days=" + bad).status_code == 400
         assert app.report_calls == []
 
-    def test_report_failure_is_a_generic_500(self, app, monkeypatch):
+    def test_report_failure_is_a_generic_500(self, app, monkeypatch, caplog):
         from src.api.routes import admin
 
         async def boom(*_a, **_k):
             raise ValueError("TURSO_DATABASE_URL is not set")
 
         monkeypatch.setattr(admin, "build_report", boom)
-        rv = get(app)
+        with caplog.at_level("ERROR", logger="src.api.routes.admin"):
+            rv = get(app)
         assert rv.status_code == 500
         assert "TURSO" not in rv.get_data(as_text=True)
+        # Logged by type only: the message can carry the database URL.
+        logged = "\n".join(r.getMessage() + (r.exc_text or "") for r in caplog.records)
+        assert "ValueError" in logged and "TURSO" not in logged
+
+    def test_a_served_read_names_the_reader_by_pid_only(self, app, monkeypatch, caplog):
+        from src.api.services.analytics import recorder
+
+        monkeypatch.setenv("HOV_ANALYTICS_SECRET", "k" * 32)
+        with caplog.at_level("INFO", logger="src.api.routes.admin"):
+            get(app)
+        logged = "\n".join(r.getMessage() for r in caplog.records)
+        assert recorder.pid_for(ADMIN_ID) in logged and ADMIN_ID not in logged
 
     def test_response_is_not_cached(self, app):
         assert "no-store" in get(app).headers.get("Cache-Control", "")

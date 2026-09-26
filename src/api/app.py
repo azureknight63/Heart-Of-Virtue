@@ -1042,18 +1042,19 @@ def _register_test_routes(app):
 
 
 def _init_analytics(app):
-    """Turn on player analytics for a production-like app, and diff progress.
+    """Enable the analytics recorder when configured, and diff progress after each request.
 
     ``configure`` leaves the recorder off under TESTING and without a database
     (``src/api/services/analytics.py``), so the test suite and the harnesses
     never write a row. The after-request hook is registered either way and is
     a no-op while the recorder is off.
     """
+    from src.api.db import DATABASE_URL_ENV
     from src.api.services import analytics
 
     if analytics.recorder.configure(
         testing=bool(app.config.get("TESTING")),
-        database_url=os.getenv("TURSO_DATABASE_URL"),
+        database_url=os.getenv(DATABASE_URL_ENV),
     ):
         analytics.recorder.start()
 

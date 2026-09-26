@@ -141,7 +141,7 @@ function PrivacyContent() {
                     <li style={{ marginBottom: spacing.xs }}><strong style={{ color: colors.text.highlight }}>Username</strong> — required to identify your account.</li>
                     <li style={{ marginBottom: spacing.xs }}><strong style={{ color: colors.text.highlight }}>Email address</strong> — required at registration for account recovery. Stored encrypted.</li>
                     <li style={{ marginBottom: spacing.xs }}><strong style={{ color: colors.text.highlight }}>Password hash</strong> — we store only an Argon2id hash. Your actual password is never stored or readable by us.</li>
-                    <li style={{ marginBottom: spacing.xs }}><strong style={{ color: colors.text.highlight }}>Game save data</strong> — character stats, inventory, and story progress stored in our database to keep your game persistent across sessions.</li>
+                    <li style={{ marginBottom: spacing.xs }}><strong style={{ color: colors.text.highlight }}>Game save data</strong> — character stats, inventory, story progress and where you are in the world (map, room and position) stored in our database to keep your game persistent across sessions.</li>
                     <li style={{ marginBottom: spacing.xs }}><strong style={{ color: colors.text.highlight }}>Email opt-in</strong> — if you choose to receive updates or newsletters, we store your preference. You can withdraw it at any time.</li>
                     <li><strong style={{ color: colors.text.highlight }}>Gameplay events</strong> — pseudonymous records of how the game is played (see Analytics below).</li>
                 </ul>
@@ -170,9 +170,11 @@ function PrivacyContent() {
             <Section title="Analytics">
                 To understand how the game is played, we record gameplay events in our own
                 database: signing in or registering, starting a new game, loading and saving,
-                maps and story milestones reached, fights (which enemies, your character level,
-                how the fight ended, how long it took and how much health you had left),
-                conversations with in-game characters (with whom, how many turns and how long,
+                maps and story milestones reached, fights (which enemies, where, your character
+                level, how the fight ended, how many turns and how long it took, and how much
+                health you had left),
+                conversations with in-game characters (with whom, how many turns, how long and
+                how long replies took,
                 not what was said), the type of any feedback you send, and when you are actively
                 playing, so we can measure session length. Each event carries a timestamp, a
                 random ID for that sign-in, and a pseudonymous player ID: a one-way keyed hash of

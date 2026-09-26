@@ -2,14 +2,13 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
-import AdminAnalyticsPage from './AdminAnalyticsPage';
+import AdminAnalyticsPage, { SECTION_IDS } from './AdminAnalyticsPage';
 import useAdminAnalytics from '../hooks/useAdminAnalytics';
 
-vi.mock('../hooks/useAdminAnalytics', () => ({ default: vi.fn() }));
+vi.mock('../hooks/useAdminAnalytics', async (importOriginal) => ({ ...(await importOriginal()), default: vi.fn() }));
 
 // Field names are the ones analytics_report.build_report emits
 // (tests/test_analytics_report.py::TestAdminPageContract pins them against real SQL).
-const SECTION_IDS = ['players', 'daily', 'retention', 'progress', 'combat', 'sessions', 'npc_chat'];
 const REPORT = {
     window_days: 30,
     scope: {
@@ -58,7 +57,7 @@ const REPORT = {
 function hookState(overrides = {}) {
     return {
         report: REPORT,
-        days: 30,
+        days: REPORT.window_days,
         selectDays: vi.fn(),
         isAdmin: true,
         isLoading: false,
@@ -116,6 +115,7 @@ describe('AdminAnalyticsPage', () => {
         renderPage(hookState());
         const table = screen.getByRole('table', { name: /retention/i });
         expect(within(table).getByText('50%')).toBeInTheDocument();
+        expect(within(table).getByText('D1+')).toBeInTheDocument(); // cumulative, not "on day 1"
         expect(within(table).getByText('10 of 20')).toBeInTheDocument();
         expect(within(table).getByText('—')).toBeInTheDocument(); // D30: nobody eligible yet
     });
@@ -223,6 +223,18 @@ describe('AdminAnalyticsPage', () => {
         expect(within(table).getByText('Wall Depression (14, 5)')).toBeInTheDocument();
         // A save from before coordinates were recorded shows the room alone.
         expect(within(table).getByText('Slime Pool')).toBeInTheDocument();
+    });
+
+    it('shows a dash, not "null", for a tile whose room has no name', () => {
+        const stalled = [{ map: 'dark-grotto', room: null, x: 3, y: 4, players: 1 }];
+        renderPage(hookState({ report: { ...REPORT, progress: { ...REPORT.progress, stalled } } }));
+        const table = screen.getByRole('table', { name: /stalled/i });
+        expect(within(table).getByText('— (3, 4)')).toBeInTheDocument();
+    });
+
+    it('treats a sub-list sent as null as empty', () => {
+        renderPage(hookState({ report: { ...REPORT, progress: { ...REPORT.progress, maps: null } } }));
+        expect(screen.getByRole('region', { name: /progress/i })).toHaveTextContent(/no data yet/i);
     });
 
     it('labels the stall threshold from the report', () => {

@@ -49,6 +49,17 @@ def is_admin(session):
     return bool(account) and account in allowed
 
 
+def _reader(session):
+    """Who asked, for the audit log: the analytics pid, never the account id."""
+    account = recorder.account_id(session)
+    if not account:
+        return "no-account"
+    try:
+        return recorder.pid_for(account)
+    except Exception:
+        return "unkeyed"
+
+
 def _window_days():
     """``?days=`` as an int in 1..MAX_WINDOW_DAYS, or None when invalid."""
     raw = request.args.get("days")
@@ -72,6 +83,7 @@ async def analytics_report():
     if error:
         return error
     if not is_admin(session):
+        logger.info("Admin analytics report refused (reader=%s)", _reader(session))
         return jsonify({"success": False, "error": "Not found"}), 404
 
     days = _window_days()
@@ -80,12 +92,15 @@ async def analytics_report():
 
     try:
         report = await build_report(executor_for(db), days=days)
-    except Exception:
-        logger.exception("Analytics report failed")
+    except Exception as exc:
+        # The type only, as the recorder's flush does: a libsql error can
+        # carry the database URL, token included.
+        logger.error("Analytics report failed (%s)", type(exc).__name__)
         return jsonify({"success": False, "error": "Report unavailable"}), 500
 
-    # Who read it, not what: the report is aggregate, the read is privileged.
-    logger.info("Admin analytics report served (days=%d)", days)
+    # Who read it (pseudonymously), not what: the report is aggregate, the
+    # read is privileged.
+    logger.info("Admin analytics report served (reader=%s, days=%d)", _reader(session), days)
     response = jsonify({"success": True, "report": report})
     response.headers["Cache-Control"] = "no-store"
     return response

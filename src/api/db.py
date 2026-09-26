@@ -29,12 +29,16 @@ class DatabaseNotConfigured(ValueError):
     """
 
 
+DATABASE_URL_ENV = "TURSO_DATABASE_URL"
+AUTH_TOKEN_ENV = "TURSO_AUTH_TOKEN"
+
+
 def create_client_from_env():
     """A new libsql client for the configured database. Raises DatabaseNotConfigured."""
-    url = os.getenv("TURSO_DATABASE_URL")
+    url = os.getenv(DATABASE_URL_ENV)
     if not url:
-        raise DatabaseNotConfigured("TURSO_DATABASE_URL is not set")
-    return libsql_client.create_client(url, auth_token=os.getenv("TURSO_AUTH_TOKEN"))
+        raise DatabaseNotConfigured("%s is not set" % DATABASE_URL_ENV)
+    return libsql_client.create_client(url, auth_token=os.getenv(AUTH_TOKEN_ENV))
 
 
 class Database:

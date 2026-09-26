@@ -102,7 +102,7 @@ def resolve_session() -> Tuple[Optional[Any], Optional[Any], Optional[RouteError
         g.hov_session_from_cookie = session_id_from_cookie() is not None
     except RuntimeError:  # outside an app context (direct unit calls)
         pass
-    analytics.bind_request_session(session)
+    analytics.bind_request_session(session)  # also records the activity heartbeat
 
     return session_manager, session, None
 
@@ -140,7 +140,7 @@ def get_session_and_player() -> Tuple[
             (jsonify({"success": False, "error": "Invalid or expired session"}), 401),
         )
 
-    analytics.bind_request_session(session)
+    analytics.bind_request_session(session)  # also records the activity heartbeat
 
     player = session_manager.get_player(session_id)
     if not player:

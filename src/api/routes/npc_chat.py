@@ -337,9 +337,8 @@ def npc_chat_respond():
     )
     # A replay answers from the turn already counted; it cost no provider call.
     if result.get("success") and not result.get("replayed"):
-        analytics.recorder.chat_turn(
-            session, npc_key, latency_ms=int((time.monotonic() - started) * 1000)
-        )
+        latency_ms = int((time.monotonic() - started) * 1000)
+        analytics.recorder.chat_turn(session, npc_key, latency_ms=latency_ms)
         if result.get("conversation_ended"):
             analytics.recorder.chat_ended(session, npc_key)
 

@@ -53,6 +53,7 @@ from src.api.services.analytics import (
     ALLOWED_PROPS,
     CHAT_EVENTS,
     HEARTBEAT_SECONDS,
+    UNKNOWN_LABEL,
     Event,
     Outcome,
     run_with_private_client,
@@ -161,6 +162,7 @@ DAILY_SERIES = (
 
 
 async def _daily(execute, now, since, days):
+    # Whole UTC days, so the first bucket can start up to a day after ``since``.
     first_day = now // DAY - (days - 1)
     counts = {}
     for key, sql, extra in DAILY_SERIES:
@@ -183,9 +185,11 @@ async def _retention(execute, now, since, days):
         "FROM analytics_events GROUP BY pid)" % ", ".join(columns),
         params,
     ))[0]
+    # The columns come in (eligible, returned) pairs, one pair per n.
+    pairs = zip(row[0::2], row[1::2])
     return [
-        {"day": n, "eligible": row[2 * i] or 0, "returned": row[2 * i + 1] or 0}
-        for i, n in enumerate(RETENTION_DAYS)
+        {"day": n, "eligible": eligible or 0, "returned": returned or 0}
+        for n, (eligible, returned) in zip(RETENTION_DAYS, pairs)
     ]
 
 
@@ -234,10 +238,12 @@ async def _combat(execute, now, since, days):
         ("AVG(CASE WHEN %s = ? THEN %s END)" % (outcome, _prop("hp_pct")), [Outcome.VICTORY]),
     ]
     rows = await execute(
-        "SELECT COALESCE(%s, 'unknown') AS enc, %s FROM analytics_events "
-        "WHERE event IN (?, ?) AND ts >= ? GROUP BY enc ORDER BY 2 DESC, enc LIMIT ?"
-        % (_prop("encounter"), ", ".join(sql for sql, _ in columns)),
-        [p for _, ps in columns for p in ps] + [Event.COMBAT_START, Event.COMBAT_END, since, TOP_N],
+        "SELECT COALESCE(%s, ?) AS enc, %s AS starts, %s FROM analytics_events "
+        "WHERE event IN (?, ?) AND ts >= ? GROUP BY enc ORDER BY starts DESC, enc LIMIT ?"
+        % (_prop("encounter"), columns[0][0], ", ".join(sql for sql, _ in columns[1:])),
+        [UNKNOWN_LABEL]
+        + [p for _, ps in columns for p in ps]
+        + [Event.COMBAT_START, Event.COMBAT_END, since, TOP_N],
     )
     return [
         {
@@ -292,7 +298,7 @@ def _chat_columns():
     Duration averages non-abandoned ends only (see the module docstring).
     """
     columns = (
-        "%s, %s, COUNT(DISTINCT pid), "
+        "%s AS conversations, %s, COUNT(DISTINCT pid), "
         "AVG(CASE WHEN event = ? AND COALESCE(%s, 0) = 0 THEN %s END)"
         % (_count("event = ?"), _count("event = ?"), _prop("abandoned"), _prop("duration_s"))
     )
@@ -305,7 +311,7 @@ async def _npc_chat(execute, now, since, days):
     where_params = [*CHAT_EVENTS, since]
     rows = await execute(
         "SELECT %s AS npc, %s FROM analytics_events WHERE %s "
-        "GROUP BY npc ORDER BY 2 DESC, npc LIMIT ?" % (_prop("npc"), columns, in_chat),
+        "GROUP BY npc ORDER BY conversations DESC, npc LIMIT ?" % (_prop("npc"), columns, in_chat),
         column_params + where_params + [TOP_N],
     )
     totals = (await execute(
@@ -388,14 +394,22 @@ def executor_for(client):
     return execute
 
 
+# Bounds a whole off-request read: the digest builds its report on the
+# scheduler thread, and an unreachable database must not park it (and the
+# provider-usage alerts behind it) indefinitely. A report is about ten queries.
+READ_TIMEOUT_SECONDS = 60
+
+
 def fetch_report(days=DEFAULT_WINDOW_DAYS):
     """Build a report synchronously with a private client (CLI and digest threads)."""
-    return run_with_private_client(lambda client: build_report(executor_for(client), days=days))
+    return run_with_private_client(
+        lambda client: build_report(executor_for(client), days=days), READ_TIMEOUT_SECONDS
+    )
 
 
 def run_query(sql, params=None):
     """One query, synchronously, with a private client (for tools)."""
-    return run_with_private_client(lambda client: executor_for(client)(sql, params))
+    return run_with_private_client(lambda client: executor_for(client)(sql, params), READ_TIMEOUT_SECONDS)
 
 
 # -- formatting -------------------------------------------------------------
@@ -414,14 +428,29 @@ def _or_dash(value, template="%s"):
     return "-" if value is None else template % value
 
 
+def retention_label(day):
+    """``D7+``: the share that came back 7 or MORE days after their first
+    visit, not the classic "active on day 7" (see ``_retention``)."""
+    return "D%d+" % day
+
+
 def room_label(stall):
     """``Cave Entrance (14, 5)``, or just the room for a save without a tile."""
+    room = _or_dash(stall.get("room"))
     if stall.get("x") is None or stall.get("y") is None:
-        return stall["room"]
-    return "%s (%d, %d)" % (stall["room"], stall["x"], stall["y"])
+        return room
+    return "%s (%d, %d)" % (room, stall["x"], stall["y"])
 
 
-_SCOPE_NOTES = {ROLLING: "rolling windows", ALL_TIME: "all time"}
+def _window_label(days):
+    return "24h" if days == 1 else "%dd" % days
+
+
+# The page spells the rolling note the same way (AdminAnalyticsPage.jsx scopeLabel).
+_SCOPE_NOTES = {
+    ROLLING: "rolling " + " / ".join(_window_label(d) for _, d in ACTIVE_WINDOWS),
+    ALL_TIME: "all time",
+}
 
 
 def _scope_note(report, key):
@@ -456,7 +485,7 @@ def _text_daily(daily):
 
 def _text_retention(retention):
     return [
-        "D%-3d %s of %d returned" % (row["day"], _share(row["returned"], row["eligible"]), row["eligible"])
+        "%-5s %s of %d returned" % (retention_label(row["day"]), _share(row["returned"], row["eligible"]), row["eligible"])
         for row in retention
     ]
 
@@ -478,12 +507,12 @@ def _text_progress(progress):
 
 
 def _text_combat(combat):
-    row_format = "%-{w}s %6s %5s %5s %5s %5s %6s %7s".format(w=ENCOUNTER_COL)
-    lines = [row_format % ("encounter", "fights", "won", "died", "fled", "quit", "avg s", "win hp%")]
+    row_format = "%-*s %6s %5s %5s %5s %9s %6s %7s"
+    lines = [row_format % (ENCOUNTER_COL, "encounter", "fights", "won", "died", "fled", "abandoned", "avg s", "win hp%")]
     lines += [
         row_format % (
-            row["encounter"][:ENCOUNTER_COL], row["starts"], row["victories"], row["defeats"],
-            row["flees"], row["abandoned"], _or_dash(row["avg_duration_s"]),
+            ENCOUNTER_COL, row["encounter"][:ENCOUNTER_COL], row["starts"], row["victories"],
+            row["defeats"], row["flees"], row["abandoned"], _or_dash(row["avg_duration_s"]),
             _or_dash(row["avg_hp_pct_on_win"]),
         )
         for row in combat
@@ -542,18 +571,24 @@ def format_text(report):
     return "\n".join(lines)
 
 
+# The new-accounts window the digest's headline quotes.
+_DIGEST_NEW_ACCOUNTS_DAYS = 7
+
+
 def _digest_players(players, note):
-    active = players["active"]
-    return (
-        "**%d** accounts (+%d in 7d), %d have played\nActive: %d in 24h · %d in 7d · %d in 30d"
-        % (players["total_accounts"], players["new_accounts"]["7d"], players["started_playing"],
-           active["dau"], active["wau"], active["mau"])
+    new_key = dict((days, key) for key, days in ACCOUNT_WINDOWS)[_DIGEST_NEW_ACCOUNTS_DAYS]
+    active = " · ".join(
+        "%d in %s" % (players["active"][key], _window_label(days)) for key, days in ACTIVE_WINDOWS
+    )
+    return "**%d** accounts (+%d in %s), %d have played\nActive: %s" % (
+        players["total_accounts"], players["new_accounts"][new_key],
+        _window_label(_DIGEST_NEW_ACCOUNTS_DAYS), players["started_playing"], active,
     )
 
 
 def _digest_retention(retention, note):
     return "Retention (%s): %s" % (note, " · ".join(
-        "D%d %s" % (row["day"], _share(row["returned"], row["eligible"])) for row in retention
+        "%s %s" % (retention_label(row["day"]), _share(row["returned"], row["eligible"])) for row in retention
     ))
 
 
@@ -602,6 +637,8 @@ def format_digest(report, limit):
     half, which would split a ``**bold**`` pair. Only a single line longer
     than ``limit`` on its own is cut.
     """
+    if all(section_unavailable(report.get(key)) for key, _ in DIGEST_SECTIONS):
+        return "Analytics unavailable."  # an outage, not an empty game
     parts = []
     for key, render in DIGEST_SECTIONS:
         section = report.get(key)
