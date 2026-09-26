@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import threading
@@ -21,11 +22,29 @@ logger = logging.getLogger(__name__)
 
 
 class Database:
+    """The process's one Turso client, running on ONE event loop of its own.
+
+    Every request's async view runs through ``asgiref.async_to_sync``, which
+    gives it its own event loop, and an aiohttp-backed libsql client is bound
+    to the loop it was built on. This used to keep one client and replace it
+    whenever the calling loop differed -- closing it under whichever request
+    was still awaiting a query on it. On production two concurrent calls were
+    enough for one to fail (2026-09-26: 2 of 2 under eventlet lost one; 15 of
+    16 on threads, Python 3.12 and 3.13 alike), and every replaced session was
+    dropped unclosed (#728).
+
+    Now the client lives on a dedicated loop in a daemon thread, created on
+    first use, and every query is submitted to that loop. Callers keep the
+    ``async`` API: they await a future that the database loop resolves, so any
+    number of request loops share one client and one connection pool.
+    """
+
     _instance = None
+    # Instance attributes once set; these are the unset defaults. Guarded by
+    # _client_lock: the check-then-create must not race (issue #406).
     _client = None
-    # Serializes the check-then-create in get_client so concurrent callers
-    # (e.g. async routes running on different event loops via asgiref) can't
-    # each construct a client and leak the loser of the race (issue #406).
+    _loop = None
+    _loop_thread = None
     _client_lock = threading.Lock()
 
     def __new__(cls):
@@ -33,78 +52,57 @@ class Database:
             cls._instance = super(Database, cls).__new__(cls)
         return cls._instance
 
-    @staticmethod
-    def _close_client_quietly(client) -> None:
-        """Best-effort close of a superseded client; never raises.
-
-        The client we're replacing is usually stale precisely because its
-        event loop is gone, so a clean ``await close()`` is often impossible.
-        We only schedule a close when the client's own loop is still running
-        (the concurrent-create case), otherwise the loop has already torn down
-        its transports and there's nothing left to close.
-        """
-        try:
-            import asyncio
-
-            session = getattr(client, "_session", None)
-            sess_loop = getattr(session, "loop", None) if session else None
-            if sess_loop is not None and not sess_loop.is_closed() and sess_loop.is_running():
-                asyncio.run_coroutine_threadsafe(client.close(), sess_loop)
-        except Exception as exc:  # pragma: no cover - defensive cleanup
-            logger.debug("Failed to close superseded db client: %s", exc)
+    def _db_loop(self) -> asyncio.AbstractEventLoop:
+        """The database loop, started on first use. Call with _client_lock held."""
+        if self._loop is None or self._loop.is_closed() or not self._loop_thread.is_alive():
+            loop = asyncio.new_event_loop()
+            thread = threading.Thread(target=loop.run_forever, name="hov-db-loop", daemon=True)
+            thread.start()
+            self._loop, self._loop_thread = loop, thread
+            self._client = None  # a client is bound to the loop it was built on
+        return self._loop
 
     def get_client(self):
-        import asyncio
+        """The shared client, built on first use.
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
+        Raises ValueError("TURSO_DATABASE_URL is not set") when unconfigured:
+        routes/saves.py and services/auth_service.py catch exactly that.
+        """
+        return self._client_and_loop()[0]
 
-        superseded = None
+    def _client_and_loop(self):
         with self._client_lock:
-            # If client exists, check if it's usable
-            if self._client is not None:
-                # We need to verify if the client's loop is still active and matches
-                # The http client usually has a _session.loop
-                session = getattr(self._client, "_session", None)
-                if session:
-                    if (
-                        session.closed
-                        or (loop and session.loop != loop)
-                        or session.loop.is_closed()
-                    ):
-                        # Hand the stale client off for cleanup instead of just
-                        # dropping the reference (which leaks its aiohttp session).
-                        superseded = self._client
-                        self._client = None
-
+            loop = self._db_loop()
             if self._client is None:
                 url = os.getenv("TURSO_DATABASE_URL")
                 auth_token = os.getenv("TURSO_AUTH_TOKEN")
                 if not url:
                     raise ValueError("TURSO_DATABASE_URL is not set")
-                self._client = libsql_client.create_client(url, auth_token=auth_token)
-            client = self._client
 
-        # Close the superseded client outside the lock (avoids holding the lock
-        # across an await-scheduling call).
-        if superseded is not None:
-            self._close_client_quietly(superseded)
-        return client
+                async def build():
+                    # Built on the database loop, so its session binds there.
+                    return libsql_client.create_client(url, auth_token=auth_token)
+
+                self._client = asyncio.run_coroutine_threadsafe(build(), loop).result()
+            return self._client, loop
+
+    async def _on_db_loop(self, call):
+        client, loop = self._client_and_loop()
+        return await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(call(client), loop))
 
     async def execute(self, sql, params=None):
-        client = self.get_client()
-        return await client.execute(sql, params)
+        return await self._on_db_loop(lambda client: client.execute(sql, params))
 
     async def batch(self, statements):
-        client = self.get_client()
-        return await client.batch(statements)
+        return await self._on_db_loop(lambda client: client.batch(statements))
 
     async def close(self):
-        if self._client:
-            await self._client.close()
+        """Close the client; the next query reconnects. The loop thread stays."""
+        with self._client_lock:
+            client, loop = self._client, self._loop
             self._client = None
+        if client is not None and loop is not None and not loop.is_closed():
+            await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(client.close(), loop))
 
 
 db = Database()
