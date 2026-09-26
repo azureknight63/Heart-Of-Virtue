@@ -51,8 +51,15 @@ def _by_name(ctx):
 
 
 def _forfeits(move, beats):
+    """Whether ``move``'s published tie-up spends the Dodge window.
+
+    Strict about the field: a payload without it would make every premise
+    built on this read "does not forfeit", and the sweep below would pass
+    for the wrong reason.
+    """
     ready = move.get("beats_until_ready")
-    return ready is not None and beats - ready < _DEFENSIVE_WINDOW_BEATS
+    assert isinstance(ready, int), f"{move['name']} carries no beats_until_ready"
+    return beats - ready < _DEFENSIVE_WINDOW_BEATS
 
 
 def _surge_fight(beats, allies=(), target=None):
