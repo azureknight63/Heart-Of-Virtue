@@ -492,3 +492,65 @@ class TestJsonlDirRetention:
         configure_logging(env={"LOG_JSONL_DIR": str(tmp_path)}, logger=logger)
         for h in logger.handlers:
             h.close()
+
+
+class TestEveryDestinationIsRedacted:
+    """#698 scrub: the filter scrubbed record fields, but each formatter
+    re-derived text the filter never saw. ``JsonlFormatter`` re-rendered the
+    raw traceback from ``exc_info`` and wrote ``str(exc_value)`` and
+    ``record.data`` unscrubbed, so a credential inside an exception or an
+    event payload reached the JSONL file with the filter installed on it."""
+
+    SECRET = "sk-or-v1-" + "a1b2c3d4e5f6" * 3
+    WEBHOOK = "https://discord.com/api/webhooks/123456/" + "Tok3n" * 6
+
+    def _emit_everywhere(self, tmp_path):
+        logger = _fresh_logger()
+        logger.handlers = []
+        jsonl_dir = tmp_path / "backend"
+        configure_logging(
+            env={
+                "LOG_LEVEL": "INFO",
+                "LOG_FILE": "app.log",
+                "LOG_JSONL_DIR": str(jsonl_dir),
+            },
+            logger=logger,
+            log_dir=tmp_path,
+        )
+        try:
+            try:
+                raise RuntimeError("provider refused key=%s" % self.SECRET)
+            except RuntimeError:
+                logger.exception("llm call failed")
+            logger.warning(
+                "payload event",
+                extra={"data": {"key": self.SECRET, "hook": self.WEBHOOK}},
+            )
+        finally:
+            for handler in logger.handlers:
+                handler.close()
+        jsonl = "".join(p.read_text(encoding="utf-8") for p in jsonl_dir.glob("*.jsonl"))
+        plain = (tmp_path / "app.log").read_text(encoding="utf-8")
+        return jsonl, plain
+
+    def test_no_secret_reaches_any_destination(self, tmp_path, capfd):
+        jsonl, plain = self._emit_everywhere(tmp_path)
+        console = capfd.readouterr().err
+        destinations = {"jsonl": jsonl, "file": plain, "console": console}
+        # Non-vacuity: every destination received both records.
+        for name, text in destinations.items():
+            assert "llm call failed" in text, name
+            assert "RuntimeError" in text, name
+        for name, text in destinations.items():
+            assert self.SECRET not in text, name
+            assert "Tok3nTok3n" not in text, name
+            assert "[REDACTED]" in text, name
+
+    def test_jsonl_lines_stay_valid_json_after_redaction(self, tmp_path):
+        jsonl, _ = self._emit_everywhere(tmp_path)
+        lines = [line for line in jsonl.splitlines() if line.strip()]
+        assert len(lines) == 2
+        envelopes = [json.loads(line) for line in lines]
+        payload = envelopes[1]["data"]
+        assert payload["key"] == "[REDACTED]"
+        assert payload["hook"] == "[REDACTED]"

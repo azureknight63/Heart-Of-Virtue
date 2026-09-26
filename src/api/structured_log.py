@@ -243,8 +243,49 @@ def to_compact_json(obj):
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
+def _redact_values(value):
+    r"""Scrub every string inside an envelope, recursively, before it is
+    serialized.
+
+    The filter scrubs record *fields*; this scrubs what a formatter derives
+    from them afterwards (``str(exc_value)``, a freshly rendered traceback,
+    the ``record.data`` payload). It runs on values rather than on the
+    finished JSON line because ``_SECRET_RE``'s webhook branch ends in
+    ``\S+``, which on a compact line would swallow the closing quote and
+    everything after it. Non-JSON values are stringified first, which is what
+    ``to_compact_json``'s ``default=str`` would have done with them anyway.
+    """
+    if isinstance(value, str):
+        return _SECRET_RE.sub("[REDACTED]", value)
+    if isinstance(value, dict):
+        return {key: _redact_values(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_redact_values(item) for item in value]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return _SECRET_RE.sub("[REDACTED]", str(value))
+
+
+class _RedactingFormatter(logging.Formatter):
+    """A plain-text formatter whose finished line is scrubbed once more.
+
+    Belt and braces behind the filter: anything a format string pulls from
+    the record that the filter did not rewrite still passes ``_SECRET_RE``.
+    Safe on plain text, unlike on JSON (see :func:`_redact_values`).
+    """
+
+    def format(self, record):
+        return _SECRET_RE.sub("[REDACTED]", super().format(record))
+
+
 class JsonlFormatter(logging.Formatter):
-    """Render a LogRecord as one single-line JSON envelope."""
+    """Render a LogRecord as one single-line JSON envelope.
+
+    Every string value is scrubbed by :func:`_redact_values` on the way out:
+    the envelope's ``error``, ``trace`` and ``data`` are derived here, after
+    :class:`_RedactSecretsFilter` has run, so the filter alone cannot cover
+    them.
+    """
 
     def format(self, record):
         env = {
@@ -267,7 +308,7 @@ class JsonlFormatter(logging.Formatter):
             data["trace"] = self.formatException(record.exc_info)
         if data:
             env["data"] = data
-        return to_compact_json(env)
+        return to_compact_json(_redact_values(env))
 
 
 class DateStampedJsonlHandler(logging.Handler):
@@ -347,7 +388,7 @@ def configure_logging(env=None, logger=None, log_dir=None):
             logger.removeHandler(handler)
             handler.close()
 
-    plain = logging.Formatter(_PLAIN_FORMAT)
+    plain = _RedactingFormatter(_PLAIN_FORMAT)
     redactor = _RedactSecretsFilter()
 
     def _install(handler, handler_level, formatter=None):
