@@ -6467,26 +6467,17 @@ class GameService:
     def _get_shop_state_locked(self, player: Any, npc_id: str) -> Dict[str, Any]:
         """``get_shop_state``'s body, run under the caller's :func:`_player_mutation_lock`."""
         from src.api.serializers.shop_serializer import ShopSerializer
+        from src.npc._shop import MerchantShopMixin
 
         merchant = self._find_merchant(player, npc_id)
         if merchant is None:
             return {"success": False, "error": "Merchant not found at this location"}
 
-        if not hasattr(merchant, "buy_modifier"):
-            merchant.initialize_shop()
-
-        # Stock the merchant on first API access — update_goods() is normally
-        # triggered by game_tick events (every 1000 ticks) but the API skips
-        # the terminal game loop entirely. Deliberately a by-hand copy of
-        # MerchantShopMixin.stock_if_empty (src/npc/_shop.py) so Mock merchants
-        # in the tests still work; keep the two in step.
-        non_gold = [
-            item
-            for item in getattr(merchant, "inventory", [])
-            if getattr(item, "name", None) != "Gold"
-        ]
-        if not non_gold and hasattr(merchant, "update_goods"):
-            merchant.update_goods()
+        # Initialize and stock the merchant on first API access, by the same
+        # check the world build uses -- update_goods() is otherwise driven by
+        # the 1000-tick game loop, which the API never runs. Called unbound so
+        # duck-typed merchants get the engine's check rather than their own.
+        MerchantShopMixin.stock_if_empty(merchant)
 
         # Transfer any merchandise items the player is carrying to the merchant's
         # stock (silently for the API — no terminal prints or sleeps). Capture the

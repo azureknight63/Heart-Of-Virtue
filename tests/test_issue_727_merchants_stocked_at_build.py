@@ -134,3 +134,22 @@ def test_iter_merchants_skips_non_tile_entries_and_non_merchants():
     merchant = Merchant()
     maps = [{"name": "x", (0, 0): Tile([object(), merchant]), (1, 0): None}, "junk"]
     assert list(iter_merchants(maps)) == [merchant]
+
+
+def test_stock_if_empty_called_unbound_uses_the_mixins_checks():
+    """GameService calls it unbound on duck-typed merchants: the mixin's own
+    Gold-by-type check decides, and a merchant with no ``update_goods`` is left
+    alone rather than raising."""
+    from types import SimpleNamespace
+
+    from src.items import Gold
+    from src.npc._shop import MerchantShopMixin
+
+    restocks = []
+    empty = SimpleNamespace(buy_modifier=1.0, inventory=[Gold(5)],
+                            update_goods=lambda: restocks.append(1))
+    assert MerchantShopMixin.stock_if_empty(empty) is True
+    assert restocks == [1]
+
+    mute = SimpleNamespace(buy_modifier=1.0, inventory=[])
+    assert MerchantShopMixin.stock_if_empty(mute) is False
