@@ -91,8 +91,6 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         (crafted, or corrupt) gets a fresh empty one instead.
         """
         spawned = self.__dict__.get("_unique_items_spawned")
-        if spawned is None:
-            spawned = self.__dict__.setdefault("_unique_items_spawned", set())
         if not isinstance(spawned, set):
             spawned = self.__dict__["_unique_items_spawned"] = set()
         return spawned
