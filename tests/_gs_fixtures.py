@@ -39,6 +39,8 @@ __all__ = [
     "get_player_gold",
     "mock_player",
     "GRID_3X3",
+    "SCENE_TEXT",
+    "AfterTheFightScene",
 ]
 
 #: Coordinates of a 3x3 map centred on the origin. ``_calculate_exits`` derives
@@ -220,3 +222,37 @@ def mock_player(**overrides):
     for key, value in overrides.items():
         setattr(player, key, value)
     return player
+
+
+#: What :class:`AfterTheFightScene` narrates -- ``AfterDefeatingKingSlime``'s
+#: opening words (``src/story/ch02.py``), shortened to one sentence.
+SCENE_TEXT = "The churning stilled."
+
+
+class AfterTheFightScene:
+    """A post-combat tile event shaped like ``AfterDefeatingKingSlime``: it
+    needs no input, narrates once, completes and leaves the tile -- so it is
+    never in ``pending_events`` and ``events_triggered`` is its only carrier
+    (issue #683). It stays silent while Jean is still in combat, as the real
+    scene's condition does.
+
+    Shared by the wire-contract and victory-loot suites (issue #706).
+    """
+
+    name = "AfterTheFightScene"
+    TEXT = SCENE_TEXT
+
+    def __init__(self, tile):
+        self.tile = tile
+        self.player = None
+        self.needs_input = False
+        self.completed = False
+
+    def check_conditions(self):
+        from src.narration import narrate
+
+        if self.player.in_combat or self.completed:
+            return
+        narrate(self.TEXT)
+        self.completed = True
+        self.tile.events_here.remove(self)
