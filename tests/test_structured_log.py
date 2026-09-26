@@ -609,3 +609,44 @@ class TestEveryDestinationIsRedacted:
         payload = envelopes[1]["data"]
         assert payload["key"] == "[REDACTED]"
         assert payload["hook"] == "[REDACTED]"
+
+
+class TestRedactSecretsFilterEdges:
+    SECRET = "sk-or-v1-" + "f0e1d2c3b4a5" * 3
+
+    @staticmethod
+    def _record(msg, args):
+        return logging.LogRecord("src.probe", logging.ERROR, __file__, 1, msg, args, None)
+
+    def test_a_record_whose_args_do_not_format_is_still_scrubbed(self):
+        """``getMessage()`` raising (bad %-args) skipped the scrub entirely,
+        and ``Handler.handleError`` then prints the raw ``msg`` and ``args``
+        to stderr."""
+        from src.api.structured_log import _RedactSecretsFilter
+
+        record = self._record(
+            "key=%s token=%s tail=" + self.SECRET, (self.SECRET,)
+        )
+        with pytest.raises(TypeError):
+            record.getMessage()  # the precondition: formatting really fails
+
+        assert _RedactSecretsFilter().filter(record) is True
+        assert self.SECRET not in str(record.msg)
+        assert self.SECRET not in repr(record.args)
+        assert "[REDACTED]" in str(record.msg)
+        assert "[REDACTED]" in repr(record.args)
+
+    def test_a_second_pass_over_the_same_record_is_a_no_op(self):
+        """One record passes the same filter once per handler (three with
+        LOG_FILE and LOG_JSONL_DIR set); the first pass already scrubbed it."""
+        from src.api.structured_log import _RedactSecretsFilter
+
+        redactor = _RedactSecretsFilter()
+        record = self._record("key=%s", (self.SECRET,))
+        redactor.filter(record)
+        assert self.SECRET not in record.getMessage()
+
+        sentinel = "unscanned sk-" + "z" * 16
+        record.msg = sentinel
+        assert redactor.filter(record) is True
+        assert record.msg == sentinel, "the second pass re-ran the scrub"

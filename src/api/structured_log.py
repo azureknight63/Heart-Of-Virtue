@@ -97,6 +97,9 @@ _SECRET_RE = re.compile(
 # would call, so the text this filter rewrites is the text they will emit.
 _EXC_FORMATTER = logging.Formatter()
 
+# Stamped on a LogRecord once _RedactSecretsFilter has scrubbed it.
+_REDACTED_MARKER = "_hov_redacted"
+
 
 class _RedactSecretsFilter(logging.Filter):
     """Replace anything credential-shaped with ``[REDACTED]``.
@@ -133,18 +136,30 @@ class _RedactSecretsFilter(logging.Filter):
     caplog's, and :class:`JsonlFormatter`.
 
     Mutating the record makes it scrubbed for every handler that formats it
-    afterwards as well — the safe direction to be wrong in.
+    afterwards as well — the safe direction to be wrong in — which is why the
+    record is stamped (``_REDACTED_MARKER``) after its first pass and later
+    handlers' filters skip it.
     """
 
     def filter(self, record):
+        # One record passes this filter once per handler; after the first pass
+        # it is already scrubbed. Stamped only once the scrub has finished.
+        if getattr(record, _REDACTED_MARKER, False):
+            return True
         try:
             message = record.getMessage()
-        except Exception:  # pragma: no cover - defensive; bad %-format args
+        except Exception:
+            # Bad %-format args. ``Handler.handleError`` prints the raw msg and
+            # args to stderr for exactly this record, so scrub both as text.
+            record.msg = _SECRET_RE.sub("[REDACTED]", str(record.msg))
+            args = record.args if isinstance(record.args, tuple) else (record.args,)
+            record.args = tuple(_SECRET_RE.sub("[REDACTED]", repr(a)) for a in args)
             message = None
         if message is not None and _SECRET_RE.search(message):
             record.msg = _SECRET_RE.sub("[REDACTED]", message)
             record.args = ()
         self._redact_traceback(record)
+        setattr(record, _REDACTED_MARKER, True)
         return True
 
     @staticmethod
