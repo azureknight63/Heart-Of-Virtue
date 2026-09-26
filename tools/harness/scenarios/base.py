@@ -5,80 +5,13 @@ from abc import ABC, abstractmethod
 from typing import Any, List, NamedTuple, Optional, Tuple
 
 from ..client import GameClient
+from ..move_picker import pick_move_body
 from ..reporter import BugReport, BugSeverity, BugCategory
 
 #: The combat-testing arena's map name (``config_combat_testing.ini`` and the
 #: arena acceptance configs start Jean on it). Off this map the arena routes
 #: and rosters name nothing.
 ARENA_MAP = "combat-testing-arena"
-
-
-def pick_move_body(battle: dict) -> Optional[dict]:
-    """The ``/api/combat/move`` request body for Jean's current prompt, or None
-    when nothing is usable.
-
-    ``available_options`` changes shape with ``input_type`` (see
-    ``combat_adapter.py``'s ``_handle_*_selection``):
-
-    - ``"move_selection"``      -> list[dict] (the normal move menu)
-    - ``"target_selection"``    -> list[dict] (viable targets)
-    - ``"direction_selection"`` -> list[str]  (e.g. ``["north", ...]``)
-    - ``"number_input"``        -> dict with ``"min"``/``"max"``/``"default"``
-
-    For the move menu the priority is: the first available Offensive move with
-    a viable target, else Advance, else Wait (each with its first viable
-    target, if any). Non-dict menu entries are skipped here; a caller that
-    treats them as a contract violation checks for them itself.
-
-    The one move picker the harness scenarios and the ``tests/api`` fight
-    drivers share (issue #706).
-    """
-    options = battle.get("available_options", [])
-    input_type = battle.get("input_type", "move_selection")
-
-    # Multi-step prompts: a previously chosen move may be awaiting a number
-    # (Wait duration), a direction, or a target before it executes.
-    if input_type == "number_input":
-        default = options.get("default", 5) if isinstance(options, dict) else 5
-        return {"move_type": "number", "move_id": str(default)}
-    if input_type == "direction_selection":
-        direction = options[0] if isinstance(options, list) and options else "north"
-        return {"move_type": "direction", "direction": direction}
-    if input_type == "target_selection":
-        targets = [o for o in options if isinstance(o, dict) and o.get("id")]
-        if not targets:
-            return None
-        return {"move_type": "target", "target_id": targets[0]["id"]}
-
-    move_index = None
-    target_id = None
-    advance_opt = None
-    wait_opt = None
-    for opt in options:
-        if not isinstance(opt, dict) or not opt.get("available"):
-            continue
-        if opt.get("category") == "Offensive" and opt.get("viable_targets"):
-            move_index = opt.get("index")
-            target_id = opt["viable_targets"][0]["id"]
-            break
-        if opt.get("name") == "Advance" and advance_opt is None:
-            advance_opt = opt
-        if opt.get("name") == "Wait" and wait_opt is None:
-            wait_opt = opt
-
-    if move_index is None:
-        chosen = advance_opt or wait_opt
-        if chosen is None:
-            return None
-        move_index = chosen.get("index")
-        targets = chosen.get("viable_targets", [])
-        if targets:
-            target_id = targets[0]["id"]
-
-    body: dict = {"move_type": "move", "move_id": str(move_index)}
-    if target_id:
-        body["target_id"] = target_id
-    return body
 
 
 class LivePlayerTile(NamedTuple):

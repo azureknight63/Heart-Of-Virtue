@@ -8,7 +8,8 @@ caller already holds the Flask test ``client`` and its session id.
 import json
 
 
-def _auth(session_id):
+def auth_headers(session_id):
+    """The Bearer header that authenticates a request as ``session_id``."""
     return {"Authorization": f"Bearer {session_id}"}
 
 
@@ -18,10 +19,10 @@ def post_json(client, url, payload, session_id):
         url,
         data=json.dumps(payload),
         content_type="application/json",
-        headers=_auth(session_id),
+        headers=auth_headers(session_id),
     )
 
 
 def get_json(client, url, session_id):
     """GET ``url`` as the session ``session_id``."""
-    return client.get(url, headers=_auth(session_id))
+    return client.get(url, headers=auth_headers(session_id))

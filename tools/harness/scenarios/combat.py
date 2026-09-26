@@ -2,7 +2,8 @@
 
 from typing import List, Tuple
 
-from .base import ARENA_MAP, Scenario, pick_move_body
+from ..move_picker import SUB_STAGE_INPUT_TYPES, pick_move_body
+from .base import ARENA_MAP, Scenario
 from ..client import GameClient
 from ..reporter import BugReport, BugSeverity, BugCategory
 
@@ -402,7 +403,7 @@ class CombatScenario(Scenario):
     def _execute_best_move(self, client: GameClient, round_num: int) -> Tuple[List[BugReport], bool]:
         """Pick and execute the best available move for Jean's turn.
 
-        The choice itself is ``base.pick_move_body`` (the shape of
+        The choice itself is ``move_picker.pick_move_body`` (the shape of
         ``available_options`` per ``input_type`` and the offensive -> Advance
         -> Wait priority are documented there). This wrapper adds the one check
         the shared picker leaves to its callers: a move menu carrying non-dict
@@ -421,7 +422,7 @@ class CombatScenario(Scenario):
         # direction/number strings) -- a real API contract violation. Report it
         # instead of silently dropping it, or the harness loses the ability to
         # catch this class of bug entirely.
-        if input_type not in ("direction_selection", "number_input", "target_selection"):
+        if input_type not in SUB_STAGE_INPUT_TYPES:
             if any(not isinstance(o, dict) for o in options):
                 bugs.append(self._bug(
                     title=f"available_options contains non-dict entries for input_type={input_type!r}",
@@ -429,7 +430,7 @@ class CombatScenario(Scenario):
                     category=BugCategory.WRONG_RESPONSE,
                     endpoint="/api/combat/status",
                     method="GET",
-                    expected="available_options is list[dict] when input_type is move_selection/target_selection",
+                    expected="available_options is list[dict] when input_type is move_selection",
                     actual=f"options={options!r}",
                 ))
 

@@ -72,6 +72,7 @@ def gate_placement():
 
 
 def gate_placement_props():
+    """The authored Eastern Gate's ``props`` dict, from a private copy."""
     return class_ref(gate_placement()).props
 
 

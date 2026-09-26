@@ -250,8 +250,9 @@ _SHAPES = {
 }
 
 
-def _persona(name):
-    """``<name>.json`` from the chat character directory, parsed."""
+def _chat_json(name):
+    """``<name>.json`` from the chat character directory, parsed -- a persona
+    or ``world_facts``."""
     return json.loads((_HUMAN_NPC_DIR / f"{name}.json").read_text(encoding="utf-8"))
 
 
@@ -284,10 +285,10 @@ class TestCharacterConfigsSatisfyTheLoader:
         the speaker's own name), so a persona missing from the list is scrubbed
         out of every OTHER NPC's line -- Votha Krr's "find Jambo, the trader"
         would lose its subject."""
-        facts = _persona("world_facts")
+        facts = _chat_json("world_facts")
         allowed = set(facts["allowed_proper_nouns"])
         names = {
-            _persona(path.stem)["character_name"]
+            _chat_json(path.stem)["character_name"]
             for path in _PERSONAS
         }
         assert names - allowed == set()
@@ -327,13 +328,13 @@ class TestCharacterConfigsSatisfyTheLoader:
 
 
 def _names_the_model_is_given():
-    facts = _persona("world_facts")
+    facts = _chat_json("world_facts")
     names = []
     for place in facts.get("geography", []):
         names.append(place.split(" (")[0])  # drop the parenthetical gloss
     for npc in facts.get("known_npcs", []):
         names.append(npc.split(" (")[0])
-    jambo = _persona("jambo")
+    jambo = _chat_json("jambo")
     names.append(jambo["role"])
     return names
 
@@ -401,7 +402,7 @@ _CHILD_AGE = re.compile(r"\byears old\b", re.IGNORECASE)
 def _child_personas():
     return [
         p.stem for p in _PERSONAS
-        if _CHILD_AGE.search(_persona(p.stem).get("system_prompt_snippet", ""))
+        if _CHILD_AGE.search(_chat_json(p.stem).get("system_prompt_snippet", ""))
     ]
 
 
@@ -412,7 +413,7 @@ def test_liss_is_in_the_child_population():
 @pytest.mark.parametrize("name", _child_personas())
 def test_a_child_knows_jean_is_a_grown_man_and_never_calls_anyone_child(name):
     """A5: Liss, about nine, answered "They can be both, child." (#717)."""
-    snippet = _persona(name)["system_prompt_snippet"]
+    snippet = _chat_json(name)["system_prompt_snippet"]
     assert "Jean is a grown man" in snippet
     assert re.search(r"never call anyone ['\"]child['\"]", snippet, re.IGNORECASE)
 
@@ -421,7 +422,7 @@ _GUIDE_ROLE = re.compile(r"\b(?:ferry|guide)\b", re.IGNORECASE)
 
 
 def _guide_personas():
-    return [p.stem for p in _PERSONAS if _GUIDE_ROLE.search(_persona(p.stem).get("role", ""))]
+    return [p.stem for p in _PERSONAS if _GUIDE_ROLE.search(_chat_json(p.stem).get("role", ""))]
 
 
 def test_mara_is_in_the_guide_population():
@@ -432,12 +433,12 @@ def test_mara_is_in_the_guide_population():
 def test_a_guide_gives_no_routes_distances_or_travel_times(name):
     """O1: Mara gave "two days' drift downstream, about three leagues" --
     a route, a distance and a time, none of them canon (#717)."""
-    snippet = _persona(name)["system_prompt_snippet"]
+    snippet = _chat_json(name)["system_prompt_snippet"]
     assert re.search(r"no routes, distances or travel times", snippet, re.IGNORECASE)
 
 
 def test_jambo_is_told_to_trust_the_where_line_not_to_guess():
-    snippet = _persona("jambo")["system_prompt_snippet"]
+    snippet = _chat_json("jambo")["system_prompt_snippet"]
     assert "not told which tent" not in snippet
     from ai.llm_client import NPC_LOCATION_BLOCK_NAME
 
