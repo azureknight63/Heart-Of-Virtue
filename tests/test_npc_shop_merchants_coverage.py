@@ -150,13 +150,11 @@ def test_reset_stock_state_edge_cases():
     # 1. No current room
     m.inventory = [Shortsword(merchandise=True)]
     m.inventory[0].unique = True
-    import src.items as items_module
-    items_module.unique_items_spawned.add('Shortsword')
-    
+
+    # No world, so no registry to release into -- the reset must still clear.
     containers = m._reset_stock_state()
     assert containers == []
     assert m.inventory == []
-    assert 'Shortsword' not in items_module.unique_items_spawned
     
     # 2. current_room is present but resolve_rooms_source returns None
     room = FakeRoom()
@@ -164,12 +162,10 @@ def test_reset_stock_state_edge_cases():
     # room has no map and room.universe is None, so resolve_rooms_source returns None
     m.inventory = [Shortsword(merchandise=True)]
     m.inventory[0].unique = True
-    items_module.unique_items_spawned.add('Shortsword')
-    
+
     containers = m._reset_stock_state()
     assert containers == []
     assert m.inventory == []
-    assert 'Shortsword' not in items_module.unique_items_spawned
     
     # 3. room_items list remove throws exception & isinstance(room, str) check (L288)
     uni = FakeUniverse([room, "string_room_to_trigger_L288"])

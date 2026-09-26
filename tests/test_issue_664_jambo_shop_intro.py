@@ -202,19 +202,13 @@ class TestTheIntroTellsTheTruth:
         real build path, since the helper above never runs ``build()``."""
         import random
 
-        from src.items import unique_items_spawned
         from src.player import Player
         from src.universe import Universe
 
         random.seed(727)
-        saved_uniques = set(unique_items_spawned)
         player = Player()
         player.universe = Universe(player)
-        try:
-            player.universe.build(player)
-        finally:
-            unique_items_spawned.clear()
-            unique_items_spawned.update(saved_uniques)
+        player.universe.build(player)
         for _o, _n, _e, _tent_file, tent_name in TENTS:
             tent = _map(player.universe, tent_name)
             crate = next(o for o in tent[(3, 2)].objects_here if type(o).__name__ == "Crate")

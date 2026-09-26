@@ -53,6 +53,7 @@ from src.shop_conditions import (  # type: ignore
     UniqueItemInjectionCondition,
     iter_merchant_containers,
     iter_rooms,
+    unique_registry_for,
 )
 
 # Two different reasons to keep a class out of random merchant stock, so two
@@ -322,8 +323,9 @@ class MerchantShopMixin:
         """Clear merchant and container inventories; release unique-item registry entries.
 
         Returns the list of Container objects tied to this merchant.
-        Unique items are released back into the global registry before clearing so
-        that they may respawn elsewhere on the next restock cycle.
+        Unique items are released back into this merchant's universe registry
+        (``Universe.unique_items_spawned``) before clearing so that they may
+        respawn elsewhere in that world on the next restock cycle.
         """
         removed_unique: set[str] = set()
         for it in getattr(self, "inventory", []) or []:
@@ -353,8 +355,9 @@ class MerchantShopMixin:
                             room_items.remove(item)
                         except Exception:
                             pass
-        for cls_name in removed_unique:
-            items_module.unique_items_spawned.discard(cls_name)
+        registry = unique_registry_for(self)
+        if registry is not None:
+            registry.difference_update(removed_unique)
         return containers
 
     def _create_always_stock_item(self, item_spec) -> Item | None:

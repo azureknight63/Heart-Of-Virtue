@@ -77,6 +77,23 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             journal = self.__dict__.setdefault("_journal", Journal())
         return journal
 
+    @property
+    def unique_items_spawned(self):
+        """Class names of the unique items that currently exist in this world.
+
+        Each factory in ``items.unique_item_factories`` may exist once per
+        universe; merchants claim a name here when they stock one and release
+        it on restock. It lives on the universe (and so in the save) rather
+        than in a module global, which every session in a worker shared, so
+        one player's shop used up everyone's uniques (issue #727). Lazy for
+        the same reason as :attr:`journal`: saves pickled before it existed
+        unpickle without it.
+        """
+        spawned = self.__dict__.get("_unique_items_spawned")
+        if spawned is None:
+            spawned = self.__dict__.setdefault("_unique_items_spawned", set())
+        return spawned
+
     def get_tile(self, x, y):
         """Get tile at coordinates from the current player's map."""
         if self.player and self.player.map:

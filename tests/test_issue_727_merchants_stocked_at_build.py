@@ -16,18 +16,6 @@ from src.shop_conditions import iter_merchants
 from src.universe import Universe
 
 
-@pytest.fixture(autouse=True)
-def _restore_unique_registry():
-    """Stocking can inject a unique item, which marks it spawned in the
-    process-global ``unique_items_spawned``; put the registry back."""
-    from src.items import unique_items_spawned
-
-    saved = set(unique_items_spawned)
-    yield
-    unique_items_spawned.clear()
-    unique_items_spawned.update(saved)
-
-
 def _fresh_world(seed=727):
     random.seed(seed)
     player = Player()
