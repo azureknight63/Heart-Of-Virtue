@@ -272,8 +272,8 @@ class TestNpcChatEndAndHistory:
     def test_late_end_landing_during_the_next_open_keeps_its_marker(
         self, game_service, player, tile
     ):
-        """#637: /end is not behind the chat-turn lock, so under a concurrent
-        worker A's late /end can arrive while B's chat_open is still composing."""
+        """#637: /end is not behind the chat-turn lock, so on a concurrent
+        worker, A's late /end can arrive while B's chat_open is still composing."""
 
         class RacingNPC(ChattyNPC):
             def chat_open(self, player):

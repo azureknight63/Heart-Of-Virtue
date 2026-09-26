@@ -926,6 +926,46 @@ class TestValidateAndFallbackOpenrouter:
         assert client._available is False
         assert client.enabled is True
 
+    def test_benched_candidates_after_the_quota_break_are_named_benched(
+        self, monkeypatch, caplog
+    ):
+        """A candidate past the break that is already benched would have been
+        skipped as ``benched`` anyway; ``not_tried`` would hide that it is
+        penalised. Log-only: its bench is not touched."""
+        client = self._client(monkeypatch)
+        client.model = "primary/model"
+        GenericLLMClient._free_models_cache = [
+            "spends/quota", "after/benched", "after/live",
+        ]
+        client._mark_model_failed("after/benched", duration_minutes=30)
+        bench_before = GenericLLMClient._failed_models["after/benched"]
+        exhausted = []
+
+        def fake_chat(model_id, *args, **kwargs):
+            if model_id == "spends/quota":
+                exhausted.append(True)
+            return None
+
+        def headroom(cls, provider):
+            return not exhausted
+
+        with caplog.at_level(logging.ERROR, logger=llm_client.logger.name), \
+                patch.object(client, "_openrouter_chat_single", side_effect=fake_chat), \
+                patch.object(
+                    GenericLLMClient, "_provider_available",
+                    classmethod(headroom),
+                ):
+            client._validate_and_fallback_openrouter()
+
+        line = next(
+            r.getMessage() for r in caplog.records
+            if "all candidates failed" in r.getMessage()
+        )
+        assert "'after/benched': 'benched'" in line
+        assert "'after/live': 'not_tried'" in line
+        assert GenericLLMClient._failed_models["after/benched"] == bench_before
+        assert "after/live" not in GenericLLMClient._failed_models
+
 
 class TestOpenrouterFailureReasonSlot:
     """The transports record why an attempt failed, on the calling thread."""

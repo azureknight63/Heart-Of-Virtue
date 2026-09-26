@@ -745,10 +745,12 @@ def _exc_reason(exc: BaseException) -> str:
 
 
 def _note_openrouter_failure(reason: str) -> None:
+    """Record why this thread's latest OpenRouter attempt failed."""
     _OPENROUTER_FAILURE.reason = reason
 
 
 def _clear_openrouter_failure() -> None:
+    """Forget this thread's recorded failure reason before a new attempt."""
     _OPENROUTER_FAILURE.reason = None
 
 
@@ -1668,7 +1670,10 @@ class GenericLLMClient:
                     cand,
                 )
                 for skipped in to_probe[i + 1:]:
-                    reasons[skipped] = _REASON_NOT_TRIED
+                    reasons[skipped] = (
+                        _REASON_BENCHED if self._is_model_failed(skipped)
+                        else _REASON_NOT_TRIED
+                    )
                 break
 
         # A rate-limited account is a wall with a clock on it, not a broken
