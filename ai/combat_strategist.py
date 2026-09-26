@@ -2003,7 +2003,7 @@ class CombatStrategist:
 
         Uses the enemy's serialized damage stat and the move's own
         ``damage_multiplier``, which the serializer reads off the live move
-        object (``Move._DAMAGE_MULTIPLIER``). This module used to keep a local
+        object (``Move.effective_damage_multiplier()``). This module used to keep a local
         table keyed on move CLASS names while the wire carries the runtime
         INSTANCE name, so every heavy hitter in the game — SlimeVolley ("Slime
         Volley"), TidalSurge ("Tidal Surge"), GorranClub ("NPC_Attack") — missed

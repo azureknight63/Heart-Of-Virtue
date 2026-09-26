@@ -2490,6 +2490,14 @@ class TestDeclaredDamageMultiplier:
     GorranClub was exactly that case: it applied ``uniform(1.5, 3)`` and
     declared nothing, so it serialized 1.0.
 
+    This pins ``evaluate()``'s POWER only. It never looked at ``execute()``'s
+    damage and its discovery reads ``__dict__``, so MineralSpit and SoulDrain
+    (inherited 1.0, execute at 0.4/0.6) and WailStrike (1.8, execute x0.7)
+    shipped overstated through it (#721). The wire value is now
+    ``Move.effective_damage_multiplier()``, and
+    ``TestWireMultiplierMatchesExecuteDamage`` below measures THAT against the
+    damage dealt -- that class, not this one, is the wire's guard.
+
     The declaring classes are discovered by reflection, not listed, and
     ``test_every_declaration_is_pinned`` asserts the discovered set and the
     pinned set are equal in BOTH directions. There is no exception list:
@@ -2856,13 +2864,29 @@ _NPC_MOVES = _npc_owned_move_population()
 def _hp_taken_by_execute(move_cls, owner_cls):
     """Run one ``execute()`` of ``move_cls`` against a live target; did HP drop?
 
+    See :func:`_land_execute` for the staging.
+    """
+    move, hp_before, hp_after, _ = _land_execute(move_cls, owner_cls)
+    return move, hp_after < hp_before
+
+
+def _land_execute(move_cls, owner_cls, user_damage=None):
+    """Land one ``execute()`` of ``move_cls``; return what it did.
+
+    Returns ``(move, hp_before, hp_after, dealt)``, where ``dealt`` is every
+    damage value ``execute()`` handed to ``hit()`` -- after protection and the
+    move's own scaling, before the target's resistances.
+
     The to-hit roll is forced (``randint`` -> 0), power rolls sit at their
     midpoint, and the two combatants stand at the move's minimum range facing
-    each other. Nobody holds a parry stance, so ``check_parry`` is False. The
+    each other, with the facing damage curve pinned to 1.0 on top. Nobody
+    holds a parry stance, so ``check_parry`` is False. The
     target is a real default ``Player`` for an enemy's move -- the subject the
     advisor is protecting -- with protection zeroed so a landed blow cannot
     round to nothing, fatigue at 0 so DeathKnell's execute window is open, and
     HP deep enough that no hit ends the fight mid-measurement.
+    ``user_damage`` overrides the owner's base damage, so a caller measuring a
+    RATIO can make ``int()`` truncation negligible.
     """
     from src import positions
     from src.npc import Friend
@@ -2870,11 +2894,13 @@ def _hp_taken_by_execute(move_cls, owner_cls):
 
     with patch("builtins.print"):
         user = owner_cls()
+        if user_damage is not None:
+            user.damage = user_damage
         player = make_player(protection=0, fatigue=0)
-        player.maxhp = player.hp = 10000
+        player.maxhp = player.hp = 100000
         if issubclass(owner_cls, Friend):
-            target = make_npc(protection=0, maxhp=10000)
-            target.hp = 10000
+            target = make_npc(protection=0, maxhp=100000)
+            target.hp = 100000
             engage(player, enemies=[target], allies=[user])
             everyone = [player, user, target]
             place(player, 1, 1)
@@ -2897,9 +2923,18 @@ def _hp_taken_by_execute(move_cls, owner_cls):
         move = move_cls(user)
         move.target = target
         hp_before = target.hp
+        real_hit = type(move).hit
+        dealt = []
+
+        def spy_hit(self, damage, glance):
+            dealt.append(damage)
+            return real_hit(self, damage, glance)
+
         with patch("random.randint", return_value=0), patch(
             "random.uniform", side_effect=lambda a, b: (a + b) / 2
-        ), patch("random.random", return_value=0.5), patch.object(
+        ), patch("random.random", return_value=0.5), patch(
+            "src.moves._base.facing_damage_multiplier", return_value=1.0
+        ), patch.object(type(move), "hit", spy_hit), patch.object(
             type(move), "miss", autospec=True
         ) as missed, patch.object(type(move), "parry", autospec=True) as parried:
             move.evaluate()
@@ -2910,7 +2945,7 @@ def _hp_taken_by_execute(move_cls, owner_cls):
         f"{move_cls.__name__}: the harness did not land the move "
         f"(miss={missed.called}, parry={parried.called}), so HP says nothing"
     )
-    return move, target.hp < hp_before
+    return move, hp_before, target.hp, dealt
 
 
 class TestDealsDamageMatchesExecute:
@@ -2954,3 +2989,101 @@ class TestDealsDamageMatchesExecute:
             f"{declared!r} but execute() {'did' if took_hp else 'did NOT'} "
             f"take HP off its target"
         )
+
+
+# ---------------------------------------------------------------------------
+# damage_multiplier vs execute() -- issue #721
+#
+# The wire's ``damage_multiplier`` is what the Tactical Advisor prices an
+# incoming hit at. ``TestDeclaredDamageMultiplier`` above pins it against the
+# power ``evaluate()`` rolls, which is not the damage: three moves scaled that
+# power AGAIN inside ``execute()`` (MineralSpit x0.4, SoulDrain x0.6,
+# WailStrike x0.7), so the advisor overstated them by 1.4x-2.5x while every
+# test stayed green. This measures the damage ``execute()`` hands ``hit()``.
+# ---------------------------------------------------------------------------
+
+#: A base damage large enough that ``int()`` truncation moves the measured
+#: ratio by at most 1/1000 per truncation.
+_MEASURE_DAMAGE = 1000
+
+
+def _measure_execute(move_cls):
+    """``(move, dealt)`` for one landed execute at ``_MEASURE_DAMAGE``."""
+    move, _, _, dealt = _land_execute(
+        move_cls, _NPC_MOVES[move_cls], user_damage=_MEASURE_DAMAGE
+    )
+    return move, dealt
+
+
+def _wire_multiplier(move):
+    """The number the wire ships -- through the serializer's own function."""
+    from src.api.serializers.combat import CombatantSerializer
+
+    return CombatantSerializer._serialize_damage_multiplier(move)
+
+
+class TestWireMultiplierMatchesExecuteDamage:
+    """The wire's ``damage_multiplier`` must equal what ``execute()`` deals.
+
+    Measured, per damaging NPC-owned move: ``user.damage`` = 1000, facing
+    curve pinned to 1.0, protection 0, the target's default resistances,
+    every roll at its midpoint and the to-hit forced. ``hit()``'s damage
+    argument over the user's damage is the multiplier the move really
+    applies; the wire must report it. Read with ``getattr`` on the instance
+    through the serializer, never off a class ``__dict__``, so an inherited
+    value is examined like any other.
+
+    Conditional bonuses are measured in their UNCONDITIONAL state -- TwinFangs
+    against a target that is not its Marked Quarry, SeismicSlam and TwinFangs
+    against default (not lowered) resistances -- because that is the baseline
+    the wire describes; the bonuses sit on top of it.
+
+    ``deals_damage`` is a per-instance property, so the damaging subset is
+    decided on the built move, not the class.
+    """
+
+    def test_the_population_includes_the_drifted_moves(self):
+        """Floor: an empty or partial population would pass every case below
+        by not having the three moves #721 was about."""
+        from src.moves import MineralSpit, SoulDrain, WailStrike
+
+        damaging = {
+            cls for cls in _NPC_MOVES if _measure_execute(cls)[0].deals_damage
+        }
+        assert len(damaging) >= 10, damaging
+        assert {MineralSpit, SoulDrain, WailStrike} <= damaging
+
+    @pytest.mark.parametrize(
+        "move_cls",
+        sorted(_NPC_MOVES, key=lambda c: c.__name__),
+        ids=lambda c: c.__name__,
+    )
+    def test_wire_reports_the_damage_execute_deals(self, move_cls):
+        move, dealt = _measure_execute(move_cls)
+        if not move.deals_damage:
+            # Nothing to price; TestDealsDamageMatchesExecute owns this half.
+            assert not dealt, f"{move_cls.__name__} hit() despite deals_damage=False"
+            return
+        assert dealt, f"{move_cls.__name__} landed but never called hit()"
+        measured = sum(dealt) / _MEASURE_DAMAGE
+        wire = _wire_multiplier(move)
+        assert wire == pytest.approx(measured, abs=0.002), (
+            f"{move_cls.__name__}: wire damage_multiplier is {wire} but "
+            f"execute() dealt {measured}x its user's damage"
+        )
+
+
+class TestExecuteDamageIsUnchangedBy721:
+    """Gameplay pin: #721 changes what the wire SAYS, never what a move DEALS.
+
+    Recorded against the pre-fix code with the harness above (user damage
+    1000, facing 1.0, protection 0, midpoint rolls).
+    """
+
+    RECORDED = {"MineralSpit": [400], "SoulDrain": [600], "WailStrike": [1260]}
+
+    @pytest.mark.parametrize("cls_name,expected", sorted(RECORDED.items()))
+    def test_damage_dealt(self, cls_name, expected):
+        import src.moves as moves
+
+        assert _measure_execute(getattr(moves, cls_name))[1] == expected

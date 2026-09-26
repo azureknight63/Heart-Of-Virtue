@@ -1467,7 +1467,23 @@ class Move:  # master class for all moves
     # the player's HP, so a ceiling here would double-count the high roll and
     # cry wolf. `_rolled_power()` below is the single place the band is rolled,
     # so the roll and the number derived from it cannot be retuned apart.
+    #
+    # This is the multiple `evaluate()` puts into `self.power`. What the wire
+    # ships is `effective_damage_multiplier()`, which also folds in
+    # `_EXECUTE_DAMAGE_SCALE` below — read that, not this, for "how hard does
+    # it hit".
     _DAMAGE_MULTIPLIER: float = 1.0
+
+    # Scale a hand-rolled `execute()` applies to `self.power` AFTER evaluate()
+    # (issue #721). MineralSpit, SoulDrain and WailStrike hit for a fraction
+    # of their evaluated power; while that fraction was an inline literal, the
+    # wire reported the evaluated power and the Tactical Advisor overstated
+    # them by 1.4x-2.5x. An execute() that scales power must read it from here
+    # so the damage and `effective_damage_multiplier()` cannot drift apart.
+    # Separate from `_DAMAGE_MULTIPLIER` rather than folded into it because,
+    # in the TelegraphedSurge family, that attribute is live gameplay power
+    # and severity input, and for a rolled move it is the band's midpoint.
+    _EXECUTE_DAMAGE_SCALE: float = 1.0
 
     # How loudly this move's wind-up should be telegraphed (issue #586).
     # Closed vocabulary, TELEGRAPH_SEVERITIES: "normal" is a routine swing;
@@ -2186,6 +2202,19 @@ class Move:  # master class for all moves
         return self.user.damage * random.uniform(
             self._POWER_ROLL_MIN, self._POWER_ROLL_MAX
         )
+
+    def effective_damage_multiplier(self):
+        """The multiple of its user's damage this move's hit centres on.
+
+        What the wire's ``damage_multiplier`` reports (the serializer calls
+        this; it computes nothing itself): the power ``evaluate()`` centres on
+        times the scale ``execute()`` applies to it. Before protection,
+        resistances, facing and conditional bonuses, which the Tactical
+        Advisor prices separately or not at all.
+        ``tests/test_npc_moves_coverage.py::TestWireMultiplierMatchesExecuteDamage``
+        measures it against the damage ``execute()`` really deals.
+        """
+        return self._DAMAGE_MULTIPLIER * self._EXECUTE_DAMAGE_SCALE
 
     def prep_colors(self):  # prepares usercolor, targetcolor for prints
         # Check if user is player generally (by name or class, assuming Player class has no friend attr)
