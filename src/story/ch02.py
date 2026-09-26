@@ -137,6 +137,10 @@ class BetaTesterBriefing(Event):
                 "Welcome to the Grondia arc beta. Your task is to play through the sequence below and "
                 "note anything that feels broken, inconsistent, or unclear:\n\n"
                 + _BETA_ROUTE_PROSE + "\n\n"
+                # Beta 2 opened with every cloud save wiped
+                # (tools/wipe_cloud_saves.py); say so, or an empty save list
+                # reads as lost progress.
+                "Saves from the earlier beta have been cleared; this beta starts fresh.\n\n"
                 "Use the Feedback button (left panel) to record anything worth reporting.\n"
                 "If you send feedback with your name or contact, you will be listed in the game credits.\n"
                 "Anonymous feedback is still valuable — you just won’t be credited.\n\n"

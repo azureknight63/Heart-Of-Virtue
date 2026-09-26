@@ -56,9 +56,14 @@ the live frontend and backend are the same commit.
 .\deploy.ps1 -Status               # drift report — run this first; read-only on the server
 .\deploy.ps1 -DryRun               # print every remote script; no build, no network, no .env
 .\deploy.ps1                       # full deploy; -Version defaults to the VERSION file
+.\deploy.ps1 -KeepMaintenance      # full deploy that leaves the page up, with a private preview URL
 .\deploy.ps1 -Maintenance On       # raise the page by hand
-.\deploy.ps1 -Maintenance Off      # lift it by hand
+.\deploy.ps1 -Maintenance Off      # lift it by hand (and delete any preview)
 ```
+
+`-KeepMaintenance` combines with `-DryRun` (which then prints the kept ssh #2)
+and not with `-Status` or `-Maintenance`. See [Keeping the page up for a
+private test](#keeping-the-page-up-for-a-private-test).
 
 Run from a checkout that **is** `origin/master` (the `Alpha` worktree). The
 deploy refuses, listing what it found, unless nothing outside `HEAD` can reach
@@ -120,10 +125,13 @@ before the window on the two marked ★):
 4. **ssh #1: stage, raise, replace** (prompt 2). Everything before the raise
    is invisible to players.
    - **Refuse** (and change nothing) if `index.html.parked` sits in the live
-     directory — a previous deploy promoted its build and stopped before the
-     lift, and its `.prev` is the last build known to work, which promoting
-     again would delete — or if the live directory is a mount point, or if the
-     host cannot reach its own public URL.
+     directory — a previous deploy promoted its build and did not lift, and
+     its `.prev` is the last build players had, which promoting again would
+     delete. With a `preview-*.html` beside it that was a `-KeepMaintenance`
+     deploy (`HOV_REFUSED=KEPT_FOR_PREVIEW`); without one, a deploy that
+     stopped before the lift (`UNLIFTED_PROMOTE`). Also refuse if the live
+     directory is a mount point, or if the host cannot reach its own public
+     URL.
    - Record what is running: the live build's commit (`HOV_LIVE_COMMIT`),
      whether a maintenance page was already up (`HOV_PAGE_WAS_UP`), and the
      backend's HEAD (`HOV_PREV_SHA`). Then `git fetch`, and check that the
@@ -167,12 +175,77 @@ before the window on the two marked ★):
      asset with `index.html` and 200.
    - `mv index.html.parked index.html`. That rename is the lift, and only its
      marker follows it. `HOV_MAINTENANCE=OFF`.
+   - **With `-KeepMaintenance`** everything above is the same text; only this
+     last step differs. Nothing is renamed: the real index stays parked, and
+     `cp index.html.parked preview-<token>.html` places a copy beside it, the
+     last thing that changes anything. `HOV_PREVIEW=preview-<token>.html`,
+     then `HOV_MAINTENANCE=KEPT`. The token is 32 hex digits (128 bits from
+     the OS's cryptographic generator), made fresh on every run and checked
+     against `[0-9a-f]{16,64}` before it reaches the script. Without the
+     switch, ssh #2 is byte-for-byte the script it has always been.
 7. **Post-lift** — `/api/info` again, and the public `index.html` should now
    reference the new chunk (cache-busted request; a stale cache is a warning,
    because the lift has already happened on the server). A failing `/api/info`
    here is **not** green: the deploy stops with the commands to put the page
    back up. If ssh #2 exits non-zero after reporting `HOV_MAINTENANCE=OFF` (a
    dropped connection), that is a warning and the post-lift checks still run.
+   A `-KeepMaintenance` deploy skips this step — nothing lifted, so the public
+   `index.html` is still the page — and prints the preview URL and the command
+   that lifts instead (below).
+
+### Keeping the page up for a private test
+
+For a release you want to play on production before anyone else does (the
+beta-2 cutover: raise the page, deploy, wipe the old saves, play-test, lift;
+the full sequence is [beta2-cutover-runbook.md](beta2-cutover-runbook.md)):
+
+```powershell
+.\deploy.ps1 -Maintenance On      # 1. raise the page (if it is not already up)
+.\deploy.ps1 -KeepMaintenance     # 2. deploy; the page stays up; prints the preview URL
+                                  # 3. one-off server work that needs the new code (the
+                                  #    cutover's save wipe ships with this deploy)
+                                  # 4. play-test through that URL
+.\deploy.ps1 -Maintenance Off     # 5. lift; also deletes the preview
+```
+
+The deploy ends by printing
+`https://nexusfidei.dev/games/HeartOfVirtue/preview-<token>.html`. That file
+is a copy of the new build's real `index.html`. The router's basename is
+`/games/HeartOfVirtue` with a catch-all route, and every asset is absolute
+under that base, so the copy boots the app and navigates inside it. What
+it does not survive is a **full reload, signing out or an expired session**
+(both hard-navigate to `/login`: `frontend/src/utils/session.js`,
+`frontend/src/api/client.js`), **or opening any other URL under the base**:
+those are served `index.html` — the maintenance page. Reopen the preview URL to get back in. `-Status` names the
+file (`HOV_STATUS_PREVIEW`) if the URL is lost.
+
+It is a capability URL, not a lock: anyone holding it reaches the new build.
+And the page never hid the API — `/games/HeartOfVirtue/api/*` answers anyone
+who calls it directly, now as during every deploy window.
+
+`-Maintenance Off` after a kept deploy restores `index.html.parked`, which is
+the new build's own index: after the promote, the live directory is the new
+build, and it holds no `index.html.pre-maintenance` (the raise's save stays
+with the previous build in `.prev`, where ssh #2 restores it). Off restores a
+parked index before a saved one in any case, since a parked index belongs to
+the build in its directory. It then deletes every `preview-*.html` in the live
+directory, so the private door closes when the page lifts.
+
+If the test fails, go back instead: backend rollback, then frontend rollback
+(both below, and printed by the deploy with the rollback commit filled in).
+The frontend rollback also lifts the page, onto the previous release; run
+`-Maintenance On` straight after if players must not reach it, then deploy the
+fix with `-KeepMaintenance` again.
+
+**Why a second deploy over a kept one is refused** (`KEPT_FOR_PREVIEW`)
+rather than accepted: the kept build is exactly the one not yet known to
+work — the private test is how it becomes known — and promoting over it moves
+it into `.prev` and deletes the previous `.prev`, the last release players
+actually had. Accepting would leave the next rollback pointing at an
+untested build, with no way back to the one that worked. The refusal costs a
+rollback before a re-deploy; accepting could cost the only known-good
+frontend. It changes nothing, and prints the same ways out as any promote
+that stopped short of its lift: lift it, or go back.
 
 ### Why an `index.html` swap and not a 503
 
@@ -232,6 +305,7 @@ docker exec webserver sh -c 'test -d /var/www/html/wp-content/HeartOfVirtue.prev
 
 | Stopped | State | Live frontend | Backend | Ways out |
 |---|---|---|---|---|
+| ssh #1 refused: `KEPT_FOR_PREVIEW` | Promoted | a `-KeepMaintenance` deploy's build, behind the page | that deploy's commit | once its private test passes, `-Maintenance Off` (here); or go back: backend rollback, then frontend rollback |
 | ssh #1 refused: `UNLIFTED_PROMOTE` | Promoted | an earlier deploy's build, behind the page | that deploy's commit | keep it: `-Maintenance Off` (here) once its chunk loads; or go back: backend rollback, then frontend rollback |
 | ssh #1 refused: mount point, or host cannot reach its public URL | NotRaised | old, untouched | old, untouched | fix the server, re-run |
 | ssh #1, before `HOV_MAINTENANCE=ON` | NotRaised | old, untouched | old, untouched — except on a first deploy (`NO_LIVE_INDEX`), where it may be new or partial | re-run; on a first deploy, backend rollback if it is unhealthy |
@@ -241,7 +315,7 @@ docker exec webserver sh -c 'test -d /var/www/html/wp-content/HeartOfVirtue.prev
 | ssh #2 after the promote | Promoted | new, behind the page; old in `.prev` | new, healthy | keep it: once `-Status`'s chunk loads as JavaScript, `-Maintenance Off`; or go back: backend rollback, then frontend rollback |
 | ssh #2 after the promote, `MISMATCH (promoted: …)` | Foreign | another run's build, behind the page; old in `.prev` | this run's commit | do not lift it: backend rollback, then frontend rollback |
 | post-lift `/api/info` | Lifted | new, lifted | new | `.\deploy.ps1 -Maintenance On` (here) first; then re-run, or backend rollback followed by frontend rollback |
-| a phase cut off: ssh exit 255 after that phase's `HOV_PHASE` line (except after ssh #1's `HOV_BACKEND_HEALTH=OK` or ssh #2's `HOV_MAINTENANCE=OFF`, which count as finished), or the run ended unexpectedly mid-phase | Unknown | not observed | not observed | `.\deploy.ps1 -Status` (here) first; its `MAINTENANCE` / `UNLIFTED_PROMOTE` lines and the commits it reports say which row above applies |
+| a phase cut off: ssh exit 255 after that phase's `HOV_PHASE` line (except after ssh #1's `HOV_BACKEND_HEALTH=OK` or ssh #2's `HOV_MAINTENANCE=OFF` / `KEPT`, which count as finished), or the run ended unexpectedly mid-phase | Unknown | not observed | not observed | `.\deploy.ps1 -Status` (here) first; its `MAINTENANCE` / `UNLIFTED_PROMOTE` lines and the commits it reports say which row above applies |
 
 On a first deploy there is no live directory to lift back to: the stops after
 the stage report NotRaised, and a re-run is the way out.
@@ -300,7 +374,10 @@ pins their order and scope: the refusals and every read before the page is
 up, and nothing players see changed before it; health before the stage ends;
 only this run's build promoted, and its chunk served before the lift; nothing
 after the lift but its marker; `-Status` limited to an allow-list of read-only
-commands. It drives `Invoke-Deploy`, `Invoke-StatusMode` and
+commands. The `-KeepMaintenance` ssh #2 is pinned to be the default's text up
+to its last step, never to put the real index in front, and to copy the
+preview only after the asset proof; `-Maintenance Off` to restore the parked
+index first and delete the previews. It drives `Invoke-Deploy`, `Invoke-StatusMode` and
 `Invoke-MaintenanceMode` with the network stubbed out, to pin that a red phase
 never reaches the next one and prints the right help for its state — including
 the rollback commit chosen — and it runs the dry run behind a sandbox that

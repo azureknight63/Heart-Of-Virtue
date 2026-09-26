@@ -5,7 +5,7 @@
     maintenance page, or reports what the server is running.
 
 .DESCRIPTION
-    Four modes. Runbook, rollback commands and caveats:
+    Four modes, the deploy with a -KeepMaintenance variant. Runbook, rollback commands and caveats:
     docs/development/deployment.md
 
       .\deploy.ps1                       Full deploy. Build, upload, stage the
@@ -15,6 +15,10 @@
                                          staged build, prove the web server
                                          serves it, and lift the page, which is
                                          the last step.
+      .\deploy.ps1 -KeepMaintenance      The same, minus the lift: the page
+                                         stays up, and a private preview URL
+                                         loads the new build for a test on
+                                         production. Lift later by hand.
       .\deploy.ps1 -Status               Drift report: the server's backend
                                          commit vs origin/master and vs the
                                          live frontend's, the served bundle,
@@ -50,7 +54,20 @@
 .PARAMETER Maintenance
     On or Off. Raises the maintenance page (uploading this checkout's
     frontend/public/maintenance.html) or lifts it by restoring the index a
-    raise or a stopped deploy saved.
+    raise, a stopped deploy or a -KeepMaintenance deploy saved; Off also
+    deletes any preview-*.html a -KeepMaintenance deploy left.
+
+.PARAMETER KeepMaintenance
+    Full deploy that does not lift. Everything up to and including the proof
+    that the web server serves the new bundle is unchanged; then, instead of
+    the lift, the new build's real index stays parked behind the page and a
+    copy of it is placed at preview-<32 random hex>.html in the live
+    directory. The deploy prints that preview URL: it boots the new build
+    for whoever holds it, while every other URL still shows the page. A
+    reload or a sign-out lands on the page again; reopen the preview URL.
+    Lift with -Maintenance Off, which also deletes the preview. A deploy
+    over a kept build is refused until it is lifted or rolled back.
+    Combines with -DryRun; not with -Status or -Maintenance.
 
 .PARAMETER DryRun
     Prints the plan and every remote script the deploy would run. No build,
@@ -72,6 +89,8 @@ param (
 
     [ValidateSet('On', 'Off')]
     [string]$Maintenance,
+
+    [switch]$KeepMaintenance,
 
     [switch]$DryRun,
 
@@ -134,8 +153,17 @@ $MainChunkPattern    = 'assets/index-[A-Za-z0-9_-]+\.js'
 $FullShaPattern      = '\A[0-9a-f]{40}\z'
 # What /api/info names itself (src/api/app.py, the `info` route).
 $ApiName             = 'Heart of Virtue API'
+# A -KeepMaintenance deploy's private door: a copy of the real index under
+# preview-<token>.html in the live directory. The token is 128 random bits in
+# lowercase hex (New-PreviewToken); the pattern admits 16 to 64 hex digits and
+# nothing else, because the name lands in the remote script. The glob is how
+# the server finds every preview (a kept deploy's marker, and what -Maintenance
+# Off deletes); no file the build ships may match it.
+$PreviewTokenPattern = '\A[0-9a-f]{16,64}\z'
+$PreviewGlob         = 'preview-*.html'
 # The states a stopped deploy can leave production in (Write-StuckHelp).
-$DeployStates        = @('NotRaised', 'Raised', 'Promoted', 'Foreign', 'Lifted', 'Unknown')
+# Kept is not a failure: a -KeepMaintenance deploy ends there on purpose.
+$DeployStates        = @('NotRaised', 'Raised', 'Promoted', 'Foreign', 'Lifted', 'Unknown', 'Kept')
 
 # ── budgets ─────────────────────────────────────────────────────────────────
 # Backend restart: settle, then poll /health. Worst case before the stage
@@ -182,6 +210,7 @@ $RemoteValues = @{
     PARKED                = $ParkedIndex
     SAVED                 = $SavedIndex
     COMMIT_FILE           = $CommitFile
+    PREVIEW_GLOB          = $PreviewGlob
     CHUNK_PATTERN         = $MainChunkPattern
     RAISE                 = $RaiseFragment
     SETTLE_SECONDS        = $RestartSettleSeconds
@@ -311,10 +340,17 @@ set -euo pipefail
 echo "HOV_PHASE=stage"
 
 # 0. Refusals, before anything changes. A parked index in the live directory
-#    means a previous deploy promoted and stopped before the lift: .prev is
-#    then the last build known to work, and this run's promote would delete
-#    it. Fail closed: a docker failure here aborts rather than reads as "no".
-parked=$(docker exec __CONTAINER__ sh -c 'if [ -e __LIVE__/__PARKED__ ]; then echo yes; else echo no; fi')
+#    means a previous deploy promoted and did not lift: it stopped before the
+#    lift, or it kept the page up on purpose (-KeepMaintenance, which leaves
+#    a preview copy beside it). Either way .prev is then the last build
+#    players had, and this run's promote would delete it. Fail closed: a
+#    docker failure here aborts rather than reads as "no".
+parked=$(docker exec __CONTAINER__ sh -c 'if [ ! -e __LIVE__/__PARKED__ ]; then echo no; elif ls __LIVE__/__PREVIEW_GLOB__ >/dev/null 2>&1; then echo kept; else echo yes; fi')
+if [ "$parked" = kept ]; then
+  echo "HOV_REFUSED=KEPT_FOR_PREVIEW"
+  echo "HOV_ERROR=a -KeepMaintenance deploy is behind the page, waiting for its private test"
+  exit 1
+fi
 if [ "$parked" != no ]; then
   echo "HOV_REFUSED=UNLIFTED_PROMOTE"
   echo "HOV_ERROR=__LIVE__/__PARKED__ exists: a previous deploy stopped after promoting"
@@ -394,10 +430,21 @@ function New-SwapAndLiftScript {
         content type is checked as well as its status: the SPA fallback
         answers a missing asset with index.html and HTTP 200. The lift is one
         rename and the last thing that changes anything.
-    #>
-    param([Parameter(Mandatory = $true)][ValidateScript({ $_ -cmatch "\A$MainChunkPattern\z" })][string]$Chunk)
 
-    $template = @'
+        With -PreviewToken (a -KeepMaintenance deploy) steps 1 and 2 are the
+        same text; step 3 is replaced. Nothing lifts: the real index stays
+        parked, and a COPY of it is placed at preview-<token>.html, after
+        the served bundle is proven, as the last thing that changes
+        anything. The SPA boots from that URL because its router has the
+        base as basename and a catch-all route, and its assets are absolute
+        under the base. -Maintenance Off lifts later and deletes the copy.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][ValidateScript({ $_ -cmatch "\A$MainChunkPattern\z" })][string]$Chunk,
+        [ValidateScript({ $_ -cmatch $PreviewTokenPattern })][string]$PreviewToken
+    )
+
+    $prove = @'
 set -euo pipefail
 echo "HOV_PHASE=swap"
 
@@ -422,12 +469,37 @@ case "$content_type" in
   *javascript*) echo "HOV_ASSET_SERVED=OK" ;;
   *) echo "HOV_ASSET_SERVED=WRONG_TYPE ($content_type)"; exit 1 ;;
 esac
-
+'@
+    $lift = @'
 # 3. Lift: the real index goes live in one rename.
 docker exec __CONTAINER__ sh -c 'mv __LIVE__/__PARKED__ __LIVE__/index.html'
 echo "HOV_MAINTENANCE=OFF"
 '@
-    return Expand-Template -Template $template -Values @{ CHUNK = $Chunk }
+    $keep = @'
+# 3. Keep the page up (-KeepMaintenance): the real index stays parked, and a
+#    copy of it under an unguessable name is the operator's private way in.
+#    -Maintenance Off lifts later and deletes the copy.
+docker exec __CONTAINER__ sh -c 'cp __LIVE__/__PARKED__ __LIVE__/__PREVIEW__'
+echo "HOV_PREVIEW=__PREVIEW__"
+echo "HOV_MAINTENANCE=KEPT"
+'@
+    # A here-string drops the newline before its closing '@: the blank line
+    # between steps 2 and 3 is put back here, as LF (Expand-Template
+    # normalises the here-strings' own line endings).
+    if ($PSBoundParameters.ContainsKey('PreviewToken')) {
+        return Expand-Template -Template ($prove + "`n`n" + $keep) -Values @{ CHUNK = $Chunk; PREVIEW = "preview-$PreviewToken.html" }
+    }
+    return Expand-Template -Template ($prove + "`n`n" + $lift) -Values @{ CHUNK = $Chunk }
+}
+
+function New-PreviewToken {
+    <#
+    .SYNOPSIS
+        A -KeepMaintenance deploy's preview token: 128 bits from the OS's
+        cryptographic generator, as 32 lowercase hex digits. The preview URL
+        is the only thing keeping the new build private, so not Get-Random.
+    #>
+    return [Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(16)).ToLowerInvariant()
 }
 
 function New-StatusScript {
@@ -467,6 +539,9 @@ echo "HOV_STATUS_LIVE_COMMIT=$(docker exec __CONTAINER__ sh -c 'cat __LIVE__/__C
 echo "HOV_STATUS_PREVIOUS_COMMIT=$(docker exec __CONTAINER__ sh -c 'cat __PREVIOUS__/__COMMIT_FILE__ 2>/dev/null || echo NONE' || echo UNKNOWN)"
 echo "HOV_STATUS_MAINTENANCE=$(docker exec __CONTAINER__ sh -c 'if grep -q __MARKER__ __LIVE__/index.html 2>/dev/null; then echo ON; else echo OFF; fi' || echo UNKNOWN)"
 echo "HOV_STATUS_UNLIFTED_PROMOTE=$(docker exec __CONTAINER__ sh -c 'test -e __LIVE__/__PARKED__ && echo yes || echo no' || echo UNKNOWN)"
+# A -KeepMaintenance deploy's private door, so a lost preview URL can be found.
+preview=$(docker exec __CONTAINER__ sh -c 'cd __LIVE__ 2>/dev/null && ls __PREVIEW_GLOB__ 2>/dev/null | head -n 1')
+echo "HOV_STATUS_PREVIEW=${preview:-NONE}"
 echo "HOV_STATUS_STAGING_PRESENT=$(docker exec __CONTAINER__ sh -c 'test -d __STAGING__ && echo yes || echo no' || echo UNKNOWN)"
 echo "HOV_STATUS_PREVIOUS_PRESENT=$(docker exec __CONTAINER__ sh -c 'test -d __PREVIOUS__ && echo yes || echo no' || echo UNKNOWN)"
 # Renaming the live directory fails if it is a mount point. Read from the
@@ -496,15 +571,27 @@ echo "HOV_MAINTENANCE=ON"
 function New-MaintenanceOffScript {
     <#
     .SYNOPSIS
-        Manual lift. Restores whichever saved index a deploy left behind:
-        $SavedIndex from a raise, or $ParkedIndex from a deploy that stopped
-        after the promote and before the lift. Refuses to report OFF if what
-        it restored is the page itself.
+        Manual lift. Restores whichever real index is waiting: $ParkedIndex
+        from a deploy that promoted and did not lift (it stopped before the
+        lift, or -KeepMaintenance kept the page up), else $SavedIndex from a
+        raise. Refuses to report OFF if what it restored is the page itself.
+        Then deletes every preview copy a -KeepMaintenance deploy left, so
+        the private door closes when the page lifts.
+
+    .DESCRIPTION
+        Parked first: a parked index belongs to the build in the directory
+        by construction (only the stage creates one, inside the build it
+        parks), while a saved index is a copy of whatever index.html was when
+        some raise ran. After a promote the live directory holds no saved
+        index at all (the stage's save stays with the previous build, and
+        the swap restores it there), so in every state a deploy leaves
+        exactly one exists; the order decides only if something else made
+        both, and then the directory's own build is the right one to show.
     #>
     $template = @'
 set -euo pipefail
 echo "HOV_PHASE=maintenance-off"
-docker exec __CONTAINER__ sh -c 'cd __LIVE__ && if [ -f __SAVED__ ]; then mv __SAVED__ index.html; elif [ -f __PARKED__ ]; then mv __PARKED__ index.html; else echo "HOV_ERROR=no saved index to restore"; exit 1; fi && if grep -q __MARKER__ index.html; then echo "HOV_ERROR=the restored index is the maintenance page"; exit 1; fi'
+docker exec __CONTAINER__ sh -c 'cd __LIVE__ && if [ -f __PARKED__ ]; then mv __PARKED__ index.html; elif [ -f __SAVED__ ]; then mv __SAVED__ index.html; else echo "HOV_ERROR=no saved index to restore"; exit 1; fi && if grep -q __MARKER__ index.html; then echo "HOV_ERROR=the restored index is the maintenance page"; exit 1; fi && rm -f __PREVIEW_GLOB__'
 echo "HOV_MAINTENANCE=OFF"
 '@
     return Expand-Template -Template $template
@@ -1048,7 +1135,9 @@ function Write-StuckHelp {
         new), Promoted (a promoted build behind the page), Foreign (the build
         behind the page is not this run's), Lifted (page down, public API
         failing), Unknown (a phase was cut off, so the server's state was not
-        observed).
+        observed), Kept (a -KeepMaintenance deploy finished: this run's
+        build promoted and proven behind the page, on purpose; -PreviewUrl
+        is its private way in).
 
         Frontend and backend move together: every way out keeps players on a
         frontend and a backend from the same commit, and the backend is put
@@ -1060,7 +1149,8 @@ function Write-StuckHelp {
     param(
         [Parameter(Mandatory = $true)][ValidateScript({ $_ -cin $DeployStates })][string]$State,
         [string]$RollbackSha,
-        [string]$RollbackNote
+        [string]$RollbackNote,
+        [string]$PreviewUrl
     )
 
     $healthPoll = 'ok=; for i in $(seq <ATTEMPTS>); do curl -fsS --max-time <TIMEOUT> -o /dev/null <URL> && { ok=1; break; }; sleep <DELAY>; done; [ -n "$ok" ] && echo BACKEND_OK || echo BACKEND_FAILED'.
@@ -1144,6 +1234,25 @@ function Write-StuckHelp {
             $lines += 'row of the red-state table in docs/development/deployment.md you are in. For reference, the backend:'
             $lines += $backendRollbackLines
         }
+        'Kept' {
+            $lines += 'The maintenance page is UP, on purpose (-KeepMaintenance). Behind it: this run''s build, promoted and'
+            $lines += 'proven served, and a backend on its commit. Players still see the page. Your private way in:'
+            $lines += "    $(if ($PreviewUrl) { $PreviewUrl } else { "$PublicBase/$PreviewGlob (.\deploy.ps1 -Status names it: HOV_STATUS_PREVIEW)" })"
+            $lines += 'A reload or a sign-out lands on the maintenance page again: reopen the preview URL to get back in.'
+            $lines += 'Anyone holding that URL reaches the new build, and the API is not behind the page at all.'
+            $lines += ''
+            $lines += 'EITHER, once the private test passes, lift the page (here) -- this also deletes the preview:'
+            $lines += '    .\deploy.ps1 -Maintenance Off'
+            $lines += 'OR, if it fails, go back to the previous release, backend first:'
+            $lines += $backendRollbackLines
+            $lines += $goBackFrontend
+            $lines += 'A deploy over this one is refused until it is lifted or rolled back: promoting again would delete'
+            $lines += "$PreviousDir, the last release players had."
+        }
+    }
+    if ($State -ceq 'Kept') {
+        Write-Host ($lines -join "`n") -ForegroundColor Yellow
+        return
     }
     $lines += ''
     $lines += "Diagnose (on the server): ssh $ServerLogin"
@@ -1192,9 +1301,11 @@ function Get-PhaseStop {
     .DESCRIPTION
         The state comes from the markers that ARRIVED, checked in this order:
           - exit 0 carries on;
-          - a stage refusal changed nothing (UNLIFTED_PROMOTE leaves an
-            earlier run's promote in place: Promoted; the others NotRaised);
-          - a swap that reported the lift (OFF), or a stage that reported
+          - a stage refusal changed nothing (UNLIFTED_PROMOTE and
+            KEPT_FOR_PREVIEW leave an earlier run's promote in place:
+            Promoted; the others NotRaised);
+          - a swap that reported its last step (OFF, or KEPT for a
+            -KeepMaintenance swap), or a stage that reported
             health OK, finished: $null, whatever the exit code -- the caller
             warns;
           - exit 255 is ssh's own failure (no remote script exits 255): once
@@ -1218,6 +1329,9 @@ function Get-PhaseStop {
     if ($refused -ceq 'UNLIFTED_PROMOTE') {
         return @{ State = 'Promoted'; Reason = 'Refused: a previous deploy promoted its build and stopped before the lift. Its .prev is the last build known to work, and promoting again would delete it. Nothing was changed. Finish that deploy first:' }
     }
+    if ($refused -ceq 'KEPT_FOR_PREVIEW') {
+        return @{ State = 'Promoted'; Reason = "Refused: a -KeepMaintenance deploy is behind the page, waiting for its private test ($PreviewGlob in the live directory). Promoting over it would move it into .prev and delete the last release players had. Nothing was changed. Lift it once it passes, or go back to the previous release, then deploy again:" }
+    }
     if ($refused) {
         $why = switch ($refused) {
             'LIVE_IS_MOUNTPOINT' { "the live directory $LiveDir is a mount point, and the promote renames it" }
@@ -1226,7 +1340,7 @@ function Get-PhaseStop {
         }
         return @{ State = 'NotRaised'; Reason = "Refused before anything changed: $why." }
     }
-    if ($Phase -ceq 'swap' -and (Get-Marker -Lines $Output -Name 'HOV_MAINTENANCE') -ceq 'OFF') { return $null }
+    if ($Phase -ceq 'swap' -and (Get-Marker -Lines $Output -Name 'HOV_MAINTENANCE') -cin 'OFF', 'KEPT') { return $null }
     if ($Phase -ceq 'stage' -and (Get-Marker -Lines $Output -Name 'HOV_BACKEND_HEALTH') -ceq 'OK') { return $null }
     if ($ExitCode -eq 255 -and $started) {
         return @{ State = 'Unknown'; Reason = "The connection dropped during the $Phase phase, after it had started on the server." }
@@ -1244,7 +1358,7 @@ function Get-PhaseStop {
 # ── modes ───────────────────────────────────────────────────────────────────
 
 function Invoke-DryRun {
-    param([Parameter(Mandatory = $true)][string]$Sha)
+    param([Parameter(Mandatory = $true)][string]$Sha, [switch]$KeepMaintenance)
     $build = ($BuildSteps | ForEach-Object { "$($_.Exe) $($_.Arguments -join ' ')" }) -join ' && '
     $chunk = Get-LocalMainChunk
     if (-not $chunk) { $chunk = 'assets/index-DRYRUN.js' }
@@ -1257,6 +1371,13 @@ function Invoke-DryRun {
     Write-Step "Would run (ssh #1 — stage, maintenance ON, backend; the health poll gives up after at most ${healthBudget}s):"
     Write-Host (New-StageScript -Sha $Sha)
     Write-Step "Would check from here: GET $PublicApiUrl is 200 and names the API; GET $PublicBase/ shows the maintenance page"
+    if ($KeepMaintenance) {
+        $token = New-PreviewToken
+        Write-Step "Would run (ssh #2 — promote, prove served, KEEP the page up; the chunk is the new build's, here $chunk; the preview token is new on every run, here $token):"
+        Write-Host (New-SwapAndLiftScript -Chunk $chunk -PreviewToken $token)
+        Write-Step "Would not lift, and would skip the post-lift checks. Would print the private preview URL, here $PublicBase/preview-$token.html; lift later with .\deploy.ps1 -Maintenance Off"
+        return
+    }
     Write-Step "Would run (ssh #2 — promote, prove served, lift; the chunk is the new build's, here $chunk):"
     Write-Host (New-SwapAndLiftScript -Chunk $chunk)
     Write-Step "Would check from here: GET $PublicApiUrl again; GET $PublicBase/ contains the new bundle's chunk name"
@@ -1296,8 +1417,22 @@ function Write-DriftReport {
     } else {
         Write-Host "Frontend: deployed $(& $shown $deployedChunk) (no local build in $DistDir to compare; run the deploy or npm run build)"
     }
+    # The name reaches the terminal as a URL, so only one of the shape this
+    # script creates is repeated.
+    $preview = Get-Marker -Lines $StatusOutput -Name 'HOV_STATUS_PREVIEW'
+    $previewToken = if ($preview -cmatch '\Apreview-(.+)\.html\z') { $Matches[1] } else { $null }
+    $kept = $previewToken -cmatch $PreviewTokenPattern
     if ((Get-Marker -Lines $StatusOutput -Name 'HOV_STATUS_UNLIFTED_PROMOTE') -ceq 'yes') {
-        Write-Warning 'A deploy promoted its build and stopped before the lift. The next deploy refuses until it is lifted (-Maintenance Off) or rolled back (see the runbook).'
+        if ($kept) {
+            Write-Warning 'A -KeepMaintenance deploy is behind the page, waiting for its private test. The next deploy refuses until it is lifted (-Maintenance Off) or rolled back (see the runbook).'
+        } else {
+            Write-Warning 'A deploy promoted its build and stopped before the lift. The next deploy refuses until it is lifted (-Maintenance Off) or rolled back (see the runbook).'
+        }
+    }
+    if ($kept) {
+        Write-Host "Private preview: $PublicBase/$preview"
+    } elseif ($preview -and $preview -cne 'NONE') {
+        Write-Warning "The live directory holds a preview file this script would not have named: $(& $shown $preview)"
     }
 }
 
@@ -1410,7 +1545,14 @@ function Invoke-Deploy {
         otherwise (an unexpected error, Ctrl+C) prints from the `finally`:
         the Unknown help while a phase is in flight, the last state observed
         otherwise, and after the lift just a note that the release is live.
+
+        -KeepMaintenance sends the kept swap (New-SwapAndLiftScript
+        -PreviewToken) instead, with a token made here, and ends in the Kept
+        state: its help is the preview URL and the command that lifts. The
+        post-lift checks are skipped, because nothing lifted: the public
+        index still IS the page.
     #>
+    param([switch]$KeepMaintenance)
     $sha = Assert-CheckoutIsOriginMaster
     $release = "v$Version ($(Format-ShortSha $sha))"
     Write-Host "Deploying $release" -ForegroundColor Cyan
@@ -1420,7 +1562,13 @@ function Invoke-Deploy {
     $newChunk = Get-LocalMainChunk
     if (-not $newChunk) { throw "$DistDir/index.html names no chunk matching $MainChunkPattern" }
     $stageScript = New-StageScript -Sha $sha
-    $swapScript = New-SwapAndLiftScript -Chunk $newChunk
+    $swapArguments = @{ Chunk = $newChunk }
+    $previewUrl = $null
+    if ($KeepMaintenance) {
+        $swapArguments.PreviewToken = New-PreviewToken
+        $previewUrl = "$PublicBase/preview-$($swapArguments.PreviewToken).html"
+    }
+    $swapScript = New-SwapAndLiftScript @swapArguments
 
     Send-Build
 
@@ -1454,13 +1602,27 @@ function Invoke-Deploy {
         }
         if ($raised) { Write-PreLiftPageCheck }
 
-        Write-Step 'Promoting the build, proving it is served, lifting maintenance (ssh #2)'
+        $lastStep = if ($KeepMaintenance) { 'keeping maintenance up' } else { 'lifting maintenance' }
+        Write-Step "Promoting the build, proving it is served, $lastStep (ssh #2)"
         $inFlight = 'swap'
         $swapOutput = Invoke-RemoteScript -Script $swapScript
         $swapExit = $LASTEXITCODE
         $inFlight = $null
         $stop = Get-PhaseStop -Phase 'swap' -Output $swapOutput -ExitCode $swapExit -WindowState $windowState
         if ($stop) { Stop-Deploy @stop @rollback }
+        if ($KeepMaintenance) {
+            # Get-PhaseStop carried on, so the swap reported its last step:
+            # the copy. Nothing lifted, so there is nothing post-lift to check.
+            $observed = 'Kept'
+            if ($swapExit -ne 0) {
+                Write-Warning 'ssh #2 placed the preview and then exited non-zero (a dropped connection is the usual reason). Continuing.'
+            }
+            Write-Host ''
+            Write-Host "Deploy $release is promoted and proven served; the maintenance page stays up (-KeepMaintenance)." -ForegroundColor Green
+            Write-StuckHelp -State 'Kept' -PreviewUrl $previewUrl @rollback
+            $finished = $true
+            return
+        }
         # Get-PhaseStop carries on after a non-zero swap only once the lift was reported.
         if ($swapExit -ne 0) {
             Write-Warning 'ssh #2 lifted the page and then exited non-zero (a dropped connection is the usual reason). Continuing with the post-lift checks.'
@@ -1486,7 +1648,7 @@ function Invoke-Deploy {
                 Write-Host "The page was already lifted: $release is live. .\deploy.ps1 -Status (here) checks it." -ForegroundColor Yellow
             } else {
                 $state = if ($inFlight -or -not $observed) { 'Unknown' } else { $observed }
-                Write-StuckHelp -State $state @rollback
+                Write-StuckHelp -State $state -PreviewUrl $previewUrl @rollback
             }
         }
     }
@@ -1496,9 +1658,10 @@ function Main {
     if ($Version -cnotmatch '\A[0-9A-Za-z.+_-]+\z') { throw "Version '$Version' is not a version tag; it names the tarball." }
     if ($Status -and $Maintenance) { throw 'Pick one of -Status or -Maintenance.' }
     if ($DryRun -and ($Status -or $Maintenance)) { throw '-DryRun applies to the deploy only.' }
+    if ($KeepMaintenance -and ($Status -or $Maintenance)) { throw '-KeepMaintenance applies to the deploy only.' }
 
     if ($DryRun) {
-        Invoke-DryRun -Sha (Get-HeadSha)
+        Invoke-DryRun -Sha (Get-HeadSha) -KeepMaintenance:$KeepMaintenance
         return
     }
 
@@ -1508,7 +1671,7 @@ function Main {
 
     if ($Status) { Invoke-StatusMode; return }
     if ($Maintenance) { Invoke-MaintenanceMode -Setting $Maintenance; return }
-    Invoke-Deploy
+    Invoke-Deploy -KeepMaintenance:$KeepMaintenance
 }
 
 # Dot-sourcing (what the tests do) defines the functions and stops here.
