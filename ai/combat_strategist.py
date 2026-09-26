@@ -1,5 +1,7 @@
 import logging
-from typing import Any, Dict, List, Literal, NamedTuple, Optional, Tuple, TypedDict
+from typing import (
+    Any, Callable, Dict, List, Literal, NamedTuple, Optional, Tuple, TypedDict,
+)
 
 from ai.llm_client import GenericLLMClient
 from src.moves import DAMAGING_MOVE_CATEGORIES
@@ -141,7 +143,7 @@ _DEFENSIVE_MOVE_NAMES = ("Dodge", "Parry")
 _FORFEITS_DEFENCE_SCORE = 18
 
 # Issue #688: what an attack is worth when its own damage_preview says it
-# cannot hurt anyone it can reach -- below every zero-cost maneuver, above
+# cannot hurt anyone it can reach -- below every zero-cost maneuver and below
 # Wait/Check (20), because a swing still costs the enemy nothing but it also
 # teaches the player nothing new that Check would.
 _HARMLESS_ATTACK_SCORE = 15
@@ -636,6 +638,45 @@ def _enemy_max_fatigue(enemy: Dict[str, Any]) -> int:
     return max(enemy.get("max_fatigue") or enemy.get("maxfatigue") or 1, 1)
 
 
+def _beat_count(value: Any) -> Optional[int]:
+    """``value`` as a whole number of beats, or None when it is not one.
+
+    One rule for every beat count read off the wire (threat countdown, move
+    tie-up, defence cooldown): a non-bool int, or a float with no fractional
+    part -- the same rule ``Move._beats_to_free`` applies to stage beats,
+    since 3.0 drains to exactly zero and 1.5 never does.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
+def _moves_by_name(
+    ctx: Dict[str, Any], predicate: Optional[Callable[[Dict[str, Any]], bool]] = None
+) -> Dict[Any, Dict[str, Any]]:
+    """Every entry of ``available_moves`` keyed by name, offerable or not.
+
+    Deliberately not `_offerable_moves`: the LLM clamps and target scoping
+    look up what the model proposed, which may be a move the adapter marked
+    unavailable. ``predicate`` narrows the set (e.g. `_deals_damage`).
+    """
+    return {
+        m.get("name"): m
+        for m in ctx.get("available_moves", [])
+        if isinstance(m, dict) and (predicate is None or predicate(m))
+    }
+
+
+def _answers_the_charge(name: Any, state: TacticalState) -> bool:
+    """True for a Dodge/Parry cast inside the defensive window: the stance
+    itself meets the flagged blow, so no clamp or charge note applies."""
+    return state["in_defensive_window"] and name in _DEFENSIVE_MOVE_NAMES
+
+
 def _incoming_beats(mip: Optional[Dict[str, Any]]) -> Optional[int]:
     """Beats until a charging enemy move lands, or None if nothing is coming.
 
@@ -661,10 +702,7 @@ def _incoming_beats(mip: Optional[Dict[str, Any]]) -> Optional[int]:
     """
     if not mip or mip.get("deals_damage") is False:
         return None
-    beats = mip.get("beats_until_resolve")
-    if isinstance(beats, bool) or not isinstance(beats, int):
-        return None
-    return beats
+    return _beat_count(mip.get("beats_until_resolve"))
 
 
 # ENGINE-OWNED: the routine member of `TELEGRAPH_SEVERITIES` (src/moves/_base.py),
@@ -708,11 +746,9 @@ def _soonest_defence(ctx: Dict[str, Any]) -> Tuple[Optional[str], Optional[int]]
         if m.get("name") in _DEFENSIVE_MOVE_NAMES:
             return m["name"], 0
     cooling = [
-        (beats, name)
+        (_beat_count(beats), name)
         for name, beats in (ctx.get("defensive_cooldowns") or {}).items()
-        if name in _DEFENSIVE_MOVE_NAMES
-        and isinstance(beats, int)
-        and not isinstance(beats, bool)
+        if name in _DEFENSIVE_MOVE_NAMES and _beat_count(beats) is not None
     ]
     if not cooling:
         return None, None
@@ -720,11 +756,15 @@ def _soonest_defence(ctx: Dict[str, Any]) -> Tuple[Optional[str], Optional[int]]
     return name, beats
 
 
-def _forfeits_defence(ready: Any, state: TacticalState) -> bool:
+def _forfeits_defence(ready: Optional[int], state: TacticalState) -> bool:
     """True when casting a move with tie-up ``ready`` gives up the only Dodge.
 
-    Issue #700. ``ready`` is the offered move's ``beats_until_ready``: beats
-    until Jean is asked again. The move forfeits the defence when all hold:
+    Issue #700. ``ready`` is the offered move's ``beats_until_ready`` read
+    through `_beat_count`: beats until Jean is asked again. For Wait that is
+    the tie-up of its DEFAULT duration (``Wait._DEFAULT_DURATION``) -- the
+    player picks the real one after the advice is shown, so a longer chosen
+    wait can still forfeit the Dodge this cleared. The move forfeits the
+    defence when all hold:
 
       * a flagged charge is coming at Jean (`_threat_worth_defending` has
         already dropped charges aimed at an ally) and is not already too close
@@ -733,14 +773,13 @@ def _forfeits_defence(ready: Any, state: TacticalState) -> bool:
         cooldown while at least `_DEFENSIVE_WINDOW_BEATS` beats remain;
       * the move frees Jean with fewer than `_DEFENSIVE_WINDOW_BEATS` to spare.
 
-    A missing or non-integer ``ready`` is no opinion: a payload that predates
-    the field, or a move in flight, scores exactly as it did before.
+    A missing or non-whole ``ready`` (None) is no opinion: a payload that
+    predates the field, or a move in flight, scores exactly as it did before.
     """
     incoming = state["incoming_beats"]
     castable_in = state["defence_castable_in"]
     if (
-        isinstance(ready, bool)
-        or not isinstance(ready, int)
+        ready is None
         or incoming is None
         or castable_in is None
         or not state["incoming_flagged"]
@@ -754,7 +793,9 @@ def _forfeits_defence(ready: Any, state: TacticalState) -> bool:
 def _forfeit_reason(name: str, ready: int, state: TacticalState) -> str:
     """Why a move scored `_FORFEITS_DEFENCE_SCORE`: its tie-up against the charge."""
     charge = _sentence_case(state["incoming_move"] or _UNNAMED_CHARGE)
-    defence = state["defence_name"] or "Dodge"
+    # `_forfeits_defence` is only True with a defence_castable_in, which
+    # `_soonest_defence` never returns without a name -- so no fallback.
+    defence = state["defence_name"]
     return (
         f"{name} ties Jean up for {ready} beat(s); {charge} lands in "
         f"{state['incoming_beats']} -- too late to {defence} after."
@@ -1168,11 +1209,7 @@ class CombatStrategist:
         it, with the same honest reason. The prompt carries no damage previews
         (a prompt change needs a live A/B run), so this is enforced in code.
         """
-        moves = {
-            m.get("name"): m
-            for m in ctx.get("available_moves", [])
-            if isinstance(m, dict) and _deals_damage(m)
-        }
+        moves = _moves_by_name(ctx, _deals_damage)
         for s in suggestions:
             move = moves.get(s.get("move_name"))
             reason = _harmless_reason(move) if move else None
@@ -1210,25 +1247,24 @@ class CombatStrategist:
         A/B run), so a model can still propose Attack 12 beats before a
         surge. Lower-only, like `_clamp_harmless_suggestions`: the score is
         only ever pulled down to `_FORFEITS_DEFENCE_SCORE`, and the honest
-        reason replaces the model's. An in-window Dodge/Parry is never
-        touched -- it is the answer, which is the ladder's rule too.
+        reason replaces the model's only when it does -- a score already at
+        or below the clamp keeps its reason, which is how a harmless attack
+        (#688, clamped first to the lower `_HARMLESS_ATTACK_SCORE`) keeps
+        "can't hurt", exactly as the ladder scores it. An in-window
+        Dodge/Parry is never touched -- it is the answer, which is the
+        ladder's rule too.
         """
         state = self._derive_tactical_state(ctx)
-        moves = {
-            m.get("name"): m
-            for m in ctx.get("available_moves", [])
-            if isinstance(m, dict)
-        }
+        moves = _moves_by_name(ctx)
         for s in suggestions:
             name = s.get("move_name")
             move = moves.get(name)
-            if move is None or (
-                state["in_defensive_window"] and name in _DEFENSIVE_MOVE_NAMES
-            ):
+            if move is None or _answers_the_charge(name, state):
                 continue
-            ready = move.get("beats_until_ready")
-            if _forfeits_defence(ready, state):
-                s["score"] = min(s.get("score", 0), _FORFEITS_DEFENCE_SCORE)
+            ready = _beat_count(move.get("beats_until_ready"))
+            score = s.get("score", 0)
+            if _forfeits_defence(ready, state) and score > _FORFEITS_DEFENCE_SCORE:
+                s["score"] = _FORFEITS_DEFENCE_SCORE
                 s["reasoning"] = _forfeit_reason(name, ready, state)
 
     # ------------------------------------------------------------------
@@ -1450,8 +1486,7 @@ class CombatStrategist:
         """
         score, reason = CombatStrategist._score_move_ladder(move, state)
         note = CombatStrategist._charge_note(state)
-        name = move.get("name")
-        answers_it = state["in_defensive_window"] and name in _DEFENSIVE_MOVE_NAMES
+        answers_it = _answers_the_charge(move.get("name"), state)
         charge = state["incoming_move"]
         if note and not answers_it and not (charge and charge in reason):
             reason = f"{reason} {note}"
@@ -1476,7 +1511,7 @@ class CombatStrategist:
         category = move.get("category", "Miscellaneous")
         base_score = _CATEGORY_BASE_SCORES.get(category, _DEFAULT_CATEGORY_SCORE)
 
-        if state["in_defensive_window"] and name in _DEFENSIVE_MOVE_NAMES:
+        if _answers_the_charge(name, state):
             return CombatStrategist._score_defensive_move(name, state)
 
         # Issue #686: inside the window with every defence priced out by
@@ -1508,6 +1543,20 @@ class CombatStrategist:
                 f"is still time before {charge} lands in {beats} beat(s)."
             )
 
+        # Issue #688, before every branch that would bid an attack UP (DoT,
+        # resting enemy, heat): an attack that cannot hurt anyone it reaches
+        # is not worth a beat whatever the heat says. A move with no previews
+        # never reaches this -- `_harmless_targets` has no opinion on it.
+        # Before #700's forfeit rule too: its score is lower, and "can't hurt"
+        # is true at any timing -- the LLM path lands on the same answer
+        # (`_clamp_forfeiting_suggestions` never lowers below it).
+        is_attack = _deals_damage(move)
+        offensive_attack = _is_offensive_attack(move)
+        if is_attack:
+            harmless_reason = _harmless_reason(move)
+            if harmless_reason:
+                return _HARMLESS_ATTACK_SCORE, harmless_reason
+
         # Issue #700: a move that ties Jean up past the last beat a Dodge/Parry
         # could still meet a flagged charge. Before every branch that could bid
         # it up (critical-fatigue Rest, DoT, heat): no refuel or damage bonus is
@@ -1515,7 +1564,7 @@ class CombatStrategist:
         # eligible, a Dodge/Parry included -- the in-window stance returned
         # above, so one arriving here does not answer the charge, and at 11-13
         # beats its own 10-beat tie-up spends the window just as Attack's does.
-        ready = move.get("beats_until_ready")
+        ready = _beat_count(move.get("beats_until_ready"))
         if _forfeits_defence(ready, state):
             return _FORFEITS_DEFENCE_SCORE, _forfeit_reason(name, ready, state)
 
@@ -1543,17 +1592,6 @@ class CombatStrategist:
 
         if state["hp_critical"] and name == "UseItem":
             return 88, "HP critically low; use a healing consumable before engaging."
-
-        # Issue #688, before every branch that would bid an attack UP (DoT,
-        # resting enemy, heat): an attack that cannot hurt anyone it reaches
-        # is not worth a beat whatever the heat says. A move with no previews
-        # never reaches this -- `_harmless_targets` has no opinion on it.
-        is_attack = _deals_damage(move)
-        offensive_attack = _is_offensive_attack(move)
-        if is_attack:
-            harmless_reason = _harmless_reason(move)
-            if harmless_reason:
-                return _HARMLESS_ATTACK_SCORE, harmless_reason
 
         if name == "Swap Weapon" and state["offense_all_harmless"]:
             return _SWAP_WHEN_HARMLESS_SCORE, _swap_when_harmless_reason(
@@ -2369,11 +2407,7 @@ class CombatStrategist:
         # `or 0`, so the same absent-HP payload was worth two different numbers
         # depending on which path reached it.
         player_hp = _player_vitals(context.get("player") or {}).hp
-        moves_by_name = {
-            m.get("name"): m
-            for m in context.get("available_moves", [])
-            if isinstance(m, dict)
-        }
+        moves_by_name = _moves_by_name(context)
 
         kept: List[Dict[str, Any]] = []
         for s in suggestions:

@@ -1682,8 +1682,8 @@ class Move:  # master class for all moves
         Not modelled: the adapter's ``max_beats = 20`` safety break returns
         early from a longer commitment, but the caster is still bound to the
         move then (current_move is set), so the count here remains the truth
-        about when he can act. A move whose ``execute()`` rewrites its own
-        later stages overrides this (``Wait``), and a stagger an enemy's
+        about when he can act. A move whose ``execute()`` rewrites its recoil
+        overrides ``_recoil_if_cast_now`` (``Wait``), and a stagger an enemy's
         Parry adds mid-swing (``Move.parry``) cannot be foreseen at all.
         """
         user = getattr(self, "user", None)
@@ -1696,9 +1696,21 @@ class Move:  # master class for all moves
         stage_beats = getattr(self, "stage_beat", None)
         if not isinstance(stage_beats, (list, tuple)) or len(stage_beats) < 3:
             return None
+        # `_effective_prep` compares ``prep > 0`` before `_beats_to_free` can
+        # reject a bad value, so a non-numeric prep must stop here or it raises
+        # out of the move listing.
+        prep = stage_beats[0]
+        if isinstance(prep, bool) or not isinstance(prep, (int, float)):
+            return None
         return self._beats_to_free(
-            self._effective_prep(), stage_beats[1], stage_beats[2]
+            self._effective_prep(), stage_beats[1], self._recoil_if_cast_now()
         )
+
+    def _recoil_if_cast_now(self):
+        """The recoil a cast now would run: the declared stage, unless a move's
+        ``execute()`` rewrites it (``Wait``) -- the one hook
+        ``beats_until_ready`` leaves open, so the gate above is not re-run."""
+        return self.stage_beat[2]
 
     @staticmethod
     def _beats_to_free(prep, execute, recoil):

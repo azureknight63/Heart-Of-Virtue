@@ -175,3 +175,19 @@ def test_a_whole_float_stage_counts_like_the_integer():
     move.stage_beat = [1.0, 1.0, 5.0, 2]
     predicted = move.beats_until_ready()
     assert predicted == _beats_until_asked_again(player, move)
+
+
+@pytest.mark.parametrize("prep", ["1", None, [1], {"beats": 1}])
+@pytest.mark.parametrize("name", ["Dodge", "Wait"])
+def test_none_for_a_non_numeric_prep_stage(name, prep):
+    """A degraded stage_beat must read "no opinion", not raise.
+
+    ``_effective_prep`` compares ``prep > 0`` before ``_beats_to_free`` can
+    reject the value, so a non-numeric prep raised TypeError out of the move
+    listing -- a 500 on every combat poll offering the move -- where every
+    other unfinishable stage answers None.
+    """
+    player, enemy = _jean_in_a_fight()
+    move = _move(player, name, enemy)
+    move.stage_beat = [prep] + list(move.stage_beat[1:])
+    assert move.beats_until_ready() is None

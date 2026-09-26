@@ -567,7 +567,9 @@ class CombatantSerializer:
         ``Move`` (src/moves/_base.py) declares ``_DAMAGE_MULTIPLIER = 1.0``,
         so every move answers this and the default below is only a coercion
         guard. ANY move that hits for more or less than its user's raw damage
-        must override it — that is not a ``TelegraphedSurge`` privilege. Most
+        must override it — or, when the difference is a scale its own
+        ``execute()`` applies, declare ``_EXECUTE_DAMAGE_SCALE`` (below) — and
+        that is not a ``TelegraphedSurge`` privilege. Most
         of the declarations in src/moves/_npc.py are on plain ``Move``
         subclasses (NpcAttack, GorranClub, VenomClaw, SpiderBite, BatBite,
         SeismicSlam, TwinFangs), so an audit that only looks at the surge
@@ -596,8 +598,8 @@ class CombatantSerializer:
         a hand-rolled ``execute()`` applies to the evaluated power
         (``_EXECUTE_DAMAGE_SCALE``, issue #721). Shipping the raw attribute
         overstated three moves to the advisor: a spray at 0.4 of its swing and
-        a drain at 0.6 went out as 1.0, and a surge that loses 0.7 of its 1.8
-        for ignoring protection went out as 1.8. This method only reads the
+        a drain at 0.6 went out as 1.0, and a surge whose 1.8 is scaled by 0.7
+        for ignoring protection (1.26) went out as 1.8. This method only reads the
         engine's answer; the arithmetic is the move's.
         ``TestWireMultiplierMatchesExecuteDamage`` in the same test file
         measures the wire value against the damage ``execute()`` deals.

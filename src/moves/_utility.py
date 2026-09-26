@@ -373,22 +373,20 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
         """The recoil ``execute()`` writes: the wait itself lives in recoil."""
         return max(1, self._chosen_duration() - 2)
 
-    def beats_until_ready(self):
-        """As ``Move.beats_until_ready``, but with the recoil ``execute()`` will set.
+    def _recoil_if_cast_now(self):
+        """``Move.beats_until_ready``'s recoil: the one ``execute()`` will set.
 
         Wait's declared stages are all zero until ``execute()`` turns the
-        chosen duration into recoil, so the base answer would read the
-        previous Wait's recoil (or none at all).
+        chosen duration into recoil, so the declared stage would read the
+        previous Wait's recoil (or none at all). Before the player picks a
+        duration this is `_DEFAULT_DURATION`'s -- a longer wait chosen at the
+        prompt ties Jean up for longer than the advisor was told (#700).
         """
-        if super().beats_until_ready() is None:
-            return None
-        return self._beats_to_free(
-            self._effective_prep(), self.stage_beat[1], self._recoil_for_duration()
-        )
+        return self._recoil_for_duration()
 
     def execute(self, player):
-        # Duration comes from the combat adapter's select_number flow; default
-        # to 5 beats when unset. (No terminal prompt.)
+        # Duration comes from the combat adapter's select_number flow; falls
+        # back to `_DEFAULT_DURATION` when unset. (No terminal prompt.)
         duration = self._chosen_duration()
         self.stage_beat[2] = self._recoil_for_duration()
         if hasattr(player, "combat_log"):
