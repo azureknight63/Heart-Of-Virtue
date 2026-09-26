@@ -2,9 +2,9 @@
 
 from typing import List, Tuple
 
-from ..move_picker import SUB_STAGE_INPUT_TYPES, pick_move_body
 from .base import ARENA_MAP, Scenario
 from ..client import GameClient
+from ..move_picker import SUB_STAGE_INPUT_TYPES, pick_move_body
 from ..reporter import BugReport, BugSeverity, BugCategory
 
 _MAX_ROUNDS = 20  # safety cap to avoid infinite loops
