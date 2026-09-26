@@ -538,7 +538,6 @@ class TestPlayerCore:
         m1.__class__ = MagicMock()
         m1.__class__.mro.return_value = [MagicMock(__name__='Merchant')]
         m1.name = "M1"
-        m1.shop = MagicMock()
 
         # Merchant 2: Needs initialization
         m2 = MagicMock()
@@ -552,7 +551,6 @@ class TestPlayerCore:
         m3.__class__ = MagicMock()
         m3.__class__.mro.return_value = [MagicMock(__name__='Merchant')]
         m3.name = "M3"
-        m3.shop = MagicMock()
         m3.update_goods.side_effect = Exception("Update failed")
 
         mock_tile = MagicMock()
@@ -562,6 +560,7 @@ class TestPlayerCore:
         with patch('src.functions.cprint'), patch('time.sleep'):
             player.refresh_merchants(phrase="M")
             m1.update_goods.assert_called_once()
+            m1.initialize_shop.assert_not_called()  # already initialized
             m2.initialize_shop.assert_called_once()
             m2.update_goods.assert_called_once()
             m3.update_goods.assert_called_once()

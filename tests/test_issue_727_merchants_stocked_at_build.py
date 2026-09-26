@@ -15,33 +15,28 @@ from src.secure_pickle import serialize_for_save
 from src.shop_conditions import UniqueItemInjectionCondition, iter_merchants
 from src.universe import Universe
 from tests._real_map_helpers import map_named
-from tests._world_fixtures import fresh_built_world as _fresh_world
-from tests._world_fixtures import merchant_on_map as _merchant
-
-
-def _goods(merchant):
-    return merchant.has_goods()
+from tests._world_fixtures import fresh_built_world, merchant_on_map
 
 
 @pytest.mark.parametrize("tent", ["grondia-jambos_shop", "eastern-descent-jambos-tent"])
 def test_jambos_counter_is_stocked_on_a_fresh_game(tent):
-    player = _fresh_world()
-    assert _goods(_merchant(player.universe, tent, "Jambo"))
+    player = fresh_built_world()
+    assert merchant_on_map(player.universe, tent, "Jambo").has_goods()
 
 
 def test_every_merchant_in_the_world_has_goods_after_build():
-    player = _fresh_world()
+    player = fresh_built_world()
     merchants = list(iter_merchants(player.universe.maps))
     assert merchants, "no merchants found -- iter_merchants is not walking the maps"
-    unstocked = [m.name for m in merchants if not _goods(m)]
+    unstocked = [m.name for m in merchants if not m.has_goods()]
     assert unstocked == []
 
 
 def test_authored_stock_is_kept_rather_than_rerolled():
     """Milo's map authors his counter and floor stock; stocking at build only
     fills merchants that have nothing, so it must not replace his."""
-    player = _fresh_world()
-    milo = _merchant(player.universe, "milos-shop", "Milo")
+    player = fresh_built_world()
+    milo = merchant_on_map(player.universe, "milos-shop", "Milo")
     milos_shop = map_named(player.universe, "milos-shop")
     assert "Restorative" in [i.name for i in milo.inventory]
     assert "Spear" in [i.name for i in milos_shop[(2, 3)].items_here]
@@ -66,8 +61,8 @@ def test_loading_a_save_does_not_reroll_stock_or_the_unique_registry():
     ``saveuniv`` branch is not that path -- nothing sets ``saveuniv`` -- so a
     test of it would pass whatever a load did.
     """
-    saved = _fresh_world()
-    jambo = _merchant(saved.universe, "grondia-jambos_shop", "Jambo")
+    saved = fresh_built_world()
+    jambo = merchant_on_map(saved.universe, "grondia-jambos_shop", "Jambo")
     # A claimed unique makes the registry non-empty, so "unchanged" means something.
     assert UniqueItemInjectionCondition().inject_unique_items(jambo)
     stock = [i.name for i in jambo.inventory]
@@ -78,7 +73,7 @@ def test_loading_a_save_does_not_reroll_stock_or_the_unique_registry():
         loaded = _load_through_the_api(serialize_for_save(saved))
 
     assert loaded is not None, "load_game rejected the save"
-    restored = _merchant(loaded.universe, "grondia-jambos_shop", "Jambo")
+    restored = merchant_on_map(loaded.universe, "grondia-jambos_shop", "Jambo")
     assert restored is not jambo
     assert [i.name for i in restored.inventory] == stock
     assert loaded.universe.unique_items_spawned == claims
@@ -86,7 +81,7 @@ def test_loading_a_save_does_not_reroll_stock_or_the_unique_registry():
 
 def test_a_merchant_that_fails_to_stock_does_not_break_the_build():
     with patch("src.npc.Merchant.update_goods", side_effect=RuntimeError("boom")):
-        player = _fresh_world()
+        player = fresh_built_world()
     assert player.universe.maps
 
 
@@ -134,3 +129,22 @@ def test_iter_merchants_skips_non_tile_entries_and_non_merchants():
     merchant = Merchant()
     maps = [{"name": "x", (0, 0): Tile([object(), merchant]), (1, 0): None}, "junk"]
     assert list(iter_merchants(maps)) == [merchant]
+
+
+def test_stock_if_empty_called_unbound_uses_the_mixins_checks():
+    """GameService calls it unbound on duck-typed merchants: the mixin's own
+    Gold-by-type check decides, and a merchant with no ``update_goods`` is left
+    alone rather than raising."""
+    from types import SimpleNamespace
+
+    from src.items import Gold
+    from src.npc._shop import MerchantShopMixin
+
+    restocks = []
+    empty = SimpleNamespace(buy_modifier=1.0, inventory=[Gold(5)],
+                            update_goods=lambda: restocks.append(1))
+    assert MerchantShopMixin.stock_if_empty(empty) is True
+    assert restocks == [1]
+
+    mute = SimpleNamespace(buy_modifier=1.0, inventory=[])
+    assert MerchantShopMixin.stock_if_empty(mute) is False

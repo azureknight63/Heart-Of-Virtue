@@ -117,7 +117,6 @@ class TestRefreshMerchantsOutcomes:
         class BrokenInit(Merchant):
             def __init__(self):
                 self.name = "BrokenInit"
-                self.shop = None
                 self.update_calls = 0
 
             def initialize_shop(self):
@@ -156,7 +155,6 @@ class TestRefreshMerchantsOutcomes:
     def test_update_goods_exception_recorded_as_named_failure(self, player):
         class UpdateExplodes(Merchant):
             name = "Sprocket"
-            shop = object()
 
             def update_goods(self):
                 raise ValueError("stock table missing")
@@ -171,7 +169,6 @@ class TestRefreshMerchantsOutcomes:
     def test_merchant_without_update_goods_is_a_failure(self, player):
         class NoUpdate(Merchant):
             name = "Stumpy"
-            shop = object()
 
         player.universe = _universe_with_tile(_tile_with_npc(NoUpdate()))
 
@@ -184,7 +181,6 @@ class TestRefreshMerchantsOutcomes:
         class Vendor(Merchant):
             def __init__(self, name):
                 self.name = name
-                self.shop = object()
                 self.update_calls = 0
 
             def update_goods(self):
@@ -205,7 +201,6 @@ class TestRefreshMerchantsOutcomes:
     def test_phrase_with_no_match_reports_the_filter(self, player):
         class Vendor(Merchant):
             name = "Fishmonger"
-            shop = object()
 
             def update_goods(self):
                 pass
@@ -222,7 +217,6 @@ class TestRefreshMerchantsOutcomes:
         class Broken(Merchant):
             def __init__(self, idx):
                 self.name = f"Broken{idx}"
-                self.shop = object()
 
             def update_goods(self):
                 raise RuntimeError("boom")

@@ -261,13 +261,18 @@ class MerchantShopMixin:
         Used to give every merchant its opening stock when a new world is built
         (issue #727). A merchant whose map authors its stock keeps that stock
         rather than having it re-rolled. Returns True when it stocked.
+
+        Safe to call unbound on a duck-typed merchant (GameService does, for
+        the shop-open path): the checks are the mixin's own, and a merchant
+        without ``update_goods`` is left as it is.
         """
-        # GameService._get_shop_state_locked repeats this check by hand, for
-        # the Mock merchants its tests use; keep the two in step.
-        self.ensure_shop_initialized()
-        if self.has_goods():
+        MerchantShopMixin.ensure_shop_initialized(self)
+        if MerchantShopMixin.has_goods(self):
             return False
-        self.update_goods()
+        update_goods = getattr(self, "update_goods", None)
+        if not callable(update_goods):
+            return False
+        update_goods()
         return True
 
     def ensure_shop_initialized(self):

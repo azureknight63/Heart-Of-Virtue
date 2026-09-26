@@ -126,6 +126,14 @@ class PlayerLevelingMixin:
             events.append(self._level_up_api())
         return events
 
+    def recompute_exp_to_level(self):
+        """Re-derive ``exp_to_level`` from the current level and intelligence.
+
+        For stats written after construction (a config's ``[player]`` block):
+        ``__init__`` fixes the first threshold at the default intelligence (#710).
+        """
+        self.exp_to_level = exp_needed_for_level(self.level, self.intelligence)
+
     def _level_up_api(self):
         """API-safe level up that mirrors terminal behavior without blocking for input.
 
@@ -136,7 +144,7 @@ class PlayerLevelingMixin:
         # Level up bookkeeping (match terminal behavior)
         self.level += 1
         self.exp -= self.exp_to_level
-        self.exp_to_level = exp_needed_for_level(self.level, self.intelligence)
+        self.recompute_exp_to_level()
 
         # Apply random bonus increases to base stats
         bonuses = {}

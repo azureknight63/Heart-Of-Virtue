@@ -10,6 +10,7 @@ world build, merely creating a session could use them up.
 import io
 from unittest.mock import Mock, patch
 
+from src.items import unique_item_factories
 from src.npc._shop import MerchantShopMixin
 from src.secure_pickle import safe_pickle_load, serialize_for_save
 from src.shop_conditions import UniqueItemInjectionCondition
@@ -47,7 +48,6 @@ def _inject(merchant):
 
 def test_claiming_every_unique_in_one_world_leaves_another_worlds_pool_whole():
     world_a, world_b = _world(), _world()
-    from src.items import unique_item_factories
 
     for _ in unique_item_factories:
         assert _inject(_jambo(world_a)), "world A could not claim its own unique"
