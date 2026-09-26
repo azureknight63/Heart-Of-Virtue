@@ -8,14 +8,13 @@ world build, merely creating a session could use them up.
 """
 
 import io
-import random
 from unittest.mock import Mock, patch
 
 from src.npc._shop import MerchantShopMixin
 from src.secure_pickle import safe_pickle_load, serialize_for_save
-from src.player import Player
-from src.shop_conditions import UniqueItemInjectionCondition, iter_merchants
+from src.shop_conditions import UniqueItemInjectionCondition
 from src.universe import Universe
+from tests._world_fixtures import fresh_built_world, merchant_on_map
 
 
 def _no_unique_rolls(self):
@@ -29,12 +28,8 @@ def _always_roll_a_unique(self):
 
 
 def _world(roll=_no_unique_rolls, seed=727):
-    random.seed(seed)
-    player = Player()
-    player.universe = Universe(player)
     with patch.object(MerchantShopMixin, "_update_shop_conditions", roll):
-        player.universe.build(player)
-    return player.universe
+        return fresh_built_world(seed).universe
 
 
 def _save_and_load(universe):
@@ -43,8 +38,7 @@ def _save_and_load(universe):
 
 
 def _jambo(universe):
-    game_map = next(m for m in universe.maps if m.get("name") == "grondia-jambos_shop")
-    return next(iter_merchants([game_map]))
+    return merchant_on_map(universe, "grondia-jambos_shop", "Jambo")
 
 
 def _inject(merchant):
@@ -58,7 +52,7 @@ def test_claiming_every_unique_in_one_world_leaves_another_worlds_pool_whole():
     for _ in unique_item_factories:
         assert _inject(_jambo(world_a)), "world A could not claim its own unique"
     assert _inject(_jambo(world_a)) == []  # A's pool is now spent...
-    assert _inject(_jambo(world_b)), "...and B's went with it"
+    assert _inject(_jambo(world_b)), "world B's pool was depleted by world A's claims"
 
 
 def test_building_a_new_session_does_not_deplete_an_existing_ones_uniques():
@@ -102,6 +96,18 @@ def test_a_universe_saved_before_the_registry_existed_loads_with_an_empty_one():
     assert restored.unique_items_spawned == set()
     restored.unique_items_spawned.add("AncientRelic")
     assert restored.unique_items_spawned == {"AncientRelic"}
+
+
+def test_a_registry_that_is_not_a_set_is_replaced_with_an_empty_one():
+    """A crafted save can put anything under ``_unique_items_spawned``; a
+    non-set would break every later claim (or, as a str, answer ``in`` checks
+    by substring). Treat it as absent."""
+    for bogus in ("CrystalTear", ["CrystalTear"], {"CrystalTear": 1}, 0):
+        world = Universe()
+        world.__dict__["_unique_items_spawned"] = bogus
+        assert world.unique_items_spawned == set(), repr(bogus)
+        world.unique_items_spawned.add("AncientRelic")
+        assert world.unique_items_spawned == {"AncientRelic"}, repr(bogus)
 
 
 def test_the_registry_survives_a_save_round_trip():

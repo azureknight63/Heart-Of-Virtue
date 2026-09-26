@@ -200,15 +200,9 @@ class TestTheIntroTellsTheTruth:
         """The crate Jambo points at holds goods the moment the world exists,
         not only after the shop has been opened once (issue #727). Uses the
         real build path, since the helper above never runs ``build()``."""
-        import random
+        from tests._world_fixtures import fresh_built_world
 
-        from src.player import Player
-        from src.universe import Universe
-
-        random.seed(727)
-        player = Player()
-        player.universe = Universe(player)
-        player.universe.build(player)
+        player = fresh_built_world(727)
         for _o, _n, _e, _tent_file, tent_name in TENTS:
             tent = _map(player.universe, tent_name)
             crate = next(o for o in tent[(3, 2)].objects_here if type(o).__name__ == "Crate")

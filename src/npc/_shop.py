@@ -262,12 +262,26 @@ class MerchantShopMixin:
         (issue #727). A merchant whose map authors its stock keeps that stock
         rather than having it re-rolled. Returns True when it stocked.
         """
-        if not hasattr(self, "buy_modifier"):
-            self.initialize_shop()
-        if any(getattr(it, "name", None) != "Gold" for it in self.inventory or []):
+        # GameService._get_shop_state_locked repeats this check by hand, for
+        # the Mock merchants its tests use; keep the two in step.
+        self.ensure_shop_initialized()
+        if self.has_goods():
             return False
         self.update_goods()
         return True
+
+    def ensure_shop_initialized(self):
+        """Run :meth:`initialize_shop` unless it already has.
+
+        ``buy_modifier`` is the marker: ``initialize_shop`` always sets it, and
+        a merchant restored from an older save may predate it.
+        """
+        if not hasattr(self, "buy_modifier"):
+            self.initialize_shop()
+
+    def has_goods(self) -> bool:
+        """True when the merchant holds anything to sell besides its gold."""
+        return any(not isinstance(it, Gold) for it in self.inventory or [])
 
     def update_goods(self):
         """Refresh or update the merchant's inventory.
