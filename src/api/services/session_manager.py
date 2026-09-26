@@ -656,6 +656,10 @@ class SessionManager:
                         )
 
             if stats_applied:
+                # level/intelligence may have moved; MinimalPlayer has no curve.
+                recompute = getattr(player, "recompute_exp_to_level", None)
+                if callable(recompute):
+                    recompute()
                 print(
                     f"[SessionManager] [OK] Applied player stats from config: {', '.join(stats_applied)}",
                     flush=True,
