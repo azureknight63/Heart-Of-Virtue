@@ -123,6 +123,23 @@ _LAST_DEFENSIBLE_BEAT = _DEFENSIVE_WINDOW_BEATS + _DEFENSIVE_STANCE_BEATS - 1
 # The two stances the window above is measured for.
 _DEFENSIVE_MOVE_NAMES = ("Dodge", "Parry")
 
+# Issue #700: what a move is worth when casting it would forfeit the only
+# defence against a flagged charge -- it ties Jean up (`beats_until_ready`,
+# published per offered move from `Move.beats_until_ready`) until fewer than
+# `_DEFENSIVE_WINDOW_BEATS` remain, so a Dodge/Parry cast when he is next asked
+# resolves after the blow. Below every defensive recommendation (the in-window
+# stance scores 60-97, the #686 locked-defence scores 82-92), and deliberately
+# two below Wait/Check (20): Check costs no beat at all, so it is strictly
+# safer than a move that spends the window, and a tie would present the two as
+# equally sound. Above nothing that matters: the harmless-attack floor (15)
+# sits below it only because a swing that cannot hurt anyone is worth even less.
+#
+# Knowingly NOT modelled (maintainer's call on #700): killing the charger, or
+# interrupting its wind-up, before the surge lands is also counterplay, and a
+# heavy Attack at 12 beats is sometimes exactly that. The advisor cannot yet
+# price "will this finish it in time", so it errs toward keeping the Dodge.
+_FORFEITS_DEFENCE_SCORE = 18
+
 # Issue #688: what an attack is worth when its own damage_preview says it
 # cannot hurt anyone it can reach -- below every zero-cost maneuver, above
 # Wait/Check (20), because a swing still costs the enemy nothing but it also
@@ -387,6 +404,11 @@ class TacticalState(TypedDict):
     # on offer and at least one is locked by fatigue, else None. See
     # `_defence_lock_note`.
     defence_lock_note: Optional[str]
+    # Issue #700: the Dodge/Parry Jean could cast soonest and in how many beats
+    # (0 = offered now); both None when neither is offered or merely cooling.
+    # See `_soonest_defence` and `_forfeits_defence`.
+    defence_name: Optional[str]
+    defence_castable_in: Optional[int]
     # Issue #688: every offered attack's damage_preview is 0 against every
     # target it can reach, and who those targets are (for the reasoning).
     offense_all_harmless: bool
@@ -672,6 +694,71 @@ def _aimed_elsewhere(mip: Optional[Dict[str, Any]], player_id: Any) -> bool:
     """
     target_id = (mip or {}).get("target_id")
     return bool(player_id and target_id and target_id != player_id)
+
+
+def _soonest_defence(ctx: Dict[str, Any]) -> Tuple[Optional[str], Optional[int]]:
+    """The Dodge/Parry Jean could cast soonest, and in how many beats (0 = now).
+
+    Issue #700. Offered now wins; otherwise the shortest ``defensive_cooldowns``
+    entry the adapter supplies. ``(None, None)`` when neither is offered nor
+    merely cooling -- fatigue-locked, unlearned, not viable -- which is the case
+    `_defence_lock_note` and #686's locked-defence branch speak to instead.
+    """
+    for m in _offerable_moves(ctx.get("available_moves", [])):
+        if m.get("name") in _DEFENSIVE_MOVE_NAMES:
+            return m["name"], 0
+    cooling = [
+        (beats, name)
+        for name, beats in (ctx.get("defensive_cooldowns") or {}).items()
+        if name in _DEFENSIVE_MOVE_NAMES
+        and isinstance(beats, int)
+        and not isinstance(beats, bool)
+    ]
+    if not cooling:
+        return None, None
+    beats, name = min(cooling)
+    return name, beats
+
+
+def _forfeits_defence(ready: Any, state: TacticalState) -> bool:
+    """True when casting a move with tie-up ``ready`` gives up the only Dodge.
+
+    Issue #700. ``ready`` is the offered move's ``beats_until_ready``: beats
+    until Jean is asked again. The move forfeits the defence when all hold:
+
+      * a flagged charge is coming at Jean (`_threat_worth_defending` has
+        already dropped charges aimed at an ally) and is not already too close
+        for a stance to meet (``incoming >= _DEFENSIVE_WINDOW_BEATS``);
+      * a Dodge/Parry could otherwise be cast in time -- offered now, or off
+        cooldown while at least `_DEFENSIVE_WINDOW_BEATS` beats remain;
+      * the move frees Jean with fewer than `_DEFENSIVE_WINDOW_BEATS` to spare.
+
+    A missing or non-integer ``ready`` is no opinion: a payload that predates
+    the field, or a move in flight, scores exactly as it did before.
+    """
+    incoming = state["incoming_beats"]
+    castable_in = state["defence_castable_in"]
+    if (
+        isinstance(ready, bool)
+        or not isinstance(ready, int)
+        or incoming is None
+        or castable_in is None
+        or not state["incoming_flagged"]
+        or incoming < _DEFENSIVE_WINDOW_BEATS
+        or castable_in > incoming - _DEFENSIVE_WINDOW_BEATS
+    ):
+        return False
+    return incoming - ready < _DEFENSIVE_WINDOW_BEATS
+
+
+def _forfeit_reason(name: str, ready: int, state: TacticalState) -> str:
+    """Why a move scored `_FORFEITS_DEFENCE_SCORE`: its tie-up against the charge."""
+    charge = _sentence_case(state["incoming_move"] or _UNNAMED_CHARGE)
+    defence = state["defence_name"] or "Dodge"
+    return (
+        f"{name} ties Jean up for {ready} beat(s); {charge} lands in "
+        f"{state['incoming_beats']} -- too late to {defence} after."
+    )
 
 
 def _harmless_targets(move: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], bool]:
@@ -1065,6 +1152,7 @@ class CombatStrategist:
             return self._get_fallback_suggestions(combat_context, max_suggestions)
 
         self._clamp_harmless_suggestions(suggestions, combat_context)
+        self._clamp_forfeiting_suggestions(suggestions, combat_context)
         suggestions.sort(key=lambda x: x["score"], reverse=True)
         results = suggestions[:max_suggestions]
         self._ensure_target_ids(results, combat_context)
@@ -1113,6 +1201,36 @@ class CombatStrategist:
             swap["score"] = max(swap.get("score", 0), _SWAP_WHEN_HARMLESS_SCORE)
             swap["reasoning"] = _swap_when_harmless_reason(names)
 
+    def _clamp_forfeiting_suggestions(
+        self, suggestions: List[Dict[str, Any]], ctx: Dict[str, Any]
+    ) -> None:
+        """Issue #700 on the LLM path: `_forfeits_defence`, as the ladder applies it.
+
+        The prompt carries no per-move tie-up (a prompt change needs a live
+        A/B run), so a model can still propose Attack 12 beats before a
+        surge. Lower-only, like `_clamp_harmless_suggestions`: the score is
+        only ever pulled down to `_FORFEITS_DEFENCE_SCORE`, and the honest
+        reason replaces the model's. An in-window Dodge/Parry is never
+        touched -- it is the answer, which is the ladder's rule too.
+        """
+        state = self._derive_tactical_state(ctx)
+        moves = {
+            m.get("name"): m
+            for m in ctx.get("available_moves", [])
+            if isinstance(m, dict)
+        }
+        for s in suggestions:
+            name = s.get("move_name")
+            move = moves.get(name)
+            if move is None or (
+                state["in_defensive_window"] and name in _DEFENSIVE_MOVE_NAMES
+            ):
+                continue
+            ready = move.get("beats_until_ready")
+            if _forfeits_defence(ready, state):
+                s["score"] = min(s.get("score", 0), _FORFEITS_DEFENCE_SCORE)
+                s["reasoning"] = _forfeit_reason(name, ready, state)
+
     # ------------------------------------------------------------------
     # Heuristic fallback
     # ------------------------------------------------------------------
@@ -1145,6 +1263,7 @@ class CombatStrategist:
         incoming_beats = threat["beats_until_resolve"]
         in_window = _defense_lands_in_time(incoming_beats)
         harmless_offense, harmless_names = self._harmless_offense(ctx)
+        defence_name, defence_castable_in = _soonest_defence(ctx)
 
         return {
             "heat": vitals.heat,
@@ -1193,6 +1312,8 @@ class CombatStrategist:
             "defence_lock_note": (
                 self._defence_lock_note(ctx) if in_window else None
             ),
+            "defence_name": defence_name,
+            "defence_castable_in": defence_castable_in,
             "offense_all_harmless": harmless_offense,
             "harmless_target_names": harmless_names,
             "reachable_target_names": _reachable_target_names(ctx),
@@ -1386,6 +1507,17 @@ class CombatStrategist:
                 f"{lock}; Rest restores fatigue so a Dodge can follow, if there "
                 f"is still time before {charge} lands in {beats} beat(s)."
             )
+
+        # Issue #700: a move that ties Jean up past the last beat a Dodge/Parry
+        # could still meet a flagged charge. Before every branch that could bid
+        # it up (critical-fatigue Rest, DoT, heat): no refuel or damage bonus is
+        # worth walking into the blow undefended. Every move reaching here is
+        # eligible, a Dodge/Parry included -- the in-window stance returned
+        # above, so one arriving here does not answer the charge, and at 11-13
+        # beats its own 10-beat tie-up spends the window just as Attack's does.
+        ready = move.get("beats_until_ready")
+        if _forfeits_defence(ready, state):
+            return _FORFEITS_DEFENCE_SCORE, _forfeit_reason(name, ready, state)
 
         if state["fatigue_critical"] and name == "Rest":
             return 90, (

@@ -100,6 +100,16 @@ def _outreaches_melee(reach_ft):
     return reach_ft > MELEE_REACH_FT
 
 
+def _whole_beats_or_none(value):
+    """``value`` if it is a beat count (a non-bool int), else None.
+
+    A type gate, not arithmetic: the engine's count passes through as-is, and
+    anything else (a test double's MagicMock, a legacy placeholder) ships as
+    the "no answer" the advisor already reads as no opinion.
+    """
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 # Shortest prep stage that earns an abort affordance. Below this a move is over
 # before a player could react to anything, and offering a bail-out would only add
 # a decision to every swing. Above it the commitment is long enough that the
@@ -4339,6 +4349,13 @@ class ApiCombatAdapter:
                 # drain fatigue. The Tactical Advisor reads this to decide
                 # which offered moves are attacks.
                 "deals_damage": deals_damage_of(move),
+                # Move.beats_until_ready (#700): if cast now, beats until Jean
+                # is asked again. The advisor reads it to keep a move that
+                # outlasts the Dodge window off the top of its list. None when
+                # the engine has no answer (in flight, degraded move, double).
+                "beats_until_ready": _whole_beats_or_none(
+                    CombatantSerializer._call_move_method(move, "beats_until_ready")
+                ),
                 "fatigue_cost": move.fatigue_cost,
                 "available": True,
                 "reason": None,
