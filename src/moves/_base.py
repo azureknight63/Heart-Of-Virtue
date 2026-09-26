@@ -1639,6 +1639,72 @@ class Move:  # master class for all moves
             return int(left) + 1
         return int(left) + 1 + int(execute_beats) + 1
 
+    def beats_until_ready(self):
+        """If cast now, beats until the caster is free to choose again (#700).
+
+        "Free" is the moment ``advance`` clears ``user.current_move`` -- the
+        end of recoil, as the move enters cooldown -- which is when
+        ``ApiCombatAdapter``'s beat loop hands control back. The Tactical
+        Advisor reads it to avoid recommending a move that carries Jean past
+        the last beat a Dodge could still meet a telegraphed blow.
+
+        Counted on the same stage machine ``beats_until_resolve`` describes:
+        draining a stage to zero does not advance it, the NEXT beat does, and
+        ``advance``'s ``while self.beats_left == 0`` loop runs a zero-length
+        stage in the same beat as the one before it. So, from rest, a move with
+        prep P, execute E and recoil R frees its caster after
+        ``P + E + R + 1 + [E > 0] + [R > 0]`` beats (Dodge [1,1,5,2] -> 10).
+        tests/test_move_beats_until_ready.py drives the real loop to hold it.
+
+        * 0 for an ``instant`` move: the adapter resolves every stage of one
+          without letting a beat pass.
+        * None unless the move is at rest (stage 0 and not the caster's
+          current move) -- an in-flight move has no "if cast now" -- and None
+          for a fractional stage, which ``advance`` can never drain to exactly
+          zero and so never finishes.
+
+        Not modelled: the adapter's ``max_beats = 20`` safety break returns
+        early from a longer commitment, but the caster is still bound to the
+        move then (current_move is set), so the count here remains the truth
+        about when he can act. A move whose ``execute()`` rewrites its own
+        later stages overrides this (``Wait``), and a stagger an enemy's
+        Parry adds mid-swing (``Move.parry``) cannot be foreseen at all.
+        """
+        user = getattr(self, "user", None)
+        if getattr(self, "current_stage", None) != MOVE_STAGE_PREP or (
+            user is not None and getattr(user, "current_move", None) is self
+        ):
+            return None
+        if getattr(self, "instant", False):
+            return 0
+        stage_beats = getattr(self, "stage_beat", None)
+        if not isinstance(stage_beats, (list, tuple)) or len(stage_beats) < 3:
+            return None
+        return self._beats_to_free(
+            self._effective_prep(), stage_beats[1], stage_beats[2]
+        )
+
+    @staticmethod
+    def _beats_to_free(prep, execute, recoil):
+        """Beats from cast to the start of cooldown, per ``advance``'s loop.
+
+        None for any stage that is not a whole number of beats (see
+        ``beats_until_ready``).
+        """
+        stages = []
+        for value in (prep, execute, recoil):
+            whole = isinstance(value, int) or (
+                isinstance(value, float) and value.is_integer()
+            )
+            if isinstance(value, bool) or not whole or value < 0:
+                return None
+            stages.append(int(value))
+        prep, execute, recoil = stages
+        # One beat to leave prep, one more per non-empty later stage: a stage
+        # of N beats costs N drains plus the beat that advances past it, and an
+        # empty stage is skipped inside the beat that reached it.
+        return prep + 1 + (execute + 1 if execute else 0) + (recoil + 1 if recoil else 0)
+
     def get_accuracy_falloff(self, user):
         """Distance beyond which this move's accuracy decays, and how fast.
 
@@ -2061,31 +2127,56 @@ class Move:  # master class for all moves
                 self.stage_announce[0]
             )  # Print the prep announce message for the move
 
-        # CleaveInstinct passive: next move after a kill gets prep=1 (skip zero-beat moves)
-        prep = self.stage_beat[0]
-        if (
-            prep > 0
-            and getattr(self.user, "_cleave_instinct_pending", False)
+        prep = self._effective_prep()
+        # The two one-shot modifiers _effective_prep() counted are spent here,
+        # and only here: the advisor asks the same question every beat.
+        if self.stage_beat[0] > 0:
+            if self._cleave_instinct_applies():
+                self.user._cleave_instinct_pending = False
+            stagger = self._pending_stagger()
+            if stagger is not None:
+                stagger.penalty_consumed = True
+        self.beats_left = prep
+
+    def _cleave_instinct_applies(self):
+        """True when the CleaveInstinct passive will cut this cast's prep to 1."""
+        return bool(
+            getattr(self.user, "_cleave_instinct_pending", False)
             and any(
                 getattr(m, "name", "") == "Cleave Instinct"
                 for m in getattr(self.user, "known_moves", [])
             )
-        ):
+        )
+
+    def _pending_stagger(self):
+        """The unspent Staggered state that will lengthen this cast's prep, or None."""
+        user_states = getattr(self.user, "states", None)
+        if not isinstance(user_states, list):
+            return None
+        for state in user_states:
+            if getattr(state, "name", "") == "Staggered" and not getattr(
+                state, "penalty_consumed", False
+            ):
+                return state
+        return None
+
+    def _effective_prep(self):
+        """The prep beats ``cast()`` would set right now, consuming nothing.
+
+        One owner for the cast-time prep modifiers, read by ``cast()`` (which
+        then spends the one-shot ones) and by ``beats_until_ready()`` (which
+        must not). Zero-prep moves take no modifier at all.
+        """
+        prep = self.stage_beat[0]
+        # CleaveInstinct passive: next move after a kill gets prep=1.
+        if prep > 0 and self._cleave_instinct_applies():
             prep = 1
-            self.user._cleave_instinct_pending = False
-
-        # Staggered state: add +5 prep beats to caster's next move (consumed after first use)
-        if prep > 0 and isinstance(getattr(self.user, "states", None), list):
-            for state in self.user.states:
-                if getattr(state, "name", "") == "Staggered" and not getattr(
-                    state, "penalty_consumed", False
-                ):
-                    prep += getattr(state, "prep_penalty", 5)
-                    state.penalty_consumed = True
-                    break
-
-        # QuickReload passive: faster crossbow reload — shave ~20% of prep beats
-        # (floored at 1) while wielding a crossbow.
+        # Staggered state: +5 prep beats on the caster's next move, once.
+        stagger = self._pending_stagger()
+        if prep > 0 and stagger is not None:
+            prep += getattr(stagger, "prep_penalty", 5)
+        # QuickReload passive: faster crossbow reload — shave ~20% of prep
+        # beats (floored at 1) while wielding a crossbow.
         if (
             prep > 1
             and getattr(getattr(self.user, "eq_weapon", None), "subtype", None)
@@ -2096,8 +2187,7 @@ class Move:  # master class for all moves
             )
         ):
             prep = max(1, int(round(prep * 0.8)))
-
-        self.beats_left = prep
+        return prep
 
     def advance(self, user):
         self.user = user  # Ensure user is always current

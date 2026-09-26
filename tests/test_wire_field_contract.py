@@ -655,6 +655,12 @@ MOVE_FIELDS_WITH_NO_CLIENT_READ = {
         "Advisor (ai/combat_strategist.py `_deals_damage`) to tell attacks "
         "from Offensive moves that only reposition or drain -- not by the client."
     ),
+    "beats_until_ready": (
+        "the engine's Move.beats_until_ready (#700), read server-side by the "
+        "Tactical Advisor (ai/combat_strategist.py `_forfeits_defence`) so it "
+        "stops recommending a move that ties Jean up past the last beat a "
+        "Dodge could still meet a telegraphed blow -- not by the client."
+    ),
 }
 
 
@@ -926,6 +932,43 @@ class TestMoveWireContract:
             "recoil": 5,
             "cooldown": 55,
         }
+
+    def test_beats_until_ready_is_the_engine_answer_not_recomputed(self):
+        """#700: the adapter publishes Move.beats_until_ready verbatim.
+
+        Staggered is the tell: its +5 prep exists only in the engine's cast-
+        time modifiers, so anything re-derived from the published
+        ``stage_beats`` would read 5 beats short. Wait is the other: its
+        stage beats are all zero until execute() reads ``duration``. Check
+        is instant, so 0. And the listing must not spend the stagger.
+        """
+        player = Player()
+        attack = Attack(player)
+        wait = Wait(player)
+        wait.duration = 7
+        check = Check(player)
+        player.known_moves = [attack, wait, check]
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.combat_list = []
+        player.combat_list_allies = [player]
+        player.combat_proximity = {}
+        player.in_combat = True
+        stagger = states.Staggered(player)
+        player.states.append(stagger)
+
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            adapter = ApiCombatAdapter(player)
+            by_name = {m["name"]: m for m in adapter._get_available_moves()}
+
+        assert by_name["Attack"]["beats_until_ready"] == attack.beats_until_ready()
+        assert attack.stage_beat == [4, 1, 1, 4]  # pin the fixture's own assumption
+        # 4 prep + 5 stagger + 1, then execute 1 + 1, then recoil 1 + 1.
+        assert by_name["Attack"]["beats_until_ready"] == 14
+        assert by_name["Wait"]["beats_until_ready"] == 7
+        assert by_name["Check"]["beats_until_ready"] == 0
+        assert stagger.penalty_consumed is False
 
     def test_stage_beats_handle_float_and_zero_values(self):
         """stage_beat entries can be floats (e.g. 3.5) and can be 0 — the
