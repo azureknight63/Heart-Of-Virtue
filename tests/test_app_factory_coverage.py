@@ -147,37 +147,36 @@ class TestLoggingConfiguration:
 
         assert "still captured" in caplog.text
 
-    @pytest.fixture
-    def pristine_root_logger(self):
-        """Snapshot and restore the REAL root logger around this test.
+    def test_repeated_calls_do_not_stack_duplicate_handlers(self, tmp_path):
+        """Idempotence was the reason force=True was there in the first place;
+        replacing it must not reintroduce handler stacking. Aimed at
+        ``structured_log.configure_logging`` -- the only installer of handlers
+        since #698 (``app._configure_logging`` installs none, so counting
+        around it proved nothing) -- with every optional handler switched on
+        and on a private logger, so the population is non-empty and known."""
+        from src.api.structured_log import configure_logging
 
-        ``_configure_logging()`` mutates the process-wide root logger, and this
-        test called it twice and restored nothing — so every test that ran
-        afterwards on the same xdist worker inherited whatever handler set and
-        level the app factory happened to leave behind, including caplog's own
-        capture arrangement.
-        """
-        root = logging.getLogger()
-        handlers = root.handlers[:]
-        level = root.level
+        logger = logging.getLogger("_test_configure_logging_idempotent")
+        logger.propagate = False
+        logger.handlers = []
+        env = {
+            "LOG_LEVEL": "INFO",
+            "LOG_FILE": "app.log",
+            "LOG_JSONL_DIR": str(tmp_path / "jsonl"),
+        }
         try:
-            yield root
+            configure_logging(env=env, logger=logger, log_dir=tmp_path)
+            after_first = len(logger.handlers)
+            configure_logging(env=env, logger=logger, log_dir=tmp_path)
+            assert after_first > 0
+            assert len(logger.handlers) == after_first, (
+                "configure_logging stacked a second handler set: "
+                f"{logger.handlers}"
+            )
         finally:
-            root.handlers[:] = handlers
-            root.setLevel(level)
-
-    def test_repeated_calls_do_not_stack_duplicate_handlers(
-        self, pristine_root_logger
-    ):
-        from src.api.app import _configure_logging
-
-        root = pristine_root_logger
-        _configure_logging()
-        after_first = len(root.handlers)
-        _configure_logging()
-        # Idempotence was the reason force=True was there in the first place;
-        # replacing it must not reintroduce handler stacking.
-        assert len(root.handlers) == after_first
+            for handler in logger.handlers:
+                handler.close()
+            logger.handlers = []
 
 
 class TestOneRootLoggerOwner:
@@ -228,13 +227,13 @@ class TestOneRootLoggerOwner:
         self, pristine_root, tmp_path, monkeypatch, capfd
     ):
         from src.api import structured_log
-        from src.api.app import _RedactSecretsFilter
+        from src.api.structured_log import _RedactSecretsFilter
 
         log_dir = tmp_path / "logs"
         log_file = log_dir / "app.log"
         jsonl_dir = tmp_path / "jsonl"
         # LOG_FILE is confined to the log directory; point that at tmp_path.
-        monkeypatch.setattr(structured_log, "_LOG_DIR", log_dir, raising=False)
+        monkeypatch.setattr(structured_log, "_LOG_DIR", log_dir)
         monkeypatch.setenv("LOG_LEVEL", "INFO")
         monkeypatch.setenv("LOG_FILE", str(log_file))
         monkeypatch.setenv("LOG_JSONL_DIR", str(jsonl_dir))
@@ -285,6 +284,62 @@ class TestOneRootLoggerOwner:
             assert "info-698" in text and "warn-698" in text, text
             assert self.SECRET not in text
             assert "[REDACTED]" in text
+
+
+class TestFlaskDefaultHandlerIsRemoved:
+    """Flask attaches ``flask.logging.default_handler`` -- an unfiltered
+    stderr handler -- to ``app.logger`` when no handler in its chain accepts
+    the logger's effective level. A debug config sets ``app.logger`` to DEBUG
+    while the production console sits at WARNING, so the first
+    ``app.logger.exception`` (the cookie-refresh path, or Flask's own
+    ``log_exception`` for every unhandled 500) wrote the raw record ahead of
+    the redacting root handler. ``app.logger`` is named for the module, so the
+    same handler also sat under ``src.api.app``'s module ``_log``."""
+
+    def test_no_unredacted_handler_is_reachable_from_app_logger(self):
+        from flask.logging import default_handler
+
+        from src.api.structured_log import _RedactSecretsFilter
+
+        debug_config = type(
+            "_FastDebugConfig", (_FastTestConfig,), {"DEBUG": True}
+        )
+        root = logging.getLogger()
+        module_logger = logging.getLogger("src.api.app")
+        saved_root = root.handlers[:], root.level
+        saved_module = module_logger.handlers[:], module_logger.level
+        # The production shape: one redacting console at WARNING, and no
+        # pytest capture handler (level 0) to satisfy Flask's level check.
+        console = logging.StreamHandler()
+        console.setLevel(logging.WARNING)
+        console.addFilter(_RedactSecretsFilter())
+        try:
+            root.handlers[:] = [console]
+            module_logger.removeHandler(default_handler)
+            app, _ = _make_app(debug_config)
+            app.logger.debug("materialise the lazy logger")  # as Flask would
+
+            reachable, current = [], app.logger
+            while current is not None:
+                reachable.extend(current.handlers)
+                if not current.propagate:
+                    break
+                current = current.parent
+            assert reachable, "no handler reachable from app.logger at all"
+            unfiltered = [
+                h
+                for h in reachable
+                if not any(isinstance(f, _RedactSecretsFilter) for f in h.filters)
+            ]
+            assert not unfiltered, (
+                "create_app left an unredacted handler on app.logger "
+                f"(flask.logging.default_handler?): {unfiltered}"
+            )
+        finally:
+            root.handlers[:] = saved_root[0]
+            root.setLevel(saved_root[1])
+            module_logger.handlers[:] = saved_module[0]
+            module_logger.setLevel(saved_module[1])
 
 
 class TestCreateApp:
@@ -1096,7 +1151,7 @@ class TestSecretRedaction:
         )
 
     def _filtered(self, record):
-        from src.api.app import _RedactSecretsFilter
+        from src.api.structured_log import _RedactSecretsFilter
 
         _RedactSecretsFilter().filter(record)
         return record
@@ -1148,7 +1203,7 @@ class TestSecretRedaction:
         the raw record before any redacting one sees it (issue #698). The
         population is derived from the logger itself, with every optional
         handler (LOG_FILE, JSONL) switched on."""
-        from src.api.app import _RedactSecretsFilter
+        from src.api.structured_log import _RedactSecretsFilter
         from src.api.structured_log import configure_logging
 
         logger = logging.getLogger("_test_redaction_every_handler")

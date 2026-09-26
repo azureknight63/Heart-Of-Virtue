@@ -97,6 +97,9 @@ _SECRET_RE = re.compile(
 # would call, so the text this filter rewrites is the text they will emit.
 _EXC_FORMATTER = logging.Formatter()
 
+# Stamped on a LogRecord once _RedactSecretsFilter has scrubbed it.
+_REDACTED_MARKER = "_hov_redacted"
+
 
 class _RedactSecretsFilter(logging.Filter):
     """Replace anything credential-shaped with ``[REDACTED]``.
@@ -133,18 +136,30 @@ class _RedactSecretsFilter(logging.Filter):
     caplog's, and :class:`JsonlFormatter`.
 
     Mutating the record makes it scrubbed for every handler that formats it
-    afterwards as well — the safe direction to be wrong in.
+    afterwards as well — the safe direction to be wrong in — which is why the
+    record is stamped (``_REDACTED_MARKER``) after its first pass and later
+    handlers' filters skip it.
     """
 
     def filter(self, record):
+        # One record passes this filter once per handler; after the first pass
+        # it is already scrubbed. Stamped only once the scrub has finished.
+        if getattr(record, _REDACTED_MARKER, False):
+            return True
         try:
             message = record.getMessage()
-        except Exception:  # pragma: no cover - defensive; bad %-format args
+        except Exception:
+            # Bad %-format args. ``Handler.handleError`` prints the raw msg and
+            # args to stderr for exactly this record, so scrub both as text.
+            record.msg = _SECRET_RE.sub("[REDACTED]", str(record.msg))
+            args = record.args if isinstance(record.args, tuple) else (record.args,)
+            record.args = tuple(_SECRET_RE.sub("[REDACTED]", repr(a)) for a in args)
             message = None
         if message is not None and _SECRET_RE.search(message):
             record.msg = _SECRET_RE.sub("[REDACTED]", message)
             record.args = ()
         self._redact_traceback(record)
+        setattr(record, _REDACTED_MARKER, True)
         return True
 
     @staticmethod
@@ -190,13 +205,50 @@ def _resolve_log_file_setting(log_file, log_dir=None):
     if not candidate.is_absolute():
         candidate = base / candidate
     resolved = candidate.resolve()
-    base = base.resolve()
-    if resolved == base or base not in resolved.parents:
-        raise ValueError("LOG_FILE must resolve to a path under %s" % base)
+    resolved_base = base.resolve()
+    if resolved == resolved_base or resolved_base not in resolved.parents:
+        raise ValueError("LOG_FILE must resolve to a path under %s" % resolved_base)
     return resolved
 
 
 _PLAIN_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
+
+# LOG_LEVEL allow-list: level names only. ``getattr(logging, name)`` would
+# happily resolve any module attribute (LOG_LEVEL=BASIC_FORMAT is a string;
+# NOTSET means "log everything").
+_LOG_LEVELS = {
+    "CRITICAL": logging.CRITICAL,
+    "ERROR": logging.ERROR,
+    "WARNING": logging.WARNING,
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
+}
+
+
+def resolve_log_level(raw, default=logging.WARNING):
+    """The one LOG_LEVEL parser: root handlers here, namespaces in app.py.
+
+    Strips and upper-cases ``raw`` and looks it up in ``_LOG_LEVELS``. Unset or
+    blank returns ``default`` silently; anything else unrecognized returns
+    ``default`` with a warning -- ``LOG_LEVEL=TRACE`` is a typo in a variable
+    whose whole purpose is "set this to see more", and used to produce a
+    silent WARNING-level run.
+    """
+    if raw is None or not str(raw).strip():
+        return default
+    name = str(raw).strip().upper()
+    if name in _LOG_LEVELS:
+        return _LOG_LEVELS[name]
+    # ASCII only: this can be emitted to a cp1252 Windows console before any
+    # handler with a safer encoding is attached.
+    _log.warning(
+        "Unrecognized LOG_LEVEL %r; using %s. Accepted values: %s",
+        raw,
+        logging.getLevelName(default),
+        ", ".join(_LOG_LEVELS),
+    )
+    return default
+
 
 # Requests that would only log the act of logging (or monitor polling).
 _REQUEST_LOG_SKIP_PREFIXES = ("/api/logs/browser",)
@@ -377,11 +429,7 @@ def configure_logging(env=None, logger=None, log_dir=None):
     env = os.environ if env is None else env
     logger = logging.getLogger() if logger is None else logger
 
-    level = getattr(
-        logging, str(env.get("LOG_LEVEL", "WARNING")).upper(), logging.WARNING
-    )
-    if not isinstance(level, int):
-        level = logging.WARNING
+    level = resolve_log_level(env.get("LOG_LEVEL"))
 
     for handler in list(logger.handlers):
         if getattr(handler, _HOV_MARKER, False):
@@ -391,7 +439,7 @@ def configure_logging(env=None, logger=None, log_dir=None):
     plain = _RedactingFormatter(_PLAIN_FORMAT)
     redactor = _RedactSecretsFilter()
 
-    def _install(handler, handler_level, formatter=None):
+    def install(handler, handler_level, formatter=None):
         handler.setLevel(handler_level)
         if formatter is not None:
             handler.setFormatter(formatter)
@@ -400,44 +448,54 @@ def configure_logging(env=None, logger=None, log_dir=None):
         logger.addHandler(handler)
 
     if not logger.handlers:
-        _install(logging.StreamHandler(), level, plain)
+        install(logging.StreamHandler(), level, plain)
 
     log_file = env.get("LOG_FILE")
     if log_file:
-        try:
-            path = _resolve_log_file_setting(log_file, log_dir)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            file_handler = logging.handlers.RotatingFileHandler(
-                path,
-                encoding="utf-8",
-                maxBytes=_LOG_FILE_MAX_BYTES,
-                backupCount=_LOG_FILE_BACKUP_COUNT,
-            )
-            _install(file_handler, level, plain)
-        except (OSError, ValueError) as exc:
-            # Degrade to the remaining handlers rather than refuse to boot
-            # over a logging destination.
-            _log.warning("Could not attach LOG_FILE handler %s: %s", log_file, exc)
+        _attach_log_file(install, log_file, log_dir, level, plain)
 
     logger.setLevel(level)
     jsonl_dir = env.get("LOG_JSONL_DIR")
     if jsonl_dir:
-        # Handler construction can't fail — the file opens lazily in emit(),
-        # which already routes errors through handleError.
-        _install(DateStampedJsonlHandler(jsonl_dir), logging.DEBUG)
-        # Capture everything in the JSONL file while the console keeps LOG_LEVEL
-        logger.setLevel(logging.DEBUG)
-        for name in _NOISY_LOGGERS:
-            logging.getLogger(name).setLevel(max(level, logging.INFO))
-        # Prune old/oversized backend logs on every (re)configure — mirrors
-        # the browser log directory's retention (7 days / 100MB). Without
-        # this, logs/backend/*.jsonl grows forever: nothing else ever
-        # touches this directory. Best-effort — a prune failure must never
-        # block server startup.
-        try:
-            LogCleanupManager(jsonl_dir, retention_days=7, max_size_mb=100).cleanup()
-        except OSError:
-            pass
+        _attach_jsonl(install, logger, jsonl_dir, level)
+
+
+def _attach_log_file(install, log_file, log_dir, level, formatter):
+    """Install the confined, rotating LOG_FILE handler, or warn and skip it."""
+    try:
+        path = _resolve_log_file_setting(log_file, log_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.handlers.RotatingFileHandler(
+            path,
+            encoding="utf-8",
+            maxBytes=_LOG_FILE_MAX_BYTES,
+            backupCount=_LOG_FILE_BACKUP_COUNT,
+        )
+        install(file_handler, level, formatter)
+    except (OSError, ValueError) as exc:
+        # Degrade to the remaining handlers rather than refuse to boot
+        # over a logging destination.
+        _log.warning("Could not attach LOG_FILE handler %s: %s", log_file, exc)
+
+
+def _attach_jsonl(install, logger, jsonl_dir, level):
+    """Install the JSONL handler, drop ``logger`` to DEBUG, prune old files."""
+    # Handler construction can't fail — the file opens lazily in emit(),
+    # which already routes errors through handleError.
+    install(DateStampedJsonlHandler(jsonl_dir), logging.DEBUG)
+    # Capture everything in the JSONL file while the console keeps LOG_LEVEL
+    logger.setLevel(logging.DEBUG)
+    for name in _NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(max(level, logging.INFO))
+    # Prune old/oversized backend logs on every (re)configure — mirrors
+    # the browser log directory's retention (7 days / 100MB). Without
+    # this, logs/backend/*.jsonl grows forever: nothing else ever
+    # touches this directory. Best-effort — a prune failure must never
+    # block server startup.
+    try:
+        LogCleanupManager(jsonl_dir, retention_days=7, max_size_mb=100).cleanup()
+    except OSError:
+        pass
 
 
 def log_event(event, *, level=logging.INFO, logger="hov", **data):

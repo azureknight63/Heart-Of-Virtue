@@ -36,6 +36,17 @@ def _fresh_logger():
     return logger
 
 
+@pytest.fixture
+def fresh_logger():
+    """:func:`_fresh_logger` whose handlers are closed and dropped on teardown."""
+    logger = _fresh_logger()
+    logger.handlers = []
+    yield logger
+    for handler in logger.handlers:
+        handler.close()
+    logger.handlers = []
+
+
 class _ListHandler(logging.Handler):
     """Collects formatted JSONL lines for assertions."""
 
@@ -226,6 +237,50 @@ class TestConfigureLogging:
         logger.handlers = []
         configure_logging(env={"LOG_LEVEL": "SHOUTING"}, logger=logger)
         assert logger.level == logging.WARNING
+
+
+class TestOneLogLevelParser:
+    """LOG_LEVEL was parsed twice: ``configure_logging`` did
+    ``getattr(logging, value.upper())`` -- no strip, and any module attribute
+    resolved (``NOTSET`` meant "log everything", ``BASIC_FORMAT`` a string) --
+    while ``app._resolve_log_level`` stripped and allow-listed. The root
+    handlers and the ``src``/``ai`` namespaces could disagree about the same
+    variable."""
+
+    RAW_VALUES = [" debug ", "info", "NOTSET", "BASIC_FORMAT", "TRACE", "\tError\n"]
+
+    @pytest.mark.parametrize("raw", RAW_VALUES)
+    def test_both_code_paths_agree(self, fresh_logger, raw):
+        from src.api.app import _resolve_log_level
+
+        configure_logging(env={"LOG_LEVEL": raw}, logger=fresh_logger)
+        assert fresh_logger.level == _resolve_log_level(raw), raw
+
+    @pytest.mark.parametrize("raw", RAW_VALUES)
+    def test_result_comes_from_the_one_allow_list(self, fresh_logger, raw):
+        from src.api import structured_log
+
+        expected = structured_log._LOG_LEVELS.get(raw.strip().upper(), logging.WARNING)
+        configure_logging(env={"LOG_LEVEL": raw}, logger=fresh_logger)
+        assert fresh_logger.level == expected, raw
+        assert structured_log.resolve_log_level(raw) == expected, raw
+
+    def test_unset_or_blank_is_the_default_without_a_warning(self, caplog):
+        from src.api.structured_log import resolve_log_level
+
+        with caplog.at_level(logging.WARNING, logger="src.api.structured_log"):
+            assert resolve_log_level(None) == logging.WARNING
+            assert resolve_log_level("  ", default=logging.ERROR) == logging.ERROR
+        assert "LOG_LEVEL" not in caplog.text
+
+    def test_unrecognized_warns_and_uses_the_default(self, caplog):
+        from src.api.structured_log import _LOG_LEVELS, resolve_log_level
+
+        with caplog.at_level(logging.WARNING, logger="src.api.structured_log"):
+            assert resolve_log_level("TRACE") == logging.WARNING
+        assert "Unrecognized LOG_LEVEL 'TRACE'" in caplog.text
+        for name in _LOG_LEVELS:
+            assert name in caplog.text
 
 
 class TestLogEvent:
@@ -432,8 +487,6 @@ class TestConfigureLoggingLogFile:
         assert not outside.parent.exists()
 
     def test_log_file_rotates(self, tmp_path):
-        from logging.handlers import RotatingFileHandler
-
         from src.api import structured_log
 
         logger = _fresh_logger()
@@ -443,7 +496,11 @@ class TestConfigureLoggingLogFile:
             logger=logger,
             log_dir=tmp_path,
         )
-        rotating = [h for h in logger.handlers if isinstance(h, RotatingFileHandler)]
+        rotating = [
+            h
+            for h in logger.handlers
+            if isinstance(h, logging.handlers.RotatingFileHandler)
+        ]
         try:
             assert len(rotating) == 1
             assert rotating[0].maxBytes == structured_log._LOG_FILE_MAX_BYTES
@@ -554,3 +611,44 @@ class TestEveryDestinationIsRedacted:
         payload = envelopes[1]["data"]
         assert payload["key"] == "[REDACTED]"
         assert payload["hook"] == "[REDACTED]"
+
+
+class TestRedactSecretsFilterEdges:
+    SECRET = "sk-or-v1-" + "f0e1d2c3b4a5" * 3
+
+    @staticmethod
+    def _record(msg, args):
+        return logging.LogRecord("src.probe", logging.ERROR, __file__, 1, msg, args, None)
+
+    def test_a_record_whose_args_do_not_format_is_still_scrubbed(self):
+        """``getMessage()`` raising (bad %-args) skipped the scrub entirely,
+        and ``Handler.handleError`` then prints the raw ``msg`` and ``args``
+        to stderr."""
+        from src.api.structured_log import _RedactSecretsFilter
+
+        record = self._record(
+            "key=%s token=%s tail=" + self.SECRET, (self.SECRET,)
+        )
+        with pytest.raises(TypeError):
+            record.getMessage()  # the precondition: formatting really fails
+
+        assert _RedactSecretsFilter().filter(record) is True
+        assert self.SECRET not in str(record.msg)
+        assert self.SECRET not in repr(record.args)
+        assert "[REDACTED]" in str(record.msg)
+        assert "[REDACTED]" in repr(record.args)
+
+    def test_a_second_pass_over_the_same_record_is_a_no_op(self):
+        """One record passes the same filter once per handler (three with
+        LOG_FILE and LOG_JSONL_DIR set); the first pass already scrubbed it."""
+        from src.api.structured_log import _RedactSecretsFilter
+
+        redactor = _RedactSecretsFilter()
+        record = self._record("key=%s", (self.SECRET,))
+        redactor.filter(record)
+        assert self.SECRET not in record.getMessage()
+
+        sentinel = "unscanned sk-" + "z" * 16
+        record.msg = sentinel
+        assert redactor.filter(record) is True
+        assert record.msg == sentinel, "the second pass re-ran the scrub"

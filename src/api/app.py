@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import NamedTuple, Tuple
 from flask import Flask, jsonify
+from flask.logging import default_handler
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from werkzeug.exceptions import ClientDisconnected
@@ -14,9 +15,11 @@ from src.api.config import Config, DevelopmentConfig
 from src.api.security_headers import register_security_headers
 from src.api.services import SessionManager, GameService
 from src.env_bootstrap import PROJECT_ROOT as _REPO_ROOT
-from src.api.structured_log import configure_logging, init_request_logging
-# Re-exported: tests and several docstrings name the filter as app.py's.
-from src.api.structured_log import _RedactSecretsFilter  # noqa: F401
+from src.api.structured_log import (
+    configure_logging,
+    init_request_logging,
+    resolve_log_level,
+)
 import src.universe as universe_module
 
 # Env-driven (LOG_LEVEL / LOG_FILE / LOG_JSONL_DIR); safe under pytest — it
@@ -33,17 +36,6 @@ _log = logging.getLogger(__name__)
 # through _log_level_setting() below rather than through two literals that can
 # drift apart.
 _LOG_LEVEL_ENV = "LOG_LEVEL"
-
-# Level names only — getattr(logging, name) would happily resolve any module
-# attribute (LOG_LEVEL=BASIC_FORMAT raised at import; NOTSET meant "log
-# everything").
-_LOG_LEVELS = {
-    "CRITICAL": logging.CRITICAL,
-    "ERROR": logging.ERROR,
-    "WARNING": logging.WARNING,
-    "INFO": logging.INFO,
-    "DEBUG": logging.DEBUG,
-}
 
 # LOG_LEVEL is applied to these namespaces, never to the root logger. Root at
 # DEBUG also turns on urllib3/httpx/openai/werkzeug/engineio wire logging, which
@@ -93,21 +85,14 @@ def _resolve_log_level(level_name=None):
     note in :func:`_configure_logging`), while ``LOG_LEVEL=TRACE`` is a typo
     in a variable whose entire purpose is "set this to see more" and used to
     produce a silent WARNING-level run with no explanation at all.
+
+    The parsing itself is :func:`src.api.structured_log.resolve_log_level`,
+    shared with the root handlers so both read the same variable one way.
     """
     raw = level_name if level_name is not None else _log_level_setting()
     if raw is None:
         return None
-    name = str(raw).strip().upper()
-    if name in _LOG_LEVELS:
-        return _LOG_LEVELS[name]
-    # ASCII only: this can be emitted to a cp1252 Windows console before any
-    # handler with a safer encoding is attached.
-    _log.warning(
-        "Unrecognized LOG_LEVEL %r; using WARNING. Accepted values: %s",
-        raw,
-        ", ".join(_LOG_LEVELS),
-    )
-    return logging.WARNING
+    return resolve_log_level(raw)
 
 
 def _configure_logging(level_name=None):
@@ -139,20 +124,21 @@ def _configure_logging(level_name=None):
     level = _resolve_log_level(level_name)
 
     # The ROOT logger's level is deliberately never touched here. Setting it
-    # was a trespass on handlers this process does not own, one field over: `caplog.at_level(INFO)` around a create_app() had every INFO
-    # record dropped, which is the vacuous-pass failure again. Python's root
-    # default is already WARNING, so scoping the level to our own namespaces
-    # gives verbose app logs without dragging in third-party wire logging.
+    # was a trespass on state this module does not own: a
+    # `caplog.at_level(INFO)` around a create_app() had every INFO record
+    # dropped, which is the vacuous-pass failure again. Python's root default
+    # is already WARNING, so scoping the level to our own namespaces gives
+    # verbose app logs without dragging in third-party wire logging.
     #
     # NOTSET (not "skip the write") is what `level is None` means here, and
     # that matters twice over. It restores inheritance, so a bare
     # `caplog.set_level(INFO)` — which raises the *root* level only — reaches
     # app records instead of being silently outranked by an explicit namespace
-    # level: the same vacuous-pass shape as above, one field over again. And it
-    # makes the TESTING pin reversible: without it, one
-    # `create_app(TestingConfig)` left `src`/`ai` at WARNING for the rest of
-    # the process, and a later non-TESTING create_app() took the
-    # "change nothing" path and never gave them back.
+    # level: the same vacuous-pass shape as above. And it makes the TESTING
+    # pin reversible: without it, one `create_app(TestingConfig)` left
+    # `src`/`ai` at WARNING for the rest of the process, and a later
+    # non-TESTING create_app() took the "change nothing" path and never gave
+    # them back.
     #
     # The caplog half only holds while the suite actually reaches this branch,
     # which is why `tests/conftest.py` blanks LOG_LEVEL rather than pinning it
@@ -875,6 +861,14 @@ def create_app(config_class=None):
 
     app = Flask(__name__)
     app.config.from_object(config_class)
+    # Flask lazily attaches its unfiltered ``default_handler`` to app.logger
+    # when no handler in the chain accepts the logger's effective level (a
+    # DEBUG config puts app.logger at DEBUG; the root console sits at
+    # LOG_LEVEL). Materialise the logger now, with DEBUG known, and take it
+    # off so every app.logger record -- ours and Flask's own log_exception --
+    # reaches only the redacting root handlers. app.logger is the
+    # ``src.api.app`` logger, i.e. this module's ``_log`` as well.
+    app.logger.removeHandler(default_handler)
     # Every env-backed *app.config value* is read here and only here, because
     # runtime_config() is the one place that knows which of them a subclass has
     # already pinned. (_apply_proxy_fix below reads TRUSTED_PROXY_COUNT itself:
