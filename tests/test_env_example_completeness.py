@@ -441,7 +441,7 @@ class TestEveryEnvVarIsDocumented:
             "TURSO_DATABASE_URL",  # os.environ.get("...") literal
             "LOG_LEVEL",  # os.environ.get(_LOG_LEVEL_ENV) module constant
             "REGISTER_RATE_LIMIT_PER_HOUR",  # limiter_from_env("...", ...)
-            "COMBAT_SOCKET_STREAMING",  # _env_flag("...", default=False)
+            "COMBAT_SOCKET_STREAMING",  # env_flag("...", default=False)
             "COMBAT_LLM_ENABLED",  # _first_env(self._ENABLED_ENV_VARS)
         ):
             assert expected in names, "%s not found by the scan" % expected
@@ -696,5 +696,5 @@ VIA_MIXED_SEQUENCE = _first_env(Feature._MIXED)
     def test_the_helper_discovery_finds_this_repos_wrappers(self):
         """Named here only as evidence the derivation works -- the scan itself
         never hard-codes them."""
-        assert {"limiter_from_env", "_env_flag"} <= env_name_helpers(API_DIR)
+        assert {"limiter_from_env", "env_flag"} <= env_name_helpers(API_DIR)
         assert "_first_env" in env_sequence_helpers(*SCANNED_ROOTS)

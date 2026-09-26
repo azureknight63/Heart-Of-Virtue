@@ -45,14 +45,13 @@ if os.environ.get("FLASK_ENV", "development").lower() != "production":
 
 from src.api.app import create_app  # noqa: E402
 
-# `_env_flag` is imported across the module boundary on purpose, private name
-# and all: it is the one place that spells which values mean "off" (including
+# `env_flag` is imported across the module boundary on purpose: it is the one place that spells which values mean "off" (including
 # the exported-but-blank case), and that list has already been duplicated and
 # drifted once — see the `_FALSEY_ENV_VALUES` comment in src/api/config.py.
 # A fourth copy of the truthiness rule here would be the same mistake again.
 from src.api.config import (  # noqa: E402
-    _env_flag,
     config_for_env,
+    env_flag,
     normalized_env,
 )
 
@@ -107,7 +106,7 @@ def resolve_host():
         SystemExit: when ``HOST`` is non-loopback and the opt-in is not set.
     """
     host = os.environ.get("HOST", "127.0.0.1")
-    if _is_loopback(host) or _env_flag(REMOTE_OPT_IN_VAR):
+    if _is_loopback(host) or env_flag(REMOTE_OPT_IN_VAR):
         return host
     raise SystemExit(
         f"run_api.py refuses to bind HOST={host!r}: that is not a loopback "

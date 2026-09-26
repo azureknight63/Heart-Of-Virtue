@@ -22,6 +22,9 @@ vi.mock('./pages/MainMenuPage', () => ({
 vi.mock('./pages/GamePage', () => ({
   default: () => <div>GamePageStub</div>
 }))
+vi.mock('./pages/AdminAnalyticsPage', () => ({
+  default: () => <div>AdminAnalyticsPageStub</div>
+}))
 vi.mock('./pages/LandingPage', () => ({
   default: () => <div>LandingPageStub</div>
 }))
@@ -109,6 +112,22 @@ describe('App', () => {
     setLocation('/games/HeartOfVirtue/menu')
     render(<App />)
     expect(screen.getByText('MainMenuPageStub')).toBeInTheDocument()
+  })
+
+  it('renders the admin analytics page when authenticated', () => {
+    // The server, not the client, decides who is an admin: the page renders
+    // for any signed-in player and shows "Nothing here" on the API's 404.
+    mockUseAuth.mockReturnValue({ isAuthenticated: true, loading: false })
+    setLocation('/games/HeartOfVirtue/admin')
+    render(<App />)
+    expect(screen.getByText('AdminAnalyticsPageStub')).toBeInTheDocument()
+  })
+
+  it('redirects /admin to root when unauthenticated', () => {
+    mockUseAuth.mockReturnValue({ isAuthenticated: false, loading: false })
+    setLocation('/games/HeartOfVirtue/admin')
+    render(<App />)
+    expect(screen.getByText('LandingPageStub')).toBeInTheDocument()
   })
 
   it('redirects /menu to root when unauthenticated', () => {

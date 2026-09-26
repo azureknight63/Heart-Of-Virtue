@@ -1270,25 +1270,25 @@ class TestEnvFlagParsing:
     VAR = "HOV_TEST_ENV_FLAG"
 
     def test_unset_uses_the_default(self, monkeypatch):
-        from src.api.config import _env_flag
+        from src.api.config import env_flag
 
         monkeypatch.delenv(self.VAR, raising=False)
-        assert _env_flag(self.VAR, default=False) is False
-        assert _env_flag(self.VAR, default=True) is True
+        assert env_flag(self.VAR, default=False) is False
+        assert env_flag(self.VAR, default=True) is True
 
     @pytest.mark.parametrize("value", ["0", "false", "FALSE", " no ", "off", ""])
     def test_falsey_values(self, monkeypatch, value):
-        from src.api.config import _env_flag
+        from src.api.config import env_flag
 
         monkeypatch.setenv(self.VAR, value)
-        assert _env_flag(self.VAR, default=True) is False
+        assert env_flag(self.VAR, default=True) is False
 
     @pytest.mark.parametrize("value", ["1", "true", "TRUE", " yes ", "on"])
     def test_truthy_values(self, monkeypatch, value):
-        from src.api.config import _env_flag
+        from src.api.config import env_flag
 
         monkeypatch.setenv(self.VAR, value)
-        assert _env_flag(self.VAR, default=False) is True
+        assert env_flag(self.VAR, default=False) is True
 
     def test_runtime_config_is_the_only_place_streaming_is_read(self, monkeypatch):
         """``create_app`` used to read COMBAT_SOCKET_STREAMING directly on the

@@ -20,6 +20,23 @@ load_project_env()
 logger = logging.getLogger(__name__)
 
 
+class DatabaseNotConfigured(ValueError):
+    """``TURSO_DATABASE_URL`` is unset.
+
+    A ``ValueError`` so existing ``except ValueError`` handlers still catch it;
+    its own type so a caller can show this message, which carries no secret,
+    without also showing a driver error that might echo the URL.
+    """
+
+
+def create_client_from_env():
+    """A new libsql client for the configured database. Raises DatabaseNotConfigured."""
+    url = os.getenv("TURSO_DATABASE_URL")
+    if not url:
+        raise DatabaseNotConfigured("TURSO_DATABASE_URL is not set")
+    return libsql_client.create_client(url, auth_token=os.getenv("TURSO_AUTH_TOKEN"))
+
+
 class Database:
     _instance = None
     _client = None
@@ -80,11 +97,7 @@ class Database:
                         self._client = None
 
             if self._client is None:
-                url = os.getenv("TURSO_DATABASE_URL")
-                auth_token = os.getenv("TURSO_AUTH_TOKEN")
-                if not url:
-                    raise ValueError("TURSO_DATABASE_URL is not set")
-                self._client = libsql_client.create_client(url, auth_token=auth_token)
+                self._client = create_client_from_env()
             client = self._client
 
         # Close the superseded client outside the lock (avoids holding the lock

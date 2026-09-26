@@ -5,6 +5,9 @@ import GameText from './GameText'
 import GameButton from './GameButton'
 
 const EFFECTIVE_DATE = 'March 26, 2026'
+// The Privacy Policy changed without the Terms changing: gameplay analytics
+// went live, which the previous text promised to disclose before enabling.
+const PRIVACY_EFFECTIVE_DATE = 'September 26, 2026'
 const CONTACT_EMAIL = 'asregbert@gmail.com'
 
 function Section({ title, children }) {
@@ -130,7 +133,7 @@ function PrivacyContent() {
     return (
         <div>
             <GameText variant="dim" size="xs" style={{ display: 'block', marginBottom: spacing.xl, fontFamily: 'monospace' }}>
-                Effective Date: {EFFECTIVE_DATE}
+                Effective Date: {PRIVACY_EFFECTIVE_DATE}
             </GameText>
 
             <Section title="What We Collect">
@@ -139,7 +142,8 @@ function PrivacyContent() {
                     <li style={{ marginBottom: spacing.xs }}><strong style={{ color: colors.text.highlight }}>Email address</strong> — required at registration for account recovery. Stored encrypted.</li>
                     <li style={{ marginBottom: spacing.xs }}><strong style={{ color: colors.text.highlight }}>Password hash</strong> — we store only an Argon2id hash. Your actual password is never stored or readable by us.</li>
                     <li style={{ marginBottom: spacing.xs }}><strong style={{ color: colors.text.highlight }}>Game save data</strong> — character stats, inventory, and story progress stored in our database to keep your game persistent across sessions.</li>
-                    <li><strong style={{ color: colors.text.highlight }}>Email opt-in</strong> — if you choose to receive updates or newsletters, we store your preference. You can withdraw it at any time.</li>
+                    <li style={{ marginBottom: spacing.xs }}><strong style={{ color: colors.text.highlight }}>Email opt-in</strong> — if you choose to receive updates or newsletters, we store your preference. You can withdraw it at any time.</li>
+                    <li><strong style={{ color: colors.text.highlight }}>Gameplay events</strong> — pseudonymous records of how the game is played (see Analytics below).</li>
                 </ul>
             </Section>
 
@@ -148,7 +152,8 @@ function PrivacyContent() {
                     <li style={{ marginBottom: spacing.xs }}>To run your account and persist your game progress.</li>
                     <li style={{ marginBottom: spacing.xs }}>To send account recovery emails when you request them.</li>
                     <li style={{ marginBottom: spacing.xs }}>To send updates or newsletters if you opted in.</li>
-                    <li>To power AI-driven in-game features (see below).</li>
+                    <li style={{ marginBottom: spacing.xs }}>To power AI-driven in-game features (see below).</li>
+                    <li>To see, in aggregate, how the game is played and where it is too hard (see Analytics).</li>
                 </ul>
             </Section>
 
@@ -163,9 +168,27 @@ function PrivacyContent() {
             </Section>
 
             <Section title="Analytics">
-                We plan to add anonymous, aggregate analytics to understand how the game is
-                played. This will not collect or transmit any personally identifiable information.
-                We will update this policy before enabling analytics.
+                To understand how the game is played, we record gameplay events in our own
+                database: signing in or registering, starting a new game, loading and saving,
+                maps and story milestones reached, fights (which enemies, your character level,
+                how the fight ended, how long it took and how much health you had left),
+                conversations with in-game characters (with whom, how many turns and how long,
+                not what was said), the type of any feedback you send, and when you are actively
+                playing, so we can measure session length. Each event carries a timestamp, a
+                random ID for that sign-in, and a pseudonymous player ID: a one-way keyed hash of
+                your account ID, so we can count returning players. None of it carries your
+                username, email address or IP address. We hold the key, so we could work out which
+                account a player ID belongs to; we do not do so.
+                <br /><br />
+                We also count, across all players, account sign-up dates and the level and
+                location stored in cloud autosaves, to see where players stop. We look at all of
+                this in aggregate, to fix difficulty spikes and find where players get stuck.
+                Summaries of those counts and averages are posted to the developer&apos;s private
+                Discord channel; while there are few players, a count there can be as small as
+                one. Otherwise this data is not shared or sold, and no third-party analytics or
+                advertising trackers are used. Gameplay events are currently kept for the life of
+                the beta; we will set and state a fixed retention period before the full release.
+                If you delete your account they are kept, but nothing left links them to you.
             </Section>
 
             <Section title="Email Communications">
@@ -177,7 +200,7 @@ function PrivacyContent() {
             <Section title="Your Rights & Control">
                 <ul style={{ paddingLeft: '1.2em', margin: 0 }}>
                     <li style={{ marginBottom: spacing.xs }}>You can update or remove your email address from your account settings at any time — no request needed.</li>
-                    <li style={{ marginBottom: spacing.xs }}>You can delete your entire account from within the game at any time. This permanently removes your account and all associated data.</li>
+                    <li style={{ marginBottom: spacing.xs }}>You can delete your entire account from within the game at any time. This permanently removes your account and all associated data, except the unlinked gameplay events described under Analytics.</li>
                     <li>We do not sell your data. Ever.</li>
                 </ul>
             </Section>
@@ -194,6 +217,10 @@ function PrivacyContent() {
                     <li>
                         <strong style={{ color: colors.text.highlight }}>OpenAI / OpenRouter</strong> — AI inference for in-game features. Game state
                         and in-game messages may be sent to these services.
+                    </li>
+                    <li>
+                        <strong style={{ color: colors.text.highlight }}>Discord</strong> — the developer&apos;s private channel receives the
+                        analytics summaries described above.
                     </li>
                 </ul>
                 <br />

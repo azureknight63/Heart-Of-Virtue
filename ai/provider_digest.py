@@ -1,4 +1,8 @@
-"""Discord digest of LLM provider usage and free-tier headroom.
+"""Discord digest of player analytics, LLM provider usage and free-tier headroom.
+
+The ``players`` section reads the analytics database through
+``src/api/services/analytics_report.py`` (the same report the admin page and
+``tools/analytics.py`` show); every other section is LLM provider usage.
 
 Companion to the per-call `[LLM SATURATION]` line in ``ai/llm_client.py``: that
 one is for tailing a log during development, this one is for knowing after
@@ -114,9 +118,11 @@ _scheduler_lock = threading.Lock()
 EMBED_COLOR = 0x5865F2
 ALERT_COLOR = 0xED4245
 POST_TIMEOUT_SECONDS = 10
+# Discord caps one embed field value at this many characters.
+DISCORD_FIELD_LIMIT = 1024
 
 # Section keys in default render order.
-SECTIONS = ("saturation", "traffic", "reliability")
+SECTIONS = ("players", "saturation", "traffic", "reliability")
 
 
 def _webhook_url_is_valid(url: str) -> bool:
@@ -268,7 +274,29 @@ def format_reliability(snapshot: Dict[str, Any]) -> str:
     return "\n".join(rows) or "No calls this window."
 
 
+def fetch_players_section(snapshot: Dict[str, Any]) -> str:
+    """Player analytics over one digest cadence. Does network I/O.
+
+    Unlike the ``format_*`` sections this one is not built from ``snapshot``
+    (which is LLM usage): it queries the analytics database, over a window as
+    long as the digest cadence, so a weekly digest reports the week. Imported
+    here rather than at module top so the digest keeps no import-time
+    dependency on the API package.
+    """
+    from src.api.services import analytics_report
+
+    from src.api.db import DatabaseNotConfigured
+
+    days = max(1, round(_baseline_interval_seconds() / analytics_report.DAY))
+    try:
+        report = analytics_report.fetch_report(days=days)
+    except DatabaseNotConfigured:
+        return "Analytics not configured."
+    return analytics_report.format_digest(report, DISCORD_FIELD_LIMIT)
+
+
 _FORMATTERS = {
+    "players": ("👥 Players", fetch_players_section),
     "saturation": ("📉 Free-Tier Saturation", format_saturation),
     "traffic": ("🔀 Provider Traffic", format_traffic),
     "reliability": ("🩺 Reliability", format_reliability),
@@ -306,8 +334,7 @@ def build_digest(snapshot: Dict[str, Any], alert: bool = False) -> Dict[str, Any
         except Exception as e:  # a broken section must not lose the digest
             logger.warning("Digest section %s failed: %s", key, e)
             value = "unavailable"
-        # Discord caps a field value at 1024 characters.
-        fields.append({"name": name, "value": value[:1024] or "—", "inline": False})
+        fields.append({"name": name, "value": value[:DISCORD_FIELD_LIMIT] or "—", "inline": False})
 
     description = "Window: %s → %s" % (
         window_text,
@@ -322,11 +349,11 @@ def build_digest(snapshot: Dict[str, Any], alert: bool = False) -> Dict[str, Any
         description = banner + "\n\n" + description
 
     return {
-        "title": "🧠 Heart of Virtue — LLM Provider Digest",
+        "title": "🧠 Heart of Virtue — Digest",
         "description": description,
         "color": ALERT_COLOR if alert else EMBED_COLOR,
         "fields": fields,
-        "footer": {"text": "Heart of Virtue • LLM provider analytics"},
+        "footer": {"text": "Heart of Virtue • player and LLM provider analytics"},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 

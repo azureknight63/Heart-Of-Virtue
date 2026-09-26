@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from src.api.db import db
+from src.api.services.analytics import SCHEMA_STATEMENTS as ANALYTICS_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +27,9 @@ def _warn(message):
         pass
 
 
-async def init_db():
-    statements = [
-        """
+# The two core tables, as constants so tests can build the real schema
+# (tests/test_analytics_report.py) instead of a drifting copy of it.
+USERS_TABLE = """
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
@@ -38,8 +39,9 @@ async def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             timezone TEXT DEFAULT 'America/New_York'
         );
-        """,
         """
+
+SAVES_TABLE = """
         CREATE TABLE IF NOT EXISTS saves (
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
@@ -53,10 +55,19 @@ async def init_db():
             playtime INTEGER,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
-        """,
+        """
+
+
+async def init_db():
+    statements = [
+        USERS_TABLE,
+        SAVES_TABLE,
         # Index for faster lookup of user saves
         "CREATE INDEX IF NOT EXISTS idx_saves_user_id ON saves(user_id);",
         "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);",
+        # Player analytics. The recorder also creates these on its first flush,
+        # so a deploy that skips this script still records.
+        *ANALYTICS_SCHEMA,
     ]
 
     print("Initializing database...")

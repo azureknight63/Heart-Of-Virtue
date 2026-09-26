@@ -245,6 +245,13 @@ describe('endpoints', () => {
     });
   });
 
+  describe('admin', () => {
+    it('requests the analytics report for a window', () => {
+      endpoints.admin.getAnalytics(7);
+      expect(apiClient.get).toHaveBeenCalledWith('/admin/analytics', { params: { days: 7 } });
+    });
+  });
+
   describe('feedback', () => {
     it('calls submitIssue endpoint with default anonymous', () => {
       endpoints.feedback.submitIssue('bug', 'Crash on login', { steps: 'Log in' });

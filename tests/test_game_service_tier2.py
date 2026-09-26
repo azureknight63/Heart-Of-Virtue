@@ -228,7 +228,7 @@ class TestNpcChatEndAndHistory:
 
         result = game_service.npc_chat_end(player, "Gorran")
 
-        assert result == {"success": True, "data": {"conversation_count": 3}}
+        assert result == {"success": True, "closed": True, "data": {"conversation_count": 3}}
         assert "_active_chat_npc_id" not in player.__dict__
 
     def test_late_end_for_a_previous_npc_keeps_the_next_npcs_marker(
@@ -291,8 +291,11 @@ class TestNpcChatEndAndHistory:
 
     def test_end_on_an_unknown_npc_reports_zero(self, game_service, player):
         player.npc_chat_histories = {}
+        # No live conversation to protect, so the key-only rule closes: "closed"
+        # is what the analytics route keys npc_chat.end on.
         assert game_service.npc_chat_end(player, "Nobody") == {
             "success": True,
+            "closed": True,
             "data": {"conversation_count": 0},
         }
 

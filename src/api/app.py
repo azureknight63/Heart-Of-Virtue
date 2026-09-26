@@ -730,6 +730,7 @@ def _register_blueprints(app):
         shop_bp,
     )
     from src.api.routes.npc_chat import npc_chat_bp
+    from src.api.routes.admin import admin_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api")
     app.register_blueprint(world_bp, url_prefix="/api")
@@ -741,6 +742,7 @@ def _register_blueprints(app):
     app.register_blueprint(logs_bp, url_prefix="/api/logs")
     app.register_blueprint(feedback_bp, url_prefix="/api/feedback")
     app.register_blueprint(shop_bp, url_prefix="/api/shop")
+    app.register_blueprint(admin_bp, url_prefix="/api")
 
     # Register error handlers from dedicated module
     from src.api.handlers.error_handler import register_error_handlers
@@ -1039,6 +1041,28 @@ def _register_test_routes(app):
             return jsonify({"success": False, "error": str(exc)}), 500
 
 
+def _init_analytics(app):
+    """Turn on player analytics for a production-like app, and diff progress.
+
+    ``configure`` leaves the recorder off under TESTING and without a database
+    (``src/api/services/analytics.py``), so the test suite and the harnesses
+    never write a row. The after-request hook is registered either way and is
+    a no-op while the recorder is off.
+    """
+    from src.api.services import analytics
+
+    if analytics.recorder.configure(
+        testing=bool(app.config.get("TESTING")),
+        database_url=os.getenv("TURSO_DATABASE_URL"),
+    ):
+        analytics.recorder.start()
+
+    @app.after_request
+    def _observe_analytics_progress(response):
+        analytics.observe_request_progress(app.session_manager, app.game_service)
+        return response
+
+
 def create_app(config_class=None):
     """Create and configure Flask application.
 
@@ -1113,6 +1137,8 @@ def create_app(config_class=None):
     # Store in app context (`app.socketio` is set by _init_socketio).
     app.session_manager = SessionManager(universe=universe)
     app.game_service = game_service
+
+    _init_analytics(app)
 
     _register_blueprints(app)
 

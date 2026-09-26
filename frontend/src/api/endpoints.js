@@ -130,6 +130,11 @@ export const feedback = {
     apiClient.post('/feedback/issue', { type, title, fields, anonymous }),
 }
 
+// Admin endpoints. 404 for non-admins; see useAdminAnalytics.
+export const admin = {
+  getAnalytics: (days) => apiClient.get('/admin/analytics', { params: { days } }),
+}
+
 // Shop endpoints
 export const shop = {
   getState: (npcId) =>

@@ -38,7 +38,7 @@ _log = logging.getLogger(__name__)
 _FALSEY_ENV_VALUES = ("0", "false", "no", "off", "")
 
 
-def _env_flag(name: str, default: bool = False) -> bool:
+def env_flag(name: str, default: bool = False) -> bool:
     """Read ``name`` as a boolean. Unset falls back to ``default``."""
     raw = os.environ.get(name)
     if raw is None:
@@ -60,7 +60,7 @@ def combat_socket_streaming_enabled() -> bool:
     server-side half of the ``/api/info`` capability contract and reads better
     named at import scope than as one line of an overlay dict.
     """
-    return _env_flag("COMBAT_SOCKET_STREAMING", default=False)
+    return env_flag("COMBAT_SOCKET_STREAMING", default=False)
 
 
 class Config:

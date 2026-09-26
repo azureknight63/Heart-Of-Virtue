@@ -138,6 +138,9 @@ LOCAL_ONLY_SECRET_ENVS = (
     "SECRET_KEY",
     # Encrypts saved games at rest, in this process, on this disk.
     "ENCRYPTION_KEY",
+    # Keys the pseudonymous analytics player id. Hashed in this process; the
+    # key itself is never sent anywhere.
+    "HOV_ANALYTICS_SECRET",
 )
 
 #: Backwards-compatible alias. Both conftests and ``tools/bug_hunt.py`` blank
@@ -609,6 +612,13 @@ _NON_SECRET_GROUPS = (
             "HOV_ANALYTICS_INTERVAL_HOURS",
             "HOV_ANALYTICS_SECTIONS",
         ),
+    ),
+    (
+        "Player analytics switches. The recorder is off under TESTING and "
+        "without TURSO_DATABASE_URL (which is outbound and blanked) whatever "
+        "HOV_ANALYTICS_ENABLED says, and HOV_ADMIN_USER_IDS is an allow-list "
+        "of account ids, not a credential.",
+        ("HOV_ADMIN_USER_IDS", "HOV_ANALYTICS_ENABLED"),
     ),
     (
         "Numeric tuning for the provider digest and the Mynx fallback.",

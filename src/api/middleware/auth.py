@@ -3,6 +3,7 @@
 from typing import Any, Optional, Tuple
 
 from flask import Response, current_app, g, jsonify, request
+from src.api.services import analytics
 from src.api.session_cookie import session_id_from_cookie
 
 #: The error half of the ``(value, error)`` contract these helpers return: the
@@ -101,6 +102,7 @@ def resolve_session() -> Tuple[Optional[Any], Optional[Any], Optional[RouteError
         g.hov_session_from_cookie = session_id_from_cookie() is not None
     except RuntimeError:  # outside an app context (direct unit calls)
         pass
+    analytics.bind_request_session(session)
 
     return session_manager, session, None
 
@@ -137,6 +139,8 @@ def get_session_and_player() -> Tuple[
             None,
             (jsonify({"success": False, "error": "Invalid or expired session"}), 401),
         )
+
+    analytics.bind_request_session(session)
 
     player = session_manager.get_player(session_id)
     if not player:
