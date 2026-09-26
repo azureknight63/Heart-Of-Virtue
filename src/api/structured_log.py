@@ -205,9 +205,9 @@ def _resolve_log_file_setting(log_file, log_dir=None):
     if not candidate.is_absolute():
         candidate = base / candidate
     resolved = candidate.resolve()
-    base = base.resolve()
-    if resolved == base or base not in resolved.parents:
-        raise ValueError("LOG_FILE must resolve to a path under %s" % base)
+    resolved_base = base.resolve()
+    if resolved == resolved_base or resolved_base not in resolved.parents:
+        raise ValueError("LOG_FILE must resolve to a path under %s" % resolved_base)
     return resolved
 
 

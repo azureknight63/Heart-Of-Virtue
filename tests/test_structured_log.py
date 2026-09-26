@@ -487,8 +487,6 @@ class TestConfigureLoggingLogFile:
         assert not outside.parent.exists()
 
     def test_log_file_rotates(self, tmp_path):
-        from logging.handlers import RotatingFileHandler
-
         from src.api import structured_log
 
         logger = _fresh_logger()
@@ -498,7 +496,11 @@ class TestConfigureLoggingLogFile:
             logger=logger,
             log_dir=tmp_path,
         )
-        rotating = [h for h in logger.handlers if isinstance(h, RotatingFileHandler)]
+        rotating = [
+            h
+            for h in logger.handlers
+            if isinstance(h, logging.handlers.RotatingFileHandler)
+        ]
         try:
             assert len(rotating) == 1
             assert rotating[0].maxBytes == structured_log._LOG_FILE_MAX_BYTES

@@ -227,13 +227,13 @@ class TestOneRootLoggerOwner:
         self, pristine_root, tmp_path, monkeypatch, capfd
     ):
         from src.api import structured_log
-        from src.api.app import _RedactSecretsFilter
+        from src.api.structured_log import _RedactSecretsFilter
 
         log_dir = tmp_path / "logs"
         log_file = log_dir / "app.log"
         jsonl_dir = tmp_path / "jsonl"
         # LOG_FILE is confined to the log directory; point that at tmp_path.
-        monkeypatch.setattr(structured_log, "_LOG_DIR", log_dir, raising=False)
+        monkeypatch.setattr(structured_log, "_LOG_DIR", log_dir)
         monkeypatch.setenv("LOG_LEVEL", "INFO")
         monkeypatch.setenv("LOG_FILE", str(log_file))
         monkeypatch.setenv("LOG_JSONL_DIR", str(jsonl_dir))
@@ -1151,7 +1151,7 @@ class TestSecretRedaction:
         )
 
     def _filtered(self, record):
-        from src.api.app import _RedactSecretsFilter
+        from src.api.structured_log import _RedactSecretsFilter
 
         _RedactSecretsFilter().filter(record)
         return record
@@ -1203,7 +1203,7 @@ class TestSecretRedaction:
         the raw record before any redacting one sees it (issue #698). The
         population is derived from the logger itself, with every optional
         handler (LOG_FILE, JSONL) switched on."""
-        from src.api.app import _RedactSecretsFilter
+        from src.api.structured_log import _RedactSecretsFilter
         from src.api.structured_log import configure_logging
 
         logger = logging.getLogger("_test_redaction_every_handler")

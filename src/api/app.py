@@ -20,8 +20,6 @@ from src.api.structured_log import (
     init_request_logging,
     resolve_log_level,
 )
-# Re-exported: tests and several docstrings name the filter as app.py's.
-from src.api.structured_log import _RedactSecretsFilter  # noqa: F401
 import src.universe as universe_module
 
 # Env-driven (LOG_LEVEL / LOG_FILE / LOG_JSONL_DIR); safe under pytest — it
@@ -126,20 +124,21 @@ def _configure_logging(level_name=None):
     level = _resolve_log_level(level_name)
 
     # The ROOT logger's level is deliberately never touched here. Setting it
-    # was a trespass on handlers this process does not own, one field over: `caplog.at_level(INFO)` around a create_app() had every INFO
-    # record dropped, which is the vacuous-pass failure again. Python's root
-    # default is already WARNING, so scoping the level to our own namespaces
-    # gives verbose app logs without dragging in third-party wire logging.
+    # was a trespass on state this module does not own: a
+    # `caplog.at_level(INFO)` around a create_app() had every INFO record
+    # dropped, which is the vacuous-pass failure again. Python's root default
+    # is already WARNING, so scoping the level to our own namespaces gives
+    # verbose app logs without dragging in third-party wire logging.
     #
     # NOTSET (not "skip the write") is what `level is None` means here, and
     # that matters twice over. It restores inheritance, so a bare
     # `caplog.set_level(INFO)` — which raises the *root* level only — reaches
     # app records instead of being silently outranked by an explicit namespace
-    # level: the same vacuous-pass shape as above, one field over again. And it
-    # makes the TESTING pin reversible: without it, one
-    # `create_app(TestingConfig)` left `src`/`ai` at WARNING for the rest of
-    # the process, and a later non-TESTING create_app() took the
-    # "change nothing" path and never gave them back.
+    # level: the same vacuous-pass shape as above. And it makes the TESTING
+    # pin reversible: without it, one `create_app(TestingConfig)` left
+    # `src`/`ai` at WARNING for the rest of the process, and a later
+    # non-TESTING create_app() took the "change nothing" path and never gave
+    # them back.
     #
     # The caplog half only holds while the suite actually reaches this branch,
     # which is why `tests/conftest.py` blanks LOG_LEVEL rather than pinning it
