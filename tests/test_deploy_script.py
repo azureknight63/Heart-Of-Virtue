@@ -51,6 +51,8 @@ import pytest
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEPLOY_PS1 = REPO_ROOT / "deploy.ps1"
 MAINTENANCE_HTML = REPO_ROOT / "frontend" / "public" / "maintenance.html"
+#: The same page for a release that clears every cloud save (-SavesReset).
+SAVES_RESET_HTML = REPO_ROOT / "frontend" / "public" / "maintenance-saves-reset.html"
 APP_INDEX_HTML = REPO_ROOT / "frontend" / "index.html"
 VITE_CONFIG = REPO_ROOT / "frontend" / "vite.config.js"
 VERSION_FILE = REPO_ROOT / "VERSION"
@@ -191,6 +193,7 @@ shutil.copy(DEPLOY_PS1, SCRIPT_COPY_DIR / "deploy.ps1")
 shutil.copy(VERSION_FILE, SCRIPT_COPY_DIR / "VERSION")
 (SCRIPT_COPY_DIR / "frontend" / "public").mkdir(parents=True)
 shutil.copy(MAINTENANCE_HTML, SCRIPT_COPY_DIR / "frontend" / "public" / "maintenance.html")
+shutil.copy(SAVES_RESET_HTML, SCRIPT_COPY_DIR / "frontend" / "public" / "maintenance-saves-reset.html")
 SCRIPT_COPY = SCRIPT_COPY_DIR / "deploy.ps1"
 
 
@@ -1612,6 +1615,8 @@ class TestTheDryRun:
         (("-Status", "-Maintenance", "On"), "Pick one of -Status or -Maintenance"),
         (("-KeepMaintenance", "-Status"), "-KeepMaintenance applies to the deploy only"),
         (("-KeepMaintenance", "-Maintenance", "Off"), "-KeepMaintenance applies to the deploy only"),
+        (("-SavesReset", "-Status"), "-SavesReset picks the page a raise puts up"),
+        (("-SavesReset", "-Maintenance", "Off"), "-SavesReset picks the page a raise puts up"),
     ])
     def test_it_refuses_modes_that_do_not_combine(self, arguments, refusal):
         proc = _run_script(*arguments)
@@ -1630,9 +1635,9 @@ function Invoke-RemoteScript {
 }
 """
 
-    def _mode(self, setting, remote_exit=0, script=SCRIPT_COPY, prelude=""):
+    def _mode(self, setting, remote_exit=0, script=SCRIPT_COPY, prelude="", arguments=""):
         proc = _pwsh(
-            _dot_source(script) + self.HARNESS
+            _dot_source(script).rstrip("\n") + (" " + arguments if arguments else "") + "\n" + self.HARNESS
             + f"$global:RemoteExit = {remote_exit}\n"
             + prelude
             + f'try {{ Invoke-MaintenanceMode -Setting {setting}; "RESULT:ok" }} catch {{ "RESULT:threw:$($_.Exception.Message)" }}\n',
@@ -1643,6 +1648,11 @@ function Invoke-RemoteScript {
     def test_on_uploads_this_checkout_s_page_then_raises_it(self):
         calls, out = self._mode("On")
         assert calls == ["upload:frontend/public/maintenance.html", "maintenance-on"], out
+        assert "RESULT:ok" in out, out
+
+    def test_saves_reset_uploads_the_saves_reset_page(self):
+        calls, out = self._mode("On", arguments="-SavesReset")
+        assert calls == ["upload:frontend/public/maintenance-saves-reset.html", "maintenance-on"], out
         assert "RESULT:ok" in out, out
 
     def test_on_renders_before_it_uploads(self):
@@ -1917,6 +1927,7 @@ class TestTheScriptText:
         assert re.search(r"\[switch\]\s*\$Status\b", param_block), "deploy.ps1 param(): no [switch]$Status"
         assert re.search(r"\[switch\]\s*\$DryRun\b", param_block), "deploy.ps1 param(): no [switch]$DryRun"
         assert re.search(r"\[switch\]\s*\$KeepMaintenance\b", param_block), "deploy.ps1 param(): no [switch]$KeepMaintenance"
+        assert re.search(r"\[switch\]\s*\$SavesReset\b", param_block), "deploy.ps1 param(): no [switch]$SavesReset"
         assert re.search(r"ValidateSet\(\s*'On'\s*,\s*'Off'\s*\)\]\s*\[string\]\s*\$Maintenance\b", param_block), (
             "deploy.ps1 param(): -Maintenance lost ValidateSet('On','Off')"
         )
@@ -2150,3 +2161,41 @@ class TestTheMaintenancePage:
         assert re.search(r"prefers-reduced-motion:\s*reduce\)\s*\{[^}]*animation:\s*none", html), (
             "maintenance.html does not stop its animations under prefers-reduced-motion"
         )
+
+
+class TestTheSavesResetPage:
+    """-SavesReset: the maintenance page for a release that clears every cloud
+    save, which the default page would contradict ("kept on the server").
+
+    It is a copy of maintenance.html that differs in ONE paragraph, and this
+    class holds it to that: everything the frontend's theme audit and
+    TestTheMaintenancePage prove of the default page then holds of this one."""
+
+    SAVES_SENTENCE = "Your saved games are kept on the server."
+
+    @staticmethod
+    def _paragraphs(html):
+        return re.findall(r"<p>(.*?)</p>", html, re.S)
+
+    def _notice(self):
+        default = self._paragraphs(MAINTENANCE_HTML.read_text(encoding="utf-8"))
+        replaced = [p for p in self._paragraphs(SAVES_RESET_HTML.read_text(encoding="utf-8")) if p not in default]
+        assert len(replaced) == 1, replaced
+        return replaced[0]
+
+    def test_it_differs_from_the_default_page_in_the_saves_paragraph_only(self):
+        default = MAINTENANCE_HTML.read_text(encoding="utf-8")
+        (kept,) = [p for p in self._paragraphs(default) if self.SAVES_SENTENCE in p]
+        reset = SAVES_RESET_HTML.read_text(encoding="utf-8")
+        assert reset.replace(self._notice(), kept, 1) == default
+
+    def test_it_does_not_promise_the_saves_it_clears(self):
+        notice = self._notice()
+        assert "kept" not in notice.lower(), notice
+        assert "will not carry over" in notice and "sign in again" in notice, notice
+
+    def test_the_stage_puts_it_up_under_saves_reset(self, pwsh):
+        reset = _pwsh(DOT_SOURCE.rstrip("\n") + " -SavesReset\n" + f"New-StageScript -Sha '{FAKE_SHA}'\n", check=True).stdout
+        assert f"cp {STAGING_DIR}/maintenance-saves-reset.html {STAGING_DIR}/index.html" in reset, reset
+        default = _pwsh(DOT_SOURCE + f"New-StageScript -Sha '{FAKE_SHA}'\n", check=True).stdout
+        assert f"cp {STAGING_DIR}/maintenance.html {STAGING_DIR}/index.html" in default, default

@@ -65,6 +65,16 @@ the live frontend and backend are the same commit.
 and not with `-Status` or `-Maintenance`. See [Keeping the page up for a
 private test](#keeping-the-page-up-for-a-private-test).
 
+`-SavesReset` is for a release that clears every cloud save: it raises
+`frontend/public/maintenance-saves-reset.html` instead of `maintenance.html`,
+whose "your saved games are kept on the server" would then be false. Pass it to
+`-Maintenance On` **and** to the deploy, because the deploy's stage copies the
+page over the live index again even when it is already up; without the switch
+the default wording comes back. The two pages differ in that one paragraph
+(`TestTheSavesResetPage`). It does not combine with `-Status` or
+`-Maintenance Off`, and it deletes nothing: the wipe is
+`tools/wipe_cloud_saves.py`.
+
 Run from a checkout that **is** `origin/master` (the `Alpha` worktree). The
 deploy refuses, listing what it found, unless nothing outside `HEAD` can reach
 the bundle:

@@ -69,6 +69,13 @@
     over a kept build is refused until it is lifted or rolled back.
     Combines with -DryRun; not with -Status or -Maintenance.
 
+.PARAMETER SavesReset
+    For a release that clears every cloud save: raise
+    frontend/public/maintenance-saves-reset.html instead of maintenance.html,
+    whose "your saved games are kept" would be false. Applies to
+    -Maintenance On and to a deploy (whose stage raises the page from the
+    build); not to -Status or -Maintenance Off.
+
 .PARAMETER DryRun
     Prints the plan and every remote script the deploy would run. No build,
     no network, no credential.
@@ -91,6 +98,8 @@ param (
     [string]$Maintenance,
 
     [switch]$KeepMaintenance,
+
+    [switch]$SavesReset,
 
     [switch]$DryRun,
 
@@ -138,7 +147,10 @@ $PackArguments = @('-cf', $TarName, '-C', $DistDir, '.')
 
 # ── names both sides of the deploy agree on ─────────────────────────────────
 # The page itself, as Vite copies it from frontend/public/ into the build.
-$MaintenancePageFile = 'maintenance.html'
+# -SavesReset picks the variant for a release that clears every cloud save:
+# the default page promises saves are kept. The two differ in that one
+# paragraph (tests/test_deploy_script.py::TestTheSavesResetPage).
+$MaintenancePageFile = if ($SavesReset) { 'maintenance-saves-reset.html' } else { 'maintenance.html' }
 # The attribute that page carries on <html>; how the scripts, -Status and the
 # public checks tell the page from the app.
 $MaintenanceMarker   = 'data-hov-maintenance'
@@ -1663,6 +1675,7 @@ function Main {
     if ($Status -and $Maintenance) { throw 'Pick one of -Status or -Maintenance.' }
     if ($DryRun -and ($Status -or $Maintenance)) { throw '-DryRun applies to the deploy only.' }
     if ($KeepMaintenance -and ($Status -or $Maintenance)) { throw '-KeepMaintenance applies to the deploy only.' }
+    if ($SavesReset -and ($Status -or $Maintenance -eq 'Off')) { throw '-SavesReset picks the page a raise puts up: use it with -Maintenance On or a deploy.' }
 
     if ($DryRun) {
         Invoke-DryRun -Sha (Get-HeadSha) -KeepMaintenance:$KeepMaintenance

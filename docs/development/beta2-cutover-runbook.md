@@ -17,15 +17,18 @@ stopping the unit go through `ubuntu@nexusfidei.dev`. `journalctl -u heart-of-vi
 - PR #723 (the #712–#718 fixes) and this branch are merged. A deploy ships `origin/master` and
   refuses unless the local checkout is exactly there, so run the `deploy.ps1` steps from a
   worktree on an up-to-date `master`.
-- `.\deploy.ps1 -KeepMaintenance -DryRun` reads cleanly.
+- `.\deploy.ps1 -KeepMaintenance -SavesReset -DryRun` reads cleanly.
 - Groq and Cerebras API keys in hand (step 3). With OpenRouter's free tier alone (50 requests
   a day), chat, Mynx and the advisor share one budget; the other two are the fallback chain.
 
 ## 1. Close the doors (here)
 
 ```powershell
-.\deploy.ps1 -Maintenance On
+.\deploy.ps1 -Maintenance On -SavesReset
 ```
+
+`-SavesReset` puts up the page that says saves will not carry over; the default one promises
+they are kept.
 
 Browsers that already have the game open keep talking to the API until the next step stops it.
 
@@ -103,8 +106,11 @@ CEREBRAS_API_KEY=<your Cerebras key>
 ## 4. Deploy, keeping the page up (here)
 
 ```powershell
-.\deploy.ps1 -KeepMaintenance
+.\deploy.ps1 -KeepMaintenance -SavesReset
 ```
+
+Keep `-SavesReset` here too: the deploy puts the page up again from the new build, and without
+the switch it would bring back the "saves are kept" wording.
 
 It builds, uploads, installs the requirements into the new venv, restarts the unit (which also
 starts it, since step 2 stopped it), proves the new bundle is served, and prints a private
