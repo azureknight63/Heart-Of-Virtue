@@ -2266,7 +2266,9 @@ class GameService:
         combat_state = None
 
         if combat_enemies:
-            if not self._defer_combat_for_level_up(player, combat_enemies):
+            if not self._defer_combat_for_level_up(
+                player, combat_enemies, session_data
+            ):
                 combat_state = self._start_combat(
                     player,
                     combat_enemies,
@@ -2731,7 +2733,9 @@ class GameService:
         combat_enemies = check_for_combat(player)
 
         if combat_enemies and not result.get("needs_input", False):
-            if self._defer_combat_for_level_up(player, combat_enemies):
+            if self._defer_combat_for_level_up(
+                player, combat_enemies, session_data
+            ):
                 # This caller is the only one that reports the deferral to the
                 # client, because it is the one the level-up dialog itself is
                 # polling.
@@ -3301,7 +3305,7 @@ class GameService:
         return tile, target
 
     @staticmethod
-    def _defer_combat_for_level_up(player, combat_enemies) -> bool:
+    def _defer_combat_for_level_up(player, combat_enemies, session_data) -> bool:
         """Stash the fight rather than starting it while points are unspent.
 
         ``_initialize_combat`` emits ``combat:started``, which races the
@@ -3315,10 +3319,16 @@ class GameService:
         differs between the three callers (bare flags, ``result`` keys, the
         interaction payload) -- the guard itself is uniform, and the
         interaction path went without it until #567's regrade.
+
+        A deferred fight is as committed as a started one, so a queued passage
+        confirmation is dropped here exactly as ``_initialize_combat`` drops
+        it (#722). Left pending, the resume dropped it later -- under a dialog
+        the client already had open, which then answered "Event not found".
         """
         if int(getattr(player, "pending_attribute_points", 0) or 0) <= 0:
             return False
         player._combat_deferred_enemies = combat_enemies
+        _drop_passage_confirmations(session_data)
         return True
 
     @staticmethod
@@ -3623,7 +3633,9 @@ class GameService:
             # side effect inside a compound condition is invisible at the call
             # site. The other two callers (`move_player`, `process_event_input`)
             # already read this way.
-            if not self._defer_combat_for_level_up(player, combat_enemies):
+            if not self._defer_combat_for_level_up(
+                player, combat_enemies, session_data
+            ):
                 combat_state = self._start_combat(
                     player,
                     combat_enemies,
@@ -3631,9 +3643,11 @@ class GameService:
                     session_data=session_data,
                 )
                 combat_started = True
-                events_triggered = _without_dropped_passage_confirmations(
-                    events_triggered, session_data
-                )
+            # Both arms drop a queued passage confirmation -- a deferred fight
+            # is still committed (#722) -- so both filter the echo (#712).
+            events_triggered = _without_dropped_passage_confirmations(
+                events_triggered, session_data
+            )
 
         return {
             "success": True,
