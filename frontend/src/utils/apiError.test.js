@@ -272,6 +272,7 @@ describe('apiErrorMessage is total, because its result is rendered', () => {
  * across the board, even for a 403 — a server-side refusal (test/guest
  * sessions with no db_user_id can't persist; see
  * project-combat-socket-qa-gotchas.md), not a client network fault.
+ * #731: the same was true of a 5xx the server answered.
  */
 describe('autosaveErrorMessage', () => {
   it('reports a 403 as a session that cannot save, not a connection problem', () => {
@@ -285,9 +286,35 @@ describe('autosaveErrorMessage', () => {
     expect(msg).toBe('Failed to save your progress. Check your connection.');
   });
 
-  it('keeps the network-flavored copy for a non-403 server error (e.g. 500)', () => {
-    const msg = autosaveErrorMessage({ response: { status: 500 } });
+  it('keeps the network-flavored copy for a timeout (no response, axios code set)', () => {
+    const msg = autosaveErrorMessage({ code: 'ECONNABORTED', message: 'timeout of 10000ms exceeded' });
     expect(msg).toBe('Failed to save your progress. Check your connection.');
+  });
+
+  // #731: a 500 with a JSON body came from the app, so the connection worked.
+  // Blaming the wifi sent players chasing a fault that was not theirs.
+  it('does not blame the connection for a 500 the server answered', () => {
+    const msg = autosaveErrorMessage({ response: { status: 500, data: { error: 'boom' } } });
+    expect(msg).not.toMatch(/connection/i);
+    expect(msg).toBe(
+      "The server couldn't save your progress. Your game continues. "
+      + 'If this keeps happening, please send it through Feedback.'
+    );
+  });
+
+  it.each([502, 503, 504])('reports a %i as the server being busy or restarting', (status) => {
+    const msg = autosaveErrorMessage({ response: { status } });
+    expect(msg).not.toMatch(/connection/i);
+    expect(msg).toBe(
+      'The server is busy or restarting. Your game continues and will try to save again as you play.'
+    );
+  });
+
+  // There is no retry queue (useAutosave resets its counter whether or not the
+  // write landed), so no copy may promise the progress "will be saved".
+  it.each([500, 502, 503, 504, undefined])('never promises the lost save will be retried (status %s)', (status) => {
+    const err = status === undefined ? new Error('Network Error') : { response: { status } };
+    expect(autosaveErrorMessage(err)).not.toMatch(/will be saved/i);
   });
 
   it('does not throw on a nullish/undefined error', () => {
