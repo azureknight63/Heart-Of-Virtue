@@ -6467,7 +6467,7 @@ class GameService:
     def _get_shop_state_locked(self, player: Any, npc_id: str) -> Dict[str, Any]:
         """``get_shop_state``'s body, run under the caller's :func:`_player_mutation_lock`."""
         from src.api.serializers.shop_serializer import ShopSerializer
-        from src.npc._shop import MerchantShopMixin
+        from src.npc import MerchantShopMixin
 
         merchant = self._find_merchant(player, npc_id)
         if merchant is None:
