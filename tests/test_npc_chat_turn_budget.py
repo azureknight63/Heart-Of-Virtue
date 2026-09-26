@@ -210,15 +210,16 @@ def test_personality_generation_spends_the_same_budget(entry):
 
 
 #: The unit this repo mirrors from the server (read 2026-09-19). Production
-#: runs gunicorn from systemd, NOT the Procfile: an eventlet worker with
-#: --timeout 120, where the Procfile said sync and the 30s default. The budget
+#: runs gunicorn from systemd, NOT the Procfile: then an eventlet worker, since
+#: 2026-09-26 gthread, with --timeout 120, where the Procfile said sync and the
+#: 30s default. The budget
 #: was sized against the Procfile, and these tests were pinned to it -- a guard
 #: reading a file production ignores.
 _UNIT = _ROOT / "deploy" / "heart-of-virtue.service"
 
 
 def _gunicorn_flags(text, source):
-    """``{worker_class, workers, timeout}`` from a gunicorn command line.
+    """``{worker_class, workers, threads, timeout}`` from a gunicorn command line.
 
     Read rather than asserted, so one spelling of the process model serves
     every test here. Absent flags fall back to gunicorn's own defaults.
@@ -230,15 +231,21 @@ def _gunicorn_flags(text, source):
     timeout = re.search(r"--timeout[ =](\d+)", argv)
     worker_class = re.search(r"--worker-class[ =](\S+)", argv)
     workers = re.search(r"(?:-w|--workers)[ =](\d+)", argv)
+    threads = re.search(r"--threads[ =](\d+)", argv)
     return {
         "worker_class": worker_class.group(1) if worker_class else "sync",
         "workers": int(workers.group(1)) if workers else 1,
+        "threads": int(threads.group(1)) if threads else 1,
         "timeout": int(timeout.group(1)) if timeout else 30,
     }
 
 
 def _production_gunicorn():
-    return _gunicorn_flags(_UNIT.read_text(encoding="utf-8"), _UNIT.name)
+    # The command, not the comments: the unit's header discusses worker
+    # classes too, and a guard that reads a comment can be satisfied by one.
+    text = _UNIT.read_text(encoding="utf-8")
+    command = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
+    return _gunicorn_flags(command, _UNIT.name)
 
 
 def test_the_procfile_says_what_the_unit_says():
@@ -292,6 +299,59 @@ def _requirement(name):
         if line and Requirement(line).name.lower() == name:
             return Requirement(line)
     pytest.fail(f"requirements-api.txt does not declare {name}")
+
+
+#: Workers that monkey-patch the stdlib. src/api/db.py submits every query to
+#: one event loop on its own thread; under a patched hub that cross-loop handoff
+#: fails outright (2026-09-26 probe: 0 of N calls completed), and on Python 3.13
+#: asyncio I/O never completes under eventlet at all (#726).
+_PATCHING_WORKERS = ("eventlet", "gevent")
+
+#: The floor on --threads for a gthread unit. One chat turn can hold a thread
+#: for up to _TURN_CEILING_SECONDS, and every connected Socket.IO client holds
+#: one for as long as it is connected; with gunicorn's default of one thread a
+#: single slow turn would stall every other player.
+_MIN_THREADS = 8
+
+
+def test_the_unit_does_not_run_a_monkey_patching_worker():
+    worker_class = _production_gunicorn()["worker_class"]
+    assert worker_class not in _PATCHING_WORKERS, (
+        f"{_UNIT.name} runs --worker-class {worker_class}, which monkey-patches "
+        "the stdlib: src/api/db.py's one-loop client cannot run under it, and "
+        "neither can asyncio on Python 3.13 (#726). Production runs gthread."
+    )
+
+
+def test_the_unit_serves_requests_concurrently_on_enough_threads():
+    """The code is written for concurrent requests on one process (the
+    per-player locks in GameService, the chat-turn lock, async_mode="threading"),
+    and sessions live in that one process's memory, so it is one worker, many
+    threads."""
+    unit = _production_gunicorn()
+    assert unit["workers"] == 1, (
+        f"{_UNIT.name} runs {unit['workers']} workers; sessions are in-process "
+        "memory, so a second worker would not see the first one's players"
+    )
+    assert unit["worker_class"] == "gthread", (
+        f"{_UNIT.name} runs --worker-class {unit['worker_class']}; production "
+        "serves concurrent requests on gthread's OS threads"
+    )
+    assert unit["threads"] >= _MIN_THREADS, (
+        f"{_UNIT.name} runs {unit['threads']} thread(s); one chat turn can hold "
+        f"a thread for {chat_llm._TURN_CEILING_SECONDS}s, so fewer than "
+        f"{_MIN_THREADS} lets a few slow turns stall everyone"
+    )
+
+
+def test_requirements_do_not_install_a_patching_worker():
+    """Installed but unused, eventlet still patches anything that imports it
+    and calls monkey_patch, and it keeps the old model one flag away."""
+    text = (_ROOT / "requirements-api.txt").read_text(encoding="utf-8")
+    for worker in _PATCHING_WORKERS:
+        assert not re.search(rf"^{worker}\b", text, re.M), (
+            f"requirements-api.txt installs {worker}; production does not run it"
+        )
 
 
 def test_requirements_cannot_install_a_gunicorn_without_the_units_worker():
@@ -384,9 +444,9 @@ def test_a_raised_call_timeout_still_ends_inside_the_client_deadline(
 def test_a_turn_fits_inside_the_production_worker_timeout():
     """A turn must not outlive the worker.
 
-    For the eventlet worker production runs, ``--timeout`` is a LIVENESS
-    heartbeat rather than a per-request deadline: a long request does not kill
-    the worker, but one that blocks the event loop does. For a sync worker it
+    For the gthread worker production runs (eventlet before it),
+    ``--timeout`` is a LIVENESS heartbeat rather than a per-request deadline:
+    a long request does not kill the worker, but a stalled main loop does. For a sync worker it
     is a hard per-request kill, and with sessions in memory that kill takes
     every player's game with it. One bound covers both, so switching the unit
     back to sync cannot quietly invalidate the budget.

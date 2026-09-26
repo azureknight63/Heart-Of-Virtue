@@ -34,6 +34,11 @@ Browsers that already have the game open keep talking to the API until the next 
 
 ## 2. Python 3.13 and the unit stopped (server, as `ubuntu@`)
 
+> **As run on 2026-09-26, 3.13 did not hold:** under the unit's eventlet worker every
+> database call hung on Python 3.13 and login returned 504 (#726). Production went back to a
+> 3.12 venv. 3.13 is safe once the unit runs the gthread worker (deployment.md, "The worker is
+> gthread"); until then, build `.venv` with the system `python3`.
+
 ```bash
 sudo systemctl stop heart-of-virtue
 sudo add-apt-repository -y ppa:deadsnakes/ppa

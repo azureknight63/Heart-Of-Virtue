@@ -1,8 +1,8 @@
 """Regression tests for issue #641 — concurrent inventory/floor mutations.
 
-Production runs gunicorn with ``--worker-class eventlet -w 1``: one process
-serves many greenlets concurrently for the SAME session, so two requests
-against one ``Player`` object can interleave at any yield point.
+Production runs gunicorn with ``--worker-class gthread -w 1 --threads 32``:
+one process serves many requests concurrently on OS threads, for the SAME
+session too, so two requests against one ``Player`` object can interleave.
 
 A prior diagnosis of this issue (a stale worktree branched before PR #645)
 found no lock anywhere in ``game_service.py`` and concluded every mutation

@@ -7,15 +7,13 @@ earlier version of this header said; engineio does no such thing. The client
 pins polling instead (frontend/src/api/socketClient.js). The reason it once
 gave -- a completed upgrade parks the WSGI request for the life of the
 connection, which a `-w 1` sync worker cannot survive -- is void (issue #653):
-production runs ``gunicorn --worker-class eventlet -w 1 --timeout 120
-wsgi:app`` from the systemd unit mirrored at ``deploy/heart-of-virtue.service``,
-a concurrent worker where a parked connection holds a greenlet. The pin stands
-for three reasons that do hold, derived in full in socketClient.js: the reverse
-proxy's ``Upgrade``/``Connection`` handling is unverified
-(docs/development/deployment.md); ``async_mode="threading"`` serving
-WebSockets under an eventlet worker is an unsupported combination; and the
-worker class is due to migrate off eventlet, which gunicorn 26 removed --
-requirements-api.txt holds gunicorn below 26 until it does.
+production runs ``gunicorn --worker-class gthread -w 1 --threads 32 --timeout
+120 wsgi:app`` from the systemd unit mirrored at
+``deploy/heart-of-virtue.service``, where a parked connection holds one of the
+worker's threads. The pin stands, derived in full in socketClient.js, because
+the reverse proxy's ``Upgrade``/``Connection`` handling is unverified
+(docs/development/deployment.md), and because every connected Socket.IO
+client holds a thread, so the thread count bounds concurrent socket players.
 
 `simple-websocket` is therefore pinned in requirements-api.txt for a narrower
 reason than "the dev WebSocket half": with the client pinning polling in dev
@@ -28,7 +26,7 @@ under any other value. See the two guards at the bottom of the file.
 
 Usage (as production runs it — see deploy/heart-of-virtue.service, which the
 Procfile mirrors):
-    FLASK_ENV=production gunicorn --worker-class eventlet -w 1         --bind "0.0.0.0:${PORT:-5000}" --timeout 120 wsgi:app
+    FLASK_ENV=production gunicorn --worker-class gthread -w 1 --threads 32         --bind "0.0.0.0:${PORT:-5000}" --timeout 120 wsgi:app
 
 Development and testing configs go through the dev entry point instead, which
 binds 127.0.0.1 by default:
