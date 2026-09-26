@@ -119,8 +119,8 @@ def _ensure_background_services_started(app):
             # constructor does real network discovery and model validation —
             # seconds of blocking I/O — and gunicorn runs a single worker
             # process (deploy/heart-of-virtue.service), so inline it would
-            # stall this response, and any of it that does not yield to the
-            # eventlet hub stalls every concurrent request too. It does not hold a lock for that duration: prewarm()
+            # stall this response and hold one of the worker's threads for
+            # seconds. It does not hold a lock for that duration: prewarm()
             # claims the attempt under _instances_lock and then builds outside
             # it, so concurrent get_instance()/is_prewarmed() callers are not
             # starved.

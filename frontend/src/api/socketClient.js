@@ -49,33 +49,31 @@ export function createCombatSocket({ url } = {}) {
     // process model was read off the Procfile and never verified. Production
     // runs the unit mirrored at `deploy/heart-of-virtue.service`,
     //
-    //     gunicorn --worker-class eventlet -w 1 --timeout 120 wsgi:app
+    //     gunicorn --worker-class gthread -w 1 --threads 32 --timeout 120 wsgi:app
     //
-    // where a parked connection holds a greenlet, not the worker, and
-    // `--timeout` is a liveness heartbeat rather than a per-request deadline.
+    // (an eventlet worker until 2026-09-26), where a parked connection holds
+    // one of the worker's threads, not the worker, and `--timeout` is a
+    // liveness heartbeat rather than a per-request deadline.
     //
-    // The pin stands for three reasons that do hold (#653, "pin now,
-    // migrate later"):
+    // The pin stands (#653, "pin now, migrate later") for two reasons that
+    // hold on that worker:
     //
     //   (a) The reverse proxy in front of the API is unverified. Nobody has
     //       read its config (docs/development/deployment.md: Apache or nginx,
     //       unconfirmed), so whether it forwards `Upgrade`/`Connection` on
     //       `/games/HeartOfVirtue/*` is unknown. Plain HTTP long-polling is
     //       the one transport known to pass through it.
-    //   (b) The server runs Socket.IO with `async_mode="threading"`
-    //       (src/api/app.py) inside an eventlet worker. Flask-SocketIO's
-    //       gunicorn + eventlet recipe assumes `async_mode="eventlet"`; a
-    //       long-lived WebSocket held by the threading driver's
-    //       simple-websocket under a monkey-patched eventlet hub is an
-    //       unsupported combination nobody has exercised. Polling requests
-    //       are ordinary short WSGI requests, which that worker does serve.
-    //   (c) The worker class itself is due to change: gunicorn 26 removed
-    //       the eventlet worker, requirements-api.txt holds gunicorn below
-    //       26 until production migrates off eventlet, and the transport
-    //       should be re-derived on whatever worker that lands on, not on
-    //       this one.
+    //   (b) Capacity. `async_mode="threading"` (src/api/app.py) on gthread is
+    //       the combination Flask-SocketIO documents, but every connected
+    //       client -- a parked WebSocket or a pending long-poll -- holds one
+    //       of the worker's 32 threads, so the thread count bounds concurrent
+    //       socket players. Measure that before opening a transport that holds
+    //       its thread for the whole connection rather than per poll.
     //
-    // Re-open the transport only after all three are settled.
+    // (A third reason, retired 2026-09-26: `async_mode="threading"` inside an
+    // eventlet worker was an unsupported combination. The unit left eventlet.)
+    //
+    // Re-open the transport only after both are settled.
     //
     // (The pin also avoids the spurious 500 — "write() before
     // start_response" — that Werkzeug's threaded dev server logs when a

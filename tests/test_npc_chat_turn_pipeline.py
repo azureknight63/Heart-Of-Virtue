@@ -76,7 +76,7 @@ class TestTurnBudgetScalesWithTheRoundTimeout:
         80s turn, i.e. 80 seconds of spinner for one reply. The maintainer's
         rule (2026-09-19) caps it at ``_TURN_CEILING_SECONDS`` -- later stages
         are refused instead. (The cap was first justified by a 30s worker kill
-        read off the Procfile; production runs an eventlet worker with
+        read off the Procfile; production runs a concurrent worker with
         --timeout 120, so the cap is a player bound. See
         deploy/heart-of-virtue.service.)"""
         adapter = _WideTimeoutAdapter()

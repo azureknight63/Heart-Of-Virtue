@@ -40,31 +40,21 @@ tzdata>=2024.1
 # gunicorn has done since 20.1.0 -- under an older one an oversized chunked
 # body is silently truncated at the cap and answered 400.
 #
-# The ceiling is not cosmetic either (#653, maintainer: "pin now, migrate
-# later"). gunicorn 26.0 REMOVED the eventlet worker the unit runs
-# (26.x's SUPPORTED_WORKERS has no `eventlet`; 25.x's geventlet.py announced
-# it), so an unbounded floor-only range made the next venv rebuild install a gunicorn
-# that refuses to boot production. Lift this only together with moving the
-# unit off `--worker-class eventlet` -- docs/development/deployment.md.
-gunicorn>=23.0,<26
+# The ceiling is the next major. The old `<26` existed only because gunicorn
+# 26.0 removed the eventlet worker the unit used to run (#653); the unit now
+# runs gthread (deploy/heart-of-virtue.service), which 26.x still ships. It is
+# bounded rather than open because an unbounded floor-only range is how #653
+# happened: re-verify the unit's worker on each new major before lifting it.
+gunicorn>=23.0,<27
 
-# The worker class production actually runs (deploy/heart-of-virtue.service:
-# `--worker-class eventlet`). Without it gunicorn refuses to boot, so the API
-# was one venv rebuild away from not starting: it was installed on the server
-# by hand (0.40.0, verified 2026-09-19) and declared nowhere. The eventlet
-# worker also monkey-patches the stdlib, which is what makes the threading
-# locks in GameService green rather than blocking -- so this line is part of
-# the concurrency model, not just a runner. Held to the unit by
-# tests/test_npc_chat_turn_budget.py.
-#
-# The floor is the one gunicorn itself enforces: from 24.0 on, its eventlet
-# worker raises "requires eventlet 0.40.3 or higher" at boot (and its
-# `[eventlet]` extra declares >=0.40.3). The server's hand-installed 0.40.0
-# therefore only boots under a gunicorn older than 24 (23.x wants >=0.24.1,
-# !=0.36.0) -- whichever gunicorn the server actually has has not been read
-# (#653); check `.venv/bin/gunicorn --version` there before rebuilding it, and
-# note a rebuild from this file moves both packages forward together.
-eventlet>=0.40.3
+# No eventlet. The unit ran `--worker-class eventlet` until 2026-09-26, and
+# its monkey-patching is what broke two things: on Python 3.13 asyncio database
+# calls never completed under it (#726), and src/api/db.py's one-loop client --
+# the fix for concurrent requests cancelling each other's queries -- cannot
+# hand work between loops under a patched hub. gthread serves requests on real
+# OS threads, which is also what the threading locks in GameService and
+# async_mode="threading" (src/api/app.py) were written for. Do not re-add it:
+# tests/test_npc_chat_turn_budget.py fails if the unit names a patching worker.
 
 # Pinned because _register_request_limits argues its correctness against a
 # specific Werkzeug rather than against a documented contract: that

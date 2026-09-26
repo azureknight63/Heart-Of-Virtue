@@ -61,9 +61,9 @@ MAX_MANUAL_SAVES = 20
 
 #: One re-entrant lock per player, serializing every inventory/floor mutation
 #: for that player (issue #641). Production runs gunicorn with
-#: ``--worker-class eventlet -w 1``: one process serves many greenlets
-#: concurrently for the SAME session, so two requests against one ``Player``
-#: object can interleave at any yield point. Take, drop, equip/unequip, shop
+#: ``--worker-class gthread -w 1 --threads 32``: one process serves many
+#: requests concurrently on OS threads, for the SAME session too, so two
+#: requests against one ``Player`` object can interleave at any point. Take, drop, equip/unequip, shop
 #: buy/sell/buyback, post-combat loot collection and the shared interaction
 #: dispatch (floor take, container take) all move objects between
 #: ``player.inventory`` and a tile's/container's/merchant's list, and until
@@ -118,18 +118,17 @@ def _player_mutation_lock(player: Any) -> threading.RLock:
 #: commits -- Jean's line, the loquacity drain, the reputation change -- so a
 #: Retry running beside it double-commits and spends the LLM quota twice.
 #:
-#: This fires in production: the unit runs an eventlet worker
+#: This fires in production: the unit runs a threaded worker
 #: (deploy/heart-of-virtue.service), so requests for one player are served
-#: concurrently as greenlets and the second turn meets a held lock. A round of
+#: concurrently and the second turn meets a held lock. A round of
 #: review reasoned from the Procfile instead -- one sync worker, requests
 #: served one at a time -- and concluded the lock was inert here; the Procfile
 #: is not what production runs. What the lock still cannot catch is a Retry
 #: sent after the abandoned turn has finished committing; idempotent turns
 #: (#636) are the fix for that one.
 #:
-#: gunicorn's eventlet worker monkey-patches the stdlib, so this is a GREEN
-#: lock: a held one yields rather than blocking the process, and the
-#: non-blocking acquire below still answers False.
+#: A held lock blocks only the thread that waits on it, and the
+#: non-blocking acquire below answers False rather than waiting at all.
 #:
 #: Weak-keyed on the player rather than stored on it: a lock does not pickle,
 #: and the player is saved.
