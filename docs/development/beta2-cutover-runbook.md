@@ -18,8 +18,8 @@ stopping the unit go through `ubuntu@nexusfidei.dev`. `journalctl -u heart-of-vi
   refuses unless the local checkout is exactly there, so run the `deploy.ps1` steps from a
   worktree on an up-to-date `master`.
 - `.\deploy.ps1 -KeepMaintenance -DryRun` reads cleanly.
-- Decide on a Groq key (step 3). With only OpenRouter's free tier (50 requests a day), `auto` has
-  one provider to fall back to, and chat, Mynx and the advisor share that budget.
+- Groq and Cerebras API keys in hand (step 3). With OpenRouter's free tier alone (50 requests
+  a day), chat, Mynx and the advisor share one budget; the other two are the fallback chain.
 
 ## 1. Close the doors (here)
 
@@ -79,8 +79,19 @@ COMBAT_LLM_ENABLED=1
 MYNX_LLM_MODEL=auto
 NPC_CHAT_LLM_MODEL=auto
 COMBAT_LLM_MODEL=auto
-GROQ_API_KEY=<recommended; see "Before you start">
+MYNX_LLM_PROVIDER=openrouter
+NPC_CHAT_LLM_PROVIDER=openrouter
+GROQ_API_KEY=<your Groq key>
+CEREBRAS_API_KEY=<your Cerebras key>
 ```
+
+- **The two `*_PROVIDER` lines are what switch Groq and Cerebras on.** A key alone arms nothing:
+  a feature assembles its fallback chain (OpenRouter, then Groq, then Cerebras) only when its
+  provider is named explicitly, and NPC chat does *not* count an inherited `MYNX_LLM_PROVIDER`
+  as a choice (`.env.example`, "IMPORTANT — a key alone does not arm the fallback chain"). Leave
+  `GROQ_MODEL`/`CEREBRAS_MODEL` blank for their defaults.
+- The tactical advisor (`COMBAT_LLM_*`) routes OpenRouter or Ollama only; it never uses the
+  Groq/Cerebras chain, and naming either there turns it off. Leave `COMBAT_LLM_PROVIDER` unset.
 
 - `ENCRYPTION_KEY` is new and mandatory: the beta-2 code refuses to start in production without
   it (`src/api/config.py`, `AuthService.__init__`). Keep a copy somewhere safe; losing it makes
