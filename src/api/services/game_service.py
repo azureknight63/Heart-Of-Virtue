@@ -5138,6 +5138,9 @@ class GameService:
             _room_title = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", _raw)
         else:
             _room_title = "Unknown"
+        # The tile, since a room title can repeat across a map.
+        _location_x = getattr(player, "location_x", None)
+        _location_y = getattr(player, "location_y", None)
 
         # 2. Hybrid Autosave Logic: UPSERT for the single autosave
         if is_autosave:
@@ -5151,7 +5154,8 @@ class GameService:
                 sql = """
                 UPDATE saves
                 SET data = ?, timestamp = CURRENT_TIMESTAMP,
-                    level = ?, map_name = ?, room_title = ?, playtime = ?
+                    level = ?, map_name = ?, room_title = ?, playtime = ?,
+                    location_x = ?, location_y = ?
                 WHERE id = ?
                 """
                 params = [
@@ -5160,13 +5164,16 @@ class GameService:
                     _map_name,
                     _room_title,
                     getattr(player, "time_elapsed", 0),
+                    _location_x,
+                    _location_y,
                     save_id,
                 ]
             else:
                 # Create first autosave
                 sql = """
-                INSERT INTO saves (id, user_id, name, data, is_autosave, level, map_name, room_title, playtime)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO saves (id, user_id, name, data, is_autosave, level, map_name, room_title, playtime,
+                                   location_x, location_y)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 params = [
                     save_id,
@@ -5178,12 +5185,15 @@ class GameService:
                     _map_name,
                     _room_title,
                     getattr(player, "time_elapsed", 0),
+                    _location_x,
+                    _location_y,
                 ]
         else:
             # Manual save
             sql = """
-            INSERT INTO saves (id, user_id, name, data, is_autosave, level, map_name, room_title, playtime)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO saves (id, user_id, name, data, is_autosave, level, map_name, room_title, playtime,
+                               location_x, location_y)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = [
                 save_id,
@@ -5195,6 +5205,8 @@ class GameService:
                 _map_name,
                 _room_title,
                 getattr(player, "time_elapsed", 0),
+                _location_x,
+                _location_y,
             ]
 
         await db.execute(sql, params)

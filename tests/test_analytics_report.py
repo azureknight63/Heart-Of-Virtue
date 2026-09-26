@@ -161,7 +161,7 @@ class TestProgress:
         db.autosave("gone2", NOW - 9 * DAY, 2, "dark-grotto", "Wall Depression")
         db.autosave("here", NOW - DAY, 4, "grondia", "Gate")
         assert build(db)["progress"]["stalled"] == [
-            {"map": "dark-grotto", "room": "Wall Depression", "players": 2}
+            {"map": "dark-grotto", "room": "Wall Depression", "x": None, "y": None, "players": 2}
         ]
 
 
@@ -374,7 +374,7 @@ ADMIN_PAGE_READS = {
     "progress.maps[]": ["map", "players"],
     "progress.flags[]": ["flag", "players"],
     "progress.levels[]": ["level", "players"],
-    "progress.stalled[]": ["map", "room", "players"],
+    "progress.stalled[]": ["map", "room", "x", "y", "players"],
     "combat[]": ["encounter", "starts", "victories", "defeats", "flees", "abandoned",
                  "avg_beats", "avg_duration_s", "avg_hp_pct_on_win"],
     "sessions": ["count", "players", "median_minutes", "avg_minutes", "avg_minutes_per_player"],

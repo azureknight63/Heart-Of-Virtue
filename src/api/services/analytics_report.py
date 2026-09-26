@@ -81,7 +81,7 @@ TEXT_FLAG_ROWS = 20
 ENCOUNTER_COL = 32
 MAP_COL = 28
 FLAG_COL = 40
-ROOM_COL = 28
+ROOM_COL = 36
 NPC_COL = 20
 
 WINDOW, ROLLING, ALL_TIME = "window", "rolling", "all_time"
@@ -205,9 +205,12 @@ async def _progress(execute, now, since, days):
         "SELECT level, COUNT(*) FROM saves WHERE is_autosave = 1 AND level IS NOT NULL "
         "GROUP BY level ORDER BY level"
     )
+    # By tile as well as room name: a name can repeat across a map. Saves from
+    # before coordinates were recorded group under x/y None.
     stalled = await execute(
-        "SELECT map_name, room_title, COUNT(*) AS n FROM saves WHERE is_autosave = 1 "
-        "AND timestamp < datetime(?, 'unixepoch') GROUP BY map_name, room_title "
+        "SELECT map_name, room_title, location_x, location_y, COUNT(*) AS n FROM saves "
+        "WHERE is_autosave = 1 AND timestamp < datetime(?, 'unixepoch') "
+        "GROUP BY map_name, room_title, location_x, location_y "
         "ORDER BY n DESC, map_name LIMIT ?",
         [now - STALLED_AFTER_DAYS * DAY, TOP_N],
     )
@@ -215,7 +218,7 @@ async def _progress(execute, now, since, days):
         "maps": [{"map": m, "players": n} for m, n in maps],
         "flags": [{"flag": f, "players": n} for f, n in flags],
         "levels": [{"level": lvl, "players": n} for lvl, n in levels],
-        "stalled": [{"map": m, "room": r, "players": n} for m, r, n in stalled],
+        "stalled": [{"map": m, "room": r, "x": x, "y": y, "players": n} for m, r, x, y, n in stalled],
         "stalled_after_days": STALLED_AFTER_DAYS,
     }
 
@@ -411,6 +414,13 @@ def _or_dash(value, template="%s"):
     return "-" if value is None else template % value
 
 
+def room_label(stall):
+    """``Cave Entrance (14, 5)``, or just the room for a save without a tile."""
+    if stall.get("x") is None or stall.get("y") is None:
+        return stall["room"]
+    return "%s (%d, %d)" % (stall["room"], stall["x"], stall["y"])
+
+
 _SCOPE_NOTES = {ROLLING: "rolling windows", ALL_TIME: "all time"}
 
 
@@ -461,7 +471,7 @@ def _text_progress(progress):
     ))
     lines.append("autosave untouched %d+ days (where it sits):" % progress["stalled_after_days"])
     lines += [
-        "  %-*s %-*s %d" % (MAP_COL, s["map"], ROOM_COL, s["room"], s["players"])
+        "  %-*s %-*s %d" % (MAP_COL, s["map"], ROOM_COL, room_label(s), s["players"])
         for s in progress["stalled"]
     ]
     return lines
@@ -571,7 +581,7 @@ def _digest_progress(progress, note):
     if not progress["stalled"]:
         return None
     top = progress["stalled"][0]
-    return "Most stalled at: %s / %s (%d)" % (top["map"], top["room"], top["players"])
+    return "Most stalled at: %s / %s (%d)" % (top["map"], room_label(top), top["players"])
 
 
 # Digest lines in the order they read, which is not report order.

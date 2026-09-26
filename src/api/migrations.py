@@ -53,6 +53,8 @@ SAVES_TABLE = """
             map_name TEXT,
             room_title TEXT,
             playtime INTEGER,
+            location_x INTEGER,
+            location_y INTEGER,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
         """
@@ -81,6 +83,9 @@ async def init_db():
             "ALTER TABLE saves ADD COLUMN map_name TEXT",
             "ALTER TABLE saves ADD COLUMN room_title TEXT",
             "ALTER TABLE saves ADD COLUMN playtime INTEGER",
+            # The tile, so reports can tell apart rooms that share a name.
+            "ALTER TABLE saves ADD COLUMN location_x INTEGER",
+            "ALTER TABLE saves ADD COLUMN location_y INTEGER",
         ]
         for stmt in backfill:
             try:

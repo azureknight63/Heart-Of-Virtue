@@ -2092,8 +2092,10 @@ class TestMigrations:
         mock_db.close.assert_called_once()
         assert mock_logger.error.called
         # Every backfill statement fails with the same genuine error, so
-        # logger.error should be called once per backfill statement (5).
-        assert mock_logger.error.call_count == 5
+        # logger.error is called once per statement init_db ran (the table
+        # creation goes through batch, not execute).
+        assert mock_db.execute.call_count > 0
+        assert mock_logger.error.call_count == mock_db.execute.call_count
 
     @pytest.mark.asyncio
     async def test_init_db_backfill_already_exists_variant_swallowed(self):

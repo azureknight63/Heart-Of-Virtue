@@ -153,6 +153,11 @@ function oneDecimal(value) {
     return isNumber(value) ? value.toFixed(1) : MISSING
 }
 
+/** `Cave Entrance (14, 5)`, or just the room for a save without a tile. */
+function roomLabel(stall) {
+    return isNumber(stall.x) && isNumber(stall.y) ? `${stall.room} (${stall.x}, ${stall.y})` : (stall.room ?? MISSING)
+}
+
 function scopeLabel(scope, windowDays) {
     if (scope === 'window') return `last ${windowDays} days`
     if (scope === 'all_time') return 'all time'
@@ -360,7 +365,7 @@ function ProgressSection({ report }) {
                     <SubTable
                         title={`Stalled: autosave untouched ${progress.stalled_after_days ?? MISSING}+ days, where it sits`}
                         label="Stalled players"
-                        columns={[{ key: 'map', label: 'Map' }, { key: 'room', label: 'Room' }, PLAYERS_COLUMN]}
+                        columns={[{ key: 'map', label: 'Map' }, { key: 'room', label: 'Room (x, y)', render: roomLabel }, PLAYERS_COLUMN]}
                         rows={progress.stalled}
                     />
                 </>

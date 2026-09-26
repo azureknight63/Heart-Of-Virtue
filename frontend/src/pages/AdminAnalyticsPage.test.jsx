@@ -35,7 +35,10 @@ const REPORT = {
         maps: [{ map: 'dark-grotto', players: 30 }, { map: 'grondia', players: 12 }],
         flags: [{ flag: 'met_gorran', players: 18 }],
         levels: [{ level: 1, players: 10 }, { level: 3, players: 5 }],
-        stalled: [{ map: 'dark-grotto', room: 'Wall Depression', players: 7 }],
+        stalled: [
+            { map: 'dark-grotto', room: 'Wall Depression', x: 14, y: 5, players: 7 },
+            { map: 'dark-grotto', room: 'Slime Pool', x: null, y: null, players: 2 },
+        ],
     },
     combat: [
         {
@@ -212,6 +215,14 @@ describe('AdminAnalyticsPage', () => {
         renderPage(hookState({ report: { ...REPORT, progress: { maps: [] }, npc_chat: { conversations: 1 } } }));
         expect(screen.getByRole('region', { name: /progress/i })).toHaveTextContent(/no data yet/i);
         expect(screen.getByRole('region', { name: /npc chat/i })).toHaveTextContent(/no data yet/i);
+    });
+
+    it('locates each stalled room by its tile coordinates', () => {
+        renderPage(hookState());
+        const table = screen.getByRole('table', { name: /stalled/i });
+        expect(within(table).getByText('Wall Depression (14, 5)')).toBeInTheDocument();
+        // A save from before coordinates were recorded shows the room alone.
+        expect(within(table).getByText('Slime Pool')).toBeInTheDocument();
     });
 
     it('labels the stall threshold from the report', () => {
