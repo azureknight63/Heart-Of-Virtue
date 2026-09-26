@@ -927,3 +927,22 @@ class TestMerchantRestock:
 
         assert first["merchant_gold"] == second["merchant_gold"] == 1000
         assert [i.name for i in merchant.inventory] == ["Gold", "Stall Ledger"]
+
+    def test_opening_a_shop_judges_stock_as_world_build_does(
+        self, game_service, player, bare_merchant
+    ):
+        """A non-Gold item that happens to be *named* "Gold" is stock.
+
+        ``MerchantShopMixin.has_goods`` (what the world build uses) excludes
+        gold by type; the shop-open path must agree rather than excluding it
+        by name, or the same merchant is "stocked" at build and re-rolled on
+        first opening.
+        """
+        mislabelled = make_consumable(name="Gold", value=1)
+        bare_merchant.inventory = [Gold(1000), mislabelled]
+        assert bare_merchant.has_goods()
+
+        game_service.get_shop_state(player, wire_handle(bare_merchant))
+
+        assert mislabelled in bare_merchant.inventory
+        assert gold_in(bare_merchant.inventory) == 1000

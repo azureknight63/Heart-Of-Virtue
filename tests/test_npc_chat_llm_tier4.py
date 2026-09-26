@@ -26,13 +26,14 @@ Tests cover:
 - All edge cases and error paths
 """
 
-from ai.llm_client import NPC_LOCATION_BLOCK_NAME
-from types import SimpleNamespace
-import pytest
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from ai.llm_client import NPC_LOCATION_BLOCK_NAME
 from src.npc._chat_llm import (
     JEAN_TONES,
     MAX_OPTION_CHARS,
@@ -48,11 +49,12 @@ from tests._npc_fixtures import (
     ScriptedAdapter,
     chat_npc,
     chat_player,
+    equipped_item,
     qc_npc,
     ready_npc,
     wired_chat_npc,
-    equipped_item,
 )
+from tests._source_scan import MAP_DIR
 
 
 @pytest.fixture
@@ -1015,7 +1017,7 @@ class TestBuildSystemPrompt:
         shipped JSON without instantiating the map's NPCs (which would mutate
         the merchant registries).
         """
-        path = Path(__file__).resolve().parent.parent / "src" / "resources" / "maps" / f"{map_name}.json"
+        path = MAP_DIR / f"{map_name}.json"
         raw = json.loads(path.read_text(encoding="utf-8"))
         player.map = {"name": map_name}
         if "metadata" in raw:

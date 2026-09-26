@@ -18,6 +18,7 @@ Exit codes:
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -57,9 +58,31 @@ if str(ROOT) not in sys.path:
 # tools/measure_llm_tokens.py grew a second, smaller derivation of its own and
 # left ANTHROPIC_API_KEY, OPENAI_API_KEY, OLLAMA_BASE_URL, GITHUB_TOKEN and
 # TURSO_* live.
+#
+# CONFIG_FILE is snapshotted BEFORE that import, because .env must not choose
+# the game config (#699). blank_outbound_env() leaves it alone --
+# tests/api/conftest.py pins its own -- but this is not a conftest, so a developer's
+# manual-QA CONFIG_FILE in .env silently decided what every scenario ran
+# against. The shell's value must still win: /combat-test and the acceptance
+# scaffolds run ``CONFIG_FILE=config_combat_testing.ini python tools/bug_hunt.py``.
+_SHELL_CONFIG_FILE = os.environ.get("CONFIG_FILE")
+
+
+def _harness_config_file(pre_dotenv_value):
+    """The CONFIG_FILE the harness runs with: the shell's, else ``""``.
+
+    ``""`` rather than unset, for the same reason as the credential sweep:
+    load_dotenv(override=False) refills a popped key, and session_manager
+    defaults an *unset* CONFIG_FILE to config_dev.ini -- ``""`` survives both.
+    """
+    return pre_dotenv_value or ""
+
+
 from tests.llm_doubles import blank_outbound_env  # noqa: E402
 
 blank_outbound_env()
+_HARNESS_CONFIG_FILE = _harness_config_file(_SHELL_CONFIG_FILE)
+os.environ["CONFIG_FILE"] = _HARNESS_CONFIG_FILE
 
 # GITHUB_TOKEN and TURSO_* used to be blanked here by name, a paragraph each.
 # Both are in OUTBOUND_CREDENTIAL_ENVS now, so the sweep above covers them:
@@ -92,7 +115,12 @@ from tools.harness.scenarios import get_scenarios
 # Output helpers
 # ---------------------------------------------------------------------------
 
-def _print_summary(bugs: list[BugReport], headless: bool) -> None:
+def _bug_dicts(bugs: list[BugReport], config_file: str) -> list[dict]:
+    """Serialise bugs, each stamped with the game config it was found under."""
+    return [{**b.to_dict(), "config_file": config_file} for b in bugs]
+
+
+def _print_summary(bugs: list[BugReport], headless: bool, config_file: str) -> None:
     if headless:
         # Machine-readable: one JSON blob to stdout.
         print(json.dumps(
@@ -100,12 +128,14 @@ def _print_summary(bugs: list[BugReport], headless: bool) -> None:
                 "total": len(bugs),
                 "critical": sum(1 for b in bugs if b.severity == BugSeverity.CRITICAL),
                 "high": sum(1 for b in bugs if b.severity == BugSeverity.HIGH),
-                "bugs": [b.to_dict() for b in bugs],
+                "config_file": config_file,
+                "bugs": _bug_dicts(bugs, config_file),
             },
             indent=2,
         ))
         return
 
+    print(f"\n[bug_hunt] CONFIG_FILE: {config_file or '(none)'}")
     if not bugs:
         print("\n[bug_hunt] No bugs found. Impressive.")
         return
@@ -210,11 +240,11 @@ def main() -> int:
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with out_path.open("w") as f:
-            json.dump([b.to_dict() for b in all_bugs], f, indent=2)
+            json.dump(_bug_dicts(all_bugs, _HARNESS_CONFIG_FILE), f, indent=2)
         if not args.headless:
             print(f"\n[bug_hunt] Report written to {out_path}")
 
-    _print_summary(all_bugs, args.headless)
+    _print_summary(all_bugs, args.headless, _HARNESS_CONFIG_FILE)
 
     # Non-zero exit if any CRITICAL or HIGH bugs found (useful in CI).
     critical_or_high = [

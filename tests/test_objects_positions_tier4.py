@@ -22,7 +22,8 @@ Focus areas:
 14. Fountain repeat event (951-952, 955-956, 959)
 15. NoticeBoard event repeat (1009)
 16. NoticeBoard use alias (1020-1022)
-17. PrayerCandleRack use (1077)
+17. PrayerCandleRack use (1077) -- the alias identity check here duplicated
+    the one in tests/test_object_synonym_aliases.py and was removed (#681)
 18. StreetLantern inspect (1126)
 19. MarketGong repeat (1164)
 20. GeminateGeode examine (1254)
@@ -57,7 +58,6 @@ from src.objects import (
     Fountain,
     StreetLantern,
     NoticeBoard,
-    PrayerCandleRack,
     MarketGong,
     GeminateGeode,
 )
@@ -199,16 +199,6 @@ class TestWallInscriptionEdgeCases:
             with patch("src.objects.functions.await_input"):
                 inscription.read()
         mock_slow.assert_called()
-
-    def test_wall_inscription_examine_alias(self):
-        """Test examine() as alias for read()."""
-        player = Mock()
-        tile = Mock()
-        inscription = WallInscription(player, tile, text="Test")
-
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(inscription).examine is type(inscription).read
 
 
 class TestContainerStartOpenProperty:
@@ -808,21 +798,6 @@ class TestNoticeBoardEvent:
             "  - Only note.",
         ]
         mock_await.assert_called_once()
-
-
-class TestPrayerCandleRackUse:
-    """Test PrayerCandleRack.use (line 1077)."""
-
-    def test_prayer_candle_rack_use_alias(self):
-        """Test use() is alias for pray()."""
-        player = Mock()
-        tile = Mock()
-
-        rack = PrayerCandleRack(player=player, tile=tile)
-
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(rack).use is type(rack).pray
 
 
 class TestStreetLanternInspect:

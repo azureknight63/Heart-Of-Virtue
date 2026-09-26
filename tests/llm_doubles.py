@@ -63,6 +63,8 @@ __all__ = [
     "make_generic_client",
     "isolate_llm_class_state",
     "child_env",
+    "NoLLM",
+    "ScriptedLLM",
 ]
 
 
@@ -567,7 +569,7 @@ _NON_SECRET_GROUPS = (
     ),
     (
         "Logging destination and verbosity. What lands IN the log file can be "
-        "sensitive -- which is why app.py installs _RedactSecretsFilter and "
+        "sensitive -- which is why structured_log.py installs _RedactSecretsFilter and "
         "confines the path to logs/ -- but neither name nor value is.",
         ("LOG_FILE", "LOG_LEVEL"),
     ),
@@ -939,3 +941,28 @@ def child_env(**overrides: str) -> Dict[str, str]:
     env["LOG_LEVEL"] = "WARNING"
     env.update(overrides)
     return env
+
+
+class NoLLM:
+    """A ``GenericLLMClient`` stand-in that is never available.
+
+    Handed to ``CombatStrategist(client=...)`` to force its heuristic ladder.
+    """
+
+    def available(self):
+        return False
+
+
+class ScriptedLLM:
+    """An available ``GenericLLMClient`` stand-in that proposes exactly the
+    suggestions it is given, copied per call so a strategist mutating one
+    (clamps rewrite ``score``/``reasoning``) cannot leak into the next."""
+
+    def __init__(self, suggestions):
+        self._suggestions = suggestions
+
+    def available(self):
+        return True
+
+    def generate_structured(self, _system, _user):
+        return {"suggestions": [dict(s) for s in self._suggestions]}

@@ -63,6 +63,21 @@ def test_exp_curve_matches_player_formula():
     assert g.exp_to_level == 7 * (165 - g.intelligence)
 
 
+def test_jeans_first_threshold_is_the_shared_curve_at_level_1():
+    """Issue #710: a fresh Jean started at a hard-coded 150 while every later
+    level, and every ally's level 1, came from exp_needed_for_level."""
+    from src.combatant import exp_needed_for_level
+    from src.player import Player
+
+    jean = Player()
+    ally = _gorran()
+    ally.intelligence = jean.intelligence  # same inputs, so only the curve differs
+
+    assert jean.level == ally.level == 1
+    assert jean.exp_to_level == exp_needed_for_level(1, jean.intelligence)
+    assert jean.exp_to_level == ally.exp_to_level
+
+
 def test_gain_exp_banks_and_levels():
     g = _gorran()
     need = g.exp_to_level

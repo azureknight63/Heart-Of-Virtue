@@ -474,18 +474,6 @@ def test_bell_ring_with_repeat_event():
     assert bell.event is mock_event  # kept
 
 
-def test_bell_use_aliases_ring():
-    """Bell.use() calls ring()."""
-    from src.objects import MarketBell as Bell
-
-    player = MagicMock()
-    tile = _make_tile()
-    bell = Bell(player=player, tile=tile)
-    # #626: a class-level alias IS its target, so an instance
-    # patch of the target can no longer be observed through it.
-    assert type(bell).use is type(bell).ring
-
-
 # ---------------------------------------------------------------------------
 # StreetLantern — douse when already dark (lines 1022-1023)
 # ---------------------------------------------------------------------------
@@ -581,45 +569,6 @@ def test_geode_place_all_ingredients_present():
     assert geode not in tile.objects_here
 
 
-def test_geode_insert_alias():
-    """GeminateGeode.insert() calls place()."""
-    from src.objects import GeminateGeode
-
-    player = MagicMock()
-    player.inventory = []
-    tile = _make_tile()
-    geode = GeminateGeode(player=player, tile=tile)
-    # #626: a class-level alias IS its target, so an instance
-    # patch of the target can no longer be observed through it.
-    assert type(geode).insert is type(geode).place
-
-
-def test_geode_solve_alias():
-    """GeminateGeode.solve() calls place()."""
-    from src.objects import GeminateGeode
-
-    player = MagicMock()
-    player.inventory = []
-    tile = _make_tile()
-    geode = GeminateGeode(player=player, tile=tile)
-    # #626: a class-level alias IS its target, so an instance
-    # patch of the target can no longer be observed through it.
-    assert type(geode).solve is type(geode).place
-
-
-def test_geode_use_alias():
-    """GeminateGeode.use() calls place()."""
-    from src.objects import GeminateGeode
-
-    player = MagicMock()
-    player.inventory = []
-    tile = _make_tile()
-    geode = GeminateGeode(player=player, tile=tile)
-    # #626: a class-level alias IS its target, so an instance
-    # patch of the target can no longer be observed through it.
-    assert type(geode).use is type(geode).place
-
-
 def test_geode_examine():
     """GeminateGeode.examine() prints description."""
     from src.objects import GeminateGeode
@@ -709,18 +658,6 @@ def test_fountain_admire():
     mock_funcs.await_input.assert_called_once()
 
 
-def test_fountain_use_alias():
-    """Fountain.use() aliases drink()."""
-    from src.objects import Fountain
-
-    player = MagicMock()
-    tile = _make_tile()
-    fountain = Fountain(player=player, tile=tile)
-    # #626: a class-level alias IS its target, so an instance
-    # patch of the target can no longer be observed through it.
-    assert type(fountain).use is type(fountain).drink
-
-
 # ---------------------------------------------------------------------------
 # NoticeBoard
 # ---------------------------------------------------------------------------
@@ -764,18 +701,6 @@ def test_noticeboard_read_second_time_no_repeat():
                 nb.read()
 
     ev.process.assert_not_called()
-
-
-def test_noticeboard_use_aliases_read():
-    """NoticeBoard.use() calls read()."""
-    from src.objects import NoticeBoard
-
-    player = MagicMock()
-    tile = _make_tile()
-    nb = NoticeBoard(player=player, tile=tile)
-    # #626: a class-level alias IS its target, so an instance
-    # patch of the target can no longer be observed through it.
-    assert type(nb).use is type(nb).read
 
 
 # ---------------------------------------------------------------------------
@@ -835,18 +760,6 @@ def test_candle_rack_pray_with_event():
     assert rack.event is None
 
 
-def test_candle_rack_use_alias():
-    """PrayerCandleRack.use() calls pray()."""
-    from src.objects import PrayerCandleRack
-
-    player = MagicMock()
-    tile = _make_tile()
-    rack = PrayerCandleRack(player=player, tile=tile)
-    # #626: a class-level alias IS its target, so an instance
-    # patch of the target can no longer be observed through it.
-    assert type(rack).use is type(rack).pray
-
-
 # ---------------------------------------------------------------------------
 # MarketGong
 # ---------------------------------------------------------------------------
@@ -889,31 +802,6 @@ def test_market_gong_strike_with_event():
 
     ev.process.assert_called_once()
     assert gong.event is None
-
-
-def test_market_gong_hit_bang_aliases():
-    """MarketGong.hit() and bang() delegate to strike()."""
-    from src.objects import MarketGong
-
-    player = MagicMock()
-    tile = _make_tile()
-    gong = MarketGong(player=player, tile=tile)
-    # #626: a class-level alias IS its target, so an instance
-    # patch of the target can no longer be observed through it.
-    assert type(gong).hit is type(gong).strike
-    assert type(gong).bang is type(gong).strike
-
-
-def test_market_gong_use_alias():
-    """MarketGong.use() delegates to strike()."""
-    from src.objects import MarketGong
-
-    player = MagicMock()
-    tile = _make_tile()
-    gong = MarketGong(player=player, tile=tile)
-    # #626: a class-level alias IS its target, so an instance
-    # patch of the target can no longer be observed through it.
-    assert type(gong).use is type(gong).strike
 
 
 # ---------------------------------------------------------------------------

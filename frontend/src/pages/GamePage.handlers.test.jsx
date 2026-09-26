@@ -780,6 +780,63 @@ describe('GamePage handler wiring', () => {
         expect(handleEventsTriggered).toHaveBeenCalledWith([{ event_id: 'x', output_text: 'Ambush!' }]);
     });
 
+    /**
+     * #704: an end_state with no id can never be resolved -- the dialog timer
+     * in useCombatCoordinator requires one -- so storing it left endState set
+     * forever, and the loading-keyed effect's `if (!endState)` gate then
+     * skipped every pending-event poll for the rest of the session.
+     *
+     * setEndState here is a stateful spy (the coordinator is mocked), so what
+     * GamePage stores is what it reads back on the next render, as with the
+     * real hook.
+     */
+    describe('an id-less end_state (#704)', () => {
+        const idlessDefeat = { status: 'defeat', message: 'You have been defeated.' };
+        let storedEndState, setEndState, checkPendingEvents, worldLoading;
+        const rerenderPage = (rerender) => rerender(<MemoryRouter><GamePage /></MemoryRouter>);
+
+        beforeEach(() => {
+            storedEndState = null;
+            setEndState = vi.fn((value) => { storedEndState = value; });
+            checkPendingEvents = vi.fn().mockResolvedValue();
+            worldLoading = false;
+            useCombatCoordinator.mockImplementation(() => makeCombatCoordinatorReturn({
+                endState: storedEndState,
+                setEndState,
+            }));
+            useEventManager.mockReturnValue(makeEventManagerReturn({ checkPendingEvents }));
+            useWorld.mockImplementation(() => ({
+                location: mockLocation, loading: worldLoading, moveToLocation, refetch: refetchWorld,
+            }));
+            useCombat.mockReturnValue({
+                combat: { log: [], end_state: idlessDefeat },
+                inCombat: false,
+                fetchCombatStatus,
+                performAction,
+            });
+        });
+
+        it('is never stored', () => {
+            const { rerender } = renderGamePage();
+            rerenderPage(rerender);
+
+            expect(setEndState).not.toHaveBeenCalledWith(idlessDefeat);
+            expect(storedEndState).toBeNull();
+        });
+
+        it('does not stop a world reload from polling pending events', () => {
+            const { rerender } = renderGamePage();
+
+            worldLoading = true;
+            rerenderPage(rerender);
+            checkPendingEvents.mockClear();
+            worldLoading = false;
+            rerenderPage(rerender);
+
+            expect(checkPendingEvents).toHaveBeenCalledTimes(1);
+        });
+    });
+
     describe('mobile layout wiring', () => {
         beforeEach(() => {
             useMobile.mockReturnValue(true);

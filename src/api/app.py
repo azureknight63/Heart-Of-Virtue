@@ -2,12 +2,11 @@
 
 import configparser
 import logging
-import logging.handlers
 import os
-import re
 from pathlib import Path
 from typing import NamedTuple, Tuple
 from flask import Flask, jsonify
+from flask.logging import default_handler
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from werkzeug.exceptions import ClientDisconnected
@@ -16,45 +15,22 @@ from src.api.config import Config, DevelopmentConfig
 from src.api.security_headers import register_security_headers
 from src.api.services import SessionManager, GameService
 from src.env_bootstrap import PROJECT_ROOT as _REPO_ROOT
-from src.api.structured_log import configure_logging, init_request_logging
+from src.api.structured_log import (
+    configure_logging,
+    init_request_logging,
+    log_level_setting,
+    resolve_log_level,
+)
 import src.universe as universe_module
 
 # Env-driven (LOG_LEVEL / LOG_FILE / LOG_JSONL_DIR); safe under pytest — it
-# only replaces handlers it installed itself. See src/api/structured_log.py.
+# only replaces handlers it installed itself. This is the ONLY place root
+# handlers are installed (issue #698): create_app() sets namespace levels and
+# nothing else. See src/api/structured_log.py.
 configure_logging()
 
 
 _log = logging.getLogger(__name__)
-
-# LOG_FILE is confined to this directory. See _resolve_log_file_setting.
-_LOG_DIR = _REPO_ROOT / "logs"
-
-# LOG_FILE rotation budget: a DEBUG run must not be able to fill the disk.
-_LOG_FILE_MAX_BYTES = 5 * 1024 * 1024
-_LOG_FILE_BACKUP_COUNT = 3
-
-# Marker stamped on the handlers this module installs. It is written twice
-# (the read in the removal loop, the write in the install loop), so a bare
-# literal in both places would silently stack a handler per create_app() the
-# day one of them is mistyped.
-_HOV_HANDLER_ATTR = "_hov_handler"
-
-# Read for two different questions — "what level?" in _resolve_log_level and
-# "is there anything to neutralise?" in _testing_log_level — so both go
-# through _log_level_setting() below rather than through two literals that can
-# drift apart.
-_LOG_LEVEL_ENV = "LOG_LEVEL"
-
-# Level names only — getattr(logging, name) would happily resolve any module
-# attribute (LOG_LEVEL=BASIC_FORMAT raised at import; NOTSET meant "log
-# everything").
-_LOG_LEVELS = {
-    "CRITICAL": logging.CRITICAL,
-    "ERROR": logging.ERROR,
-    "WARNING": logging.WARNING,
-    "INFO": logging.INFO,
-    "DEBUG": logging.DEBUG,
-}
 
 # LOG_LEVEL is applied to these namespaces, never to the root logger. Root at
 # DEBUG also turns on urllib3/httpx/openai/werkzeug/engineio wire logging, which
@@ -78,124 +54,6 @@ _LOG_LEVELS = {
 # echoes the rejected request back is echoing the player's dialogue back.
 _APP_LOG_NAMESPACES = ("src", "ai")
 
-# Blunt scrub for credential-shaped substrings on their way into any handler
-# this module installs. Nothing in the tree is known to log a secret in a
-# message (checked deliberately: the LLM client logs bool(api_key), never the
-# value) — but provider-SDK tracebacks are not written by this tree, and this
-# repo has shipped a live GITHUB_TOKEN in ``.env``, so the scrub covers the
-# credential families actually present here rather than only the OpenAI shape:
-#   sk-…            OpenAI / OpenRouter / Anthropic-style API keys
-#   gsk_…           Groq
-#   ghp_/gho_/…     GitHub OAuth + classic PATs
-#   github_pat_…    GitHub fine-grained PATs
-#   discord webhook the provider digest's Discord sink URL (the path IS the
-#                   credential)
-#   eyJ….….         JWTs, which is how the Turso/libSQL auth token is shaped
-#   Bearer …        anything already framed as a bearer credential
-_SECRET_RE = re.compile(
-    r"""
-      sk-[A-Za-z0-9_\-]{8,}
-    | gsk_[A-Za-z0-9_\-]{8,}
-    | gh[pousr]_[A-Za-z0-9_\-]{8,}
-    | github_pat_[A-Za-z0-9_\-]{8,}
-    | https://(?:\w+\.)*discord(?:app)?\.com/api/webhooks/\S+
-    | eyJ[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]*
-    | Bearer\s+[A-Za-z0-9._\-]{8,}
-    """,
-    re.VERBOSE,
-)
-
-# Used to render ``record.exc_info`` for scrubbing before any handler formats
-# it. A bare Formatter's ``formatException`` is exactly what the real handlers
-# would call, so the text this filter rewrites is the text they will emit.
-_EXC_FORMATTER = logging.Formatter()
-
-
-class _RedactSecretsFilter(logging.Filter):
-    """Replace anything credential-shaped with ``[REDACTED]``.
-
-    Installed on **every** handler this module owns, not just the LOG_FILE
-    one. Filters run per handler, and the StreamHandler is appended first, so a
-    file-handler-only filter emitted the unredacted record to stderr before it
-    ever ran.
-
-    Two payloads are scrubbed, because they travel by different routes:
-
-    * ``record.msg`` (with ``record.args`` dropped, as they have already been
-      merged in by ``getMessage()``).
-    * ``record.exc_text`` — the formatted traceback. This is the one that
-      matters most. Every ``logger.exception`` / ``exc_info=True`` call under
-      ``src/`` and ``ai/`` feeds it — dozens of sites across the tree, so no
-      list of them written here would stay true — and the largest single
-      contributor is not any route module but
-      ``src/api/handlers/error_handler.py``, the app-wide 500 handler that
-      every unhandled exception passes through. Any of them can surface a
-      provider-SDK traceback whose frame locals or request repr carry the API
-      key, and that text is rendered by ``Formatter.format`` *after* every
-      filter has run. Rendering it here and caching the redacted result in
-      ``exc_text`` (which ``Formatter.format`` reuses verbatim when set) is
-      what puts it inside the scrub. ``stack_info`` gets the same treatment
-      for the same reason.
-
-    The ``exc_text`` cache is written only when the scrub actually changed
-    something. That reuse cuts both ways: a non-empty ``exc_text`` freezes the
-    traceback for *every* handler on root, so writing it unconditionally would
-    take ``formatException`` away from handlers that render it differently —
-    caplog's today, and the JSON formatter in ``src/api/structured_log.py``
-    once this branch catches up with master.
-
-    Mutating the record makes it scrubbed for every handler that formats it
-    afterwards as well — the safe direction to be wrong in.
-    """
-
-    def filter(self, record):
-        try:
-            message = record.getMessage()
-        except Exception:  # pragma: no cover - defensive; bad %-format args
-            message = None
-        if message is not None and _SECRET_RE.search(message):
-            record.msg = _SECRET_RE.sub("[REDACTED]", message)
-            record.args = ()
-        self._redact_traceback(record)
-        return True
-
-    @staticmethod
-    def _redact_traceback(record):
-        """Scrub (and, if needed, materialise) the record's traceback text."""
-        text = getattr(record, "exc_text", None)
-        if not text and record.exc_info:
-            try:
-                text = _EXC_FORMATTER.formatException(record.exc_info)
-            except Exception:  # pragma: no cover - defensive
-                text = None
-        if text:
-            redacted = _SECRET_RE.sub("[REDACTED]", text)
-            if redacted != text:
-                record.exc_text = redacted
-
-        # ``stack_info`` is appended verbatim by every formatter rather than
-        # cached, so an unconditional write costs nothing and hides nothing.
-        stack = getattr(record, "stack_info", None)
-        if stack:
-            record.stack_info = _SECRET_RE.sub("[REDACTED]", stack)
-
-
-def _log_level_setting():
-    """The configured LOG_LEVEL, or ``None`` when it is not configured.
-
-    Blank counts as unconfigured. ``LOG_LEVEL=`` in a ``.env`` reads as "no
-    opinion", and the test suite relies on that: ``.env`` ships
-    ``LOG_LEVEL=DEBUG``, and every ``load_project_env()`` in the tree
-    (``db.py``, ``rate_limiter.py``, ``ai/llm_client.py``) runs with
-    ``override=False``, which refills a *deleted* key but leaves an assigned
-    empty one alone. Blanking is therefore the only way ``tests/conftest.py``
-    can say "unset" and have it stick.
-    """
-    raw = os.environ.get(_LOG_LEVEL_ENV)
-    if raw is None or not str(raw).strip():
-        return None
-    return raw
-
 
 def _resolve_log_level(level_name=None):
     """Return the level to apply, or ``None`` for "leave levels alone".
@@ -205,56 +63,29 @@ def _resolve_log_level(level_name=None):
     note in :func:`_configure_logging`), while ``LOG_LEVEL=TRACE`` is a typo
     in a variable whose entire purpose is "set this to see more" and used to
     produce a silent WARNING-level run with no explanation at all.
+
+    Reading and parsing both live in :mod:`src.api.structured_log`
+    (``log_level_setting`` / ``resolve_log_level``), shared with the root
+    handlers so both read the same variable one way. ``warn=False``: the
+    import-time ``configure_logging()`` already reported an unrecognized
+    value, and one typo should produce one warning per boot.
     """
-    raw = level_name if level_name is not None else _log_level_setting()
+    raw = level_name if level_name is not None else log_level_setting()
     if raw is None:
         return None
-    name = str(raw).strip().upper()
-    if name in _LOG_LEVELS:
-        return _LOG_LEVELS[name]
-    # ASCII only: this can be emitted to a cp1252 Windows console before any
-    # handler with a safer encoding is attached.
-    _log.warning(
-        "Unrecognized LOG_LEVEL %r; using WARNING. Accepted values: %s",
-        raw,
-        ", ".join(_LOG_LEVELS),
-    )
-    return logging.WARNING
-
-
-def _resolve_log_file_setting(log_file):
-    """Return the confined absolute path the LOG_FILE *setting* may write to.
-
-    Not to be confused with ``src.api.routes.logs._resolve_log_file``, which
-    shares this package and answers a different question with an incompatible
-    contract: that one takes a client-supplied filename to *read*, returns
-    ``(path, error)`` and never raises. This one takes an operator-supplied
-    setting to *write*, returns a ``Path`` and raises. The names were
-    interchangeable; the functions never were.
-
-    Raises ValueError when it escapes ``<repo>/logs/``. Unconfined, this path
-    reaches ``mkdir(parents=True)`` — which silently creates a directory tree
-    anywhere the process can write — and a rotating handler, which *renames*
-    ``X`` -> ``X.1`` -> ``X.2`` and so clobbers up to three neighbouring names
-    beside whatever it was pointed at. A relative value is interpreted inside
-    the log directory rather than against the working directory.
-    """
-    candidate = Path(log_file).expanduser()
-    if not candidate.is_absolute():
-        candidate = _LOG_DIR / candidate
-    resolved = candidate.resolve()
-    log_dir = _LOG_DIR.resolve()
-    if resolved == log_dir or log_dir not in resolved.parents:
-        raise ValueError("LOG_FILE must resolve to a path under %s" % log_dir)
-    return resolved
+    return resolve_log_level(raw, warn=False)
 
 
 def _configure_logging(level_name=None):
-    """Configure application logging from environment variables.
+    """Apply LOG_LEVEL to the app's own logger namespaces.
 
-    Called from create_app() rather than at import time: installing handlers
-    on the root logger is not something importing this module should do to
-    the host process.
+    Installs **no handlers**. Root handlers — console, LOG_FILE, JSONL, each
+    carrying the secret-redaction filter — belong to
+    :func:`src.api.structured_log.configure_logging`, run once at this
+    module's import. This function used to install a second console and
+    LOG_FILE set of its own; the two owners each removed only their own
+    marked handlers, so both sets survived, every record printed twice and
+    the import-time copy went out unredacted (issue #698).
 
     Args:
         level_name: an explicit level that overrides LOG_LEVEL. ``create_app``
@@ -265,76 +96,30 @@ def _configure_logging(level_name=None):
             at DEBUG from the second create_app() call onward, paying
             formatting and stderr writes for every ``logger.debug`` in the
             engine. ``None`` means "restore the namespaces to inheriting",
-            which is what makes that pin reversible (see the level block at
-            the end of this function).
+            which is what makes that pin reversible (see the level block
+            below).
 
-    Supported env vars:
-      LOG_LEVEL   - Python log level name, e.g. DEBUG, INFO, WARNING. Applied
-                    to the ``src`` and ``ai`` logger namespaces only. Unset
-                    means "leave the levels inherited", which leaves Python's
-                    WARNING root default in place.
-      LOG_FILE    - Optional file path under ``<repo>/logs/`` to also write
-                    logs to (rotated per ``_LOG_FILE_MAX_BYTES`` /
-                    ``_LOG_FILE_BACKUP_COUNT``, so DEBUG runs cannot grow
-                    without bound).
+    LOG_LEVEL is applied to the ``src`` and ``ai`` logger namespaces only.
+    Unset means "leave the levels inherited".
     """
     level = _resolve_log_level(level_name)
 
-    handlers = [logging.StreamHandler()]
-    log_file = os.environ.get("LOG_FILE")
-    if log_file:
-        try:
-            path = _resolve_log_file_setting(log_file)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            handlers.append(
-                logging.handlers.RotatingFileHandler(
-                    path,
-                    encoding="utf-8",
-                    maxBytes=_LOG_FILE_MAX_BYTES,
-                    backupCount=_LOG_FILE_BACKUP_COUNT,
-                )
-            )
-        except Exception as exc:
-            # Fail safe to stream-only rather than refuse to boot over a
-            # logging destination.
-            _log.warning("Could not attach LOG_FILE handler %s: %s", log_file, exc)
-
-    # Replace only the handlers a previous call installed. basicConfig(
-    # force=True) did the idempotence job but removes *and closes* every root
-    # handler, including ones this process does not own: under pytest that is
-    # caplog's, so any test building an app lost its log capture from that
-    # point on and every later "nothing was logged" assertion passed
-    # vacuously. Tagging our own handlers keeps repeated create_app() calls
-    # from stacking duplicates without touching anyone else's.
-    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
-    redactor = _RedactSecretsFilter()
-    root = logging.getLogger()
-    for existing in list(root.handlers):
-        if getattr(existing, _HOV_HANDLER_ATTR, False):
-            root.removeHandler(existing)
-            existing.close()
-    for handler in handlers:
-        setattr(handler, _HOV_HANDLER_ATTR, True)
-        handler.setFormatter(formatter)
-        handler.addFilter(redactor)
-        root.addHandler(handler)
-
-    # The ROOT logger's level is deliberately never touched. Setting it was
-    # the same trespass the handler tagging above exists to avoid, one field
-    # over: `caplog.at_level(INFO)` around a create_app() had every INFO
-    # record dropped, which is the vacuous-pass failure again. Python's root
-    # default is already WARNING, so scoping the level to our own namespaces
-    # gives verbose app logs without dragging in third-party wire logging.
+    # The ROOT logger's level is deliberately never touched here. Setting it
+    # was a trespass on state this module does not own: a
+    # `caplog.at_level(INFO)` around a create_app() had every INFO record
+    # dropped, which is the vacuous-pass failure again. Python's root default
+    # is already WARNING, so scoping the level to our own namespaces gives
+    # verbose app logs without dragging in third-party wire logging.
     #
     # NOTSET (not "skip the write") is what `level is None` means here, and
     # that matters twice over. It restores inheritance, so a bare
     # `caplog.set_level(INFO)` — which raises the *root* level only — reaches
     # app records instead of being silently outranked by an explicit namespace
-    # level: the same vacuous-pass shape as above, one field over again. And it
-    # makes the TESTING pin reversible: without it, one
-    # `create_app(TestingConfig)` left `src`/`ai` at WARNING for the rest of
-    # the process, and a later non-TESTING create_app() took the
-    # "change nothing" path and never gave them back.
+    # level: the same vacuous-pass shape as above. And it makes the TESTING
+    # pin reversible: without it, one `create_app(TestingConfig)` left
+    # `src`/`ai` at WARNING for the rest of the process, and a later
+    # non-TESTING create_app() took the "change nothing" path and never gave
+    # them back.
     #
     # The caplog half only holds while the suite actually reaches this branch,
     # which is why `tests/conftest.py` blanks LOG_LEVEL rather than pinning it
@@ -359,7 +144,7 @@ def _testing_log_level(config_class):
     """
     if not getattr(config_class, "TESTING", False):
         return None
-    if _log_level_setting() is None:
+    if log_level_setting() is None:
         return None
     return "WARNING"
 
@@ -1057,6 +842,17 @@ def create_app(config_class=None):
 
     app = Flask(__name__)
     app.config.from_object(config_class)
+    # Flask lazily attaches its unfiltered ``default_handler`` to app.logger
+    # when no handler in the chain accepts the logger's effective level (a
+    # DEBUG config puts app.logger at DEBUG; the root console sits at
+    # LOG_LEVEL). Materialise the logger now, with DEBUG known, and take it
+    # off so every app.logger record -- ours and Flask's own log_exception --
+    # reaches only the redacting root handlers. app.logger is the
+    # ``src.api.app`` logger, i.e. this module's ``_log`` as well. Intended
+    # consequence: app.logger's debug output in a DEBUG config no longer
+    # bypasses LOG_LEVEL through default_handler -- it follows LOG_LEVEL like
+    # every other namespace, so set LOG_LEVEL=DEBUG to see it.
+    app.logger.removeHandler(default_handler)
     # Every env-backed *app.config value* is read here and only here, because
     # runtime_config() is the one place that knows which of them a subclass has
     # already pinned. (_apply_proxy_fix below reads TRUSTED_PROXY_COUNT itself:

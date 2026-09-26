@@ -363,11 +363,34 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
         self.needs_duration = True
         self.duration = None
 
+    #: Beats waited when the adapter's select_number flow set no duration.
+    _DEFAULT_DURATION = 5
+
+    def _chosen_duration(self):
+        return self.duration if self.duration is not None else self._DEFAULT_DURATION
+
+    def _recoil_for_duration(self):
+        """The recoil ``execute()`` writes: the wait itself lives in recoil."""
+        return max(1, self._chosen_duration() - 2)
+
+    def _recoil_if_cast_now(self):
+        """``Move.beats_until_ready``'s recoil: the one ``execute()`` will set.
+
+        Wait's declared stages are all zero until ``execute()`` turns the
+        chosen duration into recoil, so the declared stage would read the
+        previous Wait's recoil (or none at all). This is the recoil for the
+        duration set on the move (`_DEFAULT_DURATION` if none has been chosen;
+        the adapter's select_number flow sets it and nothing resets it, so it
+        is the last duration picked) -- a longer wait chosen at the prompt ties
+        Jean up for longer than the advisor was told (#700).
+        """
+        return self._recoil_for_duration()
+
     def execute(self, player):
-        # Duration comes from the combat adapter's select_number flow; default
-        # to 5 beats when unset. (No terminal prompt.)
-        duration = self.duration if self.duration is not None else 5
-        self.stage_beat[2] = max(1, duration - 2)
+        # Duration comes from the combat adapter's select_number flow; falls
+        # back to `_DEFAULT_DURATION` when unset. (No terminal prompt.)
+        duration = self._chosen_duration()
+        self.stage_beat[2] = self._recoil_for_duration()
         if hasattr(player, "combat_log"):
             player.combat_log.append(
                 {

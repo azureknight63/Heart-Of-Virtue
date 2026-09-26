@@ -7,8 +7,8 @@ they pull against each other -- the detail has to go *somewhere* useful and
 
 * The traceback reaches the logging pipeline. The handlers used to call
   ``traceback.print_exc()``, which writes straight to stderr and never enters
-  logging, so ``src/api/app.py``'s ``_RedactSecretsFilter`` -- installed on
-  every handler the app owns precisely to keep credentials out of emitted
+  logging, so ``src/api/structured_log.py``'s ``_RedactSecretsFilter`` --
+  installed on every root handler precisely to keep credentials out of emitted
   tracebacks -- never saw the app's highest-volume traceback source. It also
   meant none of those tracebacks reached ``LOG_FILE``.
 * The response body carries a fixed generic message. ``abort(500,
@@ -37,7 +37,7 @@ import pytest
 
 pytest.importorskip("flask")
 
-#: Credential-shaped, and matched by ``app._SECRET_RE``. Not a real token.
+#: Credential-shaped, and matched by ``structured_log._SECRET_RE``. Not a real token.
 FAKE_TOKEN = "ghp_0000000000000000000000000000000000"
 
 #: Detail of exactly the kind an ``HTTPException`` description carries in
@@ -137,7 +137,7 @@ class TestTracebacksGoThroughLogging:
         """The bypass this closes, asserted end to end: a credential in the
         traceback text must come out ``[REDACTED]`` once the record travels
         through a handler carrying the filter."""
-        from src.api.app import _RedactSecretsFilter
+        from src.api.structured_log import _RedactSecretsFilter
 
         emitted = []
 

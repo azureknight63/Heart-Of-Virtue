@@ -12,8 +12,10 @@ and gold and does not accept inline comments -- and checked against the maps
 rather than restating their coordinates.
 """
 
+import ast
 import json
 import pathlib
+import subprocess
 
 import pytest
 
@@ -63,26 +65,108 @@ def test_jean_arrives_at_level_4_with_the_points_to_spend(config):
 
 
 def test_it_carries_the_chapter_1_state_beta_2_assumes(config):
-    assert "lurker_defeated" in config.starting_story_flags
     assert config.starting_party_members == ["Gorran"]
+
+
+def _tracked_flag_configs():
+    """Every tracked .ini that sets starting_story_flags, parsed by the engine.
+
+    Tracked only: untracked QA configs in a developer's worktree are theirs.
+    """
+    listed = subprocess.run(
+        ["git", "ls-files", "--", "*.ini"],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+    ).stdout.split()
+    return {
+        name: ConfigManager(str(REPO_ROOT / name)).load()
+        for name in listed
+        if "starting_story_flags" in (REPO_ROOT / name).read_text(encoding="utf-8")
+    }
+
+
+def _seeded_flags(game_config):
+    """``{flag: value}`` as SessionManager applies them to a new session."""
+    from src.api.services.session_manager import parse_starting_story_flags
+
+    return parse_starting_story_flags(game_config.starting_story_flags)
+
+
+def _json_strings(node):
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, dict):
+        for value in node.values():
+            yield from _json_strings(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _json_strings(value)
+
+
+def _src_string_literals():
+    """Every whole string literal in src/ Python and in the map JSON.
+
+    Exact matches only: a flag named in a comment, or inside a docstring's
+    prose, is not a reader of it.
+    """
+    found = set()
+    for path in (REPO_ROOT / "src").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found.update(
+            node.value for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        )
+    for path in MAPS_DIR.glob("*.json"):
+        found.update(_json_strings(json.loads(path.read_text(encoding="utf-8"))))
+    return found
+
+
+def test_every_flag_a_tracked_config_seeds_is_read_by_the_engine():
+    """Issue #709: a seeded flag nothing reads is a claim about game state no
+    code honours. ``lurker_defeated`` sat in config_prod.ini, asserted here,
+    while nothing in src/ ever read or set it."""
+    from src.story.ch02 import AfterDefeatingKingSlime, AfterKingSlimeReturn
+
+    literals = _src_string_literals()
+    # The scanner must find readers it is known to have; an empty scan would
+    # pass every config vacuously.
+    assert {AfterDefeatingKingSlime.GATE_KEY, AfterKingSlimeReturn.GATE_KEY} <= literals
+    # ...and must not find the one it is known to lack, or it would pass
+    # every config whatever it seeded.
+    assert "lurker_defeated" not in literals
+
+    configs = _tracked_flag_configs()
+    assert configs, "no tracked config seeds starting_story_flags; the guard is vacuous"
+    unread = {
+        name: sorted(missing)
+        for name, cfg in configs.items()
+        if (missing := _seeded_flags(cfg).keys() - literals)
+    }
+    assert unread == {}
 
 
 def test_the_starting_story_flags_land_on_a_real_session(monkeypatch):
     """Issue #687: config.starting_story_flags was parsed but never applied.
 
-    Prove the shipped config's flags actually reach the player's story dict,
-    not just that the parser produced them (test above).
+    Prove a tracked config's flags actually reach the player's story dict, not
+    just that the parser produced them. config_prod.ini seeds none since #709,
+    so this runs on the tracked config that seeds the most.
     """
     from src.api.services.session_manager import SessionManager
     from src.events import story_gates
 
-    monkeypatch.setenv("CONFIG_FILE", PROD_CONFIG.name)
+    configs = _tracked_flag_configs()
+    name = max(configs, key=lambda n: len(_seeded_flags(configs[n])))
+    seeded = _seeded_flags(configs[name])
+    assert seeded, "no tracked config seeds a flag to check"
+
+    monkeypatch.setenv("CONFIG_FILE", name)
     manager = SessionManager()
 
-    session_id, _player_id = manager.create_session("prod-config-flag-check")
+    session_id, _player_id = manager.create_session("config-flag-check")
     player = manager.get_player(session_id)
 
-    assert story_gates(player).get("lurker_defeated") == "1"
+    gates = story_gates(player)
+    assert {key: gates.get(key) for key in seeded} == seeded
 
 
 def test_it_plays_the_story_and_keeps_saves(config):

@@ -5,12 +5,16 @@ import src.secure_pickle as secure_pickle
 import src.map_placeholders as map_placeholders
 import json
 import inspect
+import logging
 import importlib
 from pathlib import Path
 from typing import Final
 from src.coordinate_config import CoordinateSystemConfig
 from src.narration import narrate
 from src.journal import Journal
+from src.shop_conditions import iter_merchants
+
+logger = logging.getLogger(__name__)
 
 RESOURCES_DIR: Final = Path(__file__).parent / "resources"
 
@@ -73,6 +77,24 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             journal = self.__dict__.setdefault("_journal", Journal())
         return journal
 
+    @property
+    def unique_items_spawned(self):
+        """Class names of the unique items that currently exist in this world.
+
+        Each factory in ``items.unique_item_factories`` may exist once per
+        universe; merchants claim a name here when they stock one and release
+        it on restock. It lives on the universe (and so in the save) rather
+        than in a module global, which every session in a worker shared, so
+        one player's shop used up everyone's uniques (issue #727). Lazy for
+        the same reason as :attr:`journal`: saves pickled before it existed
+        unpickle without it. A save holding something other than a set there
+        (crafted, or corrupt) gets a fresh empty one instead.
+        """
+        spawned = self.__dict__.get("_unique_items_spawned")
+        if not isinstance(spawned, set):
+            spawned = self.__dict__["_unique_items_spawned"] = set()
+        return spawned
+
     def get_tile(self, x, y):
         """Get tile at coordinates from the current player's map."""
         if self.player and self.player.map:
@@ -98,6 +120,28 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             for location in self.maps:
                 if "start" in location["name"] and self.starting_map_default is None:
                     self.starting_map_default = location
+            # Only a new world gets opening stock; a restored one keeps what was saved.
+            self._stock_empty_merchants()
+
+    def _stock_empty_merchants(self):
+        """Give every merchant with no goods its opening stock (issue #727).
+
+        Stock is otherwise rolled only on first shop open or every 1000 ticks,
+        which left merchant-bound containers (Jambo's back-room crate) empty on
+        a fresh game. A stocking failure never breaks the build: one merchant
+        failing is skipped, and a map that cannot be walked stops stocking.
+        """
+        try:
+            for merchant in iter_merchants(self.maps):
+                try:
+                    merchant.stock_if_empty()
+                except Exception:
+                    logger.exception(
+                        "Failed to stock merchant %r at world build",
+                        getattr(merchant, "name", merchant),
+                    )
+        except Exception:
+            logger.exception("Failed to walk the maps for merchants at world build")
 
     # ---------------- JSON MAP SUPPORT -----------------
     def _json_maps_root_candidates(self):

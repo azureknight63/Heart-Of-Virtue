@@ -668,6 +668,23 @@ def test_apply_player_stats_applies_valid_values_and_skips_invalid(
     assert player.strength == strength_before
 
 
+def test_apply_player_stats_recomputes_the_first_level_threshold(monkeypatch, tmp_path):
+    """#710: Player() fixes exp_to_level at its default intelligence, so a
+    configured intelligence must move Jean's first threshold with it."""
+    from src.combatant import exp_needed_for_level
+
+    ini = _write_ini(tmp_path / "cfg.ini", "[player]\nintelligence = 40\n")
+    monkeypatch.setenv("CONFIG_FILE", str(ini))
+    player = _real_player()
+    assert player.level == 1
+    default_threshold = player.exp_to_level
+
+    SessionManager()._apply_player_stats_from_config(player)
+
+    assert player.exp_to_level == exp_needed_for_level(1, 40)
+    assert player.exp_to_level != default_threshold
+
+
 def test_apply_player_stats_applies_every_mapped_stat(monkeypatch, tmp_path):
     """Walks the whole stat_mapping table against a real Player.
 
@@ -1151,6 +1168,17 @@ def test_apply_starting_story_flags_skips_a_token_with_no_key(monkeypatch):
 
     assert "" not in story
     assert set(story) == {"alpha"}
+
+
+def test_parse_starting_story_flags_is_the_appliers_token_rules():
+    from src.api.services.session_manager import parse_starting_story_flags
+    from src.events import GATE_SET
+
+    parsed = parse_starting_story_flags(
+        ["alpha", "beta=2", "  gamma  ", "delta = 5 ", "=orphan", "=", "beta=3"]
+    )
+    assert parsed == {"alpha": GATE_SET, "beta": "3", "gamma": GATE_SET, "delta": "5"}
+    assert parse_starting_story_flags(None) == {}
 
 
 def test_apply_starting_story_flags_no_story_is_skipped(monkeypatch):

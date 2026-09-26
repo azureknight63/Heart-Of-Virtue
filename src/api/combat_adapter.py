@@ -100,6 +100,21 @@ def _outreaches_melee(reach_ft):
     return reach_ft > MELEE_REACH_FT
 
 
+def _int_beats_or_none(value):
+    """``value`` if it is a non-bool int, else None.
+
+    A type gate, not arithmetic: the engine's count passes through as-is, and
+    anything else (a test double's MagicMock, a legacy placeholder) ships as
+    the "no answer" the advisor already reads as no opinion.
+
+    Deliberately stricter than the engine's ``whole_beats`` (which also takes
+    a whole float): ``Move.beats_until_ready`` only ever returns an int or
+    None, so a float here means something other than the engine answered, and
+    the wire promises the client an int.
+    """
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 # Shortest prep stage that earns an abort affordance. Below this a move is over
 # before a player could react to anything, and offering a bail-out would only add
 # a decision to every swing. Above it the commitment is long enough that the
@@ -122,7 +137,7 @@ def _warn(message):
 
     The logger, not stdout, for the second half of the same reason: every
     handler this app installs carries ``_RedactSecretsFilter`` (see
-    ``src/api/app.py``), and ``print``/``traceback.print_exc`` bypass it
+    ``src/api/structured_log.py``), and ``print``/``traceback.print_exc`` bypass it
     entirely. ``handlers/error_handler.py`` was moved off ``print_exc`` for
     that reason and these were left behind.
     """
@@ -4339,6 +4354,13 @@ class ApiCombatAdapter:
                 # drain fatigue. The Tactical Advisor reads this to decide
                 # which offered moves are attacks.
                 "deals_damage": deals_damage_of(move),
+                # Move.beats_until_ready (#700): if cast now, beats until Jean
+                # is asked again. The advisor reads it to keep a move that
+                # outlasts the Dodge window off the top of its list. None when
+                # the engine has no answer (in flight, degraded move, double).
+                "beats_until_ready": _int_beats_or_none(
+                    CombatantSerializer._call_move_method(move, "beats_until_ready")
+                ),
                 "fatigue_cost": move.fatigue_cost,
                 "available": True,
                 "reason": None,

@@ -7,7 +7,7 @@ have — real rooms expose ``objects_here`` (``src/tiles.py``) — so the walks
 silently found nothing:
 
 * issue #373 — container-housed unique items were destroyed without releasing
-  their ``items.unique_items_spawned`` registry entry, so they could never
+  their unique-item registry entry (now ``Universe.unique_items_spawned``), so they could never
   respawn.
 * issue #374 — container-housed stock never received ``ValueModifierCondition``
   pricing while merchant-inventory stock in the same shop did.
@@ -42,7 +42,6 @@ from src.items import (
     SlimeFlask,
     Weapon,
     unique_item_factories,
-    unique_items_spawned,
 )
 from src.npc import Merchant
 from src.npc._shop import _NEVER_STOCK_FAMILIES
@@ -65,6 +64,12 @@ class RealisticUniverse:
 
     def __init__(self, rooms):
         self.map = {(index, 0): room for index, room in enumerate(rooms)}
+        self.unique_items_spawned = set()
+
+
+def _claims(merchant):
+    """The unique-item claims of the world ``merchant`` stands in."""
+    return merchant.current_room.universe.unique_items_spawned
 
 
 def _merchant_in_world(name="Objects Here Tester", stock_count=0, **merchant_kwargs):
@@ -109,11 +114,10 @@ def _stub_spawn_item(room):
 
 
 def test_reset_stock_state_releases_unique_item_housed_in_container():
-    unique_items_spawned.clear()
     merchant, room = _merchant_in_world()
 
     gem = DragonHeartGem(merchandise=True)
-    unique_items_spawned.add(gem.__class__.__name__)
+    _claims(merchant).add(gem.__class__.__name__)
     container = Container(name="Relic Case", merchant=merchant, items=[gem])
     room.objects_here.append(container)
 
@@ -124,32 +128,30 @@ def test_reset_stock_state_releases_unique_item_housed_in_container():
     assert container.inventory == []
     # ...and the unique item it held is released back into the registry so it
     # can spawn again, rather than being destroyed while still claimed.
-    assert gem.__class__.__name__ not in unique_items_spawned
+    assert gem.__class__.__name__ not in _claims(merchant)
 
 
 def test_reset_stock_state_releases_unique_items_from_inventory_and_container():
-    unique_items_spawned.clear()
     merchant, room = _merchant_in_world()
 
     relic = AncientRelic(merchandise=True)
     gem = DragonHeartGem(merchandise=True)
-    unique_items_spawned.update({relic.__class__.__name__, gem.__class__.__name__})
+    _claims(merchant).update({relic.__class__.__name__, gem.__class__.__name__})
     merchant.inventory = [relic]
     room.objects_here.append(Container(name="Case", merchant=merchant, items=[gem]))
 
     merchant._reset_stock_state()
 
     assert merchant.inventory == []
-    assert relic.__class__.__name__ not in unique_items_spawned
-    assert gem.__class__.__name__ not in unique_items_spawned
+    assert relic.__class__.__name__ not in _claims(merchant)
+    assert gem.__class__.__name__ not in _claims(merchant)
 
 
 def test_reset_stock_state_ignores_containers_owned_by_other_merchants():
-    unique_items_spawned.clear()
     merchant, room = _merchant_in_world()
 
     gem = DragonHeartGem(merchandise=True)
-    unique_items_spawned.add(gem.__class__.__name__)
+    _claims(merchant).add(gem.__class__.__name__)
     foreign = Container(name="Rival Case", merchant="Someone Else", items=[gem])
     room.objects_here.append(foreign)
 
@@ -157,11 +159,10 @@ def test_reset_stock_state_ignores_containers_owned_by_other_merchants():
 
     assert containers == []
     assert foreign.inventory == [gem]
-    assert gem.__class__.__name__ in unique_items_spawned
+    assert gem.__class__.__name__ in _claims(merchant)
 
 
 def test_reset_stock_state_matches_container_owned_by_merchant_name():
-    unique_items_spawned.clear()
     merchant, room = _merchant_in_world()
     container = Container(name="Case", merchant=merchant.name, items=[Restorative()])
     room.objects_here.append(container)
@@ -205,7 +206,6 @@ def test_apply_value_conditions_prices_items_in_objects_here_containers():
 
 
 def test_inject_unique_items_places_item_in_container_from_dict_map():
-    unique_items_spawned.clear()
     merchant, room = _merchant_in_world()
     container = Container(name="Curio Cabinet", merchant=merchant, items=[])
     room.objects_here.append(container)
@@ -218,7 +218,6 @@ def test_inject_unique_items_places_item_in_container_from_dict_map():
 
 
 def test_inject_unique_items_falls_back_to_inventory_without_container():
-    unique_items_spawned.clear()
     merchant, _room = _merchant_in_world()
 
     injected = UniqueItemInjectionCondition().inject_unique_items(merchant)
@@ -228,11 +227,13 @@ def test_inject_unique_items_falls_back_to_inventory_without_container():
 
 
 def test_inject_unique_items_logs_when_container_lookup_fails(caplog):
-    unique_items_spawned.clear()
     merchant, _room = _merchant_in_world()
     merchant.inventory = []
 
     class ExplodingUniverse:
+        def __init__(self):
+            self.unique_items_spawned = set()
+
         @property
         def map(self):
             raise RuntimeError("map unavailable")
@@ -250,14 +251,13 @@ def test_inject_unique_items_logs_when_container_lookup_fails(caplog):
 
 def test_container_injection_claims_exactly_one_registry_entry():
     """The container path must keep the same registry bookkeeping as the fallback."""
-    unique_items_spawned.clear()
     merchant, room = _merchant_in_world()
     room.objects_here.append(Container(name="Case", merchant=merchant, items=[]))
 
     injected = UniqueItemInjectionCondition().inject_unique_items(merchant)
 
-    assert len(unique_items_spawned) == 1
-    assert injected[0].__class__.__name__ in unique_items_spawned
+    assert len(_claims(merchant)) == 1
+    assert injected[0].__class__.__name__ in _claims(merchant)
     assert getattr(injected[0], "unique", False) is True
 
 
@@ -348,7 +348,7 @@ def test_update_goods_always_stock_items_land_in_inventory_not_container():
     # with it the per-worker random state; the shop path itself never changed.
     # Marking every factory as already spawned empties `available_factories`,
     # so the pass returns [] deterministically (`_unique_injection_disarmed`).
-    with _unique_injection_disarmed():
+    with _unique_injection_disarmed(merchant):
         merchant.update_goods()
 
     inventory_names = {type(it).__name__ for it in merchant.inventory}
@@ -405,7 +405,7 @@ def _jambo_like_merchant():
 
 
 @contextmanager
-def _unique_injection_disarmed():
+def _unique_injection_disarmed(merchant):
     """Neutralise ``UniqueItemInjectionCondition`` for the duration.
 
     Its pick is a bare ``random.choice(available_factories)`` into a
@@ -415,13 +415,14 @@ def _unique_injection_disarmed():
     not a hand-written list of names, so a new unique cannot reopen the hole.
     """
     assert unique_item_factories, "no unique factories to isolate -- check the import"
-    spawned_before = set(unique_items_spawned)
-    unique_items_spawned.update(f.__name__ for f in unique_item_factories)
+    claims = _claims(merchant)
+    spawned_before = set(claims)
+    claims.update(f.__name__ for f in unique_item_factories)
     try:
         yield
     finally:
-        unique_items_spawned.clear()
-        unique_items_spawned.update(spawned_before)
+        claims.clear()
+        claims.update(spawned_before)
 
 
 def _restock_without_unique_injection(merchant, seed):
@@ -431,7 +432,7 @@ def _restock_without_unique_injection(merchant, seed):
     so the roll is seeded rather than left to the engine's ~220 unseeded
     ``random.*`` calls.
     """
-    with _unique_injection_disarmed():
+    with _unique_injection_disarmed(merchant):
         random.seed(seed)
         merchant.update_goods()
 

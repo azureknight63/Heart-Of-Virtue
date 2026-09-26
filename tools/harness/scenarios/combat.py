@@ -4,6 +4,7 @@ from typing import List, Tuple
 
 from .base import ARENA_MAP, Scenario
 from ..client import GameClient
+from ..move_picker import SUB_STAGE_INPUT_TYPES, pick_move_body
 from ..reporter import BugReport, BugSeverity, BugCategory
 
 _MAX_ROUNDS = 20  # safety cap to avoid infinite loops
@@ -402,18 +403,11 @@ class CombatScenario(Scenario):
     def _execute_best_move(self, client: GameClient, round_num: int) -> Tuple[List[BugReport], bool]:
         """Pick and execute the best available move for Jean's turn.
 
-        ``available_options`` changes shape depending on ``input_type``
-        (see combat_adapter.py: _handle_move_selection/_handle_target_selection/
-        _handle_direction_selection/_handle_number_selection):
-          - "move_selection"      -> list[dict] (the normal move menu)
-          - "target_selection"    -> list[dict] (viable targets)
-          - "direction_selection" -> list[str]  (e.g. ["north", ...])
-          - "number_input"        -> dict with "min"/"max"/"default"
-
-        Priority for the normal move menu:
-        1. First available offensive move with viable targets (attack range).
-        2. Advance toward a target if no offensive move is in range.
-        3. Wait as a safe fallback.
+        The choice itself is ``move_picker.pick_move_body`` (the shape of
+        ``available_options`` per ``input_type`` and the offensive -> Advance
+        -> Wait priority are documented there). This wrapper adds the one check
+        the shared picker leaves to its callers: a move menu carrying non-dict
+        entries is an API contract violation, reported as a bug.
 
         Returns (bugs, combat_ended).
         """
@@ -422,82 +416,28 @@ class CombatScenario(Scenario):
         options = battle.get("available_options", [])
         input_type = battle.get("input_type", "move_selection")
 
-        # Sub-stage prompts: a previously selected move may be awaiting a
-        # direction, a target, or a numeric value before it executes.
-        if input_type == "direction_selection":
-            direction = options[0] if isinstance(options, list) and options else "north"
-            body = {"move_type": "direction", "direction": direction}
-            return self._post_move(client, body, round_num)
-
-        if input_type == "number_input":
-            default = options.get("default", 5) if isinstance(options, dict) else 5
-            body = {"move_type": "number", "move_id": str(default)}
-            return self._post_move(client, body, round_num)
-
-        if input_type == "target_selection":
-            targets = [o for o in options if isinstance(o, dict) and o.get("id")]
-            if not targets:
-                return bugs, False
-            body = {"move_type": "target", "target_id": targets[0]["id"]}
-            return self._post_move(client, body, round_num)
-
-        # Normal move-selection menu — options should be a list of dicts.
+        # Normal move-selection menu -- options should be a list of dicts.
         # A non-dict entry here means the server sent input_type="move_selection"
-        # (or "target_selection") but available_options doesn't match that shape
-        # (e.g. leftover direction/number strings) — a real API contract
-        # violation. Report it instead of silently dropping it, or the harness
-        # loses the ability to catch this class of bug entirely.
-        clean_options = [o for o in options if isinstance(o, dict)]
-        if len(clean_options) != len(options):
-            bugs.append(self._bug(
-                title=f"available_options contains non-dict entries for input_type={input_type!r}",
-                severity=BugSeverity.HIGH,
-                category=BugCategory.WRONG_RESPONSE,
-                endpoint="/api/combat/status",
-                method="GET",
-                expected="available_options is list[dict] when input_type is move_selection/target_selection",
-                actual=f"options={options!r}",
-            ))
-        options = clean_options
+        # but available_options doesn't match that shape (e.g. leftover
+        # direction/number strings) -- a real API contract violation. Report it
+        # instead of silently dropping it, or the harness loses the ability to
+        # catch this class of bug entirely.
+        if input_type not in SUB_STAGE_INPUT_TYPES:
+            if any(not isinstance(o, dict) for o in options):
+                bugs.append(self._bug(
+                    title=f"available_options contains non-dict entries for input_type={input_type!r}",
+                    severity=BugSeverity.HIGH,
+                    category=BugCategory.WRONG_RESPONSE,
+                    endpoint="/api/combat/status",
+                    method="GET",
+                    expected="available_options is list[dict] when input_type is move_selection",
+                    actual=f"options={options!r}",
+                ))
 
-        move_index = None
-        target_id = None
-
-        # Preference order: offensive → advance → wait
-        advance_opt = None
-        wait_opt = None
-        for opt in options:
-            if not opt.get("available"):
-                continue
-            name = opt.get("name", "")
-            category = opt.get("category", "")
-            if category == "Offensive" and opt.get("viable_targets"):
-                # Ranged or melee attack that has targets in range — use it.
-                move_index = opt.get("index")
-                target_id = opt["viable_targets"][0]["id"]
-                break
-            if name == "Advance" and advance_opt is None:
-                advance_opt = opt
-            if name == "Wait" and wait_opt is None:
-                wait_opt = opt
-
-        if move_index is None:
-            # No offensive move in range — advance toward enemy.
-            chosen = advance_opt or wait_opt
-            if chosen:
-                move_index = chosen.get("index")
-                targets = chosen.get("viable_targets", [])
-                if targets:
-                    target_id = targets[0]["id"]
-
-        if move_index is None:
-            # Nothing usable — skip (shouldn't happen in a healthy combat).
+        body = pick_move_body(battle)
+        if body is None:
+            # Nothing usable -- skip (shouldn't happen in a healthy combat).
             return bugs, False
-
-        body: dict = {"move_type": "move", "move_id": str(move_index)}
-        if target_id:
-            body["target_id"] = target_id
-
         return self._post_move(client, body, round_num)
 
     def _post_move(

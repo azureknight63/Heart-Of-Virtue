@@ -82,6 +82,22 @@ def _num(value, default=0.0):
     return value
 
 
+def whole_beats(value):
+    """``value`` as a whole number of beats, or None when it is not one.
+
+    A non-bool int, or a float with no fractional part: the stage machine
+    drains 3.0 to exactly zero but never 1.5 (see ``Move.beats_until_ready``).
+    A type rule only -- callers that also forbid negatives check the sign.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
 # ── Attack outcome channel ──────────────────────────────────────────────────
 # The engine resolves what an attack did; the API must never re-derive it from
 # the narration prose. ``hit()``/``miss()``/``parry()`` publish one of these
@@ -1467,7 +1483,23 @@ class Move:  # master class for all moves
     # the player's HP, so a ceiling here would double-count the high roll and
     # cry wolf. `_rolled_power()` below is the single place the band is rolled,
     # so the roll and the number derived from it cannot be retuned apart.
+    #
+    # This is the multiple `evaluate()` puts into `self.power`. What the wire
+    # ships is `effective_damage_multiplier()`, which also folds in
+    # `_EXECUTE_DAMAGE_SCALE` below — read that, not this, for "how hard does
+    # it hit".
     _DAMAGE_MULTIPLIER: float = 1.0
+
+    # Scale a hand-rolled `execute()` applies to `self.power` AFTER evaluate()
+    # (issue #721). MineralSpit, SoulDrain and WailStrike hit for a fraction
+    # of their evaluated power; while that fraction was an inline literal, the
+    # wire reported the evaluated power and the Tactical Advisor overstated
+    # them by 1.4x-2.5x. An execute() that scales power must read it from here
+    # so the damage and `effective_damage_multiplier()` cannot drift apart.
+    # Separate from `_DAMAGE_MULTIPLIER` rather than folded into it because,
+    # in the TelegraphedSurge family, that attribute is live gameplay power
+    # and severity input, and for a rolled move it is the band's midpoint.
+    _EXECUTE_DAMAGE_SCALE: float = 1.0
 
     # How loudly this move's wind-up should be telegraphed (issue #586).
     # Closed vocabulary, TELEGRAPH_SEVERITIES: "normal" is a routine swing;
@@ -1638,6 +1670,83 @@ class Move:  # master class for all moves
             # Zero-length execute stage: prep and execute fire on one beat.
             return int(left) + 1
         return int(left) + 1 + int(execute_beats) + 1
+
+    def beats_until_ready(self):
+        """If cast now, beats until the caster is free to choose again (#700).
+
+        "Free" is the moment ``advance`` clears ``user.current_move`` -- the
+        end of recoil, as the move enters cooldown -- which is when
+        ``ApiCombatAdapter``'s beat loop hands control back. The Tactical
+        Advisor reads it to avoid recommending a move that carries Jean past
+        the last beat a Dodge could still meet a telegraphed blow.
+
+        Counted on the same stage machine ``beats_until_resolve`` describes:
+        draining a stage to zero does not advance it, the NEXT beat does, and
+        ``advance``'s ``while self.beats_left == 0`` loop runs a zero-length
+        stage in the same beat as the one before it. So, from rest, a move with
+        prep P, execute E and recoil R frees its caster after
+        ``P + E + R + 1 + [E > 0] + [R > 0]`` beats (Dodge [1,1,5,2] -> 10).
+        tests/test_move_beats_until_ready.py drives the real loop to hold it.
+
+        * 0 for an ``instant`` move: the adapter resolves every stage of one
+          without letting a beat pass.
+        * None unless the move is at rest (stage 0 and not the caster's
+          current move) -- an in-flight move has no "if cast now" -- and None
+          for a fractional stage, which ``advance`` can never drain to exactly
+          zero and so never finishes.
+
+        Not modelled: the adapter's ``max_beats = 20`` safety break returns
+        early from a longer commitment, but the caster is still bound to the
+        move then (current_move is set), so the count here remains the truth
+        about when he can act. A move whose ``execute()`` rewrites its recoil
+        overrides ``_recoil_if_cast_now`` (``Wait``), and a stagger an enemy's
+        Parry adds mid-swing (``Move.parry``) cannot be foreseen at all.
+        """
+        user = getattr(self, "user", None)
+        if getattr(self, "current_stage", None) != MOVE_STAGE_PREP or (
+            user is not None and getattr(user, "current_move", None) is self
+        ):
+            return None
+        if getattr(self, "instant", False):
+            return 0
+        stage_beats = getattr(self, "stage_beat", None)
+        if not isinstance(stage_beats, (list, tuple)) or len(stage_beats) < 3:
+            return None
+        # `_effective_prep` compares ``prep > 0`` before `_beats_to_free` can
+        # reject a bad value, so a non-numeric prep must stop here or it raises
+        # out of the move listing.
+        prep = stage_beats[0]
+        if isinstance(prep, bool) or not isinstance(prep, (int, float)):
+            return None
+        return self._beats_to_free(
+            self._effective_prep(), stage_beats[1], self._recoil_if_cast_now()
+        )
+
+    def _recoil_if_cast_now(self):
+        """The recoil a cast now would run: the declared stage, unless a move's
+        ``execute()`` rewrites it (``Wait``) -- the one hook
+        ``beats_until_ready`` leaves open, so its at-rest / instant /
+        stage-shape checks are not re-run by an override."""
+        return self.stage_beat[2]
+
+    @staticmethod
+    def _beats_to_free(prep, execute, recoil):
+        """Beats from cast to the start of cooldown, per ``advance``'s loop.
+
+        None for any stage that is not a whole number of beats (see
+        ``beats_until_ready``).
+        """
+        stages = []
+        for value in (prep, execute, recoil):
+            whole = whole_beats(value)
+            if whole is None or whole < 0:
+                return None
+            stages.append(whole)
+        prep, execute, recoil = stages
+        # One beat to leave prep, one more per non-empty later stage: a stage
+        # of N beats costs N drains plus the beat that advances past it, and an
+        # empty stage is skipped inside the beat that reached it.
+        return prep + 1 + (execute + 1 if execute else 0) + (recoil + 1 if recoil else 0)
 
     def get_accuracy_falloff(self, user):
         """Distance beyond which this move's accuracy decays, and how fast.
@@ -2061,31 +2170,56 @@ class Move:  # master class for all moves
                 self.stage_announce[0]
             )  # Print the prep announce message for the move
 
-        # CleaveInstinct passive: next move after a kill gets prep=1 (skip zero-beat moves)
-        prep = self.stage_beat[0]
-        if (
-            prep > 0
-            and getattr(self.user, "_cleave_instinct_pending", False)
+        prep = self._effective_prep()
+        # The two one-shot modifiers _effective_prep() counted are spent here,
+        # and only here: the advisor asks the same question every beat.
+        if self.stage_beat[0] > 0:
+            if self._cleave_instinct_applies():
+                self.user._cleave_instinct_pending = False
+            stagger = self._pending_stagger()
+            if stagger is not None:
+                stagger.penalty_consumed = True
+        self.beats_left = prep
+
+    def _cleave_instinct_applies(self):
+        """True when the CleaveInstinct passive will cut this cast's prep to 1."""
+        return bool(
+            getattr(self.user, "_cleave_instinct_pending", False)
             and any(
                 getattr(m, "name", "") == "Cleave Instinct"
                 for m in getattr(self.user, "known_moves", [])
             )
-        ):
+        )
+
+    def _pending_stagger(self):
+        """The unspent Staggered state that will lengthen this cast's prep, or None."""
+        user_states = getattr(self.user, "states", None)
+        if not isinstance(user_states, list):
+            return None
+        for state in user_states:
+            if getattr(state, "name", "") == "Staggered" and not getattr(
+                state, "penalty_consumed", False
+            ):
+                return state
+        return None
+
+    def _effective_prep(self):
+        """The prep beats ``cast()`` would set right now, consuming nothing.
+
+        One owner for the cast-time prep modifiers, read by ``cast()`` (which
+        then spends the one-shot ones) and by ``beats_until_ready()`` (which
+        must not). Zero-prep moves take no modifier at all.
+        """
+        prep = self.stage_beat[0]
+        # CleaveInstinct passive: next move after a kill gets prep=1.
+        if prep > 0 and self._cleave_instinct_applies():
             prep = 1
-            self.user._cleave_instinct_pending = False
-
-        # Staggered state: add +5 prep beats to caster's next move (consumed after first use)
-        if prep > 0 and isinstance(getattr(self.user, "states", None), list):
-            for state in self.user.states:
-                if getattr(state, "name", "") == "Staggered" and not getattr(
-                    state, "penalty_consumed", False
-                ):
-                    prep += getattr(state, "prep_penalty", 5)
-                    state.penalty_consumed = True
-                    break
-
-        # QuickReload passive: faster crossbow reload — shave ~20% of prep beats
-        # (floored at 1) while wielding a crossbow.
+        # Staggered state: +5 prep beats on the caster's next move, once.
+        stagger = self._pending_stagger()
+        if prep > 0 and stagger is not None:
+            prep += getattr(stagger, "prep_penalty", 5)
+        # QuickReload passive: faster crossbow reload — shave ~20% of prep
+        # beats (floored at 1) while wielding a crossbow.
         if (
             prep > 1
             and getattr(getattr(self.user, "eq_weapon", None), "subtype", None)
@@ -2096,8 +2230,7 @@ class Move:  # master class for all moves
             )
         ):
             prep = max(1, int(round(prep * 0.8)))
-
-        self.beats_left = prep
+        return prep
 
     def advance(self, user):
         self.user = user  # Ensure user is always current
@@ -2186,6 +2319,19 @@ class Move:  # master class for all moves
         return self.user.damage * random.uniform(
             self._POWER_ROLL_MIN, self._POWER_ROLL_MAX
         )
+
+    def effective_damage_multiplier(self):
+        """The multiple of its user's damage this move's hit centres on.
+
+        What the wire's ``damage_multiplier`` reports (the serializer calls
+        this; it computes nothing itself): the power ``evaluate()`` centres on
+        times the scale ``execute()`` applies to it. Before protection,
+        resistances, facing and conditional bonuses, which the Tactical
+        Advisor prices separately or not at all.
+        ``tests/test_npc_moves_coverage.py::TestWireMultiplierMatchesExecuteDamage``
+        measures it against the damage ``execute()`` really deals.
+        """
+        return self._DAMAGE_MULTIPLIER * self._EXECUTE_DAMAGE_SCALE
 
     def prep_colors(self):  # prepares usercolor, targetcolor for prints
         # Check if user is player generally (by name or class, assuming Player class has no friend attr)
