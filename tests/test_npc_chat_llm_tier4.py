@@ -44,6 +44,7 @@ from src.npc._chat_llm import (
     scale_loquacity,
 )
 from tests._gs_fixtures import live_world
+from tests._source_scan import MAP_DIR
 from tests._npc_fixtures import (
     ScriptedAdapter,
     chat_npc,
@@ -1015,7 +1016,7 @@ class TestBuildSystemPrompt:
         shipped JSON without instantiating the map's NPCs (which would mutate
         the merchant registries).
         """
-        path = Path(__file__).resolve().parent.parent / "src" / "resources" / "maps" / f"{map_name}.json"
+        path = MAP_DIR / f"{map_name}.json"
         raw = json.loads(path.read_text(encoding="utf-8"))
         player.map = {"name": map_name}
         if "metadata" in raw:
