@@ -101,7 +101,11 @@ param (
 $ServerUser   = 'alex'
 $ServerHost   = 'nexusfidei.dev'
 $ServerLogin  = "$ServerUser@$ServerHost"
-$Container    = 'webserver'
+# The php-fpm container, not nginx's: since 2026-09-17 the nginx container
+# (webserver) mounts the web root read-only, so every write through it failed
+# with "mounted volume is marked read-only". This one mounts the same volume
+# writable, and nginx serves what it writes at once.
+$Container    = 'wordpress'
 $LiveDir      = '/var/www/html/wp-content/HeartOfVirtue'
 $StagingDir   = "$LiveDir.new"
 $PreviousDir  = "$LiveDir.prev"

@@ -84,7 +84,10 @@ PRODUCTION_LAYOUT = {
     "APP": "/home/alex/heart-of-virtue",
     "SERVICE": "heart-of-virtue",
     "HEALTH_URL": "http://127.0.0.1:5000/health",
-    "CONTAINER": "webserver",
+    # Not "webserver": since 2026-09-17 the nginx container mounts the web root
+    # read-only, and every write failed with "mounted volume is marked
+    # read-only". The php-fpm container mounts the same volume writable.
+    "CONTAINER": "wordpress",
     "PUBLIC_BASE": "https://nexusfidei.dev/games/HeartOfVirtue",
 }
 LIVE_DIR = PRODUCTION_LAYOUT["LIVE"]
