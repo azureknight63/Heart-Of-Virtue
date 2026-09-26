@@ -420,6 +420,14 @@
   font-weight: 400;
   font-style: italic;
 }
+/* The drop cap renders inside the first paragraph, whose lit text is painted
+   through background-clip: text, and that paint stops at the paragraph's box.
+   The float hangs below the paragraph's two lines, so the italic J lost its
+   tail and read as an "I". Contain the float, with room for the descender. */
+.landing-page .hero-prose > p:first-child {
+  display: flow-root;
+  padding-bottom: 0.4em;
+}
 .landing-page .hero-scroll-hint {
   margin-top: 72px;
   color: var(--ink-faint);
