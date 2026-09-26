@@ -124,6 +124,56 @@ def _make_app(config=None, env=None, capture=None):
                 os.environ[k] = old_v
 
 
+def _is_redacting(handler):
+    """True when ``handler`` carries the secret-redaction filter."""
+    from src.api.structured_log import _RedactSecretsFilter
+
+    return any(isinstance(f, _RedactSecretsFilter) for f in handler.filters)
+
+
+@pytest.fixture
+def pristine_root():
+    """Snapshot the REAL root logger (and the levels create_app touches) and
+    restore it afterwards, closing any handler the test left behind.
+
+    A test that needs the production shape empties root itself, in the call
+    phase: pytest attaches its call-phase capture handlers *after* fixtures
+    run, and ``configure_logging`` withholds its console handler while any
+    foreign handler is present -- the opposite of production (no foreign
+    handlers).
+    """
+    from src.api.app import _APP_LOG_NAMESPACES
+    from src.api.structured_log import _NOISY_LOGGERS
+
+    root = logging.getLogger()
+    saved_handlers, saved_level = root.handlers[:], root.level
+    names = _APP_LOG_NAMESPACES + _NOISY_LOGGERS
+    saved_levels = {n: logging.getLogger(n).level for n in names}
+    try:
+        yield root
+    finally:
+        for handler in root.handlers:
+            if handler not in saved_handlers:
+                handler.close()
+        root.handlers[:] = saved_handlers
+        root.setLevel(saved_level)
+        for name, level in saved_levels.items():
+            logging.getLogger(name).setLevel(level)
+
+
+@pytest.fixture
+def private_logger(request):
+    """A non-propagating, handler-free logger for ``configure_logging(logger=...)``,
+    whose handlers are closed and dropped on teardown."""
+    logger = logging.getLogger("_test_app_factory_" + request.node.name)
+    logger.propagate = False
+    logger.handlers = []
+    yield logger
+    for handler in logger.handlers:
+        handler.close()
+    logger.handlers = []
+
+
 # ---------------------------------------------------------------------------
 # Basic factory tests
 # ---------------------------------------------------------------------------
@@ -147,7 +197,9 @@ class TestLoggingConfiguration:
 
         assert "still captured" in caplog.text
 
-    def test_repeated_calls_do_not_stack_duplicate_handlers(self, tmp_path):
+    def test_repeated_calls_do_not_stack_duplicate_handlers(
+        self, tmp_path, private_logger
+    ):
         """Idempotence was the reason force=True was there in the first place;
         replacing it must not reintroduce handler stacking. Aimed at
         ``structured_log.configure_logging`` -- the only installer of handlers
@@ -156,27 +208,19 @@ class TestLoggingConfiguration:
         and on a private logger, so the population is non-empty and known."""
         from src.api.structured_log import configure_logging
 
-        logger = logging.getLogger("_test_configure_logging_idempotent")
-        logger.propagate = False
-        logger.handlers = []
         env = {
             "LOG_LEVEL": "INFO",
             "LOG_FILE": "app.log",
             "LOG_JSONL_DIR": str(tmp_path / "jsonl"),
         }
-        try:
-            configure_logging(env=env, logger=logger, log_dir=tmp_path)
-            after_first = len(logger.handlers)
-            configure_logging(env=env, logger=logger, log_dir=tmp_path)
-            assert after_first > 0
-            assert len(logger.handlers) == after_first, (
-                "configure_logging stacked a second handler set: "
-                f"{logger.handlers}"
-            )
-        finally:
-            for handler in logger.handlers:
-                handler.close()
-            logger.handlers = []
+        configure_logging(env=env, logger=private_logger, log_dir=tmp_path)
+        after_first = len(private_logger.handlers)
+        configure_logging(env=env, logger=private_logger, log_dir=tmp_path)
+        assert after_first > 0
+        assert len(private_logger.handlers) == after_first, (
+            "configure_logging stacked a second handler set: "
+            f"{private_logger.handlers}"
+        )
 
 
 class TestOneRootLoggerOwner:
@@ -195,39 +239,10 @@ class TestOneRootLoggerOwner:
     # redaction pattern covers); not a real key.
     SECRET = "sk-or-v1-0123456789abcdef0123456789abcdef"
 
-    @pytest.fixture
-    def pristine_root(self):
-        """Snapshot the REAL root logger and restore it afterwards.
-
-        The test empties root itself, in the call phase: pytest attaches its
-        call-phase capture handlers *after* fixtures run, and
-        ``configure_logging`` withholds its console handler while any foreign
-        handler is present -- the opposite of the production shape (no foreign
-        handlers) this test must reproduce.
-        """
-        from src.api.app import _APP_LOG_NAMESPACES
-        from src.api.structured_log import _NOISY_LOGGERS
-
-        root = logging.getLogger()
-        saved_handlers, saved_level = root.handlers[:], root.level
-        names = _APP_LOG_NAMESPACES + _NOISY_LOGGERS
-        saved_levels = {n: logging.getLogger(n).level for n in names}
-        try:
-            yield root
-        finally:
-            for handler in root.handlers:
-                if handler not in saved_handlers:
-                    handler.close()
-            root.handlers[:] = saved_handlers
-            root.setLevel(saved_level)
-            for name, level in saved_levels.items():
-                logging.getLogger(name).setLevel(level)
-
     def test_every_record_is_emitted_once_and_redacted_everywhere(
         self, pristine_root, tmp_path, monkeypatch, capfd
     ):
         from src.api import structured_log
-        from src.api.structured_log import _RedactSecretsFilter
 
         log_dir = tmp_path / "logs"
         log_file = log_dir / "app.log"
@@ -243,8 +258,7 @@ class TestOneRootLoggerOwner:
         structured_log.configure_logging()
         _make_app()
 
-        root = pristine_root
-        handlers = root.handlers[:]
+        handlers = pristine_root.handlers[:]
         assert handlers, "configure_logging installed no root handlers at all"
 
         stderr_handlers = [
@@ -257,11 +271,7 @@ class TestOneRootLoggerOwner:
         assert len(stderr_handlers) == 1, stderr_handlers
         assert len(file_handlers) == 1, file_handlers
 
-        unfiltered = [
-            h
-            for h in handlers
-            if not any(isinstance(f, _RedactSecretsFilter) for f in h.filters)
-        ]
+        unfiltered = [h for h in handlers if not _is_redacting(h)]
         assert not unfiltered, f"root handlers without redaction: {unfiltered}"
 
         # hov.* inherits root; src.* may be pinned to WARNING by TESTING.
@@ -296,7 +306,9 @@ class TestFlaskDefaultHandlerIsRemoved:
     the redacting root handler. ``app.logger`` is named for the module, so the
     same handler also sat under ``src.api.app``'s module ``_log``."""
 
-    def test_no_unredacted_handler_is_reachable_from_app_logger(self):
+    def test_no_unredacted_handler_is_reachable_from_app_logger(
+        self, pristine_root
+    ):
         from flask.logging import default_handler
 
         from src.api.structured_log import _RedactSecretsFilter
@@ -304,17 +316,16 @@ class TestFlaskDefaultHandlerIsRemoved:
         debug_config = type(
             "_FastDebugConfig", (_FastTestConfig,), {"DEBUG": True}
         )
-        root = logging.getLogger()
         module_logger = logging.getLogger("src.api.app")
-        saved_root = root.handlers[:], root.level
-        saved_module = module_logger.handlers[:], module_logger.level
+        saved_module_handlers = module_logger.handlers[:]
+        saved_module_level = module_logger.level
         # The production shape: one redacting console at WARNING, and no
         # pytest capture handler (level 0) to satisfy Flask's level check.
         console = logging.StreamHandler()
         console.setLevel(logging.WARNING)
         console.addFilter(_RedactSecretsFilter())
         try:
-            root.handlers[:] = [console]
+            pristine_root.handlers[:] = [console]
             module_logger.removeHandler(default_handler)
             app, _ = _make_app(debug_config)
             app.logger.debug("materialise the lazy logger")  # as Flask would
@@ -326,20 +337,14 @@ class TestFlaskDefaultHandlerIsRemoved:
                     break
                 current = current.parent
             assert reachable, "no handler reachable from app.logger at all"
-            unfiltered = [
-                h
-                for h in reachable
-                if not any(isinstance(f, _RedactSecretsFilter) for f in h.filters)
-            ]
+            unfiltered = [h for h in reachable if not _is_redacting(h)]
             assert not unfiltered, (
                 "create_app left an unredacted handler on app.logger "
                 f"(flask.logging.default_handler?): {unfiltered}"
             )
         finally:
-            root.handlers[:] = saved_root[0]
-            root.setLevel(saved_root[1])
-            module_logger.handlers[:] = saved_module[0]
-            module_logger.setLevel(saved_module[1])
+            module_logger.handlers[:] = saved_module_handlers
+            module_logger.setLevel(saved_module_level)
 
 
 class TestCreateApp:
@@ -1197,51 +1202,35 @@ class TestSecretRedaction:
         assert record.getMessage() == "moved to the north gate"
 
     def test_the_filter_is_on_every_handler_configure_logging_installs(
-        self, tmp_path
+        self, tmp_path, private_logger
     ):
         """Filters run per handler, in order, so one unfiltered handler emits
         the raw record before any redacting one sees it (issue #698). The
         population is derived from the logger itself, with every optional
         handler (LOG_FILE, JSONL) switched on."""
-        from src.api.structured_log import _RedactSecretsFilter
         from src.api.structured_log import configure_logging
 
-        logger = logging.getLogger("_test_redaction_every_handler")
-        logger.propagate = False
-        logger.handlers = []
-        try:
-            configure_logging(
-                env={
-                    "LOG_LEVEL": "INFO",
-                    "LOG_FILE": str(tmp_path / "app.log"),
-                    "LOG_JSONL_DIR": str(tmp_path / "jsonl"),
-                },
-                logger=logger,
-                log_dir=tmp_path,
-            )
-            assert len(logger.handlers) == 3, logger.handlers
-            for handler in logger.handlers:
-                assert any(
-                    isinstance(f, _RedactSecretsFilter) for f in handler.filters
-                ), handler
-        finally:
-            for handler in logger.handlers:
-                handler.close()
-            logger.handlers = []
+        configure_logging(
+            env={
+                "LOG_LEVEL": "INFO",
+                "LOG_FILE": str(tmp_path / "app.log"),
+                "LOG_JSONL_DIR": str(tmp_path / "jsonl"),
+            },
+            logger=private_logger,
+            log_dir=tmp_path,
+        )
+        assert len(private_logger.handlers) == 3, private_logger.handlers
+        for handler in private_logger.handlers:
+            assert _is_redacting(handler), handler
 
-    def test_create_app_installs_no_root_handlers_of_its_own(self):
+    def test_create_app_installs_no_root_handlers_of_its_own(self, pristine_root):
         """The second owner was the bug (issue #698): ``_configure_logging``
         now sets namespace levels only."""
         from src.api.app import _configure_logging
 
-        root = logging.getLogger()
-        handlers, level = root.handlers[:], root.level
-        try:
-            _configure_logging()
-            assert root.handlers == handlers
-        finally:
-            root.handlers[:] = handlers
-            root.setLevel(level)
+        handlers = pristine_root.handlers[:]
+        _configure_logging()
+        assert pristine_root.handlers == handlers
 
 
 # ---------------------------------------------------------------------------
@@ -1259,20 +1248,8 @@ def _testing_pin():
     return _testing_log_level(_Testing)
 
 
+@pytest.mark.usefixtures("pristine_root")
 class TestNamespaceLogLevels:
-    @pytest.fixture(autouse=True)
-    def _restore(self):
-        from src.api.app import _APP_LOG_NAMESPACES
-
-        root = logging.getLogger()
-        saved_handlers, saved_level = root.handlers[:], root.level
-        saved = {n: logging.getLogger(n).level for n in _APP_LOG_NAMESPACES}
-        yield
-        for name, level in saved.items():
-            logging.getLogger(name).setLevel(level)
-        root.handlers[:] = saved_handlers
-        root.setLevel(saved_level)
-
     def test_an_unset_log_level_restores_inheritance(self, monkeypatch):
         """``level is None`` used to mean "change nothing", which made the
         TESTING pin one-way: after one create_app(TestingConfig) the ``src``
@@ -1319,6 +1296,21 @@ class TestNamespaceLogLevels:
         assert _testing_log_level(_Testing) == "WARNING"
         assert _testing_log_level(_NotTesting) is None
 
+    def test_an_unrecognized_log_level_warns_once_per_boot(
+        self, monkeypatch, caplog, private_logger
+    ):
+        """A boot reads LOG_LEVEL twice -- ``configure_logging`` at import for
+        the root handlers, ``_configure_logging`` in create_app() for the
+        namespaces -- and both used to warn about the same typo."""
+        from src.api.app import _configure_logging
+        from src.api.structured_log import configure_logging
+
+        monkeypatch.setenv("LOG_LEVEL", "TRACE")
+        with caplog.at_level(logging.WARNING):
+            configure_logging(logger=private_logger)  # the import-time call
+            _configure_logging()  # the create_app() call
+        assert caplog.text.count("Unrecognized LOG_LEVEL 'TRACE'") == 1, caplog.text
+
     @pytest.mark.parametrize("blank", ["", "   ", "	"])
     def test_a_blank_log_level_counts_as_unset(self, monkeypatch, blank):
         """``LOG_LEVEL=`` is an operator with no opinion, not a typo, so it
@@ -1330,10 +1322,11 @@ class TestNamespaceLogLevels:
         key -- and ``.env`` ships ``LOG_LEVEL=DEBUG``, so a popped variable
         comes straight back the moment ``src/api/rate_limiter.py`` is
         imported."""
-        from src.api.app import _log_level_setting, _resolve_log_level
+        from src.api.app import _resolve_log_level
+        from src.api.structured_log import log_level_setting
 
         monkeypatch.setenv("LOG_LEVEL", blank)
-        assert _log_level_setting() is None
+        assert log_level_setting() is None
         assert _resolve_log_level() is None
 
     def test_the_suite_itself_runs_with_log_level_unconfigured(self):
@@ -1349,12 +1342,13 @@ class TestNamespaceLogLevels:
 
         Deliberately takes no monkeypatch: the ambient process environment is
         the thing under test."""
-        from src.api.app import _log_level_setting, _testing_log_level
+        from src.api.app import _testing_log_level
+        from src.api.structured_log import log_level_setting
 
         class _Testing:
             TESTING = True
 
-        assert _log_level_setting() is None, (
+        assert log_level_setting() is None, (
             "tests/conftest.py must leave LOG_LEVEL unconfigured (it blanks "
             "it); pinning a value makes app.py's caplog claim untestable"
         )
@@ -1505,6 +1499,18 @@ class TestRunApiRefusesProduction:
     ``FLASK_ENV=production python tools/run_api.py`` at a terminal, and the dev
     server then serves production traffic with nothing said.
     """
+
+    @pytest.fixture(autouse=True)
+    def _app_imported_before_the_env_flip(self):
+        """Import the app graph under the suite's own environment first.
+
+        ``run_api.py`` imports ``src.api.app``, and if that is the first import
+        in this worker it builds the ``auth_service`` singleton *under
+        FLASK_ENV=production* -- whose import-time guard raises without an
+        ENCRYPTION_KEY. Under pytest-randomly, on a checkout with no ``.env``,
+        that made these tests fail whenever they happened to run first.
+        """
+        import src.api.app  # noqa: F401
 
     @staticmethod
     def _load():

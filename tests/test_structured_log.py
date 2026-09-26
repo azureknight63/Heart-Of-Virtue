@@ -273,6 +273,20 @@ class TestOneLogLevelParser:
             assert resolve_log_level("  ", default=logging.ERROR) == logging.ERROR
         assert "LOG_LEVEL" not in caplog.text
 
+    @pytest.mark.parametrize(
+        "alias, expected",
+        [("WARN", logging.WARNING), ("fatal", logging.CRITICAL)],
+    )
+    def test_stdlib_aliases_resolve_silently(self, caplog, alias, expected):
+        """``logging`` itself accepts ``WARN`` and ``FATAL``; the allow-list
+        dropped them, so ``WARN`` logged a spurious "Unrecognized" warning and
+        ``FATAL`` fell from CRITICAL to WARNING."""
+        from src.api.structured_log import resolve_log_level
+
+        with caplog.at_level(logging.WARNING, logger="src.api.structured_log"):
+            assert resolve_log_level(alias) == expected
+        assert "Unrecognized" not in caplog.text
+
     def test_unrecognized_warns_and_uses_the_default(self, caplog):
         from src.api.structured_log import _LOG_LEVELS, resolve_log_level
 
@@ -454,9 +468,7 @@ class TestConfigureLoggingLogFile:
             handler.close()
         assert "hello plain file" in path.read_text(encoding="utf-8")
 
-    def test_log_file_oserror_is_swallowed(self, tmp_path, monkeypatch):
-        logger = _fresh_logger()
-        logger.handlers = []
+    def test_log_file_oserror_is_swallowed(self, tmp_path, monkeypatch, fresh_logger):
         monkeypatch.setattr(
             logging.handlers,
             "RotatingFileHandler",
@@ -465,51 +477,45 @@ class TestConfigureLoggingLogFile:
         # Must not raise — a bad LOG_FILE path degrades, never crashes the app
         configure_logging(
             env={"LOG_LEVEL": "INFO", "LOG_FILE": str(tmp_path / "x.log")},
-            logger=logger,
+            logger=fresh_logger,
             log_dir=tmp_path,
         )
-        assert not any(isinstance(h, logging.FileHandler) for h in logger.handlers)
+        assert not any(
+            isinstance(h, logging.FileHandler) for h in fresh_logger.handlers
+        )
 
-    def test_log_file_outside_the_log_dir_is_refused(self, tmp_path):
+    def test_log_file_outside_the_log_dir_is_refused(self, tmp_path, fresh_logger):
         """The import-time LOG_FILE handler used to open any path unconfined
         (issue #698) while create_app's copy confined it; one owner, one rule."""
-        logger = _fresh_logger()
-        logger.handlers = []
         outside = tmp_path / "elsewhere" / "x.log"
         configure_logging(
             env={"LOG_LEVEL": "INFO", "LOG_FILE": str(outside)},
-            logger=logger,
+            logger=fresh_logger,
             log_dir=tmp_path / "logs",
         )
-        for handler in logger.handlers:
-            handler.close()
-        assert not any(isinstance(h, logging.FileHandler) for h in logger.handlers)
+        assert not any(
+            isinstance(h, logging.FileHandler) for h in fresh_logger.handlers
+        )
         assert not outside.parent.exists()
 
-    def test_log_file_rotates(self, tmp_path):
+    def test_log_file_rotates(self, tmp_path, fresh_logger):
         from src.api import structured_log
 
-        logger = _fresh_logger()
-        logger.handlers = []
         configure_logging(
             env={"LOG_LEVEL": "INFO", "LOG_FILE": "app.log"},
-            logger=logger,
+            logger=fresh_logger,
             log_dir=tmp_path,
         )
         rotating = [
             h
-            for h in logger.handlers
+            for h in fresh_logger.handlers
             if isinstance(h, logging.handlers.RotatingFileHandler)
         ]
-        try:
-            assert len(rotating) == 1
-            assert rotating[0].maxBytes == structured_log._LOG_FILE_MAX_BYTES
-            assert rotating[0].backupCount == structured_log._LOG_FILE_BACKUP_COUNT
-            # A relative LOG_FILE lands inside the log dir, not the cwd.
-            assert rotating[0].baseFilename == str((tmp_path / "app.log").resolve())
-        finally:
-            for handler in logger.handlers:
-                handler.close()
+        assert len(rotating) == 1
+        assert rotating[0].maxBytes == structured_log._LOG_FILE_MAX_BYTES
+        assert rotating[0].backupCount == structured_log._LOG_FILE_BACKUP_COUNT
+        # A relative LOG_FILE lands inside the log dir, not the cwd.
+        assert rotating[0].baseFilename == str((tmp_path / "app.log").resolve())
 
 
 class TestJsonlDirRetention:
@@ -561,9 +567,7 @@ class TestEveryDestinationIsRedacted:
     SECRET = "sk-or-v1-" + "a1b2c3d4e5f6" * 3
     WEBHOOK = "https://discord.com/api/webhooks/123456/" + "Tok3n" * 6
 
-    def _emit_everywhere(self, tmp_path):
-        logger = _fresh_logger()
-        logger.handlers = []
+    def _emit_everywhere(self, tmp_path, logger):
         jsonl_dir = tmp_path / "backend"
         configure_logging(
             env={
@@ -590,8 +594,8 @@ class TestEveryDestinationIsRedacted:
         plain = (tmp_path / "app.log").read_text(encoding="utf-8")
         return jsonl, plain
 
-    def test_no_secret_reaches_any_destination(self, tmp_path, capfd):
-        jsonl, plain = self._emit_everywhere(tmp_path)
+    def test_no_secret_reaches_any_destination(self, tmp_path, capfd, fresh_logger):
+        jsonl, plain = self._emit_everywhere(tmp_path, fresh_logger)
         console = capfd.readouterr().err
         destinations = {"jsonl": jsonl, "file": plain, "console": console}
         # Non-vacuity: every destination received both records.
@@ -603,8 +607,17 @@ class TestEveryDestinationIsRedacted:
             assert "Tok3nTok3n" not in text, name
             assert "[REDACTED]" in text, name
 
-    def test_jsonl_lines_stay_valid_json_after_redaction(self, tmp_path):
-        jsonl, _ = self._emit_everywhere(tmp_path)
+    def test_payload_keys_are_scrubbed_too(self):
+        """``_redact_values`` scrubbed dict values but passed keys through, so
+        ``log_event(..., **{token: 1})``-shaped payloads leaked the key."""
+        from src.api.structured_log import _redact_values
+
+        scrubbed = _redact_values({self.SECRET: {"inner " + self.SECRET: 1}})
+        assert self.SECRET not in json.dumps(scrubbed)
+        assert scrubbed == {"[REDACTED]": {"inner [REDACTED]": 1}}
+
+    def test_jsonl_lines_stay_valid_json_after_redaction(self, tmp_path, fresh_logger):
+        jsonl, _ = self._emit_everywhere(tmp_path, fresh_logger)
         lines = [line for line in jsonl.splitlines() if line.strip()]
         assert len(lines) == 2
         envelopes = [json.loads(line) for line in lines]
@@ -638,17 +651,26 @@ class TestRedactSecretsFilterEdges:
         assert "[REDACTED]" in str(record.msg)
         assert "[REDACTED]" in repr(record.args)
 
-    def test_a_second_pass_over_the_same_record_is_a_no_op(self):
+    def test_a_second_pass_over_the_same_record_is_idempotent(self, monkeypatch):
         """One record passes the same filter once per handler (three with
-        LOG_FILE and LOG_JSONL_DIR set); the first pass already scrubbed it."""
+        LOG_FILE and LOG_JSONL_DIR set). Idempotence is the contract: the
+        second pass leaves an already-scrubbed record exactly as it was and
+        does not redo the traceback work. What happens to a record mutated
+        *between* passes is deliberately not asserted -- that is not a
+        behaviour anything should rely on."""
         from src.api.structured_log import _RedactSecretsFilter
 
         redactor = _RedactSecretsFilter()
         record = self._record("key=%s", (self.SECRET,))
-        redactor.filter(record)
-        assert self.SECRET not in record.getMessage()
-
-        sentinel = "unscanned sk-" + "z" * 16
-        record.msg = sentinel
         assert redactor.filter(record) is True
-        assert record.msg == sentinel, "the second pass re-ran the scrub"
+        first = (record.msg, record.args, record.exc_text, record.stack_info)
+        assert self.SECRET not in record.getMessage()
+        assert record.getMessage().count("[REDACTED]") == 1
+
+        calls = []
+        monkeypatch.setattr(
+            _RedactSecretsFilter, "_redact_traceback", staticmethod(calls.append)
+        )
+        assert redactor.filter(record) is True
+        assert (record.msg, record.args, record.exc_text, record.stack_info) == first
+        assert calls == [], "the second pass redid the traceback scrub"
