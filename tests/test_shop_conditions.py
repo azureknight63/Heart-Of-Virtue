@@ -41,29 +41,27 @@ class ConcreteCondition(ShopCondition):
     """Minimal concrete subclass, to exercise the base-class hook defaults."""
 
 
-@pytest.fixture(autouse=True)
-def isolated_unique_registry():
-    """`items.unique_items_spawned` is process-global; snapshot and restore it.
+def _world():
+    """A stand-in universe: its own unique-item claims, and no map."""
+    return SimpleNamespace(unique_items_spawned=set())
 
-    Injection permanently claims a factory name, so a test that injects would
-    otherwise starve every later test (in this file or any other running in
-    the same worker) of unique items.
-    """
-    from src.items import unique_items_spawned
 
-    saved = set(unique_items_spawned)
-    unique_items_spawned.clear()
-    try:
-        yield unique_items_spawned
-    finally:
-        unique_items_spawned.clear()
-        unique_items_spawned.update(saved)
+def _merchant_in(world, name="Testy"):
+    """A merchant standing in ``world`` with no containers, so injection
+    takes the inventory fallback."""
+    return SimpleNamespace(
+        name=name, inventory=[], current_room=SimpleNamespace(universe=world)
+    )
 
 
 @pytest.fixture
-def bare_merchant():
-    """A merchant with no room, so injection takes the inventory fallback."""
-    return SimpleNamespace(name="Testy", inventory=[], current_room=None)
+def world():
+    return _world()
+
+
+@pytest.fixture
+def bare_merchant(world):
+    return _merchant_in(world)
 
 
 # ---------------------------------------------------------------------------
@@ -303,8 +301,10 @@ class TestUniqueItemInjection:
 
         assert injected[0].unique_condition == "Festival Stock"
 
-    def test_creates_the_inventory_list_when_the_merchant_lacks_one(self):
-        merchant = SimpleNamespace(name="Bare", current_room=None)
+    def test_creates_the_inventory_list_when_the_merchant_lacks_one(self, world):
+        merchant = SimpleNamespace(
+            name="Bare", current_room=SimpleNamespace(universe=world)
+        )
 
         injected = UniqueItemInjectionCondition().inject_unique_items(merchant)
 
@@ -320,11 +320,8 @@ class TestUniqueItemInjection:
 
         assert cond.description == f"Injected unique item: {injected[0].name}"
 
-    def test_each_unique_item_spawns_at_most_once_world_wide(self):
-        merchants = [
-            SimpleNamespace(name=f"m{i}", inventory=[], current_room=None)
-            for i in range(4)
-        ]
+    def test_each_unique_item_spawns_at_most_once_world_wide(self, world):
+        merchants = [_merchant_in(world, f"m{i}") for i in range(4)]
 
         injected = []
         for merchant in merchants:
@@ -337,17 +334,31 @@ class TestUniqueItemInjection:
         assert len({type(item) for item in injected}) == 3
         assert merchants[3].inventory == []
 
-        # And the registry now names every one of them.
-        from src.items import unique_item_factories, unique_items_spawned
+        # And the world's registry now names every one of them.
+        from src.items import unique_item_factories
 
-        assert unique_items_spawned == {f.__name__ for f in unique_item_factories}
+        assert world.unique_items_spawned == {f.__name__ for f in unique_item_factories}
+
+    def test_one_worlds_claims_do_not_touch_anothers(self, world):
+        other = _world()
+        UniqueItemInjectionCondition().inject_unique_items(_merchant_in(world))
+        assert len(world.unique_items_spawned) == 1
+        assert other.unique_items_spawned == set()
+
+    @pytest.mark.parametrize("room", [None, SimpleNamespace(), SimpleNamespace(universe=None)])
+    def test_a_merchant_outside_any_world_is_skipped(self, room):
+        """No universe means no registry to keep the item unique in, so no
+        unique is created -- rather than claiming it somewhere global."""
+        merchant = SimpleNamespace(name="Lost", inventory=[], current_room=room)
+        assert UniqueItemInjectionCondition().inject_unique_items(merchant) == []
+        assert merchant.inventory == []
 
     def test_returns_empty_when_every_unique_is_already_spawned(
-        self, bare_merchant, isolated_unique_registry
+        self, bare_merchant, world
     ):
         from src.items import unique_item_factories
 
-        isolated_unique_registry.update(f.__name__ for f in unique_item_factories)
+        world.unique_items_spawned.update(f.__name__ for f in unique_item_factories)
 
         assert UniqueItemInjectionCondition().inject_unique_items(bare_merchant) == []
         assert bare_merchant.inventory == []
@@ -356,7 +367,7 @@ class TestUniqueItemInjection:
         merchant = SimpleNamespace(name="Bartho", inventory=[])
         container = SimpleNamespace(inventory=[], merchant=merchant)
         room = SimpleNamespace(objects_here=[container])
-        universe = SimpleNamespace(map={(0, 0): room})
+        universe = SimpleNamespace(map={(0, 0): room}, unique_items_spawned=set())
         merchant.current_room = SimpleNamespace(universe=universe)
 
         injected = UniqueItemInjectionCondition().inject_unique_items(merchant)
@@ -367,13 +378,17 @@ class TestUniqueItemInjection:
     def test_container_lookup_failure_logs_and_falls_back_to_the_merchant(
         self, caplog
     ):
-        class Exploding:
+        class ExplodingMap:
+            def __init__(self):
+                self.unique_items_spawned = set()
+
             @property
-            def universe(self):
+            def map(self):
                 raise RuntimeError("malformed world")
 
         merchant = SimpleNamespace(
-            name="Bartho", inventory=[], current_room=Exploding()
+            name="Bartho", inventory=[],
+            current_room=SimpleNamespace(universe=ExplodingMap()),
         )
 
         with caplog.at_level(logging.WARNING, logger="src.shop_conditions"):

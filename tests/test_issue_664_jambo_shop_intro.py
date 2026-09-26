@@ -196,6 +196,24 @@ class TestTheIntroTellsTheTruth:
             assert crates[0].merchant == "Jambo"
             assert crates[0].stock_count > 0
 
+    def test_the_back_room_crate_is_stocked_on_a_fresh_game(self):
+        """The crate Jambo points at holds goods the moment the world exists,
+        not only after the shop has been opened once (issue #727). Uses the
+        real build path, since the helper above never runs ``build()``."""
+        import random
+
+        from src.player import Player
+        from src.universe import Universe
+
+        random.seed(727)
+        player = Player()
+        player.universe = Universe(player)
+        player.universe.build(player)
+        for _o, _n, _e, _tent_file, tent_name in TENTS:
+            tent = _map(player.universe, tent_name)
+            crate = next(o for o in tent[(3, 2)].objects_here if type(o).__name__ == "Crate")
+            assert crate.inventory, f"{tent_name}: back-room crate is empty on a fresh game"
+
     def test_restock_turns_over_the_crate_as_well_as_the_counter(self):
         """"Jambo turns everything over -- the counter and the crate, both"."""
         from src.npc._shop import MerchantShopMixin

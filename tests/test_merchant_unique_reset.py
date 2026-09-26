@@ -1,132 +1,97 @@
-import os, sys
+"""Restock (``_reset_stock_state``) releases unique-item claims.
 
-from src.items import AncientRelic, DragonHeartGem, unique_items_spawned
+Claims live on the merchant's universe (``Universe.unique_items_spawned``,
+issue #727), so every release is checked against that world's registry.
+"""
+
+from src.items import AncientRelic, CrystalTear, DragonHeartGem
 from src.npc import Merchant
 from src.objects import Container
+
 
 class DummyRoom:
     def __init__(self):
         self.objects = []
         self.universe = None  # will be set after universe creation
 
+
 class DummyUniverse:
     def __init__(self, rooms):
         self.map = rooms
+        self.unique_items_spawned = set()
+
+
+def _merchant(name):
+    return Merchant(name=name, description="desc", damage=1, aggro=False, exp_award=0, stock_count=0)
+
+
+def _merchant_in_world(name):
+    m = _merchant(name)
+    room = DummyRoom()
+    universe = DummyUniverse([room])
+    room.universe = universe
+    m.current_room = room
+    return m, room, universe
 
 
 def test_unique_items_deregistered_on_reset_inventory_and_containers():
-    unique_items_spawned.clear()
-    m = Merchant(name="Test Merchant", description="desc", damage=1, aggro=False, exp_award=0, stock_count=0)
-
-    # Unique item directly in merchant inventory
-    relic = AncientRelic(merchandise=True)
-    # Unique item inside a merchant container
-    gem = DragonHeartGem(merchandise=True)
-
-    # Register them as spawned
-    unique_items_spawned.add(relic.__class__.__name__)
-    unique_items_spawned.add(gem.__class__.__name__)
-
+    m, room, universe = _merchant_in_world("Test Merchant")
+    relic = AncientRelic(merchandise=True)  # directly in merchant inventory
+    gem = DragonHeartGem(merchandise=True)  # inside a merchant container
+    universe.unique_items_spawned.update({"AncientRelic", "DragonHeartGem"})
     m.inventory = [relic]
-
-    # Build a fake world with a container linked to merchant
-    room = DummyRoom()
-    universe = DummyUniverse([room])
-    room.universe = universe
-    m.current_room = room
-
     cont = Container(name="Chest", merchant=m, items=[gem])
     room.objects.append(cont)
 
-    assert relic.__class__.__name__ in unique_items_spawned
-    assert gem.__class__.__name__ in unique_items_spawned
-    assert len(cont.inventory) == 1
-    assert len(m.inventory) == 1
-
     containers = m._reset_stock_state()
 
-    # Both inventories cleared
     assert m.inventory == []
     assert cont.inventory == []
-
-    # Unique classes removed from registry
-    assert relic.__class__.__name__ not in unique_items_spawned
-    assert gem.__class__.__name__ not in unique_items_spawned
-
-    # Container returned
+    assert universe.unique_items_spawned == set()
     assert cont in containers
 
 
-def test_unique_items_deregistered_no_room():
-    unique_items_spawned.clear()
-    m = Merchant(name="Test Merchant 2", description="desc", damage=1, aggro=False, exp_award=0, stock_count=0)
-    relic = AncientRelic(merchandise=True)
-    unique_items_spawned.add(relic.__class__.__name__)
-    m.inventory = [relic]
-
-    returned = m._reset_stock_state()
-
-    assert relic.__class__.__name__ not in unique_items_spawned
-    assert m.inventory == []
-    # No room/universe so should return empty container list
-    assert returned == []
-
-
-# ---------------- New Tests for Expanded _reset_stock_state Coverage ----------------
-from src.items import CrystalTear  # placed after existing tests to avoid circular import concerns
-
 def test_unique_items_deregistered_two_containers():
-    """Merchant has two containers each with a different unique item. All should deregister and containers cleared."""
-    unique_items_spawned.clear()
-    m = Merchant(name="Test Merchant 3", description="desc", damage=1, aggro=False, exp_award=0, stock_count=0)
-    room = DummyRoom()
-    universe = DummyUniverse([room])
-    room.universe = universe
-    m.current_room = room
-    # Create two unique items, register them manually (mirrors injection registration behavior)
+    """Two containers each with a different unique item: both released, both cleared."""
+    m, room, universe = _merchant_in_world("Test Merchant 3")
     gem = DragonHeartGem(merchandise=True)
     tear = CrystalTear(merchandise=True)
-    unique_items_spawned.update({gem.__class__.__name__, tear.__class__.__name__})
+    universe.unique_items_spawned.update({"DragonHeartGem", "CrystalTear"})
     c1 = Container(name="Case1", merchant=m, items=[gem])
     c2 = Container(name="Case2", merchant=m, items=[tear])
     room.objects.extend([c1, c2])
-    assert gem.__class__.__name__ in unique_items_spawned
-    assert tear.__class__.__name__ in unique_items_spawned
+
     containers = m._reset_stock_state()
-    # Both inventories cleared
+
     assert c1.inventory == []
     assert c2.inventory == []
-    # Both unique classes deregistered
-    assert gem.__class__.__name__ not in unique_items_spawned
-    assert tear.__class__.__name__ not in unique_items_spawned
-    # Both containers returned
-    returned = set(containers)
-    assert c1 in returned and c2 in returned
+    assert universe.unique_items_spawned == set()
+    assert {c1, c2} <= set(containers)
+
+
+def test_release_touches_only_the_claims_of_released_items():
+    m, _room, universe = _merchant_in_world("Test Merchant 6")
+    m.inventory = [AncientRelic(merchandise=True)]
+    universe.unique_items_spawned.update({"AncientRelic", "CrystalTear"})
+
+    m._reset_stock_state()
+
+    assert universe.unique_items_spawned == {"CrystalTear"}
 
 
 def test_reset_stock_state_room_without_universe():
-    """Exercise early return path: current_room set but universe is None. Unique items in inventory deregistered."""
-    unique_items_spawned.clear()
-    m = Merchant(name="Test Merchant 4", description="desc", damage=1, aggro=False, exp_award=0, stock_count=0)
-    relic = AncientRelic(merchandise=True)
-    unique_items_spawned.add(relic.__class__.__name__)
-    m.inventory = [relic]
+    """current_room set but universe is None: nothing to release into, and
+    the reset still clears the merchant without crashing."""
+    m = _merchant("Test Merchant 4")
+    m.inventory = [AncientRelic(merchandise=True)]
     m.current_room = DummyRoom()  # universe remains None
-    containers = m._reset_stock_state()
-    assert containers == []  # early return yields no containers
-    assert relic.__class__.__name__ not in unique_items_spawned  # deregistered
-    assert m.inventory == []  # cleared
+    assert m._reset_stock_state() == []
+    assert m.inventory == []
 
 
 def test_reset_stock_state_no_room_no_universe_return_value():
-    """Explicitly test branch where neither room nor universe exists: should not crash and return empty list."""
-    unique_items_spawned.clear()
-    m = Merchant(name="Test Merchant 5", description="desc", damage=1, aggro=False, exp_award=0, stock_count=0)
-    relic = AncientRelic(merchandise=True)
-    unique_items_spawned.add(relic.__class__.__name__)
-    m.inventory = [relic]
-    # No current_room assigned at all
-    result = m._reset_stock_state()
-    assert result == []
-    assert relic.__class__.__name__ not in unique_items_spawned
+    """Neither room nor universe: should not crash and return empty list."""
+    m = _merchant("Test Merchant 5")
+    m.inventory = [AncientRelic(merchandise=True)]
+    assert m._reset_stock_state() == []
     assert m.inventory == []
