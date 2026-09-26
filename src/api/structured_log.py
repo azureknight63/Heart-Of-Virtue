@@ -20,14 +20,23 @@ stream. Console output stays plain text so `tools/run_api.py` remains readable.
 
 Environment variables (read by configure_logging):
     LOG_LEVEL      Console/plain-file level name. Defaults to WARNING.
-    LOG_FILE       Optional plain-text log file path.
+    LOG_FILE       Optional plain-text log file path, confined to
+                   ``<repo>/logs/`` and rotated (see _resolve_log_file_setting).
     LOG_JSONL_DIR  Directory for date-stamped .jsonl files. When set, the
                    logger level drops to DEBUG so the JSONL stream captures
                    everything while the console keeps LOG_LEVEL.
+
+This module is the **only** installer of root-logger handlers (issue #698).
+``src/api/app.py`` used to install a second console + LOG_FILE set from
+``create_app()``; both sets survived each other's idempotence checks, so every
+line printed twice and only one copy was redacted. ``create_app()`` now sets
+namespace levels only. Every handler installed here carries
+:class:`_RedactSecretsFilter`.
 """
 
 import json
 import logging
+import logging.handlers
 import os
 import re
 import time
@@ -41,10 +50,151 @@ from flask import g, request
 
 from src.api.middleware.auth import session_token
 from src.api.utils.log_cleanup import LogCleanupManager
+from src.env_bootstrap import PROJECT_ROOT
+
+_log = logging.getLogger(__name__)
 
 # Marker attribute stamped on handlers this module installs, so reconfiguring
 # replaces only its own handlers and never a test runner's capture handlers.
 _HOV_MARKER = "_hov_structured_handler"
+
+# LOG_FILE is confined to this directory. See _resolve_log_file_setting.
+_LOG_DIR = PROJECT_ROOT / "logs"
+
+# LOG_FILE rotation budget: a DEBUG run must not be able to fill the disk.
+_LOG_FILE_MAX_BYTES = 5 * 1024 * 1024
+_LOG_FILE_BACKUP_COUNT = 3
+
+# Blunt scrub for credential-shaped substrings on their way into any handler
+# this module installs. Nothing in the tree is known to log a secret in a
+# message (checked deliberately: the LLM client logs bool(api_key), never the
+# value) — but provider-SDK tracebacks are not written by this tree, and this
+# repo has shipped a live GITHUB_TOKEN in ``.env``, so the scrub covers the
+# credential families actually present here rather than only the OpenAI shape:
+#   sk-…            OpenAI / OpenRouter / Anthropic-style API keys
+#   gsk_…           Groq
+#   ghp_/gho_/…     GitHub OAuth + classic PATs
+#   github_pat_…    GitHub fine-grained PATs
+#   discord webhook the provider digest's Discord sink URL (the path IS the
+#                   credential)
+#   eyJ….….         JWTs, which is how the Turso/libSQL auth token is shaped
+#   Bearer …        anything already framed as a bearer credential
+_SECRET_RE = re.compile(
+    r"""
+      sk-[A-Za-z0-9_\-]{8,}
+    | gsk_[A-Za-z0-9_\-]{8,}
+    | gh[pousr]_[A-Za-z0-9_\-]{8,}
+    | github_pat_[A-Za-z0-9_\-]{8,}
+    | https://(?:\w+\.)*discord(?:app)?\.com/api/webhooks/\S+
+    | eyJ[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]*
+    | Bearer\s+[A-Za-z0-9._\-]{8,}
+    """,
+    re.VERBOSE,
+)
+
+# Used to render ``record.exc_info`` for scrubbing before any handler formats
+# it. A bare Formatter's ``formatException`` is exactly what the real handlers
+# would call, so the text this filter rewrites is the text they will emit.
+_EXC_FORMATTER = logging.Formatter()
+
+
+class _RedactSecretsFilter(logging.Filter):
+    """Replace anything credential-shaped with ``[REDACTED]``.
+
+    Installed on **every** handler :func:`configure_logging` owns — console,
+    LOG_FILE and JSONL alike. Filters run per handler, in handler order, so a
+    filter missing from any one handler emits the unredacted record through
+    it before the redacting one ever runs. That is not hypothetical: it is
+    issue #698, where a second, unfiltered handler set installed at import
+    time printed every line raw ahead of the redacted copy.
+
+    Two payloads are scrubbed, because they travel by different routes:
+
+    * ``record.msg`` (with ``record.args`` dropped, as they have already been
+      merged in by ``getMessage()``).
+    * ``record.exc_text`` — the formatted traceback. This is the one that
+      matters most. Every ``logger.exception`` / ``exc_info=True`` call under
+      ``src/`` and ``ai/`` feeds it — dozens of sites across the tree, so no
+      list of them written here would stay true — and the largest single
+      contributor is not any route module but
+      ``src/api/handlers/error_handler.py``, the app-wide 500 handler that
+      every unhandled exception passes through. Any of them can surface a
+      provider-SDK traceback whose frame locals or request repr carry the API
+      key, and that text is rendered by ``Formatter.format`` *after* every
+      filter has run. Rendering it here and caching the redacted result in
+      ``exc_text`` (which ``Formatter.format`` reuses verbatim when set) is
+      what puts it inside the scrub. ``stack_info`` gets the same treatment
+      for the same reason.
+
+    The ``exc_text`` cache is written only when the scrub actually changed
+    something. That reuse cuts both ways: a non-empty ``exc_text`` freezes the
+    traceback for *every* handler on root, so writing it unconditionally would
+    take ``formatException`` away from handlers that render it differently —
+    caplog's, and :class:`JsonlFormatter`.
+
+    Mutating the record makes it scrubbed for every handler that formats it
+    afterwards as well — the safe direction to be wrong in.
+    """
+
+    def filter(self, record):
+        try:
+            message = record.getMessage()
+        except Exception:  # pragma: no cover - defensive; bad %-format args
+            message = None
+        if message is not None and _SECRET_RE.search(message):
+            record.msg = _SECRET_RE.sub("[REDACTED]", message)
+            record.args = ()
+        self._redact_traceback(record)
+        return True
+
+    @staticmethod
+    def _redact_traceback(record):
+        """Scrub (and, if needed, materialise) the record's traceback text."""
+        text = getattr(record, "exc_text", None)
+        if not text and record.exc_info:
+            try:
+                text = _EXC_FORMATTER.formatException(record.exc_info)
+            except Exception:  # pragma: no cover - defensive
+                text = None
+        if text:
+            redacted = _SECRET_RE.sub("[REDACTED]", text)
+            if redacted != text:
+                record.exc_text = redacted
+
+        # ``stack_info`` is appended verbatim by every formatter rather than
+        # cached, so an unconditional write costs nothing and hides nothing.
+        stack = getattr(record, "stack_info", None)
+        if stack:
+            record.stack_info = _SECRET_RE.sub("[REDACTED]", stack)
+
+
+def _resolve_log_file_setting(log_file, log_dir=None):
+    """Return the confined absolute path the LOG_FILE *setting* may write to.
+
+    Not to be confused with ``src.api.routes.logs._resolve_log_file``, which
+    answers a different question with an incompatible contract: that one takes
+    a client-supplied filename to *read*, returns ``(path, error)`` and never
+    raises. This one takes an operator-supplied setting to *write*, returns a
+    ``Path`` and raises.
+
+    Raises ValueError when it escapes ``log_dir`` (default ``<repo>/logs/``).
+    Unconfined, this path reaches ``mkdir(parents=True)`` — which silently
+    creates a directory tree anywhere the process can write — and a rotating
+    handler, which *renames* ``X`` -> ``X.1`` -> ``X.2`` and so clobbers up to
+    three neighbouring names beside whatever it was pointed at. A relative
+    value is interpreted inside the log directory rather than against the
+    working directory.
+    """
+    base = Path(_LOG_DIR if log_dir is None else log_dir)
+    candidate = Path(log_file).expanduser()
+    if not candidate.is_absolute():
+        candidate = base / candidate
+    resolved = candidate.resolve()
+    base = base.resolve()
+    if resolved == base or base not in resolved.parents:
+        raise ValueError("LOG_FILE must resolve to a path under %s" % base)
+    return resolved
+
 
 _PLAIN_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 
@@ -168,14 +318,20 @@ class DateStampedJsonlHandler(logging.Handler):
             super().close()
 
 
-def configure_logging(env=None, logger=None):
+def configure_logging(env=None, logger=None, log_dir=None):
     """Configure handlers on ``logger`` (root by default) from ``env``.
+
+    The one owner of root-logger handlers in this process (issue #698). Every
+    handler it installs carries :class:`_RedactSecretsFilter`.
 
     Idempotent: previously installed handlers (marked with _HOV_MARKER) are
     replaced; foreign handlers — e.g. pytest's capture handlers — are left
     untouched. The console handler is only added when the logger has no
     foreign handlers, so importing the app under a test runner never
     double-echoes records.
+
+    ``log_dir`` overrides the directory LOG_FILE is confined to (tests only).
+    A LOG_FILE outside it is refused with a warning, never a crash.
     """
     env = os.environ if env is None else env
     logger = logging.getLogger() if logger is None else logger
@@ -192,35 +348,42 @@ def configure_logging(env=None, logger=None):
             handler.close()
 
     plain = logging.Formatter(_PLAIN_FORMAT)
+    redactor = _RedactSecretsFilter()
+
+    def _install(handler, handler_level, formatter=None):
+        handler.setLevel(handler_level)
+        if formatter is not None:
+            handler.setFormatter(formatter)
+        handler.addFilter(redactor)
+        setattr(handler, _HOV_MARKER, True)
+        logger.addHandler(handler)
 
     if not logger.handlers:
-        console = logging.StreamHandler()
-        console.setLevel(level)
-        console.setFormatter(plain)
-        setattr(console, _HOV_MARKER, True)
-        logger.addHandler(console)
+        _install(logging.StreamHandler(), level, plain)
 
     log_file = env.get("LOG_FILE")
     if log_file:
         try:
-            Path(log_file).parent.mkdir(parents=True, exist_ok=True)
-            file_handler = logging.FileHandler(log_file, encoding="utf-8")
-            file_handler.setLevel(level)
-            file_handler.setFormatter(plain)
-            setattr(file_handler, _HOV_MARKER, True)
-            logger.addHandler(file_handler)
-        except OSError:
-            pass
+            path = _resolve_log_file_setting(log_file, log_dir)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.handlers.RotatingFileHandler(
+                path,
+                encoding="utf-8",
+                maxBytes=_LOG_FILE_MAX_BYTES,
+                backupCount=_LOG_FILE_BACKUP_COUNT,
+            )
+            _install(file_handler, level, plain)
+        except (OSError, ValueError) as exc:
+            # Degrade to the remaining handlers rather than refuse to boot
+            # over a logging destination.
+            _log.warning("Could not attach LOG_FILE handler %s: %s", log_file, exc)
 
     logger.setLevel(level)
     jsonl_dir = env.get("LOG_JSONL_DIR")
     if jsonl_dir:
         # Handler construction can't fail — the file opens lazily in emit(),
         # which already routes errors through handleError.
-        jsonl_handler = DateStampedJsonlHandler(jsonl_dir)
-        jsonl_handler.setLevel(logging.DEBUG)
-        setattr(jsonl_handler, _HOV_MARKER, True)
-        logger.addHandler(jsonl_handler)
+        _install(DateStampedJsonlHandler(jsonl_dir), logging.DEBUG)
         # Capture everything in the JSONL file while the console keeps LOG_LEVEL
         logger.setLevel(logging.DEBUG)
         for name in _NOISY_LOGGERS:

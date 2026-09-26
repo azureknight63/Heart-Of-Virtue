@@ -567,7 +567,7 @@ _NON_SECRET_GROUPS = (
     ),
     (
         "Logging destination and verbosity. What lands IN the log file can be "
-        "sensitive -- which is why app.py installs _RedactSecretsFilter and "
+        "sensitive -- which is why structured_log.py installs _RedactSecretsFilter and "
         "confines the path to logs/ -- but neither name nor value is.",
         ("LOG_FILE", "LOG_LEVEL"),
     ),

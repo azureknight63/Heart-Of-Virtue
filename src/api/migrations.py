@@ -16,7 +16,7 @@ def _warn(message):
 
     The logger, not stdout, for the second half of the same reason: every
     handler this app installs carries ``_RedactSecretsFilter`` (see
-    ``src/api/app.py``), and ``print``/``traceback.print_exc`` bypass it
+    ``src/api/structured_log.py``), and ``print``/``traceback.print_exc`` bypass it
     entirely. ``handlers/error_handler.py`` was moved off ``print_exc`` for
     that reason and these were left behind.
     """
