@@ -1,11 +1,11 @@
 """Issue #700: the advisor must not recommend a move that forfeits the Dodge.
 
 #686 made the advisor honest about King Slime's Tidal Surge, but at 11-13
-beats out it still put Attack on top -- and Attack ties Jean up for 10 beats,
-so his next decision lands inside the last 4, where a Dodge cast then resolves
-after the blow. The engine now publishes ``beats_until_ready`` per offered
-move; these tests drive the real adapter and the real engine surge, reading
-every tie-up off that field rather than a hand table.
+beats out it still put Attack on top -- and Attack's tie-up carries Jean's
+next decision inside the last `_DEFENSIVE_WINDOW_BEATS`, where a Dodge cast
+then resolves after the blow. The engine now publishes ``beats_until_ready``
+per offered move; these tests drive the real adapter and the real engine
+surge, reading every tie-up off that field rather than a hand table.
 """
 
 import copy
@@ -23,25 +23,8 @@ from ai.combat_strategist import (
 from src.npc._enemies import KingSlime
 from src.npc._friends import Gorran
 from tests._combat_fixtures import forced_roll, seeded
+from tests.llm_doubles import NoLLM as _NoLLM, ScriptedLLM as _ScriptedLLM
 from tests.test_tidal_surge_legibility import _all_scores, _fight, _surge_at
-
-
-class _NoLLM:
-    def available(self):
-        return False
-
-
-class _ScriptedLLM:
-    """An LLM that proposes exactly the suggestions it is given."""
-
-    def __init__(self, suggestions):
-        self._suggestions = suggestions
-
-    def available(self):
-        return True
-
-    def generate_structured(self, system_prompt, user_prompt):
-        return {"suggestions": [dict(s) for s in self._suggestions]}
 
 
 @pytest.fixture
@@ -140,6 +123,11 @@ class TestTheBoundaryHoldsInTheRealBeatLoop:
     asked again, really casts Dodge, and the surge resolves against whatever
     stance he actually has. Every number is read off the engine -- Attack's
     published ``beats_until_ready`` and the surge's ``beats_until_resolve``.
+
+    The real check is the spy on the surge's ``execute``: it records whether
+    a ``Dodging`` state was on Jean at the moment the blow resolved. The
+    beats-left assertions only confirm the premise; the Dodging record is what
+    says the advisor's allow/clamp verdict matched what the engine did.
     """
 
     @staticmethod
@@ -242,6 +230,38 @@ class TestNoOpinionWithoutADefenceToForfeit:
         state = strategist._derive_tactical_state(ctx)
         score, _ = strategist._score_move(_by_name(ctx)["Attack"], state)
         assert score == _FORFEITS_DEFENCE_SCORE
+
+    @staticmethod
+    def _no_defence_on_offer(ctx):
+        for m in ctx["available_moves"]:
+            if m["name"] in _DEFENSIVE_MOVE_NAMES:
+                m["available"] = False
+        ctx["defensive_cooldowns"] = {}
+        ctx["fatigue_locked_moves"] = []
+
+    def test_a_cooling_parry_jean_cannot_afford_does_not_count(self, strategist):
+        """Off cooldown in time is not castable in time when fatigue still
+        locks it: the adapter lists such a move in both places."""
+        ctx = _surge_ctx(12)
+        self._no_defence_on_offer(ctx)
+        ctx["defensive_cooldowns"] = {"Parry": 2}
+        ctx["fatigue_locked_moves"] = [
+            {"name": "Parry", "category": "Defensive", "deals_damage": False,
+             "fatigue_cost": 10_000},
+        ]
+        state = strategist._derive_tactical_state(ctx)
+        assert state["defence_castable_in"] is None, state["defence_name"]
+        score, reason = strategist._score_move(_by_name(ctx)["Attack"], state)
+        assert score != _FORFEITS_DEFENCE_SCORE, reason
+
+    def test_a_negative_cooldown_is_no_beat_count(self, strategist):
+        ctx = _surge_ctx(12)
+        self._no_defence_on_offer(ctx)
+        ctx["defensive_cooldowns"] = {"Dodge": -1}
+        state = strategist._derive_tactical_state(ctx)
+        assert state["defence_castable_in"] is None, state["defence_castable_in"]
+        score, reason = strategist._score_move(_by_name(ctx)["Attack"], state)
+        assert score != _FORFEITS_DEFENCE_SCORE, reason
 
     def test_a_payload_without_the_field_scores_as_before(self, strategist):
         ctx = _surge_ctx(12)

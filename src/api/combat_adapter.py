@@ -100,12 +100,17 @@ def _outreaches_melee(reach_ft):
     return reach_ft > MELEE_REACH_FT
 
 
-def _whole_beats_or_none(value):
-    """``value`` if it is a beat count (a non-bool int), else None.
+def _int_beats_or_none(value):
+    """``value`` if it is a non-bool int, else None.
 
     A type gate, not arithmetic: the engine's count passes through as-is, and
     anything else (a test double's MagicMock, a legacy placeholder) ships as
     the "no answer" the advisor already reads as no opinion.
+
+    Deliberately stricter than the engine's ``whole_beats`` (which also takes
+    a whole float): ``Move.beats_until_ready`` only ever returns an int or
+    None, so a float here means something other than the engine answered, and
+    the wire promises the client an int.
     """
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
@@ -4353,7 +4358,7 @@ class ApiCombatAdapter:
                 # is asked again. The advisor reads it to keep a move that
                 # outlasts the Dodge window off the top of its list. None when
                 # the engine has no answer (in flight, degraded move, double).
-                "beats_until_ready": _whole_beats_or_none(
+                "beats_until_ready": _int_beats_or_none(
                     CombatantSerializer._call_move_method(move, "beats_until_ready")
                 ),
                 "fatigue_cost": move.fatigue_cost,
