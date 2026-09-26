@@ -150,6 +150,10 @@ class MynxLLMMixin:
     # module reload + live availability probe (up to several network round
     # trips) on every single Mynx interaction.
     _ADAPTER_FAILED = object()
+    # Runtime-only: the adapter holds a live HTTPS client (unpicklable), and
+    # _ADAPTER_FAILED is an object() whose identity a pickle cannot keep.
+    # Combatant.__getstate__ saves these as None; the NPC rebuilds on use.
+    _UNSAVED_ATTRS = ("_llm_adapter",)
 
     def _get_llm_adapter(self):
         """Return a live MynxLLMAdapter, or None if LLM is disabled / unavailable."""

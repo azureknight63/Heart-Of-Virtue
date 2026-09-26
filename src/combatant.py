@@ -383,6 +383,13 @@ class Combatant:
         """
         state = self.__dict__.copy()
         state.pop(PENDING_ANIMATION_ATTR, None)
+        # Runtime-only attributes a class (typically an LLM mixin) declares in
+        # its own _UNSAVED_ATTRS are saved as None, not dropped: unpickling
+        # skips __init__, and the mixins read them unguarded.
+        for cls in type(self).__mro__:
+            for attr in cls.__dict__.get("_UNSAVED_ATTRS", ()):
+                if attr in state:
+                    state[attr] = None
         return state
 
     def _init_resistances(self):

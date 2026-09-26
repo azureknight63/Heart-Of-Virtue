@@ -1964,6 +1964,10 @@ class ConversationalNPCMixin:
 
     # Sentinel distinguishing "load failed" from "not yet attempted"
     _ADAPTER_FAILED = object()
+    # Runtime-only: the adapter holds a live HTTPS client (unpicklable), and
+    # _ADAPTER_FAILED is an object() whose identity a pickle cannot keep.
+    # Combatant.__getstate__ saves these as None; the NPC rebuilds on use.
+    _UNSAVED_ATTRS = ("_chat_adapter",)
 
     def _get_adapter(self) -> Optional[Any]:
         """Lazy-load NpcChatLLMAdapter via importlib. Return None on failure."""
