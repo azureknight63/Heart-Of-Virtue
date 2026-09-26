@@ -713,16 +713,35 @@ def _turn_budget_left() -> Optional[float]:
     return None if deadline is None else deadline - time.monotonic()
 
 
-#: Why this thread's most recent OpenRouter attempt failed (``"429"``,
-#: ``"http_<code>"``, ``"exc:<ClassName>"``), for the validation failure log
-#: (#729). The transports return a bare None on every failure, and widening
-#: that return would ripple through every caller for a diagnostic only one of
-#: them reads. Module-level rather than per-instance because the reader takes
-#: it synchronously, on the same thread, straight after the call it describes;
-#: thread-local for the same reason as ``_TURN_BUDGET``. Status codes and
-#: exception class names only -- never a message or a body, which can echo
-#: request headers.
+#: Why this thread's most recent OpenRouter attempt failed
+#: (``_REASON_RATE_LIMITED``, ``_http_reason()``, ``_exc_reason()``), for the
+#: validation failure log (#729); the full vocabulary is the ``_REASON_*``
+#: block below. The transports return a bare None on every failure, and
+#: widening that return would ripple through every caller for a diagnostic
+#: only one of them reads. Module-level rather than per-instance because the
+#: reader takes it synchronously, on the same thread, straight after the call
+#: it describes; thread-local for the same reason as ``_TURN_BUDGET``. Status
+#: codes and exception class names only -- never a message or a body, which
+#: can echo request headers.
 _OPENROUTER_FAILURE = threading.local()
+
+# The reason vocabulary. The transports record rate-limit, HTTP and exception
+# reasons; the validation loop supplies the rest.
+_REASON_RATE_LIMITED = "429"
+_REASON_BENCHED = "benched"            # still inside a failure penalty; no request sent
+_REASON_EMPTY = "empty"                # None back with no transport reason recorded
+_REASON_NO_OK = "no_ok_in_reply"       # answered, but not the probe's "OK"
+_REASON_NOT_TRIED = "not_tried"        # skipped by the account-wide quota break
+
+
+def _http_reason(status) -> str:
+    """Reason token for a non-200, non-429 HTTP status."""
+    return "http_%s" % status
+
+
+def _exc_reason(exc: BaseException) -> str:
+    """Reason token for a raised exception: its class name, never its message."""
+    return "exc:%s" % type(exc).__name__
 
 
 def _note_openrouter_failure(reason: str) -> None:
@@ -1589,16 +1608,16 @@ class GenericLLMClient:
         # Returns None on success, else a short reason token.
         def test_one(m_id: str) -> Optional[str]:
             if self._is_model_failed(m_id):
-                return "benched"
+                return _REASON_BENCHED
             _clear_openrouter_failure()
             try:
                 res = self._openrouter_chat_single(m_id, "System", "Say OK", False, timeout=5)
             except Exception as e:
-                return "exc:%s" % type(e).__name__
+                return _exc_reason(e)
             if res is None:
-                return _take_openrouter_failure() or "empty"
+                return _take_openrouter_failure() or _REASON_EMPTY
             if "ok" not in str(res).lower():
-                return "no_ok_in_reply"
+                return _REASON_NO_OK
             return None
 
         primary_reason = test_one(self.model)
@@ -1622,10 +1641,14 @@ class GenericLLMClient:
             m for m in self._openrouter_candidates() if m != self.model
         ]
 
-        for cand in candidates[:5]:  # Try at most 5 fallbacks during validation
+        to_probe = candidates[:5]  # Try at most 5 fallbacks during validation
+        for i, cand in enumerate(to_probe):
+            # Checked here as well as in test_one on purpose: a benched
+            # candidate must skip the 15-minute re-bench below, which is
+            # extend-only and would lengthen a penalty with less time left.
             if self._is_model_failed(cand):
                 logger.debug("Skipping already-failed OpenRouter fallback candidate: %s", cand)
-                reasons[cand] = "benched"
+                reasons[cand] = _REASON_BENCHED
                 continue
             logger.info("Testing fallback: %s", cand)
             reason = test_one(cand)
@@ -1644,6 +1667,8 @@ class GenericLLMClient:
                     "OpenRouter validation stopping after %s: no headroom left.",
                     cand,
                 )
+                for skipped in to_probe[i + 1:]:
+                    reasons[skipped] = _REASON_NOT_TRIED
                 break
 
         # A rate-limited account is a wall with a clock on it, not a broken
@@ -1655,7 +1680,7 @@ class GenericLLMClient:
         rate_limited = not GenericLLMClient._provider_available("openrouter")
         logger.error(
             "OpenRouter validation failed: all candidates failed. adapter=%s start_model=%s candidates=%s reasons=%s rate_limited=%s enabled_before=%s",
-            type(self).__name__, start_model, candidates[:5], reasons,
+            type(self).__name__, start_model, to_probe, reasons,
             rate_limited, self.enabled,
         )
         self._available = False
@@ -2410,7 +2435,7 @@ class GenericLLMClient:
                 GenericLLMClient._record_provider_usage(
                     "openrouter", response, "rate_limited"
                 )
-                _note_openrouter_failure("429")
+                _note_openrouter_failure(_REASON_RATE_LIMITED)
                 logger.debug(
                     "SDK request for %s rate-limited (429). Skipping to next model.",
                     model_id,
@@ -2447,7 +2472,7 @@ class GenericLLMClient:
                     "skipping HTTP fallback.",
                     model_id, status,
                 )
-                _note_openrouter_failure("http_%s" % status)
+                _note_openrouter_failure(_http_reason(status))
                 return True, None, False
             logger.debug("SDK request failed for %s: %s", model_id, str(e)[:200])
             return False, None, status == 400 and "reasoning" in str(e).lower()
@@ -2533,7 +2558,7 @@ class GenericLLMClient:
                     "openrouter", response, "rate_limited"
                 )
                 logger.warning("OpenRouter 429 rate limit model=%s", model_id)
-                _note_openrouter_failure("429")
+                _note_openrouter_failure(_REASON_RATE_LIMITED)
                 # Short penalty for a rate limit specifically. It is not
                 # protected from being overwritten: a caller's later generic
                 # penalty extends past this one rather than being blocked by
@@ -2548,7 +2573,7 @@ class GenericLLMClient:
                     model_id, status,
                     _error_body_for_log(getattr(response, "text", "")),
                 )
-                _note_openrouter_failure("http_%s" % status)
+                _note_openrouter_failure(_http_reason(status))
             else:
                 content = self._content_from_ok_response(response, model_id)
                 if content:
@@ -2565,7 +2590,7 @@ class GenericLLMClient:
                     self._last_served_model = model_id
                     return content
         except Exception as e:
-            _note_openrouter_failure("exc:%s" % type(e).__name__)
+            _note_openrouter_failure(_exc_reason(e))
             if (
                 not bench_on_timeout
                 and requests is not None
