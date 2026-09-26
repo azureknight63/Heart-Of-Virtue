@@ -42,6 +42,9 @@ describe('CombatLog', () => {
     expect(screen.getByText('Combat started...')).toBeDefined();
   });
 
+  // A clock reading with AM/PM, anywhere in the log text.
+  const TWELVE_HOUR_CLOCK = /\d{1,2}:\d{2}:\d{2}\s?(AM|PM)/i;
+
   // #718 item 6: the server sends `timestamp` as 24h `%H:%M:%S`
   // (ApiCombatAdapter). An entry that arrives without one used to fall back
   // to `new Date().toLocaleTimeString()` — a 12-hour, locale "now" that both
@@ -52,7 +55,7 @@ describe('CombatLog', () => {
 
     const entriesEl = screen.getByTestId('combat-log-entries');
     expect(within(entriesEl).getByText('Jean strikes')).toBeDefined();
-    expect(entriesEl.textContent).not.toMatch(/\d{1,2}:\d{2}:\d{2}\s?(AM|PM)/i);
+    expect(entriesEl.textContent).not.toMatch(TWELVE_HOUR_CLOCK);
   });
 
   it('renders the server\'s 24h timestamp verbatim, never a 12-hour AM/PM string', () => {
@@ -62,7 +65,7 @@ describe('CombatLog', () => {
     expect(entries.textContent).toContain('12:00:00');
     // Scoped to an actual clock reading, not a bare "AM"/"PM" substring test
     // (which false-positives on ordinary log prose like "damage").
-    expect(entries.textContent).not.toMatch(/\d{1,2}:\d{2}:\d{2}\s?(AM|PM)/i);
+    expect(entries.textContent).not.toMatch(TWELVE_HOUR_CLOCK);
   });
 
   it('collapses and expands when header is clicked', () => {

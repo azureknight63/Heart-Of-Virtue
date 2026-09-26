@@ -1291,8 +1291,68 @@ class TestJeanMayNotQuoteWhatTheNpcNeverSaid:
         "What do you say we rest here until the rain passes?",
         # An attribution with nothing checkable in it keeps the benefit of the doubt.
         "Like you said, it is better not to ask too much.",
+        # Conditionals and hypotheticals, not quotes.
+        "I wonder what you'd say about Gorran.",
+        "Whatever you say about the ferry, I trust you.",
+        "If you say the river is safe, I will cross.",
     ])
     def test_non_claims_are_left_alone(self, option):
+        npc = _qc_host()
+        kept = npc._qc_jean_options(
+            [{"tone": "neutral", "text": option}], npc_transcript=["Mm. Noted."]
+        )
+        assert [o["text"] for o in kept] == [option]
+
+    @pytest.mark.parametrize("dash", ["--", " - "])
+    def test_an_ascii_dash_ends_the_claim_like_an_em_dash(self, dash):
+        """Scrub finding: with ASCII dashes the claim ran on into Jean's own
+        question ("...do that fascinates you so"), picked up "stone", met
+        Liss's "stones", and the exact #716 option was KEPT."""
+        option = _A5_GORRAN_OPTION.replace("—", dash)
+        npc = _qc_host()
+        kept = npc._qc_jean_options(
+            [{"tone": "neutral", "text": option}], npc_transcript=[_A5_LISS_OPENING]
+        )
+        assert kept == [], option
+
+    @pytest.mark.parametrize("option", [
+        # "what"/"why" before "you" is a relative clause here, not a question.
+        "What you told me about Gorran stayed with me.",
+        "I liked what you said about Gorran.",
+        # Perfect / conditional / "once" forms of the same attribution.
+        "You have said Gorran never sleeps.",
+        "You'd mentioned Gorran earlier.",
+        "You once told me Gorran was old.",
+    ])
+    def test_every_attribution_form_is_checked(self, option):
+        """Scrub iteration 2: these slipped past the #716 check."""
+        npc = _qc_host()
+        assert npc._qc_jean_options(
+            [{"tone": "neutral", "text": option}], npc_transcript=["Mm. Noted."]
+        ) == [], option
+
+    def test_ies_plurals_meet_their_singular(self):
+        """"ferries" must meet "ferry" (it used to stem to "ferrie")."""
+        npc = _qc_host()
+        option = "You said the ferries were slow."
+        kept = npc._qc_jean_options(
+            [{"tone": "neutral", "text": option}],
+            # Only "ferry" can support the claim; nothing else overlaps.
+            npc_transcript=["Mind the ferry."],
+        )
+        assert [o["text"] for o in kept] == [option]
+
+    @pytest.mark.parametrize("option", [
+        # Questions that start before "you" with a have/negated auxiliary.
+        "Have you told me everything you know about the river?",
+        "Why haven’t you told me about the ferry?",
+        "“Did you say the caves?”",
+        "What—did you say the caves?",
+        # Meta statements about how much was said, not what.
+        "You've told me nothing.",
+        "You've said very little, you know.",
+    ])
+    def test_questions_and_meta_statements_are_not_claims(self, option):
         npc = _qc_host()
         kept = npc._qc_jean_options(
             [{"tone": "neutral", "text": option}], npc_transcript=["Mm. Noted."]

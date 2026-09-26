@@ -1284,6 +1284,21 @@ TELEGRAPH_SEVERITY_NORMAL = TELEGRAPH_SEVERITIES[0]
 DAMAGING_MOVE_CATEGORIES = frozenset({"Offensive", "Mastery"})
 
 
+def deals_damage_of(move) -> bool:
+    """``move.deals_damage`` for the wire: never raises, True when unknowable.
+
+    The one reader the serializer and the combat adapter share (issue #714).
+    ``getattr``'s default only absorbs AttributeError, and the property's
+    frozenset test raises TypeError on a degraded move with an unhashable
+    ``category`` -- a serializer must never raise on a degraded object. True
+    is the safe answer: an unknown move is still priced as a possible hit.
+    """
+    try:
+        return bool(getattr(move, "deals_damage", True))
+    except Exception:
+        return True
+
+
 class UnavailableReason(StrEnum):
     """Why a move cannot be cast right now: a closed vocabulary (issue #627).
 

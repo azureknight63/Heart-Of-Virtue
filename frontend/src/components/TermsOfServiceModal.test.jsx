@@ -26,13 +26,8 @@ describe('TermsOfServiceModal', () => {
 
     it('calls onClose when Close button is clicked', () => {
         render(<TermsOfServiceModal onClose={onClose} />)
-        // Two buttons now answer to "Close": BaseDialog's own ✕ (#718 item 8
-        // gave it an aria-label) and this dialog's own footer button. This test
-        // means the footer one, identified by its visible text rather than the
-        // shared accessible name.
-        const footerClose = screen.getAllByRole('button', { name: /Close/i })
-            .find((btn) => btn.textContent !== '✕')
-        fireEvent.click(footerClose)
+        // The footer button, not BaseDialog's "Close dialog" ✕.
+        fireEvent.click(screen.getByRole('button', { name: /^Close$/i }))
         expect(onClose).toHaveBeenCalledOnce()
     })
 })

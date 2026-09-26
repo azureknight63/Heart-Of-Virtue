@@ -37,6 +37,7 @@ from ._base import (
     TELEGRAPH_SEVERITIES,
     TELEGRAPH_SEVERITY_NORMAL,
     DAMAGING_MOVE_CATEGORIES,
+    deals_damage_of,
     UnavailableReason,
     UNAVAILABILITY_TEXT,
 )
@@ -143,6 +144,7 @@ __all__ = [
     "TELEGRAPH_SEVERITY_NORMAL",
     # The categories behind Move.deals_damage (issue #714)
     "DAMAGING_MOVE_CATEGORIES",
+    "deals_damage_of",
     # Why a move is locked (issue #627): the code vocabulary and its copy
     "UnavailableReason",
     "UNAVAILABILITY_TEXT",

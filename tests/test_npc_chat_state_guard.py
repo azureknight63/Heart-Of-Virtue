@@ -414,6 +414,37 @@ class TestGuardTurn:
         assert text == "The blade on that rack was my father's work."
         assert all(guard.scan_option_text(o["text"]) == [] for o in options)
 
+    def test_a_kept_option_may_not_quote_the_line_the_guard_retracted(self):
+        """Scrub finding (#716 x guard): options were attribution-checked
+        against the pre-guard line. When the guard rewrote only the NPC's text,
+        an option quoting the retracted offer survived under the new line."""
+        quote = "You told me the blade was yours to give, was it really?"
+        npc = _guard_host()
+        adapter = _Adapter(revision={"npc_text": "The river runs high this season."})
+        text, _flavor, options = npc._guard_turn(
+            adapter,
+            "SYSTEM",
+            Turn("Here, take this blade.", "",
+                 _opts(quote, "Why stay here?", "Tell me about the river.")),
+        ).turn
+        assert text == "The river runs high this season."
+        texts = [o["text"] for o in options]
+        assert quote not in texts, texts
+        assert len(texts) == 3, "the dropped slot is topped back up"
+
+    def test_a_rewritten_closing_line_gets_no_reply_options(self):
+        """Scrub finding on the re-check above: a conversation that ends
+        (loquacity spent) sends its closing line with NO options on purpose.
+        Re-checking and topping up an empty list conjured three reply buttons
+        under conversation_ended=True."""
+        npc = _guard_host()
+        adapter = _Adapter(revision={"npc_text": "The river runs high this season."})
+        text, _flavor, options = npc._guard_turn(
+            adapter, "SYSTEM", Turn("Here, take this blade.", "", []),
+        ).turn
+        assert text == "The river runs high this season."
+        assert options == []
+
     def test_guidance_names_the_violated_categories(self):
         npc = _guard_host()
         adapter = _Adapter(revision=None)

@@ -79,12 +79,12 @@ class ObjectSerializer:
         if has_attr("keywords"):
             obj_data["keywords"] = get_attr("keywords")
 
-        # Specific object states. A story gate counts only when there is a
-        # player to judge it by (#718); a passageway without one reports none.
-        if has_attr("locked"):
-            obj_data["locked"] = get_attr("locked")
+        # Specific object states. A story gate (#718) can only be judged for a
+        # viewing player; without one, only the key lock is reported.
         if player is not None and callable(get_attr("story_locked")):
             obj_data["locked"] = ObjectSerializer.locked_for(obj, player)
+        elif has_attr("locked"):
+            obj_data["locked"] = get_attr("locked")
 
         # Handle state/opened flag consistently
         if has_attr("state"):

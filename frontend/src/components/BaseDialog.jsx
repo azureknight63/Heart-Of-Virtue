@@ -543,7 +543,7 @@ export default function BaseDialog({
                         {showCloseButton && (
                             <button
                                 onClick={onClose}
-                                aria-label="Close"
+                                aria-label="Close dialog"
                                 {...SKIP_INITIAL_FOCUS_PROPS}
                                 style={{
                                     background: 'none',

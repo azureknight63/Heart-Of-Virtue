@@ -44,7 +44,7 @@ def _passage_names(pending):
 @pytest.fixture
 def world(make_world, grid_3x3):
     """Jean at (0, 0) beside a passageway, with an aggro Slime that always
-    notices her (``awareness`` far above any finesse roll)."""
+    notices him (``awareness`` far above any finesse roll)."""
     player, game_map = make_world(grid_3x3)
     tile = game_map[(0, 0)]
     passage = Passageway(player, tile, teleport_map="other-map", teleport_tile=(0, 0))

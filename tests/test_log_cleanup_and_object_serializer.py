@@ -550,7 +550,6 @@ class TestObjectSerializeContainer:
         assert data["item_count"] == 1
 
 
-
 # ---------------------------------------------------------------------------
 # Issue #718: a story-gated passageway reports its lock
 # ---------------------------------------------------------------------------

@@ -662,6 +662,7 @@ export function makeAvailableOption(overrides = {}) {
       display_name: name,
       description: 'A basic attack.',
       category: 'Offensive',
+      deals_damage: true,
       fatigue_cost: ATTACK_CARD_FATIGUE_COST,
       available: true,
       reason: null,

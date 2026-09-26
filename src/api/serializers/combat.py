@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from src.api.constants import ITEM_USE_RANGE
 from src.api.serializers.inventory import _BONUS_ATTRS, _collect_equipped_items
 from src.combatant import combatant_handle, move_in_progress
-from src.moves import attacker_accuracy
+from src.moves import attacker_accuracy, deals_damage_of
 from src.moves._base import (
     display_name_of,
     TELEGRAPH_SEVERITIES,
@@ -496,7 +496,7 @@ class CombatantSerializer:
                 # only a move that takes HP as an incoming hit. Defaults True
                 # so a legacy save placeholder, which carries none of Move's
                 # API, keeps today's warning rather than silently losing it.
-                "deals_damage": bool(getattr(move, "deals_damage", True)),
+                "deals_damage": deals_damage_of(move),
                 # TELEGRAPH_SEVERITIES — declared on Move (src/moves/_base.py)
                 # and read off it here so the badge, enemies list and beat
                 # timeline (telegraphSeverity in combatMoveStatus.js) share

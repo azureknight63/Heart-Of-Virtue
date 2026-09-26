@@ -438,4 +438,7 @@ def test_a_guide_gives_no_routes_distances_or_travel_times(name):
 def test_jambo_is_told_to_trust_the_where_line_not_to_guess():
     snippet = _persona("jambo")["system_prompt_snippet"]
     assert "not told which tent" not in snippet
-    assert "WHERE YOU ARE" in snippet
+    from ai.llm_client import NPC_LOCATION_BLOCK_NAME
+
+    # The label the prompt actually prints, not a second spelling of it.
+    assert NPC_LOCATION_BLOCK_NAME in snippet

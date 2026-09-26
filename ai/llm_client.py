@@ -537,6 +537,12 @@ NPC_PRIVATE_BLOCK_LABEL = (
     f"{NPC_PRIVATE_BLOCK_NAME} (yours alone; Jean knows none of it unless you say it):"
 )
 
+#: The label on the chat prompt's location line (issue #717). Public for the
+#: same reason as the PRIVATE label: a character file (jambo.json) tells its
+#: NPC to trust "the tent named in WHERE YOU ARE", so the label is pinned to
+#: that text by tests/test_npc_chat_character_configs.py.
+NPC_LOCATION_BLOCK_NAME = "WHERE YOU ARE"
+
 #: Jean cannot ask about what he has never heard of.
 #:
 #: The turn prompt has always carried this inline; the standalone options

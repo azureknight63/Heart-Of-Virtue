@@ -26,6 +26,7 @@ Tests cover:
 - All edge cases and error paths
 """
 
+from ai.llm_client import NPC_LOCATION_BLOCK_NAME
 from types import SimpleNamespace
 import pytest
 import json
@@ -1014,7 +1015,7 @@ class TestBuildSystemPrompt:
         shipped JSON without instantiating the map's NPCs (which would mutate
         the merchant registries).
         """
-        path = Path("src/resources/maps") / f"{map_name}.json"
+        path = Path(__file__).resolve().parent.parent / "src" / "resources" / "maps" / f"{map_name}.json"
         raw = json.loads(path.read_text(encoding="utf-8"))
         player.map = {"name": map_name}
         if "metadata" in raw:
@@ -1022,7 +1023,7 @@ class TestBuildSystemPrompt:
 
     @staticmethod
     def _where_line(prompt):
-        lines = [ln for ln in prompt.splitlines() if ln.startswith("WHERE YOU ARE:")]
+        lines = [ln for ln in prompt.splitlines() if ln.startswith(f"{NPC_LOCATION_BLOCK_NAME}:")]
         assert len(lines) == 1, prompt
         return lines[0]
 
@@ -1053,7 +1054,7 @@ class TestBuildSystemPrompt:
     def test_a_map_with_no_place_gives_no_where_line(self, player):
         """``live_world``'s scratch map has no metadata: say nothing rather
         than guess."""
-        assert "WHERE YOU ARE" not in self._jambo()._build_system_prompt(player)
+        assert NPC_LOCATION_BLOCK_NAME not in self._jambo()._build_system_prompt(player)
 
     def test_the_prompt_says_jean_is_a_grown_man(self, player):
         """Issue #717 (A5): Liss, a nine-year-old, called Jean "child". The
@@ -2741,7 +2742,7 @@ class TestWorldFactsLoading:
 class TestCharConfigLoading:
     """Test character config loading with errors."""
 
-    def test_char_config_load_with_invalid_json(self):
+    def test_char_config_load_with_invalid_json(self, monkeypatch):
         """Test handling of invalid JSON in config."""
         import tempfile
         import os
@@ -2753,7 +2754,7 @@ class TestCharConfigLoading:
             temp_path = f.name
 
         try:
-            ConversationalNPCMixin._char_config_cache = {}
+            monkeypatch.setattr(ConversationalNPCMixin, "_char_config_cache", {})
 
             npc = chat_npc(config_path=temp_path)
             # Should gracefully handle load error

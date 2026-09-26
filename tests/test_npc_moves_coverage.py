@@ -2809,6 +2809,10 @@ class TestStatustypeCategoryTable:
 # ---------------------------------------------------------------------------
 
 
+#: NPC classes the population could not build (they need constructor args).
+_SKIPPED_NPC_CLASSES = set()
+
+
 def _npc_owned_move_population():
     """``{move class: owner NPC class}`` for every move an NPC in the game uses.
 
@@ -2830,7 +2834,10 @@ def _npc_owned_move_population():
             with patch("builtins.print"):
                 npc = obj()
         except TypeError:
-            continue  # the bare NPC base needs constructor arguments
+            # Only bases that need constructor arguments; anything else would
+            # silently shrink the population (checked by the floor test).
+            _SKIPPED_NPC_CLASSES.add(obj.__name__)
+            continue
         found = [type(m) for m in npc.known_moves]
         for grants in (getattr(npc, "skill_schedule", None) or {}).values():
             found += [g[1] for g in grants if g[0] == "NewMove"]
@@ -2892,9 +2899,17 @@ def _hp_taken_by_execute(move_cls, owner_cls):
         hp_before = target.hp
         with patch("random.randint", return_value=0), patch(
             "random.uniform", side_effect=lambda a, b: (a + b) / 2
-        ), patch("random.random", return_value=0.5):
+        ), patch("random.random", return_value=0.5), patch.object(
+            type(move), "miss", autospec=True
+        ) as missed, patch.object(type(move), "parry", autospec=True) as parried:
             move.evaluate()
             move.execute(user)
+    # A blow the harness failed to land takes no HP either, which would let a
+    # damaging move wrongly declared False pass as "correctly harmless".
+    assert not missed.called and not parried.called, (
+        f"{move_cls.__name__}: the harness did not land the move "
+        f"(miss={missed.called}, parry={parried.called}), so HP says nothing"
+    )
     return move, target.hp < hp_before
 
 
@@ -2922,6 +2937,9 @@ class TestDealsDamageMatchesExecute:
         from src.moves import NpcIdle, NpcRest
 
         assert {NpcRest, NpcIdle} <= set(_NPC_MOVES)
+        # The constructor skip may only lose argument-taking bases, never a
+        # real enemy or ally the population silently leaves out.
+        assert _SKIPPED_NPC_CLASSES <= {"NPC", "Friend", "Merchant"}, _SKIPPED_NPC_CLASSES
 
     @pytest.mark.parametrize(
         "move_cls",

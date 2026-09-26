@@ -134,3 +134,25 @@ def test_every_gold_path_leaves_the_description_matching_the_count(path):
         touched = path(player, tile)
     lists = touched if isinstance(touched, tuple) else (touched,)
     _assert_honest([g for lst in lists for g in lst])
+
+
+def test_as_stack_of_restates_a_pile_without_touching_the_original():
+    """The victory summary's "one pile for a name's drops" (#718)."""
+    pile = Gold(amt=42)
+    restated = functions.as_stack_of(pile, 115)
+    assert restated is not pile
+    assert (pile.count, restated.count) == (42, 115)
+    _assert_honest([pile, restated])
+
+
+def test_as_stack_of_survives_a_stack_grammar_that_raises():
+    """Scrub finding: an unguarded stack_grammar() on a degraded item sank the
+    whole victory summary; stack_items_list already guards the same call."""
+    pile = Gold(amt=42)
+
+    def _broken():
+        raise RuntimeError("degraded legacy item")
+
+    pile.stack_grammar = _broken
+    restated = functions.as_stack_of(pile, 115)
+    assert restated.count == 115

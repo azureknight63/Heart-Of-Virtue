@@ -1228,7 +1228,13 @@ def as_stack_of(item, count):
     copy_item_state(item, pile)
     pile.count = count
     if callable(getattr(pile, "stack_grammar", None)):
-        pile.stack_grammar()
+        try:
+            pile.stack_grammar()
+        except Exception:
+            # A degraded or legacy item keeps its copied text rather than
+            # sinking the whole victory summary (stack_items_list guards the
+            # same call the same way).
+            pass
     return pile
 
 

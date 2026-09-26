@@ -384,11 +384,16 @@ export default function GamePage() {
     } catch (err) {
       // The server refused (e.g. a scene still awaits an answer, #713) or the
       // request failed. Say why, bring back any dialog the client lost, and
-      // replace the cached room useWorld applied optimistically.
+      // replace the cached room useWorld applied optimistically. Handled here
+      // completely, so it is not rethrown: MapGrid calls onMove without a
+      // catch, and every refused tile click became an unhandled rejection.
       showError(apiErrorMessage(err, MOVE_FAILED_MESSAGE))
+      // refetchWorld's loading edge usually re-polls pending events too, but
+      // not while an endState is showing; ask directly so a lost dialog
+      // always comes back.
       checkPendingEvents()
       refetchWorld()
-      throw err
+      return
     }
 
     // Handle events triggered by movement
@@ -577,22 +582,26 @@ export default function GamePage() {
    * the roster, so re-deriving isBossFight from `combat?.enemies` on every
    * render dropped a boss fight back to the ordinary 'battle' track the
    * instant victory landed — before the VictoryDialog even had a chance to
-   * open (#718 item 4). Setting the flag only while entering combat with a
-   * non-empty roster, and clearing it on the way back to exploration, keeps
-   * the answer stable for the fight's whole lifetime instead of chasing a
-   * payload that goes empty at the worst possible moment.
+   * open (#718 item 4). So the flag latches: it turns on the first time a
+   * boss appears in the roster -- even if the roster lands after combat mode
+   * began -- stays on for the rest of the fight (a boss dying before its
+   * minions keeps its music), and clears on the way back to exploration.
+   * It is state, not a ref, so the BGM effect below re-runs when it flips.
    */
-  const isBossFightRef = useRef(false)
+  const rosterHasBoss = (combat?.enemies || []).some((enemy) => enemy.is_boss)
+  const [isBossFight, setIsBossFight] = useState(false)
   useEffect(() => {
-    if (mode === 'combat') {
-      const enemies = combat?.enemies || []
-      if (enemies.length > 0) {
-        isBossFightRef.current = enemies.some((enemy) => enemy.is_boss)
-      }
-    } else {
-      isBossFightRef.current = false
+    if (mode !== 'combat') {
+      setIsBossFight(false)
+    } else if (rosterHasBoss) {
+      setIsBossFight(true)
     }
-  }, [mode, combat?.enemies])
+  }, [mode, rosterHasBoss])
+  // Read THIS, not isBossFight: the latch only takes effect a render after
+  // the roster shows a boss, and the live roster covers that first commit,
+  // so the music never asks for 'battle' on the way into a boss fight (that
+  // swap cut the outgoing track).
+  const playBossTrack = isBossFight || (mode === 'combat' && rosterHasBoss)
 
   /**
    * Manage BGM based on mode and location metadata
@@ -601,14 +610,14 @@ export default function GamePage() {
   useEffect(() => {
     if (!currentEvent) {
       if (mode === 'combat') {
-        playBGM(isBossFightRef.current ? 'boss_battle' : 'battle')
+        playBGM(playBossTrack ? 'boss_battle' : 'battle')
       } else {
         // Use the BGM defined in map metadata, fallback to adventure
         const track = location?.bgm || 'adventure'
         playBGM(track)
       }
     }
-  }, [mode, location?.bgm, playBGM, currentEvent])
+  }, [mode, location?.bgm, playBGM, currentEvent, playBossTrack])
 
   /**
    * Check combat status and pending events whenever player and world data

@@ -3,7 +3,7 @@
 ``GameService.move_player`` and ``interact_with_target`` never read
 ``pending_events``: over the API, Jean could walk away from a scene that was
 still waiting for an answer. Answering it later ran the next stage from the
-wrong place (``Ch02GuideToCitadel`` teleported her back to Grondia), and it
+wrong place (``Ch02GuideToCitadel`` teleported him back to Grondia), and it
 was the easy road into the #712 passageway/combat deadlock. The only guard
 was the SPA's modal dialog.
 

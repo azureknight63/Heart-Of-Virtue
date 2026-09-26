@@ -48,7 +48,7 @@ from src.combatant import (
     find_by_handle,
     wire_handle,
 )
-from src.moves import SwapWeapon
+from src.moves import SwapWeapon, deals_damage_of
 from src.moves._base import (
     select_weighted_target,
     display_name_of,
@@ -2614,8 +2614,11 @@ class ApiCombatAdapter:
                             each_ally.combat_proximity[each_enemy]
                         )
 
-    def _move_deals_damage(self, move) -> bool:
-        """Check if a move deals damage (for animation fallback logic).
+    def _animates_as_attack(self, move) -> bool:
+        """Whether a move with no ``web_animation`` should fall back to the
+        attack animation -- a guess from its category and name keywords. Not
+        ``Move.deals_damage`` (the engine's answer to whether it takes HP),
+        which is what the Tactical Advisor reads.
 
         Args:
             move: The move to check
@@ -2670,7 +2673,7 @@ class ApiCombatAdapter:
         animation_type = getattr(move, "web_animation", None)
         targeted = getattr(move, "targeted", False)
         if animation_type is None:
-            if targeted and self._move_deals_damage(move):
+            if targeted and self._animates_as_attack(move):
                 animation_type = DEFAULT_DAMAGE_ANIMATION
             else:
                 animation_type = DEFAULT_ANIMATION
@@ -3720,6 +3723,9 @@ class ApiCombatAdapter:
                 {
                     "name": m.get("name"),
                     "category": m.get("category"),
+                    # As built for the offered move; the advisor's own
+                    # rule (_deals_damage) decides what a missing flag means.
+                    "deals_damage": m.get("deals_damage"),
                     "fatigue_cost": m.get("fatigue_cost", 0),
                 }
                 for m in all_moves
@@ -4328,6 +4334,11 @@ class ApiCombatAdapter:
                 "display_name": display_name_of(move),
                 "description": getattr(move, "description", ""),
                 "category": getattr(move, "category", "Miscellaneous"),
+                # The engine's own answer (Move.deals_damage), not the
+                # category: an Offensive move can reposition (BullCharge) or
+                # drain fatigue. The Tactical Advisor reads this to decide
+                # which offered moves are attacks.
+                "deals_damage": deals_damage_of(move),
                 "fatigue_cost": move.fatigue_cost,
                 "available": True,
                 "reason": None,

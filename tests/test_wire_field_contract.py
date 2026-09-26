@@ -650,6 +650,11 @@ MOVE_FIELDS_WITH_NO_CLIENT_READ = {
         "outreaches a sword. Still unconsumed: gap 4 of issue #614, which is "
         "a battlefield-rendering job, not a move-card one."
     ),
+    "deals_damage": (
+        "the engine's Move.deals_damage, read server-side by the Tactical "
+        "Advisor (ai/combat_strategist.py `_deals_damage`) to tell attacks "
+        "from Offensive moves that only reposition or drain -- not by the client."
+    ),
 }
 
 
@@ -793,6 +798,14 @@ class TestSwapWeaponWireContract:
         assert js_literal(
             FRONTEND_SRC / "utils" / "combatMoveStatus.js", "SWAP_WEAPON_MOVE_NAME"
         ) == SwapWeapon(Player()).name
+
+    def test_the_duration_choice_card_keys_on_the_engine_wait_name(self):
+        """#718: CombatMovePanel shows "you choose" instead of Wait's
+        placeholder "0 beats" by matching the move's name. A rename on either
+        side silently brings "0 beats" back."""
+        assert js_literal(
+            FRONTEND_SRC / "utils" / "combatMoveStatus.js", "WAIT_MOVE_NAME"
+        ) == Wait(Player()).name
 
 
 class TestMoveWireContract:

@@ -71,7 +71,7 @@ describe('BaseDialog', () => {
           <p>Content</p>
         </BaseDialog>
       )
-      expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Close dialog' })).toBeInTheDocument()
     })
 
     it('grows the close button to the 44px touch-target minimum on mobile (issue #542)', () => {

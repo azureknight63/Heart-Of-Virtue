@@ -1539,11 +1539,14 @@ class Passageway(Object):
             return name
         if name.lower().startswith("the "):
             return f"the {name[4:]}"
-        words = name.split(" ")
+        words = name.split()
         for i, word in enumerate(words[1:], start=1):
             if word.lower() in Passageway._DESTINATION_PREPOSITIONS:
-                head = " ".join(words[: i + 1]).lower()
-                return f"the {head} {' '.join(words[i + 1:])}".rstrip()
+                generic_head = " ".join(words[:i + 1]).lower()
+                destination = " ".join(words[i + 1:])
+                if not destination:
+                    return f"the {generic_head}"
+                return f"the {generic_head} {destination}"
         return f"the {name.lower()}"
 
     # Class-level aliases, not delegator methods (#626): each IS `enter`, so it

@@ -16,6 +16,7 @@ from src.api.services.auth_service import SaveLimitReached
 from src.combatant import find_by_handle, index_by_handle, wire_handle
 from src.journal import Journal, existing_journal, journal_for
 from src.events import (
+    LootEvent,
     PassagewayTransitionEvent,
     map_name_for_tile,
     purge_orphaned_combat_events,
@@ -387,15 +388,26 @@ def _player_hp_is_nonpositive(player) -> bool:
     return isinstance(hp, (int, float)) and hp <= 0
 
 
+def _refusal(message, key="error", include_success=True):
+    """``{key: message}``, plus ``"success": False`` unless ``include_success``
+    is False -- the shape the guards below return; each caller picks the key
+    and whether ``success`` rides along to match its own refusal convention."""
+    refusal = {"success": False} if include_success else {}
+    refusal[key] = message
+    return refusal
+
+
 def _refused_if_dead(player, key="error", include_success=True):
-    """``{key: _PLAYER_DEAD_MESSAGE}`` (plus ``"success": False`` unless
-    ``include_success`` is False) when ``player.hp <= 0``, else None -- the
-    guard every mutating GameService method runs (#690)."""
+    """A ``_refusal`` of ``_PLAYER_DEAD_MESSAGE`` when ``player.hp <= 0``,
+    else None -- the guard every mutating GameService method runs (#690)."""
     if _player_hp_is_nonpositive(player):
-        refusal = {"success": False} if include_success else {}
-        refusal[key] = _PLAYER_DEAD_MESSAGE
-        return refusal
+        return _refusal(_PLAYER_DEAD_MESSAGE, key, include_success)
     return None
+
+
+def _pending_store(session_data):
+    """The session's ``pending_events`` dict, or ``{}`` when there is none."""
+    return (session_data or {}).get("pending_events") or {}
 
 
 def _blocking_pending_events(session_data):
@@ -403,13 +415,20 @@ def _blocking_pending_events(session_data):
     ``needs_input`` and not ``completed``, read from each entry's
     ``event_data``. One predicate for every action a scene in progress
     blocks -- combat moves (``execute_move``), world moves and interactions
-    (#713)."""
-    return [
-        entry
-        for entry in ((session_data or {}).get("pending_events") or {}).values()
-        if entry.get("event_data", {}).get("needs_input")
-        and not entry.get("event_data", {}).get("completed")
-    ]
+    (#713).
+
+    Deliberately NOT guarded server-side (the SPA's modal dialog is still
+    their only guard): ``search``, ``POST /world/events``, ``/combat/start``,
+    and the inventory, shop and NPC-chat routes. None of them moves Jean, so
+    none can carry him away from a scene the way a move did.
+    """
+    return [entry for entry in _pending_store(session_data).values() if _awaits_input(entry)]
+
+
+def _awaits_input(entry):
+    """Whether one stored pending entry still wants the player's answer."""
+    event_data = entry.get("event_data") or {}
+    return bool(event_data.get("needs_input")) and not event_data.get("completed")
 
 
 #: Why a world move or interaction is refused while a scene awaits an answer
@@ -419,18 +438,17 @@ _SCENE_AWAITS_INPUT_MESSAGE = "Jean must first answer the scene in front of him.
 
 
 def _refused_while_scene_awaits_input(session_data, key="error", include_success=True):
-    """``{key: _SCENE_AWAITS_INPUT_MESSAGE}`` (plus ``"success": False``
-    unless ``include_success`` is False) while a pending event awaits input,
-    else None (#713). Walking off mid-scene let a later answer run the next
+    """A ``_refusal`` of ``_SCENE_AWAITS_INPUT_MESSAGE``, plus ``pending_event``
+    naming the blocking scene, while a pending event awaits input, else None
+    (#713). Walking off mid-scene let a later answer run the next
     stage from the wrong place (``Ch02GuideToCitadel`` teleported Jean back),
     and was the road into the #712 deadlock; the SPA's modal dialog was the
     only guard. Each caller passes its own refusal shape."""
     blocking = _blocking_pending_events(session_data)
     if not blocking:
         return None
-    refusal = {"success": False} if include_success else {}
-    refusal[key] = _SCENE_AWAITS_INPUT_MESSAGE
-    refusal["pending_event"] = blocking[0].get("event_data", {}).get("name")
+    refusal = _refusal(_SCENE_AWAITS_INPUT_MESSAGE, key, include_success)
+    refusal["pending_event"] = (blocking[0].get("event_data") or {}).get("name")
     return refusal
 
 
@@ -447,7 +465,7 @@ def _drop_passage_confirmations(session_data):
     is answered after the fight, and combat's own needs-input events belong
     to it.
     """
-    pending = (session_data or {}).get("pending_events") or {}
+    pending = _pending_store(session_data)
     dropped = [
         event_id
         for event_id, entry in pending.items()
@@ -455,6 +473,25 @@ def _drop_passage_confirmations(session_data):
     ]
     for event_id in dropped:
         del pending[event_id]
+
+
+def _without_dropped_passage_confirmations(events_triggered, session_data):
+    """``events_triggered`` minus any passage confirmation that
+    ``_drop_passage_confirmations`` has since removed (#712).
+
+    An interaction can queue a confirmation and start a fight in the same
+    call; echoing the dropped one would show the client a dialog whose answer
+    is "Event not found". The response then carries no event and possibly an
+    empty message -- deliberately: ``combat_started`` is what the client acts
+    on, and the fight is the whole story of that click.
+    """
+    still_pending = _pending_store(session_data)
+    return [
+        e
+        for e in events_triggered
+        if e.get("type") != PassagewayTransitionEvent.__name__
+        or e.get("event_id") in still_pending
+    ]
 
 
 #: Why the free equip/unequip routes refuse a weapon mid-fight (#671). A
@@ -1536,9 +1573,9 @@ class GameService:
         that is merely *held up* by an outstanding dialog (the resume gate),
         and wrong for concluding that a chain has *ended* — see
         :meth:`_pending_chain_is_gone`, which is the same question asked
-        strictly.
+        strictly. The read itself is the module's `_pending_store`.
         """
-        return (session_data or {}).get("pending_events") or {}
+        return _pending_store(session_data)
 
     @staticmethod
     def _pending_chain_is_gone(session_data: Optional[Dict[str, Any]]) -> bool:
@@ -2128,9 +2165,7 @@ class GameService:
         if getattr(player, "in_combat", False):
             return {"error": "Cannot move while in combat"}
 
-        refused = _refused_while_scene_awaits_input(
-            session_data, key="error", include_success=False
-        )
+        refused = _refused_while_scene_awaits_input(session_data, include_success=False)
         if refused is not None:
             return refused
 
@@ -2508,8 +2543,6 @@ class GameService:
         # commits, not only at the point where it was first queued. Since
         # #712 the fight's start drops such a confirmation
         # (_drop_passage_confirmations), so this is now a backstop.
-        from src.events import LootEvent, PassagewayTransitionEvent
-
         if isinstance(event, PassagewayTransitionEvent) and getattr(
             player, "in_combat", False
         ):
@@ -2951,8 +2984,6 @@ class GameService:
         :meth:`_queue_passageway_confirmation`, whose docstring carries why
         `append` and `extend` are not interchangeable here.
         """
-        from src.events import LootEvent
-
         player, target = request.player, request.target
         tile, session_data = request.tile, request.session_data
 
@@ -3027,8 +3058,6 @@ class GameService:
         there: ``EventDialog`` prefers ``output_text`` over ``description``,
         so the description is re-joined below rather than replaced.
         """
-        from src.events import PassagewayTransitionEvent
-
         player, target = request.player, request.target
         tile, session_data = request.tile, request.session_data
 
@@ -3603,16 +3632,9 @@ class GameService:
                     session_data=session_data,
                 )
                 combat_started = True
-                # This call may have queued a passage confirmation that the
-                # fight's start just dropped (#712); echoing it would show the
-                # client a dialog whose answer is "Event not found".
-                still_pending = (session_data or {}).get("pending_events") or {}
-                events_triggered = [
-                    e
-                    for e in events_triggered
-                    if e.get("type") != PassagewayTransitionEvent.__name__
-                    or e.get("event_id") in still_pending
-                ]
+                events_triggered = _without_dropped_passage_confirmations(
+                    events_triggered, session_data
+                )
 
         return {
             "success": True,
@@ -4031,7 +4053,6 @@ class GameService:
         # Check for blocking pending events - events that need input should block combat moves
         # This prevents players from acting before event dialogs appear (e.g., rumbler announcement)
         if session_data and session_data.get("pending_events"):
-            # Only block if there are events that actually need input (not stale/completed events)
             blocking_events = _blocking_pending_events(session_data)
             if blocking_events:
                 return {
@@ -4327,8 +4348,8 @@ class GameService:
             # Resume logic: If battle is active but not awaiting input, check why
             # This handles cases where combat was paused for narrative events
             if player.in_combat and not adapter.awaiting_input:
-                blocking_events = self._visible_pending_events(session_data)
-                if not blocking_events:
+                pending = self._visible_pending_events(session_data)
+                if not pending:
                     # No pending events, we should be resuming or finishing
                     if len(player.combat_list) == 0:
                         # All enemies defeated after event finished - trigger victory

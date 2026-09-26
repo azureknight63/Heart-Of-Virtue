@@ -780,7 +780,7 @@ class TestExecuteMoveInnerAnimationAttackFallback:
 
         assert result is not None
         # move.web_animation is None, targeted=True, category="Attack" ->
-        # _move_deals_damage() is True -> fallback resolves to "attack". The
+        # _animates_as_attack() is True -> fallback resolves to "attack". The
         # pending animation is consumed and flushed into combat_log (with a
         # matching impact line never emitted here since move.cast() is a
         # bare mock), so assert on the log entry rather than the transient

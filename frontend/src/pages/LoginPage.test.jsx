@@ -103,10 +103,8 @@ describe('LoginPage', () => {
         renderLoginPage();
         fireEvent.click(screen.getByText(/Terms of Service & Privacy Policy/i));
         expect(screen.getByText(/Terms & Privacy/i)).toBeDefined();
-        // Two buttons now answer to "Close": BaseDialog's own ✕ (#718 item 8
-        // gave it an aria-label) and the modal's own footer button. Either one
-        // firing onClose is the behavior under test, so just click the first.
-        fireEvent.click(screen.getAllByRole('button', { name: /Close/i })[0]);
+        // The modal's footer button, not BaseDialog's "Close dialog" ✕.
+        fireEvent.click(screen.getByRole('button', { name: /^Close$/i }));
         expect(screen.queryByText(/Terms & Privacy/i)).toBeNull();
     });
 

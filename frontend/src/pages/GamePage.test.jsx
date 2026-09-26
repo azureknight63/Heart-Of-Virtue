@@ -261,6 +261,10 @@ describe('GamePage', () => {
         await waitFor(() => {
             expect(playBGM).toHaveBeenCalledWith('boss_battle');
         });
+        // Scrub iteration 2: a latch that lags one render first asked for
+        // 'battle', and AudioContext's slot swap then cut the outgoing track.
+        // Checked from mount, with nothing cleared.
+        expect(playBGM).not.toHaveBeenCalledWith('battle');
     });
 
     // #718 item 4: `combat?.enemies` is empty by the time an `end_state`
@@ -318,6 +322,50 @@ describe('GamePage', () => {
         await waitFor(() => {
             expect(screen.getByText(/Mode: combat/i)).toBeDefined();
         });
+
+        expect(playBGM).not.toHaveBeenCalledWith('battle');
+    });
+
+    // Scrub finding on #718 item 4: the latch was a ref the BGM effect read but
+    // did not depend on, so a roster that arrives after combat mode began, or
+    // a boss that dies before its minions, was never (re)played correctly.
+    const bossPhase = (enemies) => ({
+        combat: { ...mockCombat, combat_active: true, enemies },
+        inCombat: true,
+        loading: false,
+        fetchCombatStatus: vi.fn(),
+        performAction: vi.fn(),
+    });
+    const rerenderPage = (rerender) => rerender(<MemoryRouter><GamePage /></MemoryRouter>);
+
+    it('upgrades to the boss track when the boss roster arrives after combat began', async () => {
+        const playBGM = vi.fn();
+        useAudio.mockReturnValue({ playSFX: vi.fn(), playBGM, stopBGM: vi.fn() });
+        useCombat.mockReturnValue(bossPhase([]));
+        const { rerender } = renderGamePage();
+        fireEvent.click(screen.getByRole('button', { name: /FIGHT FOR YOUR LIFE/i }));
+        await waitFor(() => expect(playBGM).toHaveBeenCalledWith('battle'));
+
+        useCombat.mockReturnValue(bossPhase([{ id: 'enemy_2', is_boss: true }]));
+        rerenderPage(rerender);
+
+        await waitFor(() => expect(playBGM).toHaveBeenLastCalledWith('boss_battle'));
+    });
+
+    it('keeps the boss track after the boss falls while its minions fight on', async () => {
+        const playBGM = vi.fn();
+        useAudio.mockReturnValue({ playSFX: vi.fn(), playBGM, stopBGM: vi.fn() });
+        useCombat.mockReturnValue(bossPhase([
+            { id: 'enemy_1', is_boss: false }, { id: 'enemy_2', is_boss: true },
+        ]));
+        const { rerender } = renderGamePage();
+        fireEvent.click(screen.getByRole('button', { name: /FIGHT FOR YOUR LIFE/i }));
+        await waitFor(() => expect(playBGM).toHaveBeenCalledWith('boss_battle'));
+        playBGM.mockClear();
+
+        useCombat.mockReturnValue(bossPhase([{ id: 'enemy_1', is_boss: false }]));
+        rerenderPage(rerender);
+        await waitFor(() => expect(screen.getByText(/Mode: combat/i)).toBeDefined());
 
         expect(playBGM).not.toHaveBeenCalledWith('battle');
     });
