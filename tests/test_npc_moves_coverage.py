@@ -15,6 +15,7 @@ Targets uncovered lines (69% -> target 85%+):
 import ast
 import inspect
 import sys
+from collections import namedtuple
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -2859,33 +2860,41 @@ def _npc_owned_move_population():
 
 _NPC_MOVES, _SKIPPED_NPC_CLASSES = _npc_owned_move_population()
 
+#: Floor on the NPC-owned move population (and its damaging subset): well
+#: below today's counts, far above what a broken enumerator would find.
+_MIN_POPULATION = 10
+
 
 def _hp_taken_by_execute(move_cls, owner_cls):
     """Run one ``execute()`` of ``move_cls`` against a live target; did HP drop?
 
     See :func:`_land_execute` for the staging.
     """
-    move, hp_before, hp_after, _ = _land_execute(move_cls, owner_cls)
-    return move, hp_after < hp_before
+    landed = _land_execute(move_cls, owner_cls)
+    return landed.move, landed.hp_after < landed.hp_before
+
+
+#: What :func:`_land_execute` returns. ``dealt`` is every damage value
+#: ``execute()`` handed to ``hit()`` -- after protection and the move's own
+#: scaling, before the target's resistances.
+_Landed = namedtuple("_Landed", "move hp_before hp_after dealt")
 
 
 def _land_execute(move_cls, owner_cls, user_damage=None):
-    """Land one ``execute()`` of ``move_cls``; return what it did.
-
-    Returns ``(move, hp_before, hp_after, dealt)``, where ``dealt`` is every
-    damage value ``execute()`` handed to ``hit()`` -- after protection and the
-    move's own scaling, before the target's resistances.
+    """Land one ``execute()`` of ``move_cls``; return a :data:`_Landed`.
 
     The to-hit roll is forced (``randint`` -> 0), power rolls sit at their
     midpoint, and the two combatants stand at the move's minimum range facing
     each other, with the facing damage curve pinned to 1.0 on top. Nobody
-    holds a parry stance, so ``check_parry`` is False. The
-    target is a real default ``Player`` for an enemy's move -- the subject the
-    advisor is protecting -- with protection zeroed so a landed blow cannot
-    round to nothing, fatigue at 0 so DeathKnell's execute window is open, and
-    HP deep enough that no hit ends the fight mid-measurement.
-    ``user_damage`` overrides the owner's base damage, so a caller measuring a
-    RATIO can make ``int()`` truncation negligible.
+    holds a parry stance, so ``check_parry`` is False.
+
+    The target is a real default ``Player`` for an enemy's move -- the subject
+    the advisor is protecting -- with protection zeroed so a landed blow
+    cannot round to nothing, fatigue at 0 so DeathKnell's execute window is
+    open, and HP deep enough that no hit ends the fight mid-measurement.
+
+    ``user_damage`` overrides the owner's base damage, so a caller measuring
+    a RATIO can make ``int()`` truncation negligible.
     """
     from src import positions
     from src.npc import Friend
@@ -2949,7 +2958,7 @@ def _land_execute(move_cls, owner_cls, user_damage=None):
     assert dealt or target.hp >= hp_before, (
         f"{move_cls.__name__}: target HP fell but hit() never ran"
     )
-    return move, hp_before, target.hp, dealt
+    return _Landed(move, hp_before, target.hp, dealt)
 
 
 class TestDealsDamageMatchesExecute:
@@ -2970,7 +2979,7 @@ class TestDealsDamageMatchesExecute:
             cls.__name__: _hp_taken_by_execute(cls, owner)[1]
             for cls, owner in _NPC_MOVES.items()
         }
-        assert len(observed) >= 10, observed
+        assert len(observed) >= _MIN_POPULATION, observed
         assert any(observed.values()), "no damaging move found"
         assert not all(observed.values()), "no non-damaging move found"
         from src.moves import NpcIdle, NpcRest
@@ -3013,10 +3022,10 @@ _MEASURE_DAMAGE = 1000
 
 def _measure_execute(move_cls):
     """``(move, dealt)`` for one landed execute at ``_MEASURE_DAMAGE``."""
-    move, _, _, dealt = _land_execute(
+    landed = _land_execute(
         move_cls, _NPC_MOVES[move_cls], user_damage=_MEASURE_DAMAGE
     )
-    return move, dealt
+    return landed.move, landed.dealt
 
 
 def _wire_multiplier(move):
@@ -3033,9 +3042,9 @@ class TestWireMultiplierMatchesExecuteDamage:
     curve pinned to 1.0, protection 0, the target's default resistances,
     every roll at its midpoint and the to-hit forced. ``hit()``'s damage
     argument over the user's damage is the multiplier the move really
-    applies; the wire must report it. Read with ``getattr`` on the instance
-    through the serializer, never off a class ``__dict__``, so an inherited
-    value is examined like any other.
+    applies; the wire must report it. Read by calling the serializer, which
+    calls the instance's ``effective_damage_multiplier()`` -- never off a
+    class ``__dict__`` -- so an inherited value is examined like any other.
 
     Conditional bonuses are measured in their UNCONDITIONAL state -- TwinFangs
     against a target that is not its Marked Quarry, SeismicSlam and TwinFangs
@@ -3054,7 +3063,7 @@ class TestWireMultiplierMatchesExecuteDamage:
         damaging = {
             cls for cls in _NPC_MOVES if _measure_execute(cls)[0].deals_damage
         }
-        assert len(damaging) >= 10, damaging
+        assert len(damaging) >= _MIN_POPULATION, damaging
         assert {MineralSpit, SoulDrain, WailStrike} <= damaging
 
     @pytest.mark.parametrize(

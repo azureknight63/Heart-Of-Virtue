@@ -8,6 +8,7 @@ move; these tests drive the real adapter and the real engine surge, reading
 every tie-up off that field rather than a hand table.
 """
 
+import copy
 from unittest.mock import patch
 
 import pytest
@@ -17,9 +18,11 @@ from ai.combat_strategist import (
     _DEFENSIVE_MOVE_NAMES,
     _DEFENSIVE_WINDOW_BEATS,
     _FORFEITS_DEFENCE_SCORE,
+    _HARMLESS_ATTACK_SCORE,
 )
 from src.npc._enemies import KingSlime
 from src.npc._friends import Gorran
+from tests._combat_fixtures import forced_roll, seeded
 from tests.test_tidal_surge_legibility import _all_scores, _fight, _surge_at
 
 
@@ -71,6 +74,14 @@ def _surge_fight(beats, allies=(), target=None):
     return player, adapter
 
 
+def _surge_ctx(beats, **kw):
+    """The strategist context the real adapter builds for `_surge_fight`."""
+    _, adapter = _surge_fight(beats, **kw)
+    with patch("builtins.print"):
+        ctx, _ = adapter._build_strategist_context(None)
+    return ctx
+
+
 class TestTheSurgeAtTwelveBeats:
     def test_attack_is_clamped_with_a_reason_naming_the_tie_up_and_the_surge(
         self, strategist
@@ -116,12 +127,81 @@ class TestTheSurgeAtTwelveBeats:
         """The #700 sweep, on the real engine: whatever tops the list at
         11-13 beats either answers the surge itself or frees Jean with at
         least a Dodge's worth of beats to spare."""
-        _, adapter = _surge_fight(beats)
-        with patch("builtins.print"):
-            ctx, _ = adapter._build_strategist_context(None)
+        ctx = _surge_ctx(beats)
         top = strategist._get_fallback_suggestions(ctx, 3)[0]
         move = _by_name(ctx)[top["move_name"]]
         assert not _forfeits(move, beats), (top, move["beats_until_ready"])
+
+
+class TestTheBoundaryHoldsInTheRealBeatLoop:
+    """The sweep above checks the strategist against its own formula
+    (``incoming - ready < _DEFENSIVE_WINDOW_BEATS``). This checks the formula
+    against the engine: Jean really casts Attack through the real adapter, is
+    asked again, really casts Dodge, and the surge resolves against whatever
+    stance he actually has. Every number is read off the engine -- Attack's
+    published ``beats_until_ready`` and the surge's ``beats_until_resolve``.
+    """
+
+    @staticmethod
+    def _attack_ready():
+        attack = _by_name(_surge_ctx(12))["Attack"]
+        assert isinstance(attack.get("beats_until_ready"), int), attack
+        return attack["beats_until_ready"]
+
+    @staticmethod
+    def _play_attack_then_dodge(incoming):
+        """Returns (advisor's Attack score at ``incoming``, surge beats left
+        when Jean is asked again, whether Dodging was up when it resolved)."""
+        from src.states import Dodging
+
+        player, adapter = _fight([KingSlime()])
+        [king] = player.combat_list
+        surge = _surge_at(adapter, king, incoming)
+
+        _, scores = _all_scores(CombatStrategist(client=_NoLLM()), adapter)
+
+        dodging_at_resolve = []
+        real_execute = surge.execute
+
+        def spy(npc):
+            dodging_at_resolve.append(
+                any(isinstance(s, Dodging) for s in player.states)
+            )
+            return real_execute(npc)
+
+        surge.execute = spy
+        moves = {m.name: m for m in player.known_moves}
+        attack, dodge = moves["Attack"], moves["Dodge"]
+        attack.target = king
+        with patch("builtins.print"), seeded(), forced_roll(100):
+            result = adapter._commit_and_execute(attack)
+            assert "error" not in result, result
+            assert player.current_move is None, "Jean was not asked again"
+            left = surge.beats_until_resolve()
+            assert not dodging_at_resolve, "the surge landed during the Attack"
+            result = adapter._commit_and_execute(dodge)
+            assert "error" not in result, result
+        assert dodging_at_resolve, "the surge never resolved during the Dodge"
+        return scores["Attack"][0], left, dodging_at_resolve[0]
+
+    def test_at_the_boundary_the_advisor_allows_attack_and_the_dodge_is_up(self):
+        ready = self._attack_ready()
+        incoming = ready + _DEFENSIVE_WINDOW_BEATS
+        score, left, dodging = self._play_attack_then_dodge(incoming)
+        assert score != _FORFEITS_DEFENCE_SCORE, "premise: the advisor allows it"
+        assert left == incoming - ready, (
+            f"published beats_until_ready {ready}, but the surge had {left} "
+            f"beats left (expected {incoming - ready}) when Jean was asked again"
+        )
+        assert dodging, "Attack was advised as safe, yet the Dodge was not up"
+
+    def test_one_beat_later_the_advisor_clamps_and_the_dodge_is_too_late(self):
+        ready = self._attack_ready()
+        incoming = ready + _DEFENSIVE_WINDOW_BEATS - 1
+        score, left, dodging = self._play_attack_then_dodge(incoming)
+        assert score == _FORFEITS_DEFENCE_SCORE, "premise: the advisor clamps it"
+        assert left == incoming - ready, (left, incoming, ready)
+        assert not dodging, "the clamp was needless: the Dodge was up in time"
 
 
 class TestNoOpinionWithoutADefenceToForfeit:
@@ -136,9 +216,7 @@ class TestNoOpinionWithoutADefenceToForfeit:
     def test_no_dodge_in_time_leaves_attack_alone(self, strategist, why):
         """When no Dodge/Parry could be cast in time anyway there is nothing
         to forfeit; #686's locked-defence rule governs that case."""
-        _, adapter = _surge_fight(12)
-        with patch("builtins.print"):
-            ctx, _ = adapter._build_strategist_context(None)
+        ctx = _surge_ctx(12)
         ctx["defensive_cooldowns"] = {}
         for m in ctx["available_moves"]:
             if m["name"] in _DEFENSIVE_MOVE_NAMES:
@@ -152,20 +230,21 @@ class TestNoOpinionWithoutADefenceToForfeit:
         score, reason = strategist._score_move(_by_name(ctx)["Attack"], state)
         assert score != _FORFEITS_DEFENCE_SCORE, reason
 
-    def test_a_dodge_cooling_down_but_ready_in_time_still_counts(self, strategist):
-        _, adapter = _surge_fight(12)
-        with patch("builtins.print"):
-            ctx, _ = adapter._build_strategist_context(None)
+    @pytest.mark.parametrize("cooldown", [2, 2.0])
+    def test_a_dodge_cooling_down_but_ready_in_time_still_counts(
+        self, strategist, cooldown
+    ):
+        """A whole float is a beat count too -- the rule
+        ``Move._beats_to_free`` applies to stage beats."""
+        ctx = _surge_ctx(12)
         _by_name(ctx)["Dodge"]["available"] = False
-        ctx["defensive_cooldowns"] = {"Dodge": 2}
+        ctx["defensive_cooldowns"] = {"Dodge": cooldown}
         state = strategist._derive_tactical_state(ctx)
         score, _ = strategist._score_move(_by_name(ctx)["Attack"], state)
         assert score == _FORFEITS_DEFENCE_SCORE
 
     def test_a_payload_without_the_field_scores_as_before(self, strategist):
-        _, adapter = _surge_fight(12)
-        with patch("builtins.print"):
-            ctx, _ = adapter._build_strategist_context(None)
+        ctx = _surge_ctx(12)
         for m in ctx["available_moves"]:
             m.pop("beats_until_ready", None)
         state = strategist._derive_tactical_state(ctx)
@@ -176,9 +255,7 @@ class TestNoOpinionWithoutADefenceToForfeit:
 
 class TestTheLLMPathIsClampedToo:
     def test_a_proposed_attack_is_lowered_with_the_honest_reason(self):
-        _, adapter = _surge_fight(12)
-        with patch("builtins.print"):
-            ctx, _ = adapter._build_strategist_context(None)
+        ctx = _surge_ctx(12)
         strategist = CombatStrategist(client=_ScriptedLLM([
             {"move_name": "Attack", "score": 95, "reasoning": "Hit it now."},
             {"move_name": "Advance", "score": 50, "reasoning": "Close in."},
@@ -192,3 +269,57 @@ class TestTheLLMPathIsClampedToo:
         # Lower-only: a move that leaves time to Dodge keeps the model's score.
         assert by_move["Advance"]["score"] == 50
         assert results[0]["move_name"] != "Attack"
+
+    def test_a_model_score_already_below_the_clamp_keeps_its_reason(self):
+        """Lower-only means untouched when there is nothing to lower: the
+        honest reason replaces the model's only when the score drops."""
+        ctx = _surge_ctx(12)
+        low = _FORFEITS_DEFENCE_SCORE - 8
+        strategist = CombatStrategist(client=_ScriptedLLM([
+            {"move_name": "Attack", "score": low, "reasoning": "Hold off for now."},
+        ]))
+        [attack] = [
+            s for s in strategist.get_suggestions(ctx, max_suggestions=3)
+            if s["move_name"] == "Attack"
+        ]
+        assert attack["score"] == low, attack
+        assert attack["reasoning"] == "Hold off for now.", attack
+
+
+class TestAHarmlessAttackThatAlsoForfeits:
+    """Both #688 (harmless) and #700 (forfeit) apply to one Attack. The two
+    scoring paths must agree: the harmless score, which is the lower one, with
+    the harmless reason -- a swing that cannot hurt anyone is worthless at any
+    timing, so "can't hurt" is the stronger and truer thing to tell Jean."""
+
+    @staticmethod
+    def _ctx():
+        ctx = _surge_ctx(12)
+        attack = _by_name(ctx)["Attack"]
+        assert _forfeits(attack, 12), "premise: Attack forfeits the Dodge"
+        assert attack.get("viable_targets"), "premise: Attack reaches the King"
+        for t in attack["viable_targets"]:
+            t["damage_preview"] = {"min": 0, "max": 0}
+        return ctx
+
+    def test_ladder_and_llm_path_agree(self):
+        ctx = self._ctx()
+        ladder = CombatStrategist(client=_NoLLM())
+        state = ladder._derive_tactical_state(ctx)
+        ladder_score, ladder_reason = ladder._score_move(
+            _by_name(ctx)["Attack"], state
+        )
+
+        llm = CombatStrategist(client=_ScriptedLLM([
+            {"move_name": "Attack", "score": 95, "reasoning": "Hit it now."},
+        ]))
+        [llm_attack] = [
+            s for s in llm.get_suggestions(copy.deepcopy(ctx), max_suggestions=3)
+            if s["move_name"] == "Attack"
+        ]
+
+        assert ladder_score == llm_attack["score"] == _HARMLESS_ATTACK_SCORE, (
+            ladder_score, llm_attack,
+        )
+        assert "can't hurt" in ladder_reason, ladder_reason
+        assert "can't hurt" in llm_attack["reasoning"], llm_attack
