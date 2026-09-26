@@ -27,7 +27,6 @@ from src.api.serializers.combat import (
     strip_combatant_prefix,
 )
 from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
-from src.api.services import analytics
 from src.api.schemas.combat_beat import (
     DEFAULT_ANIMATION,
     DEFAULT_DAMAGE_ANIMATION,
@@ -808,12 +807,25 @@ class CombatOutputCapture:
         self.log_entries = []
 
 
+def _analytics():
+    """``src.api.services.analytics``, imported on first use.
+
+    Not at module top: importing the services package runs its ``__init__``,
+    which imports ``game_service``, which imports this module half-loaded, so
+    any process that loaded this module first failed (tests/test_import_order.py).
+    """
+    from src.api.services import analytics
+
+    return analytics
+
+
 def combat_adapter_state(player) -> dict:
     """``player.combat_adapter_state``, created empty when missing.
 
     The single home of the lazy init that five sites used to carry as their
-    own ``if not hasattr(...)`` copy; the adapter and GameService both read
-    through here. The dict lives on the player (not on the adapter) because
+    own ``if not hasattr(...)`` copy; GameService and the adapter's writers go
+    through here (the adapter's pure reads use ``_adapter_state_view``, which
+    does not create it). The dict lives on the player (not on the adapter) because
     the adapter object is not the fight's lifetime -- see
     ``ApiCombatAdapter.combat_id``.
     """
@@ -957,7 +969,7 @@ class ApiCombatAdapter:
 
         # Analytics identity of the current fight, set where combat_id is
         # minted and read when it settles (the roster may be torn down by then).
-        self._analytics_encounter = analytics.UNKNOWN_ENCOUNTER
+        self._analytics_encounter = _analytics().UNKNOWN_ENCOUNTER
         self._analytics_started_at = None
         # Set, under _beat_lock, once this fight's end is recorded: the three
         # exits (victory, defeat, flee) can race, and a fight has one end.
@@ -1119,6 +1131,18 @@ class ApiCombatAdapter:
         """
         return combat_adapter_state(self.player)
 
+    def _adapter_state_view(self) -> dict:
+        """The fight's state for reading, or ``{}`` once it has been discarded.
+
+        Flee and load end a fight by deleting ``player.combat_adapter_state``
+        (``GameService._discard_fight_state``), and a status poll that lost the
+        race still reads through this adapter. A read must not raise there, and
+        must not re-create the state either: the fight is over. Writers go
+        through :meth:`_adapter_state`, which does create it.
+        """
+        state = getattr(self.player, "combat_adapter_state", None)
+        return state if isinstance(state, dict) else {}
+
     @property
     def combat_id(self):
         """Stable identity for the current fight.
@@ -1130,11 +1154,11 @@ class ApiCombatAdapter:
         attribute would be discarded there and every poll for the rest of that
         fight would publish `combat_id: None`.
         """
-        return self.player.combat_adapter_state.get("combat_id", None)
+        return self._adapter_state_view().get("combat_id", None)
 
     @combat_id.setter
     def combat_id(self, value):
-        self.player.combat_adapter_state["combat_id"] = value
+        self._adapter_state()["combat_id"] = value
 
     @property
     def combat_grid_size(self):
@@ -1152,19 +1176,19 @@ class ApiCombatAdapter:
         outside Battlefield's overflow:hidden container — an invisible enemy in
         an active fight.
         """
-        return self.player.combat_adapter_state.get("combat_grid_size", (13, 13))
+        return self._adapter_state_view().get("combat_grid_size", (13, 13))
 
     @combat_grid_size.setter
     def combat_grid_size(self, value):
-        self.player.combat_adapter_state["combat_grid_size"] = value
+        self._adapter_state()["combat_grid_size"] = value
 
     @property
     def awaiting_input(self):
-        return self.player.combat_adapter_state.get("awaiting_input", False)
+        return self._adapter_state_view().get("awaiting_input", False)
 
     @awaiting_input.setter
     def awaiting_input(self, value):
-        self.player.combat_adapter_state["awaiting_input"] = value
+        self._adapter_state()["awaiting_input"] = value
 
     @property
     def victory_deferred(self):
@@ -1180,7 +1204,7 @@ class ApiCombatAdapter:
         ``combat_wave_pending`` signal cannot say that: it is gone by the time
         the next request arrives.
         """
-        return self._adapter_state().get("victory_deferred", False)
+        return self._adapter_state_view().get("victory_deferred", False)
 
     @victory_deferred.setter
     def victory_deferred(self, value):
@@ -1193,27 +1217,27 @@ class ApiCombatAdapter:
 
     @property
     def input_type(self):
-        return self.player.combat_adapter_state.get("input_type", None)
+        return self._adapter_state_view().get("input_type", None)
 
     @input_type.setter
     def input_type(self, value):
-        self.player.combat_adapter_state["input_type"] = value
+        self._adapter_state()["input_type"] = value
 
     @property
     def pending_move_index(self):
-        return self.player.combat_adapter_state.get("pending_move_index", None)
+        return self._adapter_state_view().get("pending_move_index", None)
 
     @pending_move_index.setter
     def pending_move_index(self, value):
-        self.player.combat_adapter_state["pending_move_index"] = value
+        self._adapter_state()["pending_move_index"] = value
 
     @property
     def available_options(self):
-        return self.player.combat_adapter_state.get("available_options", [])
+        return self._adapter_state_view().get("available_options", [])
 
     @available_options.setter
     def available_options(self, value):
-        self.player.combat_adapter_state["available_options"] = value
+        self._adapter_state()["available_options"] = value
 
     @staticmethod
     def _log_entry_key(entry):
@@ -2900,7 +2924,7 @@ class ApiCombatAdapter:
                     pass
 
         # Check if events triggered (BEFORE calling get_combat_state which consumes them)
-        event_just_triggered = "events_triggered" in self._adapter_state()
+        event_just_triggered = "events_triggered" in self._adapter_state_view()
 
         # Is this beat a wave transition rather than the end of the fight?
         # A fight that is mid-ambush says so before the roster empties, by
@@ -3760,6 +3784,7 @@ class ApiCombatAdapter:
         same fight (same combat_id) and do not change which encounter it counts as.
         """
         try:
+            analytics = _analytics()
             self._analytics_encounter = analytics.encounter_label(enemies)
             self._analytics_started_at = time.time()
             self._analytics_end_recorded = False
@@ -3784,6 +3809,7 @@ class ApiCombatAdapter:
             return
         self._analytics_end_recorded = True
         try:
+            analytics = _analytics()
             started = self._analytics_started_at
             encounter = self._analytics_encounter
             if encounter == analytics.UNKNOWN_ENCOUNTER:
@@ -3814,7 +3840,7 @@ class ApiCombatAdapter:
         """
         with self._beat_lock:
             if self.player.in_combat:
-                self._record_fight_end(analytics.Outcome.FLEE)
+                self._record_fight_end(_analytics().Outcome.FLEE)
 
     def inherit_fight_identity(self, previous) -> None:
         """Carry the current fight's analytics identity over from ``previous``.
@@ -3823,7 +3849,7 @@ class ApiCombatAdapter:
         resume in ``GameService.get_combat_status``): without it the fight's
         end would be recorded against an unknown encounter with no duration.
         """
-        self._analytics_encounter = getattr(previous, "_analytics_encounter", analytics.UNKNOWN_ENCOUNTER)
+        self._analytics_encounter = getattr(previous, "_analytics_encounter", _analytics().UNKNOWN_ENCOUNTER)
         self._analytics_started_at = getattr(previous, "_analytics_started_at", None)
         self._analytics_end_recorded = getattr(previous, "_analytics_end_recorded", False)
 
@@ -3870,7 +3896,7 @@ class ApiCombatAdapter:
                 # instead.
                 return self._terminal_state_snapshot(beat_states)
 
-            self._record_fight_end(analytics.Outcome.DEFEAT)
+            self._record_fight_end(_analytics().Outcome.DEFEAT)
             self.player.in_combat = False
             self.awaiting_input = False
             self.victory_deferred = False
@@ -4201,7 +4227,7 @@ class ApiCombatAdapter:
                 # without re-awarding exp, re-minting the summary id or
                 # re-publishing the ended stream.
                 return self._terminal_state_snapshot(beat_states)
-            self._record_fight_end(analytics.Outcome.VICTORY)
+            self._record_fight_end(_analytics().Outcome.VICTORY)
             self._handle_victory()
             return self._publish_terminal_state(beat_states)
 
@@ -4862,8 +4888,9 @@ class ApiCombatAdapter:
                     exc_info=True,
                 )
 
-        # Include check_data if available (from Check move)
-        adapter_state = self._adapter_state()
+        # Include check_data if available (from Check move). The view: after a
+        # flee this read must not re-create the discarded state.
+        adapter_state = self._adapter_state_view()
         if "check_data" in adapter_state:
             battle_state["check_data"] = adapter_state["check_data"]
             # Clear check_data after including it once

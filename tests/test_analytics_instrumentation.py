@@ -155,26 +155,16 @@ class TestCombat:
                 release.wait(5)
             real_record(outcome)
 
-        def in_request(fn, *args, swallow=False):
+        def in_request(fn, *args):
             with Flask(__name__).test_request_context("/api/combat"):
                 analytics.bind_request_session(session)
-                try:
-                    fn(*args)
-                except AttributeError:
-                    # Pre-existing and out of scope here: a settle that loses
-                    # this race to flee raises from _terminal_state_snapshot,
-                    # because flee has already discarded combat_adapter_state.
-                    # What this test pins is that it records no second end.
-                    if not swallow:
-                        raise
+                fn(*args)
 
         adapter._record_fight_end = slow_record
         fleeing = threading.Thread(target=in_request, args=(GameService().flee_combat, player))
         fleeing.start()
         assert entered.wait(5)
-        settling = threading.Thread(
-            target=in_request, args=(adapter.settle_defeat,), kwargs={"swallow": True}
-        )
+        settling = threading.Thread(target=in_request, args=(adapter.settle_defeat,))
         settling.start()
         settling.join(0.3)
         # The race is only tested if the settle really is waiting on flee's lock.
