@@ -53,6 +53,25 @@ def _fault(message):
         pass
 
 
+def parse_starting_story_flags(tokens):
+    """``config.starting_story_flags`` tokens as ``{flag: value}``.
+
+    A bare ``"flag"`` maps to ``GATE_SET`` (what ``gate_is_set`` compares
+    against), ``"flag=value"`` to the stripped ``value``; a token with no key
+    (``"=value"``, ``"="``) is skipped, so ``story[""]`` is never written.
+    A repeated flag keeps its last value, as applying the tokens in order did.
+    """
+    from src.events import GATE_SET
+
+    parsed = {}
+    for token in tokens or ():
+        key, has_value, value = token.partition("=")
+        key = key.strip()
+        if key:
+            parsed[key] = value.strip() if has_value else GATE_SET
+    return parsed
+
+
 # Minimum seconds between opportunistic sweeps of expired sessions. Keeps the
 # O(n) cleanup off the hot per-request path while still bounding memory growth.
 _REAP_INTERVAL_SECONDS = 60
@@ -810,9 +829,8 @@ class SessionManager:
         """Seed story-state flags from config.starting_story_flags onto player.
 
         Restores the semantics ``src/game.py`` had before the terminal
-        teardown (311a644e): a bare ``"flag"`` token sets it (to ``GATE_SET``),
-        a ``"flag=value"`` token sets it to ``value``; a token with no key is
-        skipped. Written through
+        teardown (311a644e); the token rules are
+        :func:`parse_starting_story_flags`'s. Written through
         ``set_story_gate`` so a player with no story (e.g. ``MinimalPlayer``)
         is a silent no-op rather than an ``AttributeError``.
 
@@ -829,18 +847,10 @@ class SessionManager:
 
         from src.events import set_story_gate
 
-        applied = []
-        for token in flags:
-            key, has_value, value = token.partition("=")
-            key = key.strip()
-            if not key:
-                # "=value" or a stray "=" names no flag; never write story[""].
-                continue
-            # A bare flag takes set_story_gate's own default (GATE_SET, what
-            # gate_is_set compares against) rather than a literal copied here.
-            args = (key, value.strip()) if has_value else (key,)
-            if set_story_gate(player, *args):
-                applied.append(token.strip())
+        applied = [
+            key for key, value in parse_starting_story_flags(flags).items()
+            if set_story_gate(player, key, value)
+        ]
         if applied:
             print(
                 f"[SessionManager] [OK] Applied starting_story_flags: {applied}",

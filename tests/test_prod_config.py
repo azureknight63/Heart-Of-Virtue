@@ -84,10 +84,11 @@ def _tracked_flag_configs():
     }
 
 
-def _seeded_flag_keys(game_config):
-    """Flag keys, with SessionManager._apply_starting_story_flags' token rules."""
-    keys = (token.partition("=")[0].strip() for token in game_config.starting_story_flags)
-    return {key for key in keys if key}
+def _seeded_flags(game_config):
+    """``{flag: value}`` as SessionManager applies them to a new session."""
+    from src.api.services.session_manager import parse_starting_story_flags
+
+    return parse_starting_story_flags(game_config.starting_story_flags)
 
 
 def _json_strings(node):
@@ -129,13 +130,16 @@ def test_every_flag_a_tracked_config_seeds_is_read_by_the_engine():
     # The scanner must find readers it is known to have; an empty scan would
     # pass every config vacuously.
     assert {AfterDefeatingKingSlime.GATE_KEY, AfterKingSlimeReturn.GATE_KEY} <= literals
+    # ...and must not find the one it is known to lack, or it would pass
+    # every config whatever it seeded.
+    assert "lurker_defeated" not in literals
 
     configs = _tracked_flag_configs()
     assert configs, "no tracked config seeds starting_story_flags; the guard is vacuous"
     unread = {
-        name: sorted(_seeded_flag_keys(cfg) - literals)
+        name: sorted(missing)
         for name, cfg in configs.items()
-        if _seeded_flag_keys(cfg) - literals
+        if (missing := _seeded_flags(cfg).keys() - literals)
     }
     assert unread == {}
 
@@ -148,11 +152,11 @@ def test_the_starting_story_flags_land_on_a_real_session(monkeypatch):
     so this runs on the tracked config that seeds the most.
     """
     from src.api.services.session_manager import SessionManager
-    from src.events import GATE_SET, story_gates
+    from src.events import story_gates
 
     configs = _tracked_flag_configs()
-    name = max(configs, key=lambda n: len(_seeded_flag_keys(configs[n])))
-    seeded = _seeded_flag_keys(configs[name])
+    name = max(configs, key=lambda n: len(_seeded_flags(configs[n])))
+    seeded = _seeded_flags(configs[name])
     assert seeded, "no tracked config seeds a flag to check"
 
     monkeypatch.setenv("CONFIG_FILE", name)
@@ -162,7 +166,7 @@ def test_the_starting_story_flags_land_on_a_real_session(monkeypatch):
     player = manager.get_player(session_id)
 
     gates = story_gates(player)
-    assert {key: gates.get(key) for key in seeded} == {key: GATE_SET for key in seeded}
+    assert {key: gates.get(key) for key in seeded} == seeded
 
 
 def test_it_plays_the_story_and_keeps_saves(config):

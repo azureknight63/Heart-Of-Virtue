@@ -135,13 +135,13 @@ class TestRefreshMerchantsOutcomes:
         assert lines == ["Merchant refresh complete: 1 succeeded, 0 failed."]
 
     def test_outer_exception_recorded_as_named_failure(self, player):
-        """An exception reading ``shop`` is reported against that merchant by name."""
+        """An exception reading ``update_goods`` is reported against that merchant by name."""
 
         class TotallyBroken(Merchant):
             name = "TotallyBroken"
 
             @property
-            def shop(self):
+            def update_goods(self):
                 raise RuntimeError("property exploded")
 
         player.universe = _universe_with_tile(_tile_with_npc(TotallyBroken()))

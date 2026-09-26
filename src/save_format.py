@@ -26,6 +26,8 @@ import json
 import math
 import logging
 
+from src.combatant import exp_needed_for_level
+
 logger = logging.getLogger(__name__)
 
 # Bumped on breaking layout changes; loaders reject versions they don't know.
@@ -47,12 +49,17 @@ _REQUIRED_TOP_LEVEL_KEYS = frozenset({"format_version", "player", "world"})
 _REQUIRED_PLAYER_KEYS = frozenset({"name", "level", "hp", "maxhp"})
 _REQUIRED_WORLD_KEYS = frozenset({"map_name"})
 
+# Fallback for a primary stat the player lacks: Player.__init__ starts every
+# primary stat (and its *_base) at 10.
+_DEFAULT_STAT = 10
+
 # Player scalar attributes copied verbatim (name -> default when absent).
 _PLAYER_SCALARS = {
     "name": "Jean",
     "level": 1,
     "exp": 0,
-    "exp_to_level": 150,
+    # A fresh Player's first threshold, from the one leveling curve (#710).
+    "exp_to_level": exp_needed_for_level(1, _DEFAULT_STAT),
     "hp": 100,
     "maxhp": 100,
     "fatigue": 150,
@@ -195,7 +202,7 @@ def player_to_data(player):
 
     stats = {}
     for stat in _PLAYER_STATS:
-        stats[stat] = getattr(player, stat, 10)
+        stats[stat] = getattr(player, stat, _DEFAULT_STAT)
         stats[f"{stat}_base"] = getattr(player, f"{stat}_base", stats[stat])
 
     inventory = []

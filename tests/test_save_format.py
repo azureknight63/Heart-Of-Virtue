@@ -413,6 +413,14 @@ def test_inventory_entries_without_a_name_are_dropped():
     assert inv == [{"name": "Restorative", "type": "consumable", "count": 2}]
 
 
+def test_the_exp_to_level_fallback_is_a_fresh_players_first_threshold():
+    """Issue #710 moved Jean's first threshold onto the leveling curve; the
+    fallback for a player missing the attribute must be that same number."""
+    from src.player import Player
+
+    assert sf._PLAYER_SCALARS["exp_to_level"] == Player().exp_to_level
+
+
 def test_missing_player_attributes_fall_back_to_the_documented_defaults():
     """A partially-constructed player must still produce a valid document."""
     bare = type("Bare", (), {})()

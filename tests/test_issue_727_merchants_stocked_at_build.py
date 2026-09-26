@@ -6,31 +6,21 @@ which his introduction sends Jean to -- was empty on a fresh game. A fresh
 ``Universe.build()`` now stocks every merchant that has no goods yet.
 """
 
-import random
-from unittest.mock import patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.player import Player
-from src.shop_conditions import iter_merchants
+from src.secure_pickle import serialize_for_save
+from src.shop_conditions import UniqueItemInjectionCondition, iter_merchants
 from src.universe import Universe
-
-
-def _fresh_world(seed=727):
-    random.seed(seed)
-    player = Player()
-    player.universe = Universe(player)
-    player.universe.build(player)
-    return player
-
-
-def _merchant(universe, map_name, npc_name):
-    game_map = next(m for m in universe.maps if m.get("name") == map_name)
-    return next(m for m in iter_merchants([game_map]) if npc_name in m.name)
+from tests._real_map_helpers import map_named
+from tests._world_fixtures import fresh_built_world as _fresh_world
+from tests._world_fixtures import merchant_on_map as _merchant
 
 
 def _goods(merchant):
-    return [i for i in merchant.inventory if getattr(i, "name", None) != "Gold"]
+    return merchant.has_goods()
 
 
 @pytest.mark.parametrize("tent", ["grondia-jambos_shop", "eastern-descent-jambos-tent"])
@@ -52,31 +42,85 @@ def test_authored_stock_is_kept_rather_than_rerolled():
     fills merchants that have nothing, so it must not replace his."""
     player = _fresh_world()
     milo = _merchant(player.universe, "milos-shop", "Milo")
-    milos_shop = next(m for m in player.universe.maps if m.get("name") == "milos-shop")
+    milos_shop = map_named(player.universe, "milos-shop")
     assert "Restorative" in [i.name for i in milo.inventory]
     assert "Spear" in [i.name for i in milos_shop[(2, 3)].items_here]
 
 
-def test_restoring_a_saved_universe_does_not_reroll_stock():
-    """``build()`` on a saved universe restores it; it must not re-roll."""
+def _load_through_the_api(save_blob):
+    """``GameService.load_game`` on ``save_blob``: the strict unpickle and
+    every post-load step a real restore runs, with only the database stubbed."""
+    from src.api.services.game_service import GameService
+
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(rows=[[save_blob]])
+    with patch("src.api.db.db", db):
+        return asyncio.run(GameService().load_game("save-id", "user-id"))
+
+
+def test_loading_a_save_does_not_reroll_stock_or_the_unique_registry():
+    """A restored world keeps the stock and unique claims it was saved with.
+
+    Goes through the real restore path (``load_game``: strict load of a
+    ``serialize_for_save`` blob, then the post-load fix-ups). ``build()``'s
+    ``saveuniv`` branch is not that path -- nothing sets ``saveuniv`` -- so a
+    test of it would pass whatever a load did.
+    """
     saved = _fresh_world()
     jambo = _merchant(saved.universe, "grondia-jambos_shop", "Jambo")
-    before = [i.name for i in jambo.inventory]
+    # A claimed unique makes the registry non-empty, so "unchanged" means something.
+    assert UniqueItemInjectionCondition().inject_unique_items(jambo)
+    stock = [i.name for i in jambo.inventory]
+    claims = set(saved.universe.unique_items_spawned)
+    assert claims
 
-    player = Player()
-    player.saveuniv = saved.universe.maps
-    player.savestat = object()
-    player.universe = Universe(player)
     with patch("src.npc.Merchant.update_goods", side_effect=AssertionError("re-rolled")):
-        player.universe.build(player)
-    assert player.universe.maps is saved.universe.maps
-    assert [i.name for i in jambo.inventory] == before
+        loaded = _load_through_the_api(serialize_for_save(saved))
+
+    assert loaded is not None, "load_game rejected the save"
+    restored = _merchant(loaded.universe, "grondia-jambos_shop", "Jambo")
+    assert restored is not jambo
+    assert [i.name for i in restored.inventory] == stock
+    assert loaded.universe.unique_items_spawned == claims
 
 
 def test_a_merchant_that_fails_to_stock_does_not_break_the_build():
     with patch("src.npc.Merchant.update_goods", side_effect=RuntimeError("boom")):
         player = _fresh_world()
     assert player.universe.maps
+
+
+def test_a_map_that_cannot_be_walked_for_merchants_does_not_break_the_build(caplog):
+    """``_stock_empty_merchants`` promises the build survives a stocking
+    failure; that includes the walk itself, not just one merchant's restock."""
+
+    class Room:
+        @property
+        def npcs_here(self):
+            raise RuntimeError("corrupt room")
+
+    universe = Universe()
+    universe.maps = [{"name": "broken", (0, 0): Room()}]
+    with caplog.at_level("ERROR", logger="src.universe"):
+        universe._stock_empty_merchants()  # must not raise
+    assert "corrupt room" in caplog.text
+
+
+def test_has_goods_ignores_gold_by_type_not_by_name():
+    from types import SimpleNamespace
+
+    from src.items import Gold, Rock
+    from src.npc._shop import MerchantShopMixin
+
+    def has_goods(*inventory):
+        return MerchantShopMixin.has_goods(SimpleNamespace(inventory=list(inventory)))
+
+    assert not has_goods()
+    assert not has_goods(Gold(5))
+    assert has_goods(Gold(5), Rock())
+    renamed = Rock()
+    renamed.name = "Gold"
+    assert has_goods(renamed)
 
 
 def test_iter_merchants_skips_non_tile_entries_and_non_merchants():

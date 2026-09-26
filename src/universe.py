@@ -87,11 +87,14 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         than in a module global, which every session in a worker shared, so
         one player's shop used up everyone's uniques (issue #727). Lazy for
         the same reason as :attr:`journal`: saves pickled before it existed
-        unpickle without it.
+        unpickle without it. A save holding something other than a set there
+        (crafted, or corrupt) gets a fresh empty one instead.
         """
         spawned = self.__dict__.get("_unique_items_spawned")
         if spawned is None:
             spawned = self.__dict__.setdefault("_unique_items_spawned", set())
+        if not isinstance(spawned, set):
+            spawned = self.__dict__["_unique_items_spawned"] = set()
         return spawned
 
     def get_tile(self, x, y):
@@ -127,16 +130,20 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
 
         Stock is otherwise rolled only on first shop open or every 1000 ticks,
         which left merchant-bound containers (Jambo's back-room crate) empty on
-        a fresh game. One merchant failing to stock never breaks the build.
+        a fresh game. A stocking failure never breaks the build: one merchant
+        failing is skipped, and a map that cannot be walked stops stocking.
         """
-        for merchant in iter_merchants(self.maps):
-            try:
-                merchant.stock_if_empty()
-            except Exception:
-                logger.exception(
-                    "Failed to stock merchant %r at world build",
-                    getattr(merchant, "name", merchant),
-                )
+        try:
+            for merchant in iter_merchants(self.maps):
+                try:
+                    merchant.stock_if_empty()
+                except Exception:
+                    logger.exception(
+                        "Failed to stock merchant %r at world build",
+                        getattr(merchant, "name", merchant),
+                    )
+        except Exception:
+            logger.exception("Failed to walk the maps for merchants at world build")
 
     # ---------------- JSON MAP SUPPORT -----------------
     def _json_maps_root_candidates(self):

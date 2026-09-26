@@ -6477,7 +6477,9 @@ class GameService:
 
         # Stock the merchant on first API access — update_goods() is normally
         # triggered by game_tick events (every 1000 ticks) but the API skips
-        # the terminal game loop entirely.
+        # the terminal game loop entirely. Deliberately a by-hand copy of
+        # MerchantShopMixin.stock_if_empty (src/npc/_shop.py) so Mock merchants
+        # in the tests still work; keep the two in step.
         non_gold = [
             item
             for item in getattr(merchant, "inventory", [])

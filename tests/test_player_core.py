@@ -545,7 +545,7 @@ class TestPlayerCore:
         m2.__class__ = MagicMock()
         m2.__class__.mro.return_value = [MagicMock(__name__='Merchant')]
         m2.name = "M2"
-        m2.shop = None
+        del m2.buy_modifier  # the marker initialize_shop sets: not yet run
 
         # Merchant 3: Fails update
         m3 = MagicMock()
