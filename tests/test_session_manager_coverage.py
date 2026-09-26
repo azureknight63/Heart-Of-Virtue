@@ -1153,6 +1153,17 @@ def test_apply_starting_story_flags_skips_a_token_with_no_key(monkeypatch):
     assert set(story) == {"alpha"}
 
 
+def test_parse_starting_story_flags_is_the_appliers_token_rules():
+    from src.api.services.session_manager import parse_starting_story_flags
+    from src.events import GATE_SET
+
+    parsed = parse_starting_story_flags(
+        ["alpha", "beta=2", "  gamma  ", "delta = 5 ", "=orphan", "=", "beta=3"]
+    )
+    assert parsed == {"alpha": GATE_SET, "beta": "3", "gamma": GATE_SET, "delta": "5"}
+    assert parse_starting_story_flags(None) == {}
+
+
 def test_apply_starting_story_flags_no_story_is_skipped(monkeypatch):
     mgr = _bare_manager(monkeypatch)
     mgr.game_config = _make_game_config(starting_story_flags=["alpha"])
