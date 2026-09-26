@@ -713,6 +713,33 @@ def _turn_budget_left() -> Optional[float]:
     return None if deadline is None else deadline - time.monotonic()
 
 
+#: Why this thread's most recent OpenRouter attempt failed (``"429"``,
+#: ``"http_<code>"``, ``"exc:<ClassName>"``), for the validation failure log
+#: (#729). The transports return a bare None on every failure, and widening
+#: that return would ripple through every caller for a diagnostic only one of
+#: them reads. Module-level rather than per-instance because the reader takes
+#: it synchronously, on the same thread, straight after the call it describes;
+#: thread-local for the same reason as ``_TURN_BUDGET``. Status codes and
+#: exception class names only -- never a message or a body, which can echo
+#: request headers.
+_OPENROUTER_FAILURE = threading.local()
+
+
+def _note_openrouter_failure(reason: str) -> None:
+    _OPENROUTER_FAILURE.reason = reason
+
+
+def _clear_openrouter_failure() -> None:
+    _OPENROUTER_FAILURE.reason = None
+
+
+def _take_openrouter_failure() -> Optional[str]:
+    """This thread's last recorded failure reason, cleared as it is read."""
+    reason = getattr(_OPENROUTER_FAILURE, "reason", None)
+    _OPENROUTER_FAILURE.reason = None
+    return reason
+
+
 #: The most ``NPC_CHAT_LLM_TIMEOUT`` may raise one chat call's timeout to.
 #: The worst NPC chat turn is its budget ceiling (``_TURN_CEILING_SECONDS``,
 #: 21s, in src/npc/_chat_llm.py) plus one call, and the client gives up at
@@ -1555,21 +1582,32 @@ class GenericLLMClient:
         logger.info("Validating OpenRouter model: %s", self.model)
         start_model = self.model
 
-        # Tiny test chat to verify connectivity and availability (short timeout)
-        def test_one(m_id: str) -> bool:
+        # Why each candidate failed, for the one ERROR line below (#729).
+        reasons: Dict[str, str] = {}
+
+        # Tiny test chat to verify connectivity and availability (short timeout).
+        # Returns None on success, else a short reason token.
+        def test_one(m_id: str) -> Optional[str]:
             if self._is_model_failed(m_id):
-                return False
+                return "benched"
+            _clear_openrouter_failure()
             try:
                 res = self._openrouter_chat_single(m_id, "System", "Say OK", False, timeout=5)
-                return res is not None and "ok" in str(res).lower()
-            except Exception:
-                return False
+            except Exception as e:
+                return "exc:%s" % type(e).__name__
+            if res is None:
+                return _take_openrouter_failure() or "empty"
+            if "ok" not in str(res).lower():
+                return "no_ok_in_reply"
+            return None
 
-        if test_one(self.model):
+        primary_reason = test_one(self.model)
+        if primary_reason is None:
             logger.info("Primary model %s verified.", self.model)
             self._available = True
             return
 
+        reasons[self.model] = primary_reason
         logger.debug("Primary model %s failed. Searching for fallback...", self.model)
         self._mark_model_failed(self.model, duration_minutes=30)
 
@@ -1587,15 +1625,17 @@ class GenericLLMClient:
         for cand in candidates[:5]:  # Try at most 5 fallbacks during validation
             if self._is_model_failed(cand):
                 logger.debug("Skipping already-failed OpenRouter fallback candidate: %s", cand)
+                reasons[cand] = "benched"
                 continue
             logger.info("Testing fallback: %s", cand)
-            if test_one(cand):
+            reason = test_one(cand)
+            if reason is None:
                 logger.info("Found working fallback: %s", cand)
                 self.model = cand
                 self._available = True
                 return
-            else:
-                self._mark_model_failed(cand, duration_minutes=15)
+            reasons[cand] = reason
+            self._mark_model_failed(cand, duration_minutes=15)
             if not GenericLLMClient._provider_available("openrouter"):
                 # Account-wide quota: every remaining candidate is a guaranteed
                 # 429, so stop rather than spend five more round trips on the
@@ -1614,8 +1654,9 @@ class GenericLLMClient:
         # lets `_provider_chain` route around it.
         rate_limited = not GenericLLMClient._provider_available("openrouter")
         logger.error(
-            "OpenRouter validation failed: all candidates failed. start_model=%s candidates=%s rate_limited=%s enabled_before=%s",
-            start_model, candidates[:5], rate_limited, self.enabled,
+            "OpenRouter validation failed: all candidates failed. adapter=%s start_model=%s candidates=%s reasons=%s rate_limited=%s enabled_before=%s",
+            type(self).__name__, start_model, candidates[:5], reasons,
+            rate_limited, self.enabled,
         )
         self._available = False
         if not rate_limited:
@@ -2369,6 +2410,7 @@ class GenericLLMClient:
                 GenericLLMClient._record_provider_usage(
                     "openrouter", response, "rate_limited"
                 )
+                _note_openrouter_failure("429")
                 logger.debug(
                     "SDK request for %s rate-limited (429). Skipping to next model.",
                     model_id,
@@ -2405,6 +2447,7 @@ class GenericLLMClient:
                     "skipping HTTP fallback.",
                     model_id, status,
                 )
+                _note_openrouter_failure("http_%s" % status)
                 return True, None, False
             logger.debug("SDK request failed for %s: %s", model_id, str(e)[:200])
             return False, None, status == 400 and "reasoning" in str(e).lower()
@@ -2490,6 +2533,7 @@ class GenericLLMClient:
                     "openrouter", response, "rate_limited"
                 )
                 logger.warning("OpenRouter 429 rate limit model=%s", model_id)
+                _note_openrouter_failure("429")
                 # Short penalty for a rate limit specifically. It is not
                 # protected from being overwritten: a caller's later generic
                 # penalty extends past this one rather than being blocked by
@@ -2504,6 +2548,7 @@ class GenericLLMClient:
                     model_id, status,
                     _error_body_for_log(getattr(response, "text", "")),
                 )
+                _note_openrouter_failure("http_%s" % status)
             else:
                 content = self._content_from_ok_response(response, model_id)
                 if content:
@@ -2520,6 +2565,7 @@ class GenericLLMClient:
                     self._last_served_model = model_id
                     return content
         except Exception as e:
+            _note_openrouter_failure("exc:%s" % type(e).__name__)
             if (
                 not bench_on_timeout
                 and requests is not None
