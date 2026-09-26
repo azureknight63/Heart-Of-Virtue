@@ -304,8 +304,8 @@ describe('autosaveErrorMessage', () => {
 
   // Pins what the docstring says: only 403 and 5xx get their own copy, so any
   // other 4xx still gets the connection wording even though the server answered.
-  it('keeps the network-flavored copy for a 401 (any 4xx other than 403)', () => {
-    const msg = autosaveErrorMessage({ response: { status: 401 } });
+  it.each([400, 401, 409, 413])('keeps the network-flavored copy for a %i (any 4xx other than 403)', (status) => {
+    const msg = autosaveErrorMessage({ response: { status } });
     expect(msg).toBe('Failed to save your progress. Check your connection.');
   });
 

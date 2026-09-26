@@ -17,6 +17,13 @@ import logger from './logger'
 
 const RESOLVABLE_END_STATUSES = new Set(['victory', 'defeat'])
 
+const MAX_LOGGED_STATUS_LENGTH = 32
+
+function loggableStatus(status) {
+    if (status == null) return null
+    return typeof status === 'string' ? status.slice(0, MAX_LOGGED_STATUS_LENGTH) : typeof status
+}
+
 /**
  * True when `endState` is an end state the client can resolve: it carries an
  * id and a victory/defeat status.
@@ -48,11 +55,4 @@ export function resolvableEndState(endState) {
         })
     }
     return null
-}
-
-const MAX_LOGGED_STATUS_LENGTH = 32
-
-function loggableStatus(status) {
-    if (status == null) return null
-    return typeof status === 'string' ? status.slice(0, MAX_LOGGED_STATUS_LENGTH) : typeof status
 }

@@ -220,7 +220,7 @@ describe('GamePage', () => {
         });
     });
 
-    // An active fight against ``enemies`` as useCombat reports it, and a
+    // An active fight against `enemies` as useCombat reports it, and a
     // re-render of the page after the mock changes -- shared by the BGM tests.
     const combatPhase = (enemies) => ({
         combat: { ...mockCombat, combat_active: true, enemies },
