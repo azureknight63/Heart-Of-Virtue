@@ -289,9 +289,12 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
 
                 return (
                   <div key={entry.id ?? `${entry.timestamp}-${idx}`} style={{ fontSize: '13px', lineHeight: '1.4' }}>
-                    <span style={{ opacity: 0.5, marginRight: spacing.sm, color: colors.text.muted, fontSize: '11px' }}>
-                      [{entry.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}]
-                    </span>
+                    {/* The server's 24h time, verbatim; none rather than a render-time "now" (#718). */}
+                    {entry.timestamp && (
+                      <span style={{ opacity: 0.5, marginRight: spacing.sm, color: colors.text.muted, fontSize: '11px' }}>
+                        [{entry.timestamp}]
+                      </span>
+                    )}
                     {isTelegraph && (
                       <span role="img" aria-label={TELEGRAPH_SPOKEN_LABEL} style={{ color: textColor, marginRight: spacing.xs, fontWeight: 'bold' }}>
                         {TELEGRAPH_GLYPH}

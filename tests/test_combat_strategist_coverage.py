@@ -14,6 +14,8 @@ import pytest
 from ai import combat_strategist
 from ai.combat_strategist import (
     CombatStrategist,
+    _ADVANCE_IN_REACH_SCORE,
+    _ADVANCE_SCORE,
     PlayerDefenses,
     PlayerVitals,
     _HEAT_BLAZING,
@@ -226,6 +228,23 @@ class TestFallbackSuggestions:
         assert result[0]["score"] == 90
         assert "No attack is affordable" in result[0]["reasoning"]
 
+    def test_an_affordable_non_damaging_offensive_move_is_not_offense(self, strategist):
+        """Scrub iteration 2: a BullCharge Jean can pay for is not an attack, so
+        it must not hide that every real attack is priced out; and a locked
+        BullCharge is not the "cheapest attack" the Rest advice quotes."""
+        ctx = self._priced_out_ctx()
+        ctx["available_moves"].append({
+            "name": "BullCharge", "category": "Offensive", "deals_damage": False,
+            "available": True, "fatigue_cost": 10, "targeted": True,
+            "viable_targets": [{"id": "enemy_1", "name": "Bat", "distance": 5}],
+        })
+        ctx["fatigue_locked_moves"].append(
+            {"name": "BullCharge", "category": "Offensive", "deals_damage": False,
+             "fatigue_cost": 70}
+        )
+        assert CombatStrategist._offense_priced_out(ctx) is True
+        assert CombatStrategist._cheapest_locked_offense(ctx) == 90
+
     def test_offense_priced_out_still_yields_to_lethal_dodge(self, strategist):
         enemy = {
             "name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10,
@@ -406,6 +425,92 @@ class TestFallbackSuggestions:
         result = strategist._get_fallback_suggestions(ctx, 1)
         assert result[0]["move_name"] == "Advance"
         assert "Close the distance" in result[0]["reasoning"]
+
+    # Issue #718: O1 was told to Advance with an enemy at 1 ft. "Within reach"
+    # is read off the payload the advisor already has -- an offered damaging
+    # move's `viable_targets` is the engine's own in-range verdict -- never
+    # recomputed from distances here.
+    _RUMBLER_AT_1FT = {"id": "enemy_r1", "name": "Rock Rumbler", "distance": 1}
+
+    def _reach_ctx(self, attack_targets):
+        moves = [
+            {"name": "Advance", "category": "Maneuver", "available": True},
+            {"name": "Turn", "category": "Maneuver", "available": True},
+            # A targeted NON-damaging move with a target in reach: it must not
+            # count as "an attack can reach someone".
+            {
+                "name": "MarkedQuarry", "category": "Tactical", "available": True,
+                "targeted": True, "viable_targets": [dict(self._RUMBLER_AT_1FT)],
+            },
+        ]
+        if attack_targets is not None:
+            moves.append({
+                "name": "Attack", "category": "Offensive", "available": True,
+                "targeted": True, "viable_targets": attack_targets,
+            })
+        return _base_ctx(
+            enemies=[{"id": "enemy_r1", "name": "Rock Rumbler", "hp": 50,
+                      "max_hp": 50, "fatigue": 100, "max_fatigue": 100,
+                      "distance": 1, "status_effects": []}],
+            available_moves=moves,
+        )
+
+    # Cold heat is O1's case: Attack drops to 75 there and Advance's flat 80
+    # took the top slot.
+    @pytest.mark.parametrize("heat", [_HEAT_COLD - 0.1, 1.0])
+    def test_advance_is_not_urged_with_an_enemy_already_in_reach(self, strategist, heat):
+        ctx = self._reach_ctx([dict(self._RUMBLER_AT_1FT)])
+        ctx["player"]["heat"] = heat
+        result = strategist._get_fallback_suggestions(ctx, 4)
+        assert result[0]["move_name"] != "Advance"
+        # The fallback returns only the top few, so price Advance directly.
+        state = strategist._derive_tactical_state(ctx)
+        moves = {m["name"]: m for m in ctx["available_moves"]}
+        adv_score, adv_reason = CombatStrategist._score_move(moves["Advance"], state)
+        atk_score, _ = CombatStrategist._score_move(moves["Attack"], state)
+        assert adv_score < atk_score
+        assert adv_score == _ADVANCE_IN_REACH_SCORE
+        assert "Close the distance" not in adv_reason
+        assert "Rock Rumbler is already within reach" in adv_reason
+
+    def test_advance_stays_high_when_no_attack_reaches_anyone(self, strategist):
+        # The adapter drops a targeted move with no viable target from
+        # available_moves, so "every enemy out of reach" is: no attack offered.
+        ctx = self._reach_ctx(None)
+        result = strategist._get_fallback_suggestions(ctx, 4)
+        assert result[0]["move_name"] == "Advance"
+        assert result[0]["score"] == _ADVANCE_SCORE
+        assert "Close the distance" in result[0]["reasoning"]
+
+    def test_a_non_damaging_offensive_move_in_reach_does_not_count(self, strategist):
+        """Scrub finding: reach was decided by category, so a player's BullCharge
+        (Offensive, but the engine says deals_damage False; only offered at
+        3-20 ft) read as "an attack already reaches the Rumbler" -- the exact
+        case where Advance matters most. The adapter publishes the engine's
+        flag on every offered move, and the advisor must read it."""
+        ctx = self._reach_ctx(None)
+        ctx["available_moves"].append({
+            "name": "BullCharge", "category": "Offensive", "deals_damage": False,
+            "available": True, "targeted": True,
+            "viable_targets": [dict(self._RUMBLER_AT_1FT)],
+        })
+        state = strategist._derive_tactical_state(ctx)
+        assert state["reachable_target_names"] == []
+        moves = {m["name"]: m for m in ctx["available_moves"]}
+        adv_score, adv_reason = CombatStrategist._score_move(moves["Advance"], state)
+        assert adv_score == _ADVANCE_SCORE
+        assert "already within reach" not in adv_reason
+        # Nor is BullCharge itself sold as a blow (it had read "lands at
+        # baseline damage"). Whether a gap-closer should outrank Advance at
+        # range is a balance question this does not answer.
+        _, bull_reason = CombatStrategist._score_move(moves["BullCharge"], state)
+        assert "damage" not in bull_reason.lower(), bull_reason
+
+    def test_advance_stays_high_for_an_attack_with_an_empty_target_list(self, strategist):
+        ctx = self._reach_ctx([])
+        result = strategist._get_fallback_suggestions(ctx, 4)
+        assert result[0]["move_name"] == "Advance"
+        assert result[0]["score"] == _ADVANCE_SCORE
 
     def test_wait_check_low_priority(self, strategist):
         ctx = _base_ctx(available_moves=[{"name": "Check", "category": "Miscellaneous", "available": True}])

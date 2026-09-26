@@ -1199,3 +1199,168 @@ class TestNoQcPathLetsAForgedSpeakerLabelThrough:
         kept = npc._qc_npc_text("Careful, NPC: the bridge is out.", [])
         assert kept.text is not None
         assert kept.text == "Careful, someone: the bridge is out."
+
+
+# ---------------------------------------------------------------------------
+# Issue #716: Jean's option may not quote the NPC's private character sheet.
+#
+# Live QA 2026-09-25 (tester A5, `POST /api/npc/chat/open {"npc_id": "Liss"}`):
+# the NPC line and Jean's options come out of ONE completion under ONE system
+# prompt, and that prompt carries Liss's `system_prompt_snippet` ("You adore
+# Gorran the Golemite"). One of Jean's three options was the verbatim text
+# below -- Liss had said nothing about Gorran; her only line was the one about
+# the plates. An option that tells the NPC what she said has to be backed by
+# something she actually said on screen.
+# ---------------------------------------------------------------------------
+
+_A5_LISS_OPENING = (
+    "Those plates on your chest—are they stones? They glitter like the "
+    "river at dusk."
+)
+_A5_GORRAN_OPTION = (
+    "You said you adore Gorran—what does a stone being do that fascinates "
+    "you so?"
+)
+_A5_OTHER_OPTIONS = [
+    {"kind": "reply", "tone": "curious",
+     "text": "They are river stones I collected, polished for luck."},
+    {"kind": "ask-npc", "tone": "surprised",
+     "text": "Do you travel with the nomads often, or is this a rare stop for you?"},
+]
+
+
+def _liss_payload(npc_text):
+    return make_turn(
+        npc_text,
+        jean_options=_A5_OTHER_OPTIONS
+        + [{"kind": "follow-up", "tone": "skeptical", "text": _A5_GORRAN_OPTION}],
+    )
+
+
+def _liss_host(adapter, **overrides):
+    return wired_chat_npc(
+        adapter,
+        name="Liss",
+        _chat_world_facts={"allowed_proper_nouns": ["Liss", "Jean", "Gorran"]},
+        _chat_personality={"given_name": "Liss", "voice": "quick"},
+        **overrides,
+    )
+
+
+class TestJeanMayNotQuoteWhatTheNpcNeverSaid:
+    def test_the_a5_option_is_dropped_when_liss_never_mentioned_gorran(self):
+        adapter = _ScriptedRealAdapter(_liss_payload(_A5_LISS_OPENING))
+        result = _liss_host(adapter).chat_open(chat_player())
+        texts = [o["text"] for o in result["jean_options"]]
+        assert _A5_GORRAN_OPTION not in texts
+        # The two honest options survive and the slot is topped back up.
+        assert _A5_OTHER_OPTIONS[0]["text"] in texts
+        assert _A5_OTHER_OPTIONS[1]["text"] in texts
+        assert len(texts) == 3
+
+    def test_negative_control_the_option_is_kept_when_she_did_say_it(self):
+        said_it = "I adore Gorran! Does he ever sleep, or does he just stand there?"
+        adapter = _ScriptedRealAdapter(_liss_payload(said_it))
+        result = _liss_host(adapter).chat_open(chat_player())
+        assert _A5_GORRAN_OPTION in [o["text"] for o in result["jean_options"]]
+
+    def test_an_earlier_npc_line_in_the_history_supports_the_quote(self):
+        """The transcript is the whole conversation, not only the newest line."""
+        adapter = _ScriptedRealAdapter(_liss_payload(_A5_LISS_OPENING))
+        host = _liss_host(
+            adapter,
+            _chat_history=[{"npc": "Gorran is the best thing I ever saw.", "jean": ""}],
+        )
+        result = host.chat_respond(chat_player(), "Hello again.", "neutral")
+        assert _A5_GORRAN_OPTION in [o["text"] for o in result["jean_options"]]
+
+    @pytest.mark.parametrize("option", [
+        "You told me the ferry leaves at dawn, so why wait here?",
+        "You mentioned the caves earlier; what did you hear there?",
+        "You say the Readers lie, but how would you know that?",
+        "You've said the Badlands are cursed. Who told you so?",
+    ])
+    def test_every_attribution_verb_is_checked(self, option):
+        npc = _qc_host()
+        assert npc._qc_jean_options(
+            [{"tone": "neutral", "text": option}], npc_transcript=["Mm. Noted."]
+        ) == []
+
+    @pytest.mark.parametrize("option", [
+        # Not a claim about the NPC's words at all.
+        "What do you say we rest here until the rain passes?",
+        # An attribution with nothing checkable in it keeps the benefit of the doubt.
+        "Like you said, it is better not to ask too much.",
+        # Conditionals and hypotheticals, not quotes.
+        "I wonder what you'd say about Gorran.",
+        "Whatever you say about the ferry, I trust you.",
+        "If you say the river is safe, I will cross.",
+    ])
+    def test_non_claims_are_left_alone(self, option):
+        npc = _qc_host()
+        kept = npc._qc_jean_options(
+            [{"tone": "neutral", "text": option}], npc_transcript=["Mm. Noted."]
+        )
+        assert [o["text"] for o in kept] == [option]
+
+    @pytest.mark.parametrize("dash", ["--", " - "])
+    def test_an_ascii_dash_ends_the_claim_like_an_em_dash(self, dash):
+        """Scrub finding: with ASCII dashes the claim ran on into Jean's own
+        question ("...do that fascinates you so"), picked up "stone", met
+        Liss's "stones", and the exact #716 option was KEPT."""
+        option = _A5_GORRAN_OPTION.replace("—", dash)
+        npc = _qc_host()
+        kept = npc._qc_jean_options(
+            [{"tone": "neutral", "text": option}], npc_transcript=[_A5_LISS_OPENING]
+        )
+        assert kept == [], option
+
+    @pytest.mark.parametrize("option", [
+        # "what"/"why" before "you" is a relative clause here, not a question.
+        "What you told me about Gorran stayed with me.",
+        "I liked what you said about Gorran.",
+        # Perfect / conditional / "once" forms of the same attribution.
+        "You have said Gorran never sleeps.",
+        "You'd mentioned Gorran earlier.",
+        "You once told me Gorran was old.",
+    ])
+    def test_every_attribution_form_is_checked(self, option):
+        """Scrub iteration 2: these slipped past the #716 check."""
+        npc = _qc_host()
+        assert npc._qc_jean_options(
+            [{"tone": "neutral", "text": option}], npc_transcript=["Mm. Noted."]
+        ) == [], option
+
+    def test_ies_plurals_meet_their_singular(self):
+        """"ferries" must meet "ferry" (it used to stem to "ferrie")."""
+        npc = _qc_host()
+        option = "You said the ferries were slow."
+        kept = npc._qc_jean_options(
+            [{"tone": "neutral", "text": option}],
+            # Only "ferry" can support the claim; nothing else overlaps.
+            npc_transcript=["Mind the ferry."],
+        )
+        assert [o["text"] for o in kept] == [option]
+
+    @pytest.mark.parametrize("option", [
+        # Questions that start before "you" with a have/negated auxiliary.
+        "Have you told me everything you know about the river?",
+        "Why haven’t you told me about the ferry?",
+        "“Did you say the caves?”",
+        "What—did you say the caves?",
+        # Meta statements about how much was said, not what.
+        "You've told me nothing.",
+        "You've said very little, you know.",
+    ])
+    def test_questions_and_meta_statements_are_not_claims(self, option):
+        npc = _qc_host()
+        kept = npc._qc_jean_options(
+            [{"tone": "neutral", "text": option}], npc_transcript=["Mm. Noted."]
+        )
+        assert [o["text"] for o in kept] == [option]
+
+    def test_without_a_transcript_the_check_does_not_run(self):
+        """Legacy callers that pass options alone keep their behaviour."""
+        npc = _qc_host()
+        kept = npc._qc_jean_options([{"tone": "neutral", "text": _A5_GORRAN_OPTION}])
+        assert [o["text"] for o in kept] == [_A5_GORRAN_OPTION]

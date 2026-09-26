@@ -26,7 +26,8 @@ describe('TermsOfServiceModal', () => {
 
     it('calls onClose when Close button is clicked', () => {
         render(<TermsOfServiceModal onClose={onClose} />)
-        fireEvent.click(screen.getByRole('button', { name: /Close/i }))
+        // The footer button, not BaseDialog's "Close dialog" ✕.
+        fireEvent.click(screen.getByRole('button', { name: /^Close$/i }))
         expect(onClose).toHaveBeenCalledOnce()
     })
 })

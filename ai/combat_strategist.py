@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, List, Literal, NamedTuple, Optional, Tuple, TypedDict
 
 from ai.llm_client import GenericLLMClient
+from src.moves import DAMAGING_MOVE_CATEGORIES
 from src.text_format import pct as _pct
 
 logger = logging.getLogger(__name__)
@@ -127,14 +128,17 @@ _DEFENSIVE_MOVE_NAMES = ("Dodge", "Parry")
 # Wait/Check (20), because a swing still costs the enemy nothing but it also
 # teaches the player nothing new that Check would.
 _HARMLESS_ATTACK_SCORE = 15
-#: Move categories that deal damage and carry per-target damage previews, so
-#: the #688 "can this hurt anyone?" rule applies to all of them -- not just
-#: Offensive (Mastery moves strike too).
-_DAMAGING_CATEGORIES = frozenset({"Offensive", "Mastery"})
 # ...and what Swap Weapon is worth once that is true of EVERY offered attack:
 # above Advance (80), Turn (75) and a low-fatigue Rest (72), the moves the QA
 # run alternated through for 150 beats while the blade did nothing.
 _SWAP_WHEN_HARMLESS_SCORE = 88
+# Issue #718: what Advance is worth when an offered attack already reaches
+# somebody -- below every baseline maneuver (Turn 75) so it never outbids an
+# attack Jean can already make, but above Wait/Check (20): closing on a second,
+# farther enemy is not worthless, just not what this beat is for.
+_ADVANCE_IN_REACH_SCORE = 30
+# ...and what it is worth otherwise: closing to range is the plan.
+_ADVANCE_SCORE = 80
 
 # Issue #686: Withdraw/Rest when a charge is inside the defensive window but
 # Dodge/Parry is priced out by fatigue. Withdraw leads -- it is the only move
@@ -387,6 +391,10 @@ class TacticalState(TypedDict):
     # target it can reach, and who those targets are (for the reasoning).
     offense_all_harmless: bool
     harmless_target_names: List[str]
+    # Issue #718: who an offered damaging move can already reach, read off
+    # each move's `viable_targets` (the engine's in-range verdict). Empty
+    # means no attack reaches anyone, which is when Advance is the answer.
+    reachable_target_names: List[str]
 
 
 class IncomingThreat(TypedDict):
@@ -541,6 +549,43 @@ def _charge_is_worth_flagging(beats_until_resolve: Optional[int]) -> bool:
     )
 
 
+#: What a reason calls an incoming charge the payload does not name.
+_UNNAMED_CHARGE = "the enemy's attack"
+
+
+def _sentence_case(text: str) -> str:
+    """``text`` with its first letter capitalised and the rest untouched."""
+    return f"{text[:1].upper()}{text[1:]}"
+
+
+def _deals_damage(move: Dict[str, Any]) -> bool:
+    """Whether an offered move is an attack.
+
+    The engine's ``Move.deals_damage``, which the adapter publishes on every
+    offered move; the category default it is built from only when the payload
+    predates the flag. Category alone is wrong: an Offensive move can
+    reposition (BullCharge) or drain fatigue (KeeningToll), and pricing those
+    as blows sent Advance to the bottom with "already within reach".
+    """
+    flag = move.get("deals_damage")
+    if isinstance(flag, bool):
+        return flag
+    # Not the same rule as `_incoming_beats`, deliberately: there a missing
+    # flag means "price it as a hit" (a warning is never silently lost); here
+    # it means "trust the category" (an offered move's payload predates it).
+    return move.get("category") in DAMAGING_MOVE_CATEGORIES
+
+
+def _is_offensive_attack(move: Dict[str, Any]) -> bool:
+    """An ``Offensive`` move that actually deals damage (`_deals_damage`).
+
+    What the heat/DoT bonuses and the fatigue soft-lock mean by "an attack".
+    Mastery moves are left out on purpose, as they always were there: they
+    have their own base score and are not the cheap swing Rest is advised for.
+    """
+    return move.get("category") == "Offensive" and _deals_damage(move)
+
+
 def _offerable_moves(available_moves: List[Any]) -> List[Dict[str, Any]]:
     """The moves Jean may actually be told to cast this beat.
 
@@ -584,8 +629,15 @@ def _incoming_beats(mip: Optional[Dict[str, Any]]) -> Optional[int]:
 
     The engine returns None for exactly that case; None here means "not
     incoming", and every caller must skip rather than substitute a sentinel.
+
+    A move the engine says deals no damage (``deals_damage`` False, from
+    ``Move.deals_damage``) is not incoming either (issue #714): an enemy's
+    Rest was priced at its user's full damage and read "Rest (potentially
+    lethal) lands in 2 beat(s)". Only an explicit False skips; a payload
+    without the key keeps the old behaviour, so a missing field can never
+    silence a real blow.
     """
-    if not mip:
+    if not mip or mip.get("deals_damage") is False:
         return None
     beats = mip.get("beats_until_resolve")
     if isinstance(beats, bool) or not isinstance(beats, int):
@@ -601,7 +653,7 @@ _ROUTINE_SEVERITY = "normal"
 
 def _charge_name(mip: Dict[str, Any]) -> str:
     """The name the player sees for a charging move ("Tidal Surge")."""
-    return mip.get("display_name") or mip.get("name") or "the enemy's attack"
+    return mip.get("display_name") or mip.get("name") or _UNNAMED_CHARGE
 
 
 def _is_telegraphed(mip: Dict[str, Any]) -> bool:
@@ -639,6 +691,24 @@ def _harmless_targets(move: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], bool]
         if isinstance(high, (int, float)) and not isinstance(high, bool) and high <= 0:
             harmless.append(t)
     return harmless, bool(targets) and len(harmless) == len(targets)
+
+
+def _reachable_target_names(ctx: Dict[str, Any]) -> List[str]:
+    """Issue #718: who some offered damaging move can hit from where Jean stands.
+
+    Reads only ``viable_targets``, which ApiCombatAdapter fills from the
+    engine's own range check (``_get_available_targets``) -- no distance is
+    compared here. A move without that list has no opinion.
+    """
+    targets: List[Dict[str, Any]] = []
+    for m in _offered_damaging_moves(ctx):
+        targets.extend(t for t in m.get("viable_targets") or [] if isinstance(t, dict))
+    return _target_names(targets)
+
+
+def _offered_damaging_moves(ctx: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The offerable moves that are attacks (see `_deals_damage`)."""
+    return [m for m in _offerable_moves(ctx.get("available_moves", [])) if _deals_damage(m)]
 
 
 def _harmless_reason(move: Dict[str, Any]) -> Optional[str]:
@@ -1013,7 +1083,7 @@ class CombatStrategist:
         moves = {
             m.get("name"): m
             for m in ctx.get("available_moves", [])
-            if isinstance(m, dict) and m.get("category") in _DAMAGING_CATEGORIES
+            if isinstance(m, dict) and _deals_damage(m)
         }
         for s in suggestions:
             move = moves.get(s.get("move_name"))
@@ -1125,6 +1195,7 @@ class CombatStrategist:
             ),
             "offense_all_harmless": harmless_offense,
             "harmless_target_names": harmless_names,
+            "reachable_target_names": _reachable_target_names(ctx),
         }
 
     @staticmethod
@@ -1167,11 +1238,7 @@ class CombatStrategist:
         (or one that can hurt somebody) means Jean still has an attack worth
         making, and the answer is False.
         """
-        offense = [
-            m
-            for m in _offerable_moves(ctx.get("available_moves", []))
-            if m.get("category") in _DAMAGING_CATEGORIES
-        ]
+        offense = _offered_damaging_moves(ctx)
         harmless: List[Dict[str, Any]] = []
         for m in offense:
             targets, all_harmless = _harmless_targets(m)
@@ -1192,32 +1259,36 @@ class CombatStrategist:
         min_bui = state["incoming_beats"]
         est_damage = state["estimated_damage"]
         est_lethal = state["incoming_lethal"]
+        # Issue #718: every reason names the charge it answers, as
+        # `_charge_note` does outside the window -- the name `_charge_name`
+        # already resolved into the state, never a second naming path.
+        charge = _sentence_case(state["incoming_move"] or _UNNAMED_CHARGE)
 
         if state["dodge_impaired"] and not est_lethal:
             # Status effect reduces defensive move value when the hit is survivable
             return 60, (
-                f"Attack in ~{min_bui} beat(s) but status effect impairs {name} "
+                f"{charge} in ~{min_bui} beat(s) but status effect impairs {name} "
                 "reliability; consider UseItem or accepting the hit."
             )
         if state["dodge_impaired"] and est_lethal:
             # Even impaired, better than a one-shot
             return 88, (
-                f"Incoming hit is potentially lethal in ~{min_bui} beat(s); "
+                f"{charge} is potentially lethal in ~{min_bui} beat(s); "
                 f"{name} reliability is reduced by status effect but still "
                 "preferable to dying."
             )
         if est_lethal:
             return 97, (
-                f"Potentially lethal hit (~{est_damage} dmg) landing in "
+                f"{charge} is potentially lethal (~{est_damage} dmg), landing in "
                 f"~{min_bui} beat(s); {name} is critical."
             )
         if state["defensively_vulnerable"]:
             return 95, (
-                f"Attack landing in ~{min_bui} beat(s) and Jean's defenses are "
+                f"{charge} landing in ~{min_bui} beat(s) and Jean's defenses are "
                 f"low (~{est_damage} estimated dmg); {name} now."
             )
         return 80, (
-            f"Attack in ~{min_bui} beat(s) (~{est_damage} estimated dmg); "
+            f"{charge} in ~{min_bui} beat(s) (~{est_damage} estimated dmg); "
             f"{name} is advisable but Jean's defenses may absorb it."
         )
 
@@ -1234,7 +1305,7 @@ class CombatStrategist:
             return None
         lethal = " (potentially lethal)" if state["incoming_lethal"] else ""
         charge = state["incoming_move"]
-        lead = f"{charge[:1].upper()}{charge[1:]}{lethal} lands in {beats} beat(s)"
+        lead = f"{_sentence_case(charge)}{lethal} lands in {beats} beat(s)"
         if beats > _LAST_DEFENSIBLE_BEAT:
             return (
                 f"{lead}; Dodge/Parry once it is {_LAST_DEFENSIBLE_BEAT} "
@@ -1302,7 +1373,7 @@ class CombatStrategist:
         ):
             score = _LOCKED_DEFENCE_SCORES[(name, state["incoming_lethal"])]
             # Not implied by the lock: the lock note is derived on its own.
-            charge = state["incoming_move"] or "the enemy's attack"
+            charge = state["incoming_move"] or _UNNAMED_CHARGE
             beats = state["incoming_beats"]
             if name == "Withdraw":
                 return score, (
@@ -1345,7 +1416,9 @@ class CombatStrategist:
         # resting enemy, heat): an attack that cannot hurt anyone it reaches
         # is not worth a beat whatever the heat says. A move with no previews
         # never reaches this -- `_harmless_targets` has no opinion on it.
-        if category in _DAMAGING_CATEGORIES:
+        is_attack = _deals_damage(move)
+        offensive_attack = _is_offensive_attack(move)
+        if is_attack:
             harmless_reason = _harmless_reason(move)
             if harmless_reason:
                 return _HARMLESS_ATTACK_SCORE, harmless_reason
@@ -1355,20 +1428,20 @@ class CombatStrategist:
                 state["harmless_target_names"]
             )
 
-        if state["dot_active"] and category == "Offensive":
+        if state["dot_active"] and offensive_attack:
             # Player DoT ticking — reward aggression to end the fight
             return min(95, base_score + 8), (
                 f"DoT is draining HP; {name} to end combat quickly."
             )
 
-        if state["enemy_likely_resting"] and category == "Offensive":
+        if state["enemy_likely_resting"] and offensive_attack:
             # Enemy likely to Rest next turn — safe offensive window
             return min(95, base_score + 6), (
                 f"Enemy fatigue is critical — they may Rest next turn; {name} to "
                 "exploit the window."
             )
 
-        if state["enemy_dot_active"] and category == "Offensive":
+        if state["enemy_dot_active"] and offensive_attack:
             # Enemy has DoT — time favours Jean, slightly less frantic. Named
             # generically: _DOT_STATUSES covers acid, resonance and spiritual
             # drain as well as poison and fire.
@@ -1384,12 +1457,19 @@ class CombatStrategist:
             )
 
         if name == "Advance":
-            return 80, "Close the distance to bring offensive moves into range."
+            names = state["reachable_target_names"]
+            if names:
+                verb = "is" if len(names) == 1 else "are"
+                return _ADVANCE_IN_REACH_SCORE, (
+                    f"{', '.join(names)} {verb} already within reach of Jean's attacks; "
+                    "Advance gains nothing this beat."
+                )
+            return _ADVANCE_SCORE, "Close the distance to bring offensive moves into range."
 
         if name in ("Wait", "Check"):
             return 20, f"{name} cedes initiative; use only if no better option exists."
 
-        if category == "Offensive":
+        if offensive_attack:
             heat_band = state["heat_band"]
             score = min(99, base_score + _HEAT_OFFENSIVE_BONUS[heat_band])
             return score, _HEAT_OFFENSIVE_NOTE[heat_band].format(
@@ -1846,12 +1926,9 @@ class CombatStrategist:
         usable = [
             m for m in ctx.get("available_moves", []) if m.get("available", True)
         ]
-        if any(m.get("category") == "Offensive" for m in usable):
+        if any(_is_offensive_attack(m) for m in usable):
             return False
-        return any(
-            m.get("category") == "Offensive"
-            for m in ctx.get("fatigue_locked_moves", [])
-        )
+        return any(_is_offensive_attack(m) for m in ctx.get("fatigue_locked_moves", []))
 
     @staticmethod
     def _cheapest_locked_offense(ctx: Dict[str, Any]) -> Optional[int]:
@@ -1859,7 +1936,7 @@ class CombatStrategist:
         costs = [
             m.get("fatigue_cost") or 0
             for m in ctx.get("fatigue_locked_moves", [])
-            if m.get("category") == "Offensive"
+            if _is_offensive_attack(m)
         ]
         return min(costs) if costs else None
 

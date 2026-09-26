@@ -1127,6 +1127,10 @@ class Passageway(Object):
     locked_until_flag = None
     locked_message = None
 
+    #: Words that end a passageway name's generic head and introduce its
+    #: destination ("Path TO Grondia"); see ``build_article_phrase``.
+    _DESTINATION_PREPOSITIONS = frozenset({"to", "into", "toward", "towards"})
+
     #: Extra verbs that CROSS this placement, beyond ``enter``, its delegators
     #: and the words of its own name -- authored per placement (#630): the
     #: Eastern Gates' ``east``/``west`` and The Guesthold's ``inside``. They
@@ -1411,6 +1415,19 @@ class Passageway(Object):
         )
         return True
 
+    def story_locked(self, player):
+        """True while ``locked_until_flag`` holds this passageway shut.
+
+        The pure question behind ``crossing_locked``: it narrates nothing, so
+        a payload may ask it on every poll (issue #718 -- the API reported
+        ``locked: false`` while the Eastern Gate refused to open). The guard
+        and its reasons are ``crossing_locked``'s, below.
+        """
+        flag = self.locked_until_flag
+        if not (isinstance(flag, str) and flag):
+            return False
+        return not gate_is_set(player, flag)
+
     def crossing_locked(self, player):
         """True, after narrating a decline, when a story gate blocks crossing.
 
@@ -1429,10 +1446,7 @@ class Passageway(Object):
         value (``None``, a list, ...) must read as "not locked" rather than
         raise.
         """
-        flag = self.locked_until_flag
-        if not (isinstance(flag, str) and flag):
-            return False
-        if gate_is_set(player, flag):
+        if not self.story_locked(player):
             return False
         stops_at = f"Jean stops at {self.build_article_phrase(self.name)}"
         narrate(
@@ -1517,11 +1531,22 @@ class Passageway(Object):
         Possessives (Jambo's Tent) are proper nouns — no article.
         Names starting with "The" strip the duplicate and preserve rest.
         Generic noun phrases (Archive Door, Tent Flap) get "the " prepended.
+        Only the generic head is lowercased: after a preposition comes the
+        destination, a place name kept as authored -- "Path to Grondia" is
+        "the path to Grondia", never "...grondia" (issue #718).
         """
         if "'" in name:
             return name
         if name.lower().startswith("the "):
             return f"the {name[4:]}"
+        words = name.split()
+        for i, word in enumerate(words[1:], start=1):
+            if word.lower() in Passageway._DESTINATION_PREPOSITIONS:
+                generic_head = " ".join(words[:i + 1]).lower()
+                destination = " ".join(words[i + 1:])
+                if not destination:
+                    return f"the {generic_head}"
+                return f"the {generic_head} {destination}"
         return f"the {name.lower()}"
 
     # Class-level aliases, not delegator methods (#626): each IS `enter`, so it

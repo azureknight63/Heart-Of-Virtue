@@ -67,10 +67,15 @@ vi.mock('../api/endpoints', () => ({
     },
 }));
 
+// The promise GamePage's onMove returned for the last "Move North" click, so a
+// test can tell "handled" (resolves) from "rethrown" (rejects); the button
+// itself still swallows a rejection so an unrelated test never sees one.
+const movePromises = [];
+
 vi.mock('../components/LeftPanel', () => ({
     default: ({ onMove, onCombatAction, onAdvisorPause, onAdvisorRequestSuggestions, onInteractionTypingChange, onInteractionClose, onMoveSubmitted }) => (
         <div data-testid="left-panel">
-            <button onClick={() => onMove('north').catch(() => {})}>Move North</button>
+            <button onClick={() => { const p = onMove('north'); movePromises.push(p); p.catch(() => {}); }}>Move North</button>
             <button onClick={() => onCombatAction('attack', { target: 'enemy_1' })}>Combat Action</button>
             <button onClick={() => onAdvisorPause(true)}>Pause Advisor</button>
             <button onClick={() => onAdvisorRequestSuggestions()}>Request Suggestions</button>
@@ -207,6 +212,7 @@ describe('GamePage handler wiring', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        movePromises.length = 0;
 
         refetchPlayer = vi.fn().mockResolvedValue();
         refetchWorld = vi.fn().mockResolvedValue();
@@ -319,9 +325,42 @@ describe('GamePage handler wiring', () => {
             fireEvent.click(screen.getByText('Move North'));
         });
 
-        // handleMove's catch block just rethrows — refetch/triggerTick only run on success.
+        // handleMove's catch block returns early — refetch/triggerTick only run on success.
         expect(refetchPlayer).not.toHaveBeenCalled();
         expect(triggerTick).not.toHaveBeenCalled();
+    });
+
+    it('a move the server refuses (#713) is surfaced, resurfaces the scene and resyncs the room', async () => {
+        // The /world/move route answers a refusal with a 400 and prose in
+        // `error`; axios rejects with it under `response.data`.
+        const refusal = 'Jean must first answer the scene in front of him.';
+        const err = Object.assign(new Error('Request failed with status code 400'), {
+            response: { status: 400, data: { success: false, error: refusal } },
+        });
+        moveToLocation.mockRejectedValue(err);
+        const showError = mockToastError();
+        const checkPendingEvents = vi.fn().mockResolvedValue();
+        useEventManager.mockReturnValue(makeEventManagerReturn({ checkPendingEvents }));
+        renderGamePage();
+        // Mount runs its own pending-events check and world fetch; count only
+        // what the refused move causes.
+        checkPendingEvents.mockClear();
+        refetchWorld.mockClear();
+
+        await clickAndSettle('Move North');
+
+        // Told why, rather than a silent console.log in MovementStar.
+        expect(showError).toHaveBeenCalledWith(refusal);
+        // A dialog that was lost client-side comes back...
+        expect(checkPendingEvents).toHaveBeenCalledTimes(1);
+        // ...and useWorld's optimistic cached room is replaced by the real one.
+        expect(refetchWorld).toHaveBeenCalledTimes(1);
+        // Still a failed move: none of the success-path side effects.
+        expect(refetchPlayer).not.toHaveBeenCalled();
+        expect(triggerTick).not.toHaveBeenCalled();
+        // Handled in full, not rethrown: onMove resolves, so MapGrid (which
+        // calls it with no catch) is spared an unhandled rejection.
+        await expect(movePromises.at(-1)).resolves.toBeUndefined();
     });
 
     it('starts combat mode when the combat_init event is confirmed', async () => {

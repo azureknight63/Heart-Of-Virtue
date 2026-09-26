@@ -484,7 +484,7 @@ describe('EventDialog', () => {
     expect(screen.queryByTestId('event-text-container')).toBeNull();
 
     // Close button visible immediately (isComplete=true on mount).
-    expect(screen.getByRole('button', { name: /Close/i }).disabled).toBe(false);
+    expect(screen.getByRole('button', { name: /^Close$/i }).disabled).toBe(false);
   });
 
   describe('submissionErrorMessage', () => {
@@ -732,11 +732,11 @@ describe('EventDialog', () => {
         // "or click anywhere to continue…" line is gone — clicking the body
         // still closes, it is simply no longer advertised beside two other
         // controls.
-        expect(screen.getByRole('button', { name: /^CLOSE$/ })).not.toBeNull();
+        expect(screen.getByRole('button', { name: /^Close$/i })).not.toBeNull();
         expect(screen.queryByText(/or click anywhere to continue/i)).toBeNull();
         expect(screen.queryByText(/click to finish/i)).toBeNull();
 
-        fireEvent.click(screen.getByRole('button', { name: '✕' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
         expect(mockOnClose).toHaveBeenCalledTimes(1);
       });
 
@@ -760,13 +760,14 @@ describe('EventDialog', () => {
         fireEvent.click(stage); // advance to beat 2
         fireEvent.click(stage); // finish beat 2's typewriter — last beat NOT reached
         expect(screen.queryByText(/his voice low and rough from disuse/)).toBeNull();
+        // The dialog's own CLOSE button, not BaseDialog's "Close dialog" ✕.
         expect(screen.queryByRole('button', { name: /^Close$/i })).toBeNull();
         return utils.unmount;
       };
 
       it('still dismisses via ✕ when the conversation has not reached its last beat', () => {
         const unmount = driveToBeatTwo({ ...longNoRosterEvent, event_id: 'gorran-pools-2a' });
-        fireEvent.click(screen.getByRole('button', { name: '✕' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
         expect(mockOnClose).toHaveBeenCalledTimes(1);
         unmount();
       });
@@ -804,7 +805,7 @@ describe('EventDialog', () => {
 
         // showCloseButton={!needsInput} hides the ✕ entirely for this event;
         // the overlay click is still wired to handleGlobalInteraction though.
-        expect(screen.queryByRole('button', { name: '✕' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Close dialog' })).toBeNull();
         fireEvent.click(document.querySelector('.modal-overlay'));
         expect(mockOnClose).not.toHaveBeenCalled();
       });
@@ -984,6 +985,68 @@ describe('EventDialog', () => {
       fireEvent.click(screen.getByText(/↩ Back/i));
       expect(screen.getByText('The gate groaned open.').textContent).toBe('The gate groaned open.');
       expect(screen.queryByText('Come, Jean Claire.')).toBeNull();
+    });
+
+    // Issue #715: EventDialog's own document keydown handler (the one that
+    // reads inputOptions and fires handleChoiceSelect/handleSubmit) checked
+    // showInput, isSubmitting, typing targets, modifiers and e.repeat, but
+    // never showHistory. Unlike ConversationStage's advance listener (already
+    // guarded via `paused={showHistory}`, see the tests above), this handler
+    // kept firing while the LOG view covered a plain (non-staged) prompt: a
+    // sole "Continue" option took Enter, and a multi-choice prompt took a
+    // number key, even though the player could not see either option.
+    it('does not submit on Enter for a sole option while LOG is open (#715)', () => {
+      const soleOptionEvent = {
+        ...mockEvent,
+        input_prompt: 'Your choice:',
+        input_options: [{ label: 'Continue', value: 'go' }],
+      };
+      renderDialog(soleOptionEvent, { history });
+      finishText();
+      expect(screen.getByText('Continue')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText(/Log \(2\)/i));
+      const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      document.dispatchEvent(enter);
+
+      expect(mockOnSubmitInput).not.toHaveBeenCalled();
+    });
+
+    it('does not submit on a number key for a multi-choice prompt while LOG is open (#715)', () => {
+      renderDialog(mockEvent, { history });
+      finishText();
+      expect(screen.getByText('Touch it')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText(/Log \(2\)/i));
+      const one = new KeyboardEvent('keydown', { key: '1', bubbles: true, cancelable: true });
+      document.dispatchEvent(one);
+
+      expect(mockOnSubmitInput).not.toHaveBeenCalled();
+    });
+
+    // Negative control: with LOG closed, the same keys DO submit — this must
+    // stay true both before and after the #715 fix, or the two tests above
+    // would be vacuous (the handler doing nothing for unrelated reasons).
+    it('still submits on Enter/number keys when LOG is closed (negative control)', () => {
+      const soleOptionEvent = {
+        ...mockEvent,
+        input_prompt: 'Your choice:',
+        input_options: [{ label: 'Continue', value: 'go' }],
+      };
+      renderDialog(soleOptionEvent, { history });
+      finishText();
+
+      const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      document.dispatchEvent(enter);
+      expect(mockOnSubmitInput).toHaveBeenCalledWith('event-123', 'go');
+    });
+
+    it('still submits on a number key when LOG is closed (negative control)', () => {
+      renderDialog(mockEvent, { history });
+      finishText();
+      const one = new KeyboardEvent('keydown', { key: '1', bubbles: true, cancelable: true });
+      document.dispatchEvent(one);
+      expect(mockOnSubmitInput).toHaveBeenCalledWith('event-123', 'touch');
     });
   });
 
@@ -1202,7 +1265,7 @@ describe('EventDialog', () => {
       await waitFor(() => expect(touch.disabled).toBe(false));
       expect(onSubmitInput).not.toHaveBeenCalled();
       // No ✕ either, which is what makes the stuck state unrecoverable.
-      expect(screen.queryByRole('button', { name: '✕' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Close dialog' })).toBeNull();
     });
 
     it('re-enables the choice buttons when the submission resolves unsuccessfully', async () => {

@@ -579,6 +579,11 @@ class TestPassagewayArticleGeneration:
             ("The Secret Door", "the Secret Door"),
             # Generic noun phrases get a lowercased "the ".
             ("Archive Door", "the archive door"),
+            # Issue #718: only the generic head is lowercased. What follows
+            # its preposition names a place, and keeps the author's casing
+            # (O1 saw "Jean steps through the path to grondia...").
+            ("Path to Grondia", "the path to Grondia"),
+            ("Passage to the Mineral Pools", "the passage to the Mineral Pools"),
         ],
     )
     def test_passageway_enter_builds_the_right_article_phrase(

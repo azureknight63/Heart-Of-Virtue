@@ -549,3 +549,82 @@ class TestObjectSerializeContainer:
             data = ObjectSerializer.serialize_container(obj)
         assert data["item_count"] == 1
 
+
+# ---------------------------------------------------------------------------
+# Issue #718: a story-gated passageway reports its lock
+# ---------------------------------------------------------------------------
+
+
+class TestStoryLockedPassagewayReportsLocked:
+    """Grondia's Eastern Gate (#669) refuses to cross until Votha Krr's second
+    conversation, but ``locked`` only ever read the KEY lock -- a Passageway
+    has none -- so the room payload carried no lock at all and the interact
+    response's ``object_state.locked`` said ``False`` while the gate was
+    refusing (A1, 2026-09-25). Built from the shipped placement through the
+    real map loader, via the #669 fixture.
+    """
+
+    @staticmethod
+    def _gate():
+        from tests.test_issue_669_grondia_eastern_gate_lock import build_gate_world
+
+        player, _game_map, gate = build_gate_world()
+        return player, gate
+
+    @staticmethod
+    def _open(player):
+        from src.events import set_story_gate
+        from tests.test_issue_669_grondia_eastern_gate_lock import LOCK_FLAG
+
+        set_story_gate(player, LOCK_FLAG)
+
+    def test_the_gate_serializes_locked_while_the_story_holds_it(self):
+        from src.narration import capture_narration
+
+        player, gate = self._gate()
+        with capture_narration() as messages:
+            data = ObjectSerializer.serialize(gate, player=player)
+        assert data["locked"] is True
+        # Asking is not trying: the decline is narrated only by a crossing.
+        assert messages == []
+
+    def test_a_story_lock_never_advertises_unlock(self):
+        """No key opens it: UNLOCK would be a button that cannot work."""
+        player, gate = self._gate()
+        data = ObjectSerializer.serialize(gate, player=player)
+        assert "unlock" not in [str(k).lower() for k in data["keywords"]]
+        assert "open" not in [str(k).lower() for k in data["keywords"]]
+
+    def test_the_gate_serializes_unlocked_once_the_flag_is_set(self):
+        player, gate = self._gate()
+        self._open(player)
+        data = ObjectSerializer.serialize(gate, player=player)
+        assert data["locked"] is False
+
+    def test_the_room_payload_threads_the_player(self):
+        from src.api.services.game_service import GameService
+
+        player, gate = self._gate()
+        room = GameService().get_current_room(player)
+        (entry,) = [o for o in room["objects"] if o["id"] == wire_handle(gate)]
+        assert entry["locked"] is True
+
+    def test_the_interact_object_state_reports_the_story_lock(self):
+        from src.api.services.game_service import GameService
+
+        player, gate = self._gate()
+        result = GameService().interact_with_target(
+            player, wire_handle(gate), "enter", session_data={}
+        )
+        assert result["object_state"]["locked"] is True, result
+        assert "unlock" not in [str(k).lower() for k in result["object_state"]["keywords"]]
+
+    def test_the_interact_object_state_is_unlocked_once_open(self):
+        from src.api.services.game_service import GameService
+
+        player, gate = self._gate()
+        self._open(player)
+        result = GameService().interact_with_target(
+            player, wire_handle(gate), "enter", session_data={}
+        )
+        assert result["object_state"]["locked"] is False, result

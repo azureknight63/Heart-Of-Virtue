@@ -13,6 +13,7 @@ import {
     autoResolvedTargetId,
     moveDamagePreview,
     shortfallSuffix,
+    WAIT_MOVE_NAME,
 } from '../utils/combatMoveStatus';
 import {
     STAGE_KEYS,
@@ -41,6 +42,13 @@ const STAGE_LABELS = {
     cooldown: 'Cooldown',
 };
 
+// Wait's duration range (WAIT_DURATION_PROMPT, src/api/combat_adapter.py) is
+// only revealed after it is clicked and never rides the moves-list wire, so
+// its card says the honest thing rather than inventing "3-10" or showing the
+// placeholder's "0 beats" (#718; see WAIT_MOVE_NAME).
+const DURATION_CHOICE_LABEL = 'you choose';
+const DURATION_CHOICE_TITLE = 'You choose the duration after selecting this move.';
+
 // Width of the fullest bar in the visible list (the move at maxTotal beats).
 // Every other bar in the same panel is scaled relative to this, not to its
 // own total — see maxTotalStageBeats' docstring for why per-card
@@ -60,10 +68,15 @@ const COMMITMENT_BAR_MIN_WIDTH = 3;
 const MoveCommitmentBar = ({ move, maxTotal }) => {
     const stageBeats = getStageBeats(move);
     const total = totalStageBeats(stageBeats);
+    const isDurationChoice = move?.name === WAIT_MOVE_NAME;
 
     // Nothing in the visible list declares a duration (e.g. every move here
     // is missing stage_beats) — draw nothing rather than a row of empty bars.
-    if (maxTotal <= 0) return null;
+    // Wait is the one exception: its stage_beats is a [0,0,0,0] placeholder
+    // (see WAIT_MOVE_NAME), so with no other move to set maxTotal it would
+    // vanish along with its "you choose" label. It keeps an empty track
+    // beside that label instead.
+    if (maxTotal <= 0 && !isDurationChoice) return null;
 
     const barWidth = total <= 0
         ? COMMITMENT_BAR_MIN_WIDTH
@@ -77,7 +90,7 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
         <div
             data-testid="move-commitment-bar"
             data-total-beats={total}
-            title={`${breakdown} (${formatBeats(total)} ${beatUnit(total)} total lockout)`}
+            title={isDurationChoice ? DURATION_CHOICE_TITLE : `${breakdown} (${formatBeats(total)} ${beatUnit(total)} total lockout)`}
             style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}
         >
             <div
@@ -109,7 +122,7 @@ const MoveCommitmentBar = ({ move, maxTotal }) => {
                 </div>
             </div>
             <GameText variant="muted" size="xs" style={{ fontFamily: fonts.main, whiteSpace: 'nowrap' }}>
-                {formatBeats(total)} {beatUnit(total)}
+                {isDurationChoice ? DURATION_CHOICE_LABEL : `${formatBeats(total)} ${beatUnit(total)}`}
             </GameText>
         </div>
     );

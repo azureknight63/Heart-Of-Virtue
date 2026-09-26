@@ -29,6 +29,9 @@ import { redirectToLogin } from '../utils/session'
 import { apiErrorMessage, autosaveErrorMessage } from '../utils/apiError'
 import { LOOT_COLLECT_REFUSED } from '../utils/lootCopy'
 
+/** Shown when a move fails and the response carries no reason of its own. */
+const MOVE_FAILED_MESSAGE = 'Jean could not move.'
+
 export default function GamePage() {
   const isMobile = useMobile()
 
@@ -375,7 +378,23 @@ export default function GamePage() {
    * Handle movement with event and combat checks
    */
   const handleMove = async (direction) => {
-    const result = await moveToLocation(direction)
+    let result
+    try {
+      result = await moveToLocation(direction)
+    } catch (err) {
+      // The server refused (e.g. a scene still awaits an answer, #713) or the
+      // request failed. Say why, bring back any dialog the client lost, and
+      // replace the cached room useWorld applied optimistically. Handled here
+      // completely, so it is not rethrown: MapGrid calls onMove without a
+      // catch, and every refused tile click became an unhandled rejection.
+      showError(apiErrorMessage(err, MOVE_FAILED_MESSAGE))
+      // refetchWorld's loading edge usually re-polls pending events too, but
+      // not while an endState is showing; ask directly so a lost dialog
+      // always comes back.
+      checkPendingEvents()
+      refetchWorld()
+      return
+    }
 
     // Handle events triggered by movement
     if (result.events_triggered && result.events_triggered.length > 0) {
@@ -557,23 +576,48 @@ export default function GamePage() {
   }, [mode, playSFX])
 
   /**
+   * Latches whether the CURRENT fight is a boss fight, for the BGM effect
+   * below. `combat?.enemies` is not a safe read at the moment that matters
+   * most: by the time an `end_state` appears the adapter has already emptied
+   * the roster, so re-deriving isBossFight from `combat?.enemies` on every
+   * render dropped a boss fight back to the ordinary 'battle' track the
+   * instant victory landed — before the VictoryDialog even had a chance to
+   * open (#718 item 4). So the flag latches: it turns on the first time a
+   * boss appears in the roster -- even if the roster lands after combat mode
+   * began -- stays on for the rest of the fight (a boss dying before its
+   * minions keeps its music), and clears on the way back to exploration.
+   * It is state, not a ref, so the BGM effect below re-runs when it flips.
+   */
+  const rosterHasBoss = (combat?.enemies || []).some((enemy) => enemy.is_boss)
+  const [isBossFight, setIsBossFight] = useState(false)
+  useEffect(() => {
+    if (mode !== 'combat') {
+      setIsBossFight(false)
+    } else if (rosterHasBoss) {
+      setIsBossFight(true)
+    }
+  }, [mode, rosterHasBoss])
+  // Read THIS, not isBossFight: the latch only takes effect a render after
+  // the roster shows a boss, and the live roster covers that first commit,
+  // so the music never asks for 'battle' on the way into a boss fight (that
+  // swap cut the outgoing track).
+  const playBossTrack = isBossFight || (mode === 'combat' && rosterHasBoss)
+
+  /**
    * Manage BGM based on mode and location metadata
    * (Does not override active event BGM)
    */
   useEffect(() => {
     if (!currentEvent) {
       if (mode === 'combat') {
-        // Boss fights (Lurker, King Slime, …) get their own track; the
-        // engine flags them via `is_boss` on the enemy combatant.
-        const isBossFight = (combat?.enemies || []).some((enemy) => enemy.is_boss)
-        playBGM(isBossFight ? 'boss_battle' : 'battle')
+        playBGM(playBossTrack ? 'boss_battle' : 'battle')
       } else {
         // Use the BGM defined in map metadata, fallback to adventure
         const track = location?.bgm || 'adventure'
         playBGM(track)
       }
     }
-  }, [mode, location?.bgm, playBGM, currentEvent, combat?.enemies])
+  }, [mode, location?.bgm, playBGM, currentEvent, playBossTrack])
 
   /**
    * Check combat status and pending events whenever player and world data

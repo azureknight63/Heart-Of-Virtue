@@ -69,9 +69,13 @@ def won_fight(make_world, grid_3x3):
     ``won_fight(before_the_kill=fn)`` — ``fn(tile)`` runs with the fight tile
     as it was BEFORE the enemy died, for tests that need something already
     lying there when the drop lands (#621).
+    ``won_fight(carrying=[...])`` — what the dying enemy has in its pack, which
+    ``drop_inventory`` scatters (hidden) beside the loot-table roll.
     """
 
-    def _build(player_knows_the_room=True, loot=None, before_the_kill=None):
+    def _build(
+        player_knows_the_room=True, loot=None, before_the_kill=None, carrying=None
+    ):
         jean, game_map = make_world(grid_3x3)
         fight_tile = game_map[(0, 0)]
 
@@ -99,6 +103,8 @@ def won_fight(make_world, grid_3x3):
         # collected (#621).
         slime = Slime()
         slime.loot = dict(_CERTAIN_LOOT if loot is None else loot)
+        if carrying is not None:
+            slime.inventory = list(carrying)
         slime.current_room = fight_tile
         slime.player_ref = jean
         slime.before_death()
@@ -940,6 +946,40 @@ def test_the_victory_dialog_describes_the_drop_not_a_twin(won_fight, game_servic
     (taken,) = [i for i in fight.player.inventory if id(i) not in carried]
     assert taken is not twin
     assert (entry["value"], entry["description"]) == (taken.value, taken.description)
+
+
+def test_the_victory_dialog_describes_the_whole_gold_drop(won_fight):
+    """Issue #718: O1's dialog read "A small pouch containing 42 gold pieces."
+    beside ``quantity: 115``, and collecting it raised gold by 115.
+
+    No merge left a stale description: every pile describes its own count.
+    The summary sums the quantity over EVERY drop of a name, but read the
+    description (and ``value``, which for gold is the amount) off the first
+    pile alone. One death drops two gold piles that never merge -- the
+    loot-table roll lands visible, the scattered pack hidden -- and several
+    kills in one fight do the same.
+    """
+    from src.items import Gold
+
+    rolled, carried = 42, 73
+    # drop_inventory keeps each unit unless random() > 0.6; 0.0 keeps all.
+    with patch("src.npc._loot.random.random", return_value=0.0):
+        fight = won_fight(
+            loot={"Gold": {"chance": 100, "qty": rolled}}, carrying=[Gold(carried)]
+        )
+
+    piles = [i for i in fight.fight_tile.items_here if isinstance(i, Gold)]
+    assert sorted(p.count for p in piles) == [rolled, carried], "premise: two piles"
+    for pile in piles:
+        assert str(pile.count) in pile.description, "premise: each pile is honest"
+
+    (entry,) = fight.player.combat_end_summary["items_dropped"]
+    total = rolled + carried
+    assert entry["quantity"] == total
+    assert entry["description"] == Gold(total).description, entry
+    assert entry["value"] == Gold(total).value, entry
+    # Describing the sum restates a copy; the piles on the floor are untouched.
+    assert sorted(p.count for p in piles) == [rolled, carried]
 
 
 class _AfterTheFightScene:

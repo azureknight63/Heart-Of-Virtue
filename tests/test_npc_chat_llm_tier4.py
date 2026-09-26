@@ -26,6 +26,7 @@ Tests cover:
 - All edge cases and error paths
 """
 
+from ai.llm_client import NPC_LOCATION_BLOCK_NAME
 from types import SimpleNamespace
 import pytest
 import json
@@ -847,7 +848,7 @@ class TestBuildSystemPrompt:
 
         assert "You are Tal, a nomad. methodical." in prompt
         assert "You know about trade routes, water caches." in prompt
-        assert "Jean is he/him. Do not write Jean's dialogue." in prompt
+        assert "Jean is a grown man (he/him). Do not write Jean's dialogue." in prompt
         assert "MagicMock" not in prompt
 
     def test_generic_npc_prompt_falls_back_with_no_personality(self, player):
@@ -940,8 +941,10 @@ class TestBuildSystemPrompt:
 
         prompt = npc._build_system_prompt(player)
 
+        from ai.llm_client import NPC_PRIVATE_BLOCK_LABEL
+
         assert "WORLD:" not in prompt
-        assert prompt.startswith("You are Ren, a nomad.")
+        assert prompt.startswith(NPC_PRIVATE_BLOCK_LABEL + "\nYou are Ren, a nomad.")
 
     @pytest.mark.parametrize("chapter", ["1", "2", "7"])
     def test_the_real_story_chapter_reaches_the_spoiler_guard(self, player, chapter):
@@ -959,6 +962,105 @@ class TestBuildSystemPrompt:
 
         assert f"It is currently chapter {chapter}." in prompt
         assert f"JEAN'S KNOWN CONTEXT (chapter {chapter})" in prompt
+
+    def test_the_character_block_is_labelled_private_to_the_npc(self, player):
+        """Issue #716. Jean's options are generated in the SAME completion as
+        the NPC's line, under this prompt, so the model read Liss's sheet
+        ("You adore Gorran the Golemite") and had Jean quote it back to her.
+        The sheet is fenced with a label saying Jean does not know it, directly
+        above the authored text, and the options rule names that label."""
+        from ai.llm_client import (
+            NPC_PRIVATE_BLOCK_LABEL,
+            NPC_PRIVATE_BLOCK_NAME,
+            _JEAN_OPTION_KNOWLEDGE_RULE,
+        )
+
+        snippet = "You adore Gorran the Golemite."
+        npc = chat_npc(
+            init=False,
+            name="Liss",
+            _chat_world_facts={},
+            _chat_char_config={"system_prompt_snippet": snippet},
+            _chat_personality=None,
+        )
+
+        prompt = npc._build_system_prompt(player)
+
+        assert NPC_PRIVATE_BLOCK_LABEL + "\n" + snippet in prompt
+        assert NPC_PRIVATE_BLOCK_NAME in NPC_PRIVATE_BLOCK_LABEL
+        assert "Jean" in NPC_PRIVATE_BLOCK_LABEL
+        assert NPC_PRIVATE_BLOCK_NAME in _JEAN_OPTION_KNOWLEDGE_RULE
+
+    def test_a_generic_persona_is_labelled_private_too(self, player):
+        from ai.llm_client import NPC_PRIVATE_BLOCK_LABEL
+
+        npc = chat_npc(
+            init=False,
+            name="Nomad",
+            _chat_world_facts={},
+            _chat_char_config=None,
+            _chat_personality={"given_name": "Ren", "voice": "sparse"},
+        )
+
+        prompt = npc._build_system_prompt(player)
+
+        assert NPC_PRIVATE_BLOCK_LABEL + "\nYou are Ren, a nomad." in prompt
+
+    @staticmethod
+    def _stand_on(player, map_name):
+        """Put ``player`` on the real map ``map_name``, as the loader would.
+
+        ``Universe._load_single_json_map`` builds ``player.map`` as the map's
+        name plus its ``metadata`` block verbatim; this does the same from the
+        shipped JSON without instantiating the map's NPCs (which would mutate
+        the merchant registries).
+        """
+        path = Path(__file__).resolve().parent.parent / "src" / "resources" / "maps" / f"{map_name}.json"
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        player.map = {"name": map_name}
+        if "metadata" in raw:
+            player.map["metadata"] = raw["metadata"]
+
+    @staticmethod
+    def _where_line(prompt):
+        lines = [ln for ln in prompt.splitlines() if ln.startswith(f"{NPC_LOCATION_BLOCK_NAME}:")]
+        assert len(lines) == 1, prompt
+        return lines[0]
+
+    def _jambo(self):
+        return chat_npc(
+            init=False,
+            name="Jambo",
+            _chat_world_facts={},
+            _chat_char_config={"system_prompt_snippet": "You are Jambo."},
+            _chat_personality=None,
+        )
+
+    def test_jambo_in_the_grondia_tent_is_told_he_is_in_grondia(self, player):
+        """Issue #717 (O1): in his Grondia tent Jambo placed himself by the
+        river for three turns; nothing in the prompt said which tent."""
+        self._stand_on(player, "grondia-jambos_shop")
+        where = self._where_line(self._jambo()._build_system_prompt(player))
+        assert "Grondia" in where
+        assert "camp" not in where.lower()
+        assert "river" not in where.lower()
+
+    def test_jambo_in_the_camp_tent_is_told_he_is_at_the_camp(self, player):
+        self._stand_on(player, "eastern-descent-jambos-tent")
+        where = self._where_line(self._jambo()._build_system_prompt(player))
+        assert "camp" in where.lower()
+        assert "Grondia" not in where
+
+    def test_a_map_with_no_place_gives_no_where_line(self, player):
+        """``live_world``'s scratch map has no metadata: say nothing rather
+        than guess."""
+        assert NPC_LOCATION_BLOCK_NAME not in self._jambo()._build_system_prompt(player)
+
+    def test_the_prompt_says_jean_is_a_grown_man(self, player):
+        """Issue #717 (A5): Liss, a nine-year-old, called Jean "child". The
+        prompt said he/him and nothing about his age."""
+        prompt = self._jambo()._build_system_prompt(player)
+        assert "Jean is a grown man" in prompt
 
     def test_chapter_defaults_to_one_for_a_fresh_game(self, player):
         npc = chat_npc(
@@ -2316,7 +2418,12 @@ class TestIntegrationChatFlow:
 class TestCacheManagement:
     """Test class-level cache management."""
 
-    def test_world_facts_cache_shared(self):
+    # Both tests replace a CLASS-level cache, which outlives the test: an
+    # unrestored {"cached": True} left every later chat NPC in the process with
+    # no allowed_proper_nouns, so test_npc_chat_character_configs' noun-filter
+    # tests failed whenever this file ran first in the same process. monkeypatch
+    # puts the real cache back.
+    def test_world_facts_cache_shared(self, monkeypatch):
         """Two hosts see one cache object, not two equal copies.
 
         This built ``npc1`` and ``npc2``, used neither, and then asserted that
@@ -2324,7 +2431,7 @@ class TestCacheManagement:
         to it -- true of any implementation, including a per-instance cache.
         Identity through both instances is the claim the name makes.
         """
-        ConversationalNPCMixin._world_facts_cache = {"cached": True}
+        monkeypatch.setattr(ConversationalNPCMixin, "_world_facts_cache", {"cached": True})
 
         npc1 = chat_npc(init=False, name="NPC1")
         npc2 = chat_npc(init=False, name="NPC2")
@@ -2332,9 +2439,9 @@ class TestCacheManagement:
         assert npc1._world_facts_cache is ConversationalNPCMixin._world_facts_cache
         assert npc2._world_facts_cache is npc1._world_facts_cache
 
-    def test_char_config_cache(self):
+    def test_char_config_cache(self, monkeypatch):
         """Test character config cache."""
-        ConversationalNPCMixin._char_config_cache = {}
+        monkeypatch.setattr(ConversationalNPCMixin, "_char_config_cache", {})
 
         chat_npc(config_path="/nonexistent/path.json")
         # Cache should be populated even on error
@@ -2635,7 +2742,7 @@ class TestWorldFactsLoading:
 class TestCharConfigLoading:
     """Test character config loading with errors."""
 
-    def test_char_config_load_with_invalid_json(self):
+    def test_char_config_load_with_invalid_json(self, monkeypatch):
         """Test handling of invalid JSON in config."""
         import tempfile
         import os
@@ -2647,7 +2754,7 @@ class TestCharConfigLoading:
             temp_path = f.name
 
         try:
-            ConversationalNPCMixin._char_config_cache = {}
+            monkeypatch.setattr(ConversationalNPCMixin, "_char_config_cache", {})
 
             npc = chat_npc(config_path=temp_path)
             # Should gracefully handle load error

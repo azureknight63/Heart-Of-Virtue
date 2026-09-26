@@ -13,7 +13,7 @@ Targets the large uncovered sections by exercising:
 - _handle_direction_selection
 - _handle_number_selection
 - _synchronize_distances
-- _move_deals_damage
+- _animates_as_attack
 - _update_heat
 - _get_available_moves (cooldown / fatigue / not-viable branches)
 - _get_available_targets (ally targets, bow special case)
@@ -1351,7 +1351,7 @@ class TestUpdateHeat:
 
 
 # ---------------------------------------------------------------------------
-# _move_deals_damage
+# _animates_as_attack
 # ---------------------------------------------------------------------------
 
 
@@ -1361,21 +1361,21 @@ class TestMoveDealsDamage:
         move = MagicMock()
         move.category = "Attack"
         move.name = "Test"
-        assert adapter._move_deals_damage(move) is True
+        assert adapter._animates_as_attack(move) is True
 
     def test_buff_category_not_damage(self):
         adapter = _make_adapter()
         move = MagicMock()
         move.category = "Buff"
         move.name = "Strengthen"
-        assert adapter._move_deals_damage(move) is False
+        assert adapter._animates_as_attack(move) is False
 
     def test_name_with_damage_keyword(self):
         adapter = _make_adapter()
         move = MagicMock()
         move.category = "Unknown"
         move.name = "Power Strike"
-        assert adapter._move_deals_damage(move) is True
+        assert adapter._animates_as_attack(move) is True
 
     def test_no_category_attribute_falls_through_to_the_name_check(self):
         """Without a ``category`` the decision rests entirely on the name.
@@ -1388,11 +1388,11 @@ class TestMoveDealsDamage:
 
         harmless = MagicMock(spec=["name"])
         harmless.name = "SomeMove"
-        assert adapter._move_deals_damage(harmless) is False
+        assert adapter._animates_as_attack(harmless) is False
 
         violent = MagicMock(spec=["name"])
         violent.name = "Pommel Strike"
-        assert adapter._move_deals_damage(violent) is True
+        assert adapter._animates_as_attack(violent) is True
 
 
 # ---------------------------------------------------------------------------

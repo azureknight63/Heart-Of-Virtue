@@ -103,7 +103,8 @@ describe('LoginPage', () => {
         renderLoginPage();
         fireEvent.click(screen.getByText(/Terms of Service & Privacy Policy/i));
         expect(screen.getByText(/Terms & Privacy/i)).toBeDefined();
-        fireEvent.click(screen.getByRole('button', { name: /Close/i }));
+        // The modal's footer button, not BaseDialog's "Close dialog" ✕.
+        fireEvent.click(screen.getByRole('button', { name: /^Close$/i }));
         expect(screen.queryByText(/Terms & Privacy/i)).toBeNull();
     });
 

@@ -300,6 +300,13 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
         const handleKeyDown = (e) => {
             if (!showInput) return
             if (isSubmitting) return
+            // LOG covers the choice buttons/prompt without unmounting them
+            // (issue #715): the player can no longer see which option Enter
+            // or a number key would pick, so this handler must not act while
+            // showHistory is true. ConversationStage has its own equivalent
+            // guard via `paused={showHistory}` — this is the other listener
+            // issue #530 added.
+            if (showHistory) return
             // Guards required by a document-scoped listener (issue #530):
             // without them, a keydown aimed at an unrelated focused control
             // (a glossary search box, an NPC chat input open over this
@@ -359,7 +366,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
         return () => {
             document.removeEventListener('keydown', handleKeyDown)
         }
-    }, [showInput, inputType, inputOptions, isSoleOption, textInput, numberInput, selectedChoice, isSubmitting])
+    }, [showInput, showHistory, inputType, inputOptions, isSoleOption, textInput, numberInput, selectedChoice, isSubmitting])
 
     // Character counter for text input
     const charCount = textInput.length

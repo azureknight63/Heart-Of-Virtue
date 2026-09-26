@@ -241,6 +241,7 @@ export function makeActiveMove(overrides = {}) {
       mvrange: { min: 0, max: 5 },
       falloff: null,
       damage_multiplier: 1.0,
+      deals_damage: true,
       telegraph_severity: 'normal',
     },
     overrides
@@ -661,6 +662,7 @@ export function makeAvailableOption(overrides = {}) {
       display_name: name,
       description: 'A basic attack.',
       category: 'Offensive',
+      deals_damage: true,
       fatigue_cost: ATTACK_CARD_FATIGUE_COST,
       available: true,
       reason: null,

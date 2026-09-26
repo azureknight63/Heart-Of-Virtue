@@ -127,6 +127,8 @@ try:  # pragma: no cover - trivially exercised by importing this module
         MAX_OPTION_CHARS,
         MERCHANT_FORBIDDEN_TOPICS,
         MERCHANT_SUBSTITUTE_TOPICS,
+        NPC_LOCATION_BLOCK_NAME,
+        NPC_PRIVATE_BLOCK_LABEL,
         REPUTATION_DELTA_BOUNDS,
     )
 except Exception as _constants_import_error:  # pragma: no cover - no AI stack
@@ -182,6 +184,12 @@ except Exception as _constants_import_error:  # pragma: no cover - no AI stack
     MERCHANT_SUBSTITUTE_TOPICS = (
         "craft, fit, maintenance, provenance, or general lore"
     )
+    # A literal on purpose: TestConstantFallbacksDoNotDrift pins every
+    # fallback byte-for-byte to its ai.llm_client counterpart.
+    NPC_PRIVATE_BLOCK_LABEL = (
+        "PRIVATE (yours alone; Jean knows none of it unless you say it):"
+    )
+    NPC_LOCATION_BLOCK_NAME = "WHERE YOU ARE"
 
 _AI_DIR = Path(__file__).resolve().parent.parent.parent / "ai"
 _HUMAN_NPC_DIR = _AI_DIR / "npc" / "human"
@@ -775,6 +783,108 @@ _TURN_CEILING_SECONDS = 21.0
 _OPTION_META_PATTERN = re.compile(
     r"\[Option|\bAs Jean\b|I don.t know what to say", re.IGNORECASE
 )
+
+# Jean telling the NPC what the NPC said (issue #716). The NPC line and Jean's
+# options come out of one completion under one system prompt, and that prompt
+# carries the NPC's private character sheet -- so the model can hand Jean "You
+# said you adore Gorran" when the NPC never said it (live, Liss, 2026-09-25).
+# ``claim`` is the rest of the clause after the verb: it stops at the first
+# sentence or clause break, or at a dash in any spelling -- em, en, ASCII "--",
+# or a spaced hyphen -- so "You said you adore Gorran--what..." gives "you
+# adore Gorran" rather than running on into Jean's own question. Linear: the
+# lookahead is a fixed alternation tested once per character.
+# The check that uses it is `_unsupported_attribution`.
+_ATTRIBUTION_PATTERN = re.compile(
+    r"\byou(?:(?:['’](?:ve|d)|\s+ha(?:ve|d))\s+(?:just\s+|already\s+|once\s+)?"
+    r"(?:said|mentioned|told\s+(?:me|us))"
+    r"|\s+(?:just\s+|already\s+|once\s+)?(?:said|say|mentioned|told\s+(?:me|us)))"
+    r"\b(?:\s+that\b)?"
+    r"(?P<claim>(?:(?!--|\s-\s)[^.?!;:,—–])*)",
+    re.IGNORECASE,
+)
+
+# "What do you say we rest?", "Did you say the ferry?" and "Why haven't you
+# told me?" ask rather than attribute: in a question the auxiliary is always
+# the word right before "you". "what"/"why" are NOT in the set -- in "What
+# you told me about Gorran..." they open a relative clause, which is the most
+# natural wording of the very attribution #716 exists to catch. The word
+# before "you" decides it; kept
+# as a set rather than folded into the regex because Python lookbehinds must be
+# fixed-width. Apostrophes are normalised to ASCII before the lookup.
+_ATTRIBUTION_QUESTION_WORDS = frozenset(
+    {
+        "do", "did", "does", "would", "could", "will", "can", "shall",
+        "should", "have", "has", "had", "if", "whatever",
+        "don't", "didn't", "doesn't", "won't", "wouldn't", "couldn't",
+        "can't", "haven't", "hasn't", "hadn't", "shouldn't",
+    }
+)
+
+# Shortest word that counts as checkable content in a claim.
+_MIN_KEY_WORD_LEN = 4
+
+# Words that carry no checkable content in a claim. Anything else of
+# _MIN_KEY_WORD_LEN or more letters is a "key word" the NPC's own lines must
+# contain -- one is enough. Quantity words ("told me nothing", "said very
+# little") describe HOW MUCH was said, not what, so they check nothing. Deliberately lenient: a false drop costs the player a good option
+# (the slot is refilled from the generic pool), a false keep costs what #716
+# cost before this existed, so the check only fires when NOTHING in the claim
+# was ever said.
+_ATTRIBUTION_STOPWORDS = frozenset(
+    {
+        "about", "again", "already", "also", "been", "before", "being",
+        "could", "does", "earlier", "even", "ever", "from", "have", "here",
+        "just", "like", "much", "must", "only", "really", "should", "some",
+        "something", "that", "their", "them", "then", "there", "these",
+        "they", "thing", "things", "this", "those", "very", "were", "what",
+        "when", "where", "which", "will", "with", "would", "your", "yours",
+        "yourself",
+        "nothing", "anything", "everything", "little", "enough", "plenty",
+    }
+)
+
+
+_KEY_WORD_PATTERN = re.compile(r"[a-z]+(?:['’][a-z]+)?")
+_POSSESSIVE_SUFFIX_PATTERN = re.compile(r"['’]s$")
+
+
+def _key_words(text: str) -> Set[str]:
+    """Lower-cased content words of ``_MIN_KEY_WORD_LEN`` or more letters, crudely de-pluralised.
+
+    "stones" and "stone", "Gorran's" and "Gorran" must meet, and nothing
+    finer is attempted -- this is a tripwire, not a lemmatiser.
+    """
+    words: Set[str] = set()
+    for word in _KEY_WORD_PATTERN.findall(text.lower()):
+        word = _POSSESSIVE_SUFFIX_PATTERN.sub("", word)
+        # Longer than the minimum, so the stem still meets it.
+        if len(word) > _MIN_KEY_WORD_LEN and word.endswith("ies"):
+            word = word[:-3] + "y"
+        elif len(word) > _MIN_KEY_WORD_LEN and word.endswith("s") and not word.endswith("ss"):
+            word = word[:-1]
+        if len(word) >= _MIN_KEY_WORD_LEN and word not in _ATTRIBUTION_STOPWORDS:
+            words.add(word)
+    return words
+
+
+def _unsupported_attribution(text: str, npc_words: Set[str]) -> bool:
+    """True if ``text`` quotes the NPC saying something the NPC never said.
+
+    ``npc_words`` is :func:`_key_words` over every NPC line of the conversation
+    so far, including the line this option answers. A claim with no key words
+    ("Like you said, ...") cannot be checked and is let through.
+    """
+    for match in _ATTRIBUTION_PATTERN.finditer(text):
+        # The last WORD before "you", whatever quote or dash is glued to it
+        # ("“Did you", "What—did you").
+        before = _KEY_WORD_PATTERN.findall(text[: match.start()].lower())
+        if before and before[-1].replace("’", "'") in _ATTRIBUTION_QUESTION_WORDS:
+            continue
+        claimed = _key_words(match.group("claim"))
+        if claimed and not (claimed & npc_words):
+            return True
+    return False
+
 
 # Jean's own name inside one of *Jean's own* dialogue options. The three options
 # are lines Jean himself says, so "Jean has walked a long road" or "Ask her about
@@ -2326,9 +2436,13 @@ class ConversationalNPCMixin:
         methods.
         """
         chapter = self._get_chapter(player)
+        character = self._build_character_block()
         blocks = [
             self._build_world_facts_block(),
-            self._build_character_block(),
+            # Fenced (#716): Jean's options are written in this same call, and
+            # an unlabelled sheet read to the model as common knowledge.
+            f"{NPC_PRIVATE_BLOCK_LABEL}\n{character}" if character else "",
+            self._build_location_block(player),
             self._build_trade_block(),
             # Combat self-knowledge (progressing allies only) — the chat is the
             # sole surface for ally growth (no UI elements by design), so the
@@ -2340,6 +2454,22 @@ class ConversationalNPCMixin:
             self._build_jean_context_block(player, chapter),
         ]
         return "\n\n".join(block for block in blocks if block)
+
+    @staticmethod
+    def _build_location_block(player) -> str:
+        """Where this conversation happens, or "" when the map does not say.
+
+        Read from the ``place`` key of the map's authored ``metadata`` block,
+        which ``Universe._load_single_json_map`` copies onto ``player.map``;
+        chat opens only with an NPC on the player's own tile, so the player's
+        map is the NPC's. Map names ("grondia-jambos_shop") are ids, not
+        prose, and Jambo's two tents share every tile title, so the place is
+        authored rather than derived (#717: in Grondia he described the river).
+        """
+        game_map = getattr(player, "map", None)
+        metadata = game_map.get("metadata") if isinstance(game_map, dict) else None
+        place = metadata.get("place") if isinstance(metadata, dict) else None
+        return f"{NPC_LOCATION_BLOCK_NAME}: {place}." if place else ""
 
     def _build_world_facts_block(self) -> str:
         """The shared setting: places, peoples, world rules, tone."""
@@ -2397,8 +2527,11 @@ class ConversationalNPCMixin:
     def _build_conduct_block(self, chapter: str) -> str:
         """What the NPC may not write, and how far into the story it may see."""
         return (
-            "Jean is he/him. Do not write Jean's dialogue. Do not describe Jean's "
-            "internal state.\n"
+            # "a grown man" (#717): Liss, a child, called him "child". The
+            # world_facts Jean entry says so too, but known_npcs is not
+            # rendered into this prompt, so it has to be said here.
+            "Jean is a grown man (he/him). Do not write Jean's dialogue. Do not "
+            "describe Jean's internal state.\n"
             # Prevention half of the state guard: nothing said in a chat reaches
             # the engine, so an offer or an appointment is a promise the game
             # cannot keep. Cheaper to not generate one than to catch and revise
@@ -3542,8 +3675,20 @@ class ConversationalNPCMixin:
             flavor = flavor[0].upper() + flavor[1:]
         return flavor
 
-    def _qc_jean_options(self, options: Any) -> List[Dict[str, str]]:
+    def _qc_jean_options(
+        self, options: Any, npc_transcript: Optional[Sequence[str]] = None
+    ) -> List[Dict[str, str]]:
         """QC Jean dialogue options. Return the salvageable subset, possibly empty.
+
+        ``npc_transcript`` is every NPC line the player has seen in this
+        conversation, the one being answered included (see
+        :meth:`_npc_transcript`). When given, an option that tells the NPC
+        what the NPC said -- "you said / told me / mentioned ..." -- is dropped
+        unless some key word of that claim occurs in those lines (issue #716).
+        ``None`` skips the check, for a caller with no transcript to offer.
+        Scripted scene lines never enter ``_chat_history``, so a quote of one
+        is dropped too; the top-up refills the slot, which is the cheap side
+        of that trade.
 
         Per design decision this salvages rather than rejecting wholesale: each
         option is validated independently, near-duplicates drop only the later
@@ -3564,6 +3709,11 @@ class ConversationalNPCMixin:
         """
         if not isinstance(options, list) or not options:
             return []
+        npc_words = (
+            None
+            if npc_transcript is None
+            else set().union(*(_key_words(line) for line in npc_transcript))
+        )
 
         validated: List[Tuple[Optional[str], str]] = []
         for opt in options[:_MAX_OPTION_CANDIDATES]:
@@ -3603,6 +3753,12 @@ class ConversationalNPCMixin:
             # prices and stock. Keep the rule scoped so useful armor/craft lore
             # questions remain available for the player.
             if self._is_merchant_commerce_question(text):
+                continue
+
+            # Jean cannot quote a line the NPC never spoke (#716): the claim
+            # came from the private character sheet in the system prompt.
+            if npc_words is not None and _unsupported_attribution(text, npc_words):
+                logger.debug("_qc_jean_options dropped an unsupported attribution.")
                 continue
 
             # Tone is taken at face value (a name, not a position) and simply
@@ -3926,10 +4082,21 @@ class ConversationalNPCMixin:
 
         # Options: prefer clean revised options; otherwise drop the soliciting
         # ones and top the set back up from the deterministic pool.
+        transcript = self._npc_transcript(final_text)
         final_options = options
         if any(option_flags):
             final_options = self._rebuild_guarded_options(
-                options, option_flags, revision, topics
+                options, option_flags, revision, topics, transcript,
+            )
+        if final_text != npc_text and final_options:
+            # The options were attribution-checked (#716) against the line the
+            # guard just retracted. Re-check the kept ones -- including clean
+            # originals the rebuild salvaged -- against what the NPC now says.
+            # Only when there ARE options: a closing turn (loquacity spent)
+            # carries none on purpose, and topping it up would put reply
+            # buttons under conversation_ended.
+            final_options = self._top_up_jean_options(
+                self._qc_jean_options(final_options, transcript)
             )
 
         return GuardedTurn(Turn(final_text, final_flavor, final_options), True)
@@ -3940,15 +4107,16 @@ class ConversationalNPCMixin:
         option_flags: List[List[_chat_guard.GuardFlag]],
         revision: Optional[Dict[str, Any]],
         topics: Set[str],
+        npc_transcript: Optional[Sequence[str]] = None,
     ) -> List[Dict[str, str]]:
         """Return three clean Jean options after at least one was flagged."""
         rebuilt: List[Dict[str, str]] = []
         revised = (revision or {}).get("jean_options")
         if isinstance(revised, list):
             # Same QC the generated options get (length caps, meta-speech
-            # filter, tone defaulting, near-duplicate dedup) — the reviser's
-            # output has never seen it.
-            for opt in self._qc_jean_options(revised):
+            # filter, tone defaulting, near-duplicate dedup, the #716
+            # attribution check) — the reviser's output has never seen it.
+            for opt in self._qc_jean_options(revised, npc_transcript):
                 if _chat_guard.scan_option_text(opt["text"], topics):
                     continue
                 rebuilt.append(dict(opt))
@@ -4187,9 +4355,10 @@ class ConversationalNPCMixin:
         otherwise falls back to the deterministic pool. Never makes a second LLM
         call on the combined path (protects the budget).
         """
+        transcript = self._npc_transcript(npc_line)
         if turn is not None and _is_combined_adapter(adapter):
             return self._top_up_jean_options(
-                self._qc_jean_options(turn.raw_options or [])
+                self._qc_jean_options(turn.raw_options or [], transcript)
             )
         if (
             turn is not None
@@ -4213,10 +4382,26 @@ class ConversationalNPCMixin:
                 )
                 raw = None
             if raw:
-                options = self._qc_jean_options(raw)
+                options = self._qc_jean_options(raw, transcript)
                 if options:
                     return self._top_up_jean_options(options)
         return self._get_fallback_jean_options()
+
+    def _npc_transcript(self, current: Optional[str] = None) -> List[str]:
+        """The NPC lines ``_qc_jean_options`` checks an attribution against.
+
+        The stored rows -- which span persisted earlier conversations with this
+        NPC as well as this one, and include fallback narration stored in the
+        NPC's slot; both only make the check more lenient -- plus ``current``,
+        the line of this turn, which is not persisted until after the options
+        are chosen.
+        """
+        lines = [
+            str(row.get("npc") or "")
+            for row in self._chat_history or []
+            if isinstance(row, dict)
+        ]
+        return [line for line in [*lines, current or ""] if line]
 
     # ------------------------------------------------------------------
     # Turn assembly shared by both chat entry points

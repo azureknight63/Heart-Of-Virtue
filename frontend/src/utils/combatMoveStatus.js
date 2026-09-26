@@ -269,6 +269,15 @@ export const FLEE_BREAK_AWAY_DISTANCE_FT = 20;
 export const SWAP_WEAPON_MOVE_NAME = 'Swap Weapon';
 
 /**
+ * The engine's name for Wait (`Wait.name`, src/moves/_utility.py). Its card
+ * cannot draw a commitment bar: stage_beats is a [0,0,0,0] placeholder until
+ * the player picks a duration on the next prompt (#718), so CombatMovePanel
+ * says "you choose" instead. Held to the engine by
+ * tests/test_wire_field_contract.py, so a rename cannot bring "0 beats" back.
+ */
+export const WAIT_MOVE_NAME = 'Wait';
+
+/**
  * Whether a move can actually be cast right now, and why not.
  *
  * `move.available` alone is not enough (issue #554). The engine's own
