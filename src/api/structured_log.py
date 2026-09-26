@@ -439,7 +439,7 @@ def configure_logging(env=None, logger=None, log_dir=None):
     plain = _RedactingFormatter(_PLAIN_FORMAT)
     redactor = _RedactSecretsFilter()
 
-    def _install(handler, handler_level, formatter=None):
+    def install(handler, handler_level, formatter=None):
         handler.setLevel(handler_level)
         if formatter is not None:
             handler.setFormatter(formatter)
@@ -448,44 +448,54 @@ def configure_logging(env=None, logger=None, log_dir=None):
         logger.addHandler(handler)
 
     if not logger.handlers:
-        _install(logging.StreamHandler(), level, plain)
+        install(logging.StreamHandler(), level, plain)
 
     log_file = env.get("LOG_FILE")
     if log_file:
-        try:
-            path = _resolve_log_file_setting(log_file, log_dir)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            file_handler = logging.handlers.RotatingFileHandler(
-                path,
-                encoding="utf-8",
-                maxBytes=_LOG_FILE_MAX_BYTES,
-                backupCount=_LOG_FILE_BACKUP_COUNT,
-            )
-            _install(file_handler, level, plain)
-        except (OSError, ValueError) as exc:
-            # Degrade to the remaining handlers rather than refuse to boot
-            # over a logging destination.
-            _log.warning("Could not attach LOG_FILE handler %s: %s", log_file, exc)
+        _attach_log_file(install, log_file, log_dir, level, plain)
 
     logger.setLevel(level)
     jsonl_dir = env.get("LOG_JSONL_DIR")
     if jsonl_dir:
-        # Handler construction can't fail — the file opens lazily in emit(),
-        # which already routes errors through handleError.
-        _install(DateStampedJsonlHandler(jsonl_dir), logging.DEBUG)
-        # Capture everything in the JSONL file while the console keeps LOG_LEVEL
-        logger.setLevel(logging.DEBUG)
-        for name in _NOISY_LOGGERS:
-            logging.getLogger(name).setLevel(max(level, logging.INFO))
-        # Prune old/oversized backend logs on every (re)configure — mirrors
-        # the browser log directory's retention (7 days / 100MB). Without
-        # this, logs/backend/*.jsonl grows forever: nothing else ever
-        # touches this directory. Best-effort — a prune failure must never
-        # block server startup.
-        try:
-            LogCleanupManager(jsonl_dir, retention_days=7, max_size_mb=100).cleanup()
-        except OSError:
-            pass
+        _attach_jsonl(install, logger, jsonl_dir, level)
+
+
+def _attach_log_file(install, log_file, log_dir, level, formatter):
+    """Install the confined, rotating LOG_FILE handler, or warn and skip it."""
+    try:
+        path = _resolve_log_file_setting(log_file, log_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.handlers.RotatingFileHandler(
+            path,
+            encoding="utf-8",
+            maxBytes=_LOG_FILE_MAX_BYTES,
+            backupCount=_LOG_FILE_BACKUP_COUNT,
+        )
+        install(file_handler, level, formatter)
+    except (OSError, ValueError) as exc:
+        # Degrade to the remaining handlers rather than refuse to boot
+        # over a logging destination.
+        _log.warning("Could not attach LOG_FILE handler %s: %s", log_file, exc)
+
+
+def _attach_jsonl(install, logger, jsonl_dir, level):
+    """Install the JSONL handler, drop ``logger`` to DEBUG, prune old files."""
+    # Handler construction can't fail — the file opens lazily in emit(),
+    # which already routes errors through handleError.
+    install(DateStampedJsonlHandler(jsonl_dir), logging.DEBUG)
+    # Capture everything in the JSONL file while the console keeps LOG_LEVEL
+    logger.setLevel(logging.DEBUG)
+    for name in _NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(max(level, logging.INFO))
+    # Prune old/oversized backend logs on every (re)configure — mirrors
+    # the browser log directory's retention (7 days / 100MB). Without
+    # this, logs/backend/*.jsonl grows forever: nothing else ever
+    # touches this directory. Best-effort — a prune failure must never
+    # block server startup.
+    try:
+        LogCleanupManager(jsonl_dir, retention_days=7, max_size_mb=100).cleanup()
+    except OSError:
+        pass
 
 
 def log_event(event, *, level=logging.INFO, logger="hov", **data):

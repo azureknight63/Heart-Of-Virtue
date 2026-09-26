@@ -147,37 +147,36 @@ class TestLoggingConfiguration:
 
         assert "still captured" in caplog.text
 
-    @pytest.fixture
-    def pristine_root_logger(self):
-        """Snapshot and restore the REAL root logger around this test.
+    def test_repeated_calls_do_not_stack_duplicate_handlers(self, tmp_path):
+        """Idempotence was the reason force=True was there in the first place;
+        replacing it must not reintroduce handler stacking. Aimed at
+        ``structured_log.configure_logging`` -- the only installer of handlers
+        since #698 (``app._configure_logging`` installs none, so counting
+        around it proved nothing) -- with every optional handler switched on
+        and on a private logger, so the population is non-empty and known."""
+        from src.api.structured_log import configure_logging
 
-        ``_configure_logging()`` mutates the process-wide root logger, and this
-        test called it twice and restored nothing — so every test that ran
-        afterwards on the same xdist worker inherited whatever handler set and
-        level the app factory happened to leave behind, including caplog's own
-        capture arrangement.
-        """
-        root = logging.getLogger()
-        handlers = root.handlers[:]
-        level = root.level
+        logger = logging.getLogger("_test_configure_logging_idempotent")
+        logger.propagate = False
+        logger.handlers = []
+        env = {
+            "LOG_LEVEL": "INFO",
+            "LOG_FILE": "app.log",
+            "LOG_JSONL_DIR": str(tmp_path / "jsonl"),
+        }
         try:
-            yield root
+            configure_logging(env=env, logger=logger, log_dir=tmp_path)
+            after_first = len(logger.handlers)
+            configure_logging(env=env, logger=logger, log_dir=tmp_path)
+            assert after_first > 0
+            assert len(logger.handlers) == after_first, (
+                "configure_logging stacked a second handler set: "
+                f"{logger.handlers}"
+            )
         finally:
-            root.handlers[:] = handlers
-            root.setLevel(level)
-
-    def test_repeated_calls_do_not_stack_duplicate_handlers(
-        self, pristine_root_logger
-    ):
-        from src.api.app import _configure_logging
-
-        root = pristine_root_logger
-        _configure_logging()
-        after_first = len(root.handlers)
-        _configure_logging()
-        # Idempotence was the reason force=True was there in the first place;
-        # replacing it must not reintroduce handler stacking.
-        assert len(root.handlers) == after_first
+            for handler in logger.handlers:
+                handler.close()
+            logger.handlers = []
 
 
 class TestOneRootLoggerOwner:
