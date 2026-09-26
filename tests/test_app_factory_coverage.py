@@ -287,6 +287,62 @@ class TestOneRootLoggerOwner:
             assert "[REDACTED]" in text
 
 
+class TestFlaskDefaultHandlerIsRemoved:
+    """Flask attaches ``flask.logging.default_handler`` -- an unfiltered
+    stderr handler -- to ``app.logger`` when no handler in its chain accepts
+    the logger's effective level. A debug config sets ``app.logger`` to DEBUG
+    while the production console sits at WARNING, so the first
+    ``app.logger.exception`` (the cookie-refresh path, or Flask's own
+    ``log_exception`` for every unhandled 500) wrote the raw record ahead of
+    the redacting root handler. ``app.logger`` is named for the module, so the
+    same handler also sat under ``src.api.app``'s module ``_log``."""
+
+    def test_no_unredacted_handler_is_reachable_from_app_logger(self):
+        from flask.logging import default_handler
+
+        from src.api.structured_log import _RedactSecretsFilter
+
+        debug_config = type(
+            "_FastDebugConfig", (_FastTestConfig,), {"DEBUG": True}
+        )
+        root = logging.getLogger()
+        module_logger = logging.getLogger("src.api.app")
+        saved_root = root.handlers[:], root.level
+        saved_module = module_logger.handlers[:], module_logger.level
+        # The production shape: one redacting console at WARNING, and no
+        # pytest capture handler (level 0) to satisfy Flask's level check.
+        console = logging.StreamHandler()
+        console.setLevel(logging.WARNING)
+        console.addFilter(_RedactSecretsFilter())
+        try:
+            root.handlers[:] = [console]
+            module_logger.removeHandler(default_handler)
+            app, _ = _make_app(debug_config)
+            app.logger.debug("materialise the lazy logger")  # as Flask would
+
+            reachable, current = [], app.logger
+            while current is not None:
+                reachable.extend(current.handlers)
+                if not current.propagate:
+                    break
+                current = current.parent
+            assert reachable, "no handler reachable from app.logger at all"
+            unfiltered = [
+                h
+                for h in reachable
+                if not any(isinstance(f, _RedactSecretsFilter) for f in h.filters)
+            ]
+            assert not unfiltered, (
+                "create_app left an unredacted handler on app.logger "
+                f"(flask.logging.default_handler?): {unfiltered}"
+            )
+        finally:
+            root.handlers[:] = saved_root[0]
+            root.setLevel(saved_root[1])
+            module_logger.handlers[:] = saved_module[0]
+            module_logger.setLevel(saved_module[1])
+
+
 class TestCreateApp:
     def test_returns_app_and_socketio(self):
         from flask import Flask

@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import NamedTuple, Tuple
 from flask import Flask, jsonify
+from flask.logging import default_handler
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from werkzeug.exceptions import ClientDisconnected
@@ -861,6 +862,14 @@ def create_app(config_class=None):
 
     app = Flask(__name__)
     app.config.from_object(config_class)
+    # Flask lazily attaches its unfiltered ``default_handler`` to app.logger
+    # when no handler in the chain accepts the logger's effective level (a
+    # DEBUG config puts app.logger at DEBUG; the root console sits at
+    # LOG_LEVEL). Materialise the logger now, with DEBUG known, and take it
+    # off so every app.logger record -- ours and Flask's own log_exception --
+    # reaches only the redacting root handlers. app.logger is the
+    # ``src.api.app`` logger, i.e. this module's ``_log`` as well.
+    app.logger.removeHandler(default_handler)
     # Every env-backed *app.config value* is read here and only here, because
     # runtime_config() is the one place that knows which of them a subclass has
     # already pinned. (_apply_proxy_fix below reads TRUSTED_PROXY_COUNT itself:
