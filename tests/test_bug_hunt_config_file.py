@@ -2,8 +2,8 @@
 
 bug_hunt.py loads ``.env`` as a side effect of importing ``tests.llm_doubles``
 (-> ``ai.llm_client`` -> ``load_project_env()``). ``blank_outbound_env()``
-leaves CONFIG_FILE alone because every conftest overrides it -- but bug_hunt is
-not a conftest, so a developer's manual-QA ``CONFIG_FILE`` in ``.env`` silently
+leaves CONFIG_FILE alone (``tests/api/conftest.py`` pins its own) -- but
+bug_hunt is not a conftest, so a developer's manual-QA ``CONFIG_FILE`` in ``.env`` silently
 chose which game config every scenario ran against.
 
 The shell's value still has to win: ``/combat-test`` and the acceptance
@@ -112,8 +112,9 @@ spec.loader.exec_module(mod)
 
 # Any later load (db.py and friends at create_app time) must not refill it.
 eb.load_project_env()
-print("PROBE_RESULT " + json.dumps({"config_file": os.environ.get("CONFIG_FILE")}))
+print(sys.argv[3] + json.dumps({"config_file": os.environ.get("CONFIG_FILE")}))
 """
+PROBE_RESULT_PREFIX = "PROBE_RESULT "
 
 
 def _probe_env(tmp_path, shell_value):
@@ -131,7 +132,7 @@ def _probe_env(tmp_path, shell_value):
 def _run_probe(tmp_path, shell_value):
     env, dotenv = _probe_env(tmp_path, shell_value)
     completed = subprocess.run(
-        [sys.executable, "-c", _PROBE, str(ROOT), str(dotenv)],
+        [sys.executable, "-c", _PROBE, str(ROOT), str(dotenv), PROBE_RESULT_PREFIX],
         capture_output=True,
         text=True,
         env=env,
@@ -139,8 +140,8 @@ def _run_probe(tmp_path, shell_value):
         timeout=300,
     )
     for line in completed.stdout.splitlines():
-        if line.startswith("PROBE_RESULT "):
-            return json.loads(line[len("PROBE_RESULT "):])["config_file"]
+        if line.startswith(PROBE_RESULT_PREFIX):
+            return json.loads(line[len(PROBE_RESULT_PREFIX):])["config_file"]
     raise AssertionError(
         "probe produced no result\nstdout:\n%s\nstderr:\n%s"
         % (completed.stdout[-4000:], completed.stderr[-4000:])
@@ -194,26 +195,32 @@ def diff(a, b):
     return sorted(k for k in set(a) | set(b) if a.get(k) != b.get(k))
 
 # Key names only -- never values, which can be .env secrets.
-print("ENV_PROBE " + json.dumps({
+print(sys.argv[2] + json.dumps({
     "import": diff(before, after_import),
     "helper": diff(before, after_helper),
     "has_helper": helper is not None,
 }))
 """
+ENV_PROBE_PREFIX = "ENV_PROBE "
 
 
 class TestImportingThisModuleLeavesTheEnvironmentAlone:
     def test_collection_and_the_fixture_restore_os_environ(self):
+        # CONFIG_FILE unset in the child, as in _probe_env: a leaked import
+        # assigns the shell's own value back, so with CONFIG_FILE exported in
+        # the shell or CI the CONFIG_FILE half of the leak would be invisible.
+        env = dict(os.environ)
+        env.pop("CONFIG_FILE", None)
         completed = subprocess.run(
-            [sys.executable, "-c", _ENV_PROBE, str(ROOT)],
-            capture_output=True, text=True, cwd=str(ROOT), timeout=300,
+            [sys.executable, "-c", _ENV_PROBE, str(ROOT), ENV_PROBE_PREFIX],
+            capture_output=True, text=True, env=env, cwd=str(ROOT), timeout=300,
         )
         lines = [
             ln for ln in completed.stdout.splitlines()
-            if ln.startswith("ENV_PROBE ")
+            if ln.startswith(ENV_PROBE_PREFIX)
         ]
         assert lines, completed.stderr[-4000:]
-        result = json.loads(lines[-1][len("ENV_PROBE "):])
+        result = json.loads(lines[-1][len(ENV_PROBE_PREFIX):])
         assert result["import"] == [], "collection changed: %s" % result["import"]
         assert result["has_helper"]
         assert result["helper"] == [], "fixture leaked: %s" % result["helper"]

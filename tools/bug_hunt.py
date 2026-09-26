@@ -60,8 +60,8 @@ if str(ROOT) not in sys.path:
 # TURSO_* live.
 #
 # CONFIG_FILE is snapshotted BEFORE that import, because .env must not choose
-# the game config (#699). blank_outbound_env() leaves it alone -- every
-# conftest overrides it -- but this is not a conftest, so a developer's
+# the game config (#699). blank_outbound_env() leaves it alone --
+# tests/api/conftest.py pins its own -- but this is not a conftest, so a developer's
 # manual-QA CONFIG_FILE in .env silently decided what every scenario ran
 # against. The shell's value must still win: /combat-test and the acceptance
 # scaffolds run ``CONFIG_FILE=config_combat_testing.ini python tools/bug_hunt.py``.
@@ -191,7 +191,6 @@ def main() -> int:
         return 2
 
     client = GameClient(app)
-    config_file = _HARNESS_CONFIG_FILE
 
     # Select scenarios.
     scenarios = get_scenarios(name=args.scenario)
@@ -241,11 +240,11 @@ def main() -> int:
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with out_path.open("w") as f:
-            json.dump(_bug_dicts(all_bugs, config_file), f, indent=2)
+            json.dump(_bug_dicts(all_bugs, _HARNESS_CONFIG_FILE), f, indent=2)
         if not args.headless:
             print(f"\n[bug_hunt] Report written to {out_path}")
 
-    _print_summary(all_bugs, args.headless, config_file)
+    _print_summary(all_bugs, args.headless, _HARNESS_CONFIG_FILE)
 
     # Non-zero exit if any CRITICAL or HIGH bugs found (useful in CI).
     critical_or_high = [

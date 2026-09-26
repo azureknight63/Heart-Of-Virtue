@@ -39,7 +39,6 @@ __all__ = [
     "get_player_gold",
     "mock_player",
     "GRID_3X3",
-    "SCENE_TEXT",
     "AfterTheFightScene",
 ]
 

@@ -7,10 +7,49 @@ module and the harness client).
 
 from typing import Optional
 
-#: The ``input_type`` values of a multi-step prompt: a move already chosen is
-#: awaiting a direction, a number (Wait duration) or a target before it
-#: executes. Anything else is the ordinary move menu.
-SUB_STAGE_INPUT_TYPES = ("direction_selection", "number_input", "target_selection")
+#: Wait duration sent when a ``number_input`` prompt carries no ``default``.
+FALLBACK_NUMBER_INPUT = 5
+#: Direction sent when a ``direction_selection`` prompt lists none.
+FALLBACK_DIRECTION = "north"
+
+
+def _pick_number(options) -> Optional[dict]:
+    """``number_input``: options is a dict with ``min``/``max``/``default``."""
+    default = (
+        options.get("default", FALLBACK_NUMBER_INPUT)
+        if isinstance(options, dict) else FALLBACK_NUMBER_INPUT
+    )
+    return {"move_type": "number", "move_id": str(default)}
+
+
+def _pick_direction(options) -> Optional[dict]:
+    """``direction_selection``: options is a list[str] (e.g. ``["north", ...]``)."""
+    direction = (
+        options[0] if isinstance(options, list) and options else FALLBACK_DIRECTION
+    )
+    return {"move_type": "direction", "direction": direction}
+
+
+def _pick_target(options) -> Optional[dict]:
+    """``target_selection``: options is a list[dict] of viable targets."""
+    targets = [o for o in options if isinstance(o, dict) and o.get("id")]
+    if not targets:
+        return None
+    return {"move_type": "target", "target_id": targets[0]["id"]}
+
+
+# The multi-step prompts: a move already chosen is awaiting a direction, a
+# number (Wait duration) or a target before it executes. Anything else is the
+# ordinary move menu.
+_SUB_STAGE_PICKERS = {
+    "direction_selection": _pick_direction,
+    "number_input": _pick_number,
+    "target_selection": _pick_target,
+}
+
+#: The ``input_type`` values of a multi-step prompt. Derived from the dispatch
+#: above, so a sub-stage the picker handles is always one the callers skip.
+SUB_STAGE_INPUT_TYPES = tuple(_SUB_STAGE_PICKERS)
 
 
 def pick_move_body(battle: dict) -> Optional[dict]:
@@ -35,21 +74,13 @@ def pick_move_body(battle: dict) -> Optional[dict]:
     options = battle.get("available_options", [])
     input_type = battle.get("input_type", "move_selection")
 
-    if input_type == "number_input":
-        default = options.get("default", 5) if isinstance(options, dict) else 5
-        return {"move_type": "number", "move_id": str(default)}
-    if input_type == "direction_selection":
-        direction = options[0] if isinstance(options, list) and options else "north"
-        return {"move_type": "direction", "direction": direction}
-    if input_type == "target_selection":
-        targets = [o for o in options if isinstance(o, dict) and o.get("id")]
-        if not targets:
-            return None
-        return {"move_type": "target", "target_id": targets[0]["id"]}
+    sub_stage = _SUB_STAGE_PICKERS.get(input_type)
+    if sub_stage is not None:
+        return sub_stage(options)
     return _pick_menu_move(options)
 
 
-def _pick_menu_move(options) -> Optional[dict]:
+def _pick_menu_move(options: list) -> Optional[dict]:
     """The body for the ordinary move menu: the first available Offensive move
     with a viable target, else Advance, else Wait (each with its first viable
     target, if any). None when none of those is available."""
