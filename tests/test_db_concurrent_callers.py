@@ -27,10 +27,6 @@ CALLERS = 8
 
 class _Session:
     def __init__(self):
-        try:
-            self.loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self.loop = None
         self.closed = False
 
 

@@ -29,9 +29,9 @@ class Database:
     to the loop it was built on. This used to keep one client and replace it
     whenever the calling loop differed -- closing it under whichever request
     was still awaiting a query on it. On production two concurrent calls were
-    enough for one to fail (2026-09-26: 2 of 2 under eventlet lost one; 15 of
-    16 on threads, Python 3.12 and 3.13 alike), and every replaced session was
-    dropped unclosed (#728).
+    enough for one to fail (2026-09-26: 2 concurrent calls under eventlet lost
+    1; 16 on threads lost 15, Python 3.12 and 3.13 alike), and every replaced
+    session was dropped unclosed (#728).
 
     Now the client lives on a dedicated loop in a daemon thread, created on
     first use, and every query is submitted to that loop. Callers keep the
@@ -46,6 +46,11 @@ class Database:
     _loop = None
     _loop_thread = None
     _client_lock = threading.Lock()
+    #: How long a request waits, holding _client_lock, for the database loop to
+    #: build the client. Building is object construction with no I/O, so this
+    #: only fires if the loop is wedged -- and then it must fail the request
+    #: rather than queue every other one behind the lock forever.
+    _BUILD_TIMEOUT_SECONDS = 30
 
     def __new__(cls):
         if cls._instance is None:
@@ -83,7 +88,9 @@ class Database:
                     # Built on the database loop, so its session binds there.
                     return libsql_client.create_client(url, auth_token=auth_token)
 
-                self._client = asyncio.run_coroutine_threadsafe(build(), loop).result()
+                self._client = asyncio.run_coroutine_threadsafe(build(), loop).result(
+                    timeout=self._BUILD_TIMEOUT_SECONDS
+                )
             return self._client, loop
 
     async def _on_db_loop(self, call):

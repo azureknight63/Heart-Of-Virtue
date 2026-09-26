@@ -45,6 +45,9 @@ tzdata>=2024.1
 # runs gthread (deploy/heart-of-virtue.service), which 26.x still ships. It is
 # bounded rather than open because an unbounded floor-only range is how #653
 # happened: re-verify the unit's worker on each new major before lifting it.
+# Verified on the server, Python 3.13, --worker-class gthread (2026-09-26):
+# 25.3.0 and 26.2.0 (what a fresh venv resolves this range to) both boot and
+# serve 40 concurrent requests and the Socket.IO polling handshake.
 gunicorn>=23.0,<27
 
 # No eventlet. The unit ran `--worker-class eventlet` until 2026-09-26, and
