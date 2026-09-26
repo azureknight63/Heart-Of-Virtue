@@ -9,10 +9,11 @@ deadline, with a player watching a spinner the whole time.
 The budget was first sized against the Procfile: one sync gunicorn worker,
 30s, sessions in memory, so an overrun killed the worker and every session.
 Production runs a gthread worker with --timeout 120 instead
-(deploy/heart-of-virtue.service, read from the server 2026-09-19; eventlet
-until 2026-09-26), where a long request holds one of the worker's threads and
-the timeout bounds a STALLED worker, not a slow request. The numbers stayed -- a player should not wait half a minute for one reply -- and
-these tests now read the unit rather than the Procfile.
+(deploy/heart-of-virtue.service: eventlet as read from the server 2026-09-19,
+gthread since 2026-09-26, PR #732), where a long request holds one of the
+worker's threads and the timeout bounds a STALLED worker, not a slow request.
+The numbers stayed -- a player should not wait half a minute for one reply --
+and these tests now read the unit rather than the Procfile.
 
 Maintainer decisions (2026-09-19): bound the turn server-side, keep it under
 ~25s, and size the client deadline from the engine's budget. So:

@@ -81,7 +81,8 @@ def _harness_config_file(pre_dotenv_value):
 from tests.llm_doubles import blank_outbound_env  # noqa: E402
 
 blank_outbound_env()
-os.environ["CONFIG_FILE"] = _harness_config_file(_SHELL_CONFIG_FILE)
+_HARNESS_CONFIG_FILE = _harness_config_file(_SHELL_CONFIG_FILE)
+os.environ["CONFIG_FILE"] = _HARNESS_CONFIG_FILE
 
 # GITHUB_TOKEN and TURSO_* used to be blanked here by name, a paragraph each.
 # Both are in OUTBOUND_CREDENTIAL_ENVS now, so the sweep above covers them:
@@ -190,7 +191,7 @@ def main() -> int:
         return 2
 
     client = GameClient(app)
-    config_file = os.environ.get("CONFIG_FILE", "")
+    config_file = _HARNESS_CONFIG_FILE
 
     # Select scenarios.
     scenarios = get_scenarios(name=args.scenario)

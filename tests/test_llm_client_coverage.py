@@ -885,6 +885,47 @@ class TestValidateAndFallbackOpenrouter:
         assert "'ratelimited/candidate': '429'" in line
         assert "secret-bearing" not in line
 
+    def test_candidates_skipped_by_the_quota_break_are_named_not_tried(
+        self, monkeypatch, caplog
+    ):
+        """The account-wide 429 ``break`` leaves the rest of the list unprobed;
+        the reasons map must say so rather than silently drop them, or the
+        log reads as if only the first candidate was ever considered."""
+        client = self._client(monkeypatch)
+        client.model = "primary/model"
+        GenericLLMClient._free_models_cache = [
+            "spends/quota", "after/one", "after/two",
+        ]
+        exhausted = []
+
+        def fake_chat(model_id, *args, **kwargs):
+            if model_id == "spends/quota":
+                exhausted.append(True)
+            return None
+
+        def headroom(cls, provider):
+            return not exhausted
+
+        with caplog.at_level(logging.ERROR, logger=llm_client.logger.name), \
+                patch.object(client, "_openrouter_chat_single", side_effect=fake_chat), \
+                patch.object(
+                    GenericLLMClient, "_provider_available",
+                    classmethod(headroom),
+                ):
+            client._validate_and_fallback_openrouter()
+
+        line = next(
+            r.getMessage() for r in caplog.records
+            if "all candidates failed" in r.getMessage()
+        )
+        assert "'spends/quota': 'empty'" in line
+        assert "'after/one': 'not_tried'" in line
+        assert "'after/two': 'not_tried'" in line
+        # Log-only: the latch and routing are untouched by the new token.
+        assert "rate_limited=True" in line
+        assert client._available is False
+        assert client.enabled is True
+
 
 class TestOpenrouterFailureReasonSlot:
     """The transports record why an attempt failed, on the calling thread."""
@@ -902,26 +943,19 @@ class TestOpenrouterFailureReasonSlot:
         # Taking clears it, so a stale reason cannot leak into the next attempt.
         assert llm_client._take_openrouter_failure() is None
 
-    def test_deterministic_sdk_refusal_records_its_status(self, monkeypatch):
+    @pytest.mark.parametrize(
+        "status, reason", [(404, "http_404"), (429, "429")],
+    )
+    def test_sdk_refusal_records_its_status(self, monkeypatch, status, reason):
         client = self._client(monkeypatch)
         llm_client._clear_openrouter_failure()
-        err = Exception("not found")
-        err.status_code = 404
+        err = Exception("refused")
+        err.status_code = status
         sdk = MagicMock()
         sdk.chat.completions.create.side_effect = err
         handled, content, _ = client._try_sdk(sdk, "m/x", "s", "u", False, 5)
         assert (handled, content) == (True, None)
-        assert llm_client._take_openrouter_failure() == "http_404"
-
-    def test_sdk_429_records_429(self, monkeypatch):
-        client = self._client(monkeypatch)
-        llm_client._clear_openrouter_failure()
-        err = Exception("rate limited")
-        err.status_code = 429
-        sdk = MagicMock()
-        sdk.chat.completions.create.side_effect = err
-        client._try_sdk(sdk, "m/x", "s", "u", False, 5)
-        assert llm_client._take_openrouter_failure() == "429"
+        assert llm_client._take_openrouter_failure() == reason
 
     def test_the_slot_is_per_thread(self, monkeypatch):
         llm_client._clear_openrouter_failure()
