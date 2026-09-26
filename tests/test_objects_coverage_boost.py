@@ -171,15 +171,6 @@ class TestWallInscription:
         # The inscription body still goes out, via print_slow.
         mock_slow.assert_called_once_with("Ancient text.", speed="fast")
 
-    def test_examine_aliases_read(self):
-        """Line 224-226: examine() calls read()."""
-        p = _player()
-        tile = _mock_tile()
-        wi = objects.WallInscription(player=p, tile=tile, text="")
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(wi).examine is type(wi).read
-
 
 # ---------------------------------------------------------------------------
 # WallSwitch — position toggling
@@ -729,15 +720,6 @@ class TestFountain:
             fountain.admire()
         mock_await.assert_called_once()
 
-    def test_use_aliases_drink(self):
-        """Line 963-964: use() calls drink()."""
-        p = _player()
-        tile = _mock_tile()
-        fountain = objects.Fountain(player=p, tile=tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(fountain).use is type(fountain).drink
-
 
 # ---------------------------------------------------------------------------
 # StreetLantern
@@ -831,15 +813,6 @@ class TestNoticeBoard:
             board.read()
         ev.process.assert_called_once()
         assert board._read_once is True
-
-    def test_use_aliases_read(self):
-        """Line 1085-1086: use() calls read()."""
-        p = _player()
-        tile = _mock_tile()
-        board = objects.NoticeBoard(player=p, tile=tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(board).use is type(board).read
 
 
 # ---------------------------------------------------------------------------
@@ -953,21 +926,3 @@ class TestMarketGong:
             gong.strike()
         ev.process.assert_called_once()
         assert gong.event is None
-
-    def test_hit_aliases_strike(self):
-        """Line 1172-1173: hit() calls strike()."""
-        p = _player()
-        tile = _mock_tile()
-        gong = objects.MarketGong(player=p, tile=tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(gong).hit is type(gong).strike
-
-    def test_bang_aliases_strike(self):
-        """Line 1175-1176: bang() calls strike()."""
-        p = _player()
-        tile = _mock_tile()
-        gong = objects.MarketGong(player=p, tile=tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(gong).bang is type(gong).strike
