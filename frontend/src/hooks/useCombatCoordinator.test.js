@@ -356,6 +356,25 @@ describe('useCombatCoordinator', () => {
 
             expect(second.result.current.showDefeatDialog).toBe(true)
         })
+
+        // #704: the dialog timer requires an id, but the pending flags did not.
+        // An id-less end_state set endStatePendingRef/isResolvingCombatEnd
+        // (`undefined !== null`) and nothing ever reset them -- the reset lives
+        // inside the timer that never starts -- so "Resolving battle..." hung
+        // forever with the mode locked to combat.
+        it('never stores an id-less end_state, so nothing is left pending (#704)', () => {
+            const combat = { end_state: { status: 'victory', message: 'Victory!' }, log: [] }
+
+            const { result } = renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, combat, inCombat: false })
+            )
+            act(() => vi.advanceTimersByTime(10000))
+
+            expect(result.current.endState).toBeNull()
+            expect(result.current.endStatePendingRef.current).toBe(false)
+            expect(result.current.isResolvingCombatEnd).toBe(false)
+            expect(result.current.showVictoryDialog).toBe(false)
+        })
     })
 
     describe('handleSuggestedMoveClick', () => {

@@ -28,6 +28,7 @@ import { TAB_KEYS } from '../utils/mobileTabs'
 import { redirectToLogin } from '../utils/session'
 import { apiErrorMessage, autosaveErrorMessage } from '../utils/apiError'
 import { LOOT_COLLECT_REFUSED } from '../utils/lootCopy'
+import { resolvableEndState } from '../utils/combatEndState'
 
 /** Shown when a move fails and the response carries no reason of its own. */
 const MOVE_FAILED_MESSAGE = 'Jean could not move.'
@@ -525,13 +526,16 @@ export default function GamePage() {
     } else {
       setCombatDialogShown(false)
       // Handle combat end state
-      const maybeEnd = combat?.end_state
+      // Same gate as useCombatCoordinator: an id-less end state can never be
+      // resolved, and storing it switched off pending-event polling for good
+      // (the `if (!endState)` below) (#704).
+      const maybeEnd = resolvableEndState(combat?.end_state)
       // The end-of-combat gate lives in useCombatCoordinator, which compares
       // the DEDUPED log count (utils/combatLogKey) against LeftPanel's reveal
       // count. This effect used to carry its own copy of that comparison;
       // nothing here ever read it, so it was deleted rather than kept in sync.
 
-      if (maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
+      if (maybeEnd) {
         setEndState(maybeEnd)
 
         // Refetch the room as soon as combat end is detected, not only once the
@@ -539,7 +543,7 @@ export default function GamePage() {
         // victory/defeat modal (mode flips to 'exploration' below while the
         // dialog is still pending) and it reads `location`, which otherwise
         // still carries the pre-fight, everyone-hostile room state.
-        if (maybeEnd.id && worldRefetchedForEndStateRef.current !== maybeEnd.id) {
+        if (worldRefetchedForEndStateRef.current !== maybeEnd.id) {
           worldRefetchedForEndStateRef.current = maybeEnd.id
           refetchWorld()
         }

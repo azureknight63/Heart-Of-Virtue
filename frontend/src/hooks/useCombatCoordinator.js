@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { distinctLogCount } from '../utils/combatLogKey'
+import { resolvableEndState } from '../utils/combatEndState'
 
 // How long the victory dialog waits before it may be dismissed --
 // long enough that the closing beats finish streaming behind it, so
@@ -90,9 +91,12 @@ export function useCombatCoordinator({
      * the dialog interrupts.
      */
     useEffect(() => {
-        const maybeEnd = combat?.end_state
+        // Only a resolvable (id-carrying) end state is stored or marked pending:
+        // the timer below is keyed on the id and is the only thing that clears
+        // the pending flags, so an id-less one used to hang them forever (#704).
+        const maybeEnd = inCombat ? null : resolvableEndState(combat?.end_state)
 
-        if (!inCombat && maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
+        if (maybeEnd) {
             // Distinct entries, not raw length: the per-target carriers of one
             // swing are byte-identical, so the raw log permanently exceeds
             // LeftPanel's deduped count after any multi-target resolution and
@@ -112,7 +116,7 @@ export function useCombatCoordinator({
                 // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive twin of the ref above; same guard, same reasoning.
                 setIsResolvingCombatEnd(true)
             }
-            if (!isCombatLogProcessing && !hasPendingLogs && !isBattlefieldAnimating && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
+            if (!isCombatLogProcessing && !hasPendingLogs && !isBattlefieldAnimating && maybeEnd.id !== lastEndStateId) {
                 // Mark handled immediately so re-renders don't schedule a second timer
                 // within this mount (see the lastEndStateId comment above for why this
                 // is intentionally NOT persisted to sessionStorage).
