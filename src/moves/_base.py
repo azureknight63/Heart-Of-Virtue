@@ -82,6 +82,22 @@ def _num(value, default=0.0):
     return value
 
 
+def whole_beats(value):
+    """``value`` as a whole number of beats, or None when it is not one.
+
+    A non-bool int, or a float with no fractional part: the stage machine
+    drains 3.0 to exactly zero but never 1.5 (see ``Move.beats_until_ready``).
+    A type rule only -- callers that also forbid negatives check the sign.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
 # ── Attack outcome channel ──────────────────────────────────────────────────
 # The engine resolves what an attack did; the API must never re-derive it from
 # the narration prose. ``hit()``/``miss()``/``parry()`` publish one of these
@@ -1709,7 +1725,8 @@ class Move:  # master class for all moves
     def _recoil_if_cast_now(self):
         """The recoil a cast now would run: the declared stage, unless a move's
         ``execute()`` rewrites it (``Wait``) -- the one hook
-        ``beats_until_ready`` leaves open, so the gate above is not re-run."""
+        ``beats_until_ready`` leaves open, so its at-rest / instant /
+        stage-shape checks are not re-run by an override."""
         return self.stage_beat[2]
 
     @staticmethod
@@ -1721,12 +1738,10 @@ class Move:  # master class for all moves
         """
         stages = []
         for value in (prep, execute, recoil):
-            whole = isinstance(value, int) or (
-                isinstance(value, float) and value.is_integer()
-            )
-            if isinstance(value, bool) or not whole or value < 0:
+            whole = whole_beats(value)
+            if whole is None or whole < 0:
                 return None
-            stages.append(int(value))
+            stages.append(whole)
         prep, execute, recoil = stages
         # One beat to leave prep, one more per non-empty later stage: a stage
         # of N beats costs N drains plus the beat that advances past it, and an

@@ -4,7 +4,7 @@ from typing import (
 )
 
 from ai.llm_client import GenericLLMClient
-from src.moves import DAMAGING_MOVE_CATEGORIES
+from src.moves import DAMAGING_MOVE_CATEGORIES, whole_beats
 from src.text_format import pct as _pct
 
 logger = logging.getLogger(__name__)
@@ -133,8 +133,8 @@ _DEFENSIVE_MOVE_NAMES = ("Dodge", "Parry")
 # stance scores 60-97, the #686 locked-defence scores 82-92), and deliberately
 # two below Wait/Check (20): Check costs no beat at all, so it is strictly
 # safer than a move that spends the window, and a tie would present the two as
-# equally sound. Above nothing that matters: the harmless-attack floor (15)
-# sits below it only because a swing that cannot hurt anyone is worth even less.
+# equally sound. Only the harmless-attack score (15) sits below it, because a
+# swing that cannot hurt anyone is worth even less.
 #
 # Knowingly NOT modelled (maintainer's call on #700): killing the charger, or
 # interrupting its wind-up, before the surge lands is also counterplay, and a
@@ -642,17 +642,10 @@ def _beat_count(value: Any) -> Optional[int]:
     """``value`` as a whole number of beats, or None when it is not one.
 
     One rule for every beat count read off the wire (threat countdown, move
-    tie-up, defence cooldown): a non-bool int, or a float with no fractional
-    part -- the same rule ``Move._beats_to_free`` applies to stage beats,
-    since 3.0 drains to exactly zero and 1.5 never does.
+    tie-up, defence cooldown), and it is the engine's: `whole_beats`
+    (src/moves/_base.py), which ``Move._beats_to_free`` applies to stage beats.
     """
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    return None
+    return whole_beats(value)
 
 
 def _moves_by_name(
@@ -741,15 +734,27 @@ def _soonest_defence(ctx: Dict[str, Any]) -> Tuple[Optional[str], Optional[int]]
     entry the adapter supplies. ``(None, None)`` when neither is offered nor
     merely cooling -- fatigue-locked, unlearned, not viable -- which is the case
     `_defence_lock_note` and #686's locked-defence branch speak to instead.
+
+    A cooling entry that is ALSO in ``fatigue_locked_moves`` is skipped: the
+    adapter lists a move there whenever Jean cannot pay for it, cooldown or
+    not, and coming off cooldown does not make it affordable. A negative or
+    non-whole cooldown is not a beat count and is skipped too.
     """
     for m in _offerable_moves(ctx.get("available_moves", [])):
         if m.get("name") in _DEFENSIVE_MOVE_NAMES:
             return m["name"], 0
-    cooling = [
-        (_beat_count(beats), name)
-        for name, beats in (ctx.get("defensive_cooldowns") or {}).items()
-        if name in _DEFENSIVE_MOVE_NAMES and _beat_count(beats) is not None
-    ]
+    unaffordable = {
+        m.get("name")
+        for m in ctx.get("fatigue_locked_moves") or []
+        if isinstance(m, dict)
+    }
+    cooling = []
+    for name, raw in (ctx.get("defensive_cooldowns") or {}).items():
+        if name not in _DEFENSIVE_MOVE_NAMES or name in unaffordable:
+            continue
+        beats = _beat_count(raw)
+        if beats is not None and beats >= 0:
+            cooling.append((beats, name))
     if not cooling:
         return None, None
     beats, name = min(cooling)
@@ -761,9 +766,11 @@ def _forfeits_defence(ready: Optional[int], state: TacticalState) -> bool:
 
     Issue #700. ``ready`` is the offered move's ``beats_until_ready`` read
     through `_beat_count`: beats until Jean is asked again. For Wait that is
-    the tie-up of its DEFAULT duration (``Wait._DEFAULT_DURATION``) -- the
-    player picks the real one after the advice is shown, so a longer chosen
-    wait can still forfeit the Dodge this cleared. The move forfeits the
+    the tie-up of the duration set on the move (``Wait._DEFAULT_DURATION`` if
+    none has been chosen; the adapter never resets it, so after one Wait it is
+    the last duration picked) -- the player picks the real one after the
+    advice is shown, so a longer chosen wait can still forfeit the Dodge this
+    cleared. The move forfeits the
     defence when all hold:
 
       * a flagged charge is coming at Jean (`_threat_worth_defending` has

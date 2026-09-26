@@ -378,9 +378,11 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
 
         Wait's declared stages are all zero until ``execute()`` turns the
         chosen duration into recoil, so the declared stage would read the
-        previous Wait's recoil (or none at all). Before the player picks a
-        duration this is `_DEFAULT_DURATION`'s -- a longer wait chosen at the
-        prompt ties Jean up for longer than the advisor was told (#700).
+        previous Wait's recoil (or none at all). This is the recoil for the
+        duration set on the move (`_DEFAULT_DURATION` if none has been chosen;
+        the adapter's select_number flow sets it and nothing resets it, so it
+        is the last duration picked) -- a longer wait chosen at the prompt ties
+        Jean up for longer than the advisor was told (#700).
         """
         return self._recoil_for_duration()
 

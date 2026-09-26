@@ -38,6 +38,7 @@ from ._base import (
     TELEGRAPH_SEVERITY_NORMAL,
     DAMAGING_MOVE_CATEGORIES,
     deals_damage_of,
+    whole_beats,
     UnavailableReason,
     UNAVAILABILITY_TEXT,
 )
@@ -145,6 +146,8 @@ __all__ = [
     # The categories behind Move.deals_damage (issue #714)
     "DAMAGING_MOVE_CATEGORIES",
     "deals_damage_of",
+    # The whole-beat-count rule (#700) the advisor reads wire counts with
+    "whole_beats",
     # Why a move is locked (issue #627): the code vocabulary and its copy
     "UnavailableReason",
     "UNAVAILABILITY_TEXT",
