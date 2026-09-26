@@ -99,6 +99,35 @@ def iter_rooms(rooms_source: Any) -> Iterator[Any]:
         yield room
 
 
+def _is_merchant(obj: Any) -> bool:
+    """True when a class named ``Merchant`` is in ``obj``'s MRO.
+
+    Matched by name rather than ``isinstance`` so this module need not import
+    ``src.npc`` (which imports it).
+    """
+    try:
+        return any(
+            getattr(c, "__name__", "") == "Merchant" for c in obj.__class__.mro()
+        )
+    except Exception:
+        return False
+
+
+def iter_merchants(maps: Any) -> Iterator[Any]:
+    """Yield every Merchant NPC standing on a tile in ``maps``.
+
+    ``maps`` is ``Universe.maps``: a list of map dicts keyed by ``(x, y)``
+    (plus a ``"name"`` entry). Entries that are not map dicts are skipped.
+    """
+    for game_map in maps or []:
+        if not isinstance(game_map, dict):
+            continue
+        for room in iter_rooms(game_map):
+            for npc in getattr(room, "npcs_here", None) or []:
+                if _is_merchant(npc):
+                    yield npc
+
+
 def iter_merchant_containers(room: Any, merchant: Any) -> Iterator[Any]:
     """Yield the containers in ``room`` whose stock belongs to ``merchant``.
 

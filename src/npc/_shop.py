@@ -254,6 +254,20 @@ class MerchantShopMixin:
 
     # ── High-level restock orchestration ──────────────────────────────────────
 
+    def stock_if_empty(self) -> bool:
+        """Run :meth:`update_goods` if this merchant has no goods yet (Gold aside).
+
+        Used to give every merchant its opening stock when a new world is built
+        (issue #727). A merchant whose map authors its stock keeps that stock
+        rather than having it re-rolled. Returns True when it stocked.
+        """
+        if not hasattr(self, "buy_modifier"):
+            self.initialize_shop()
+        if any(getattr(it, "name", None) != "Gold" for it in self.inventory or []):
+            return False
+        self.update_goods()
+        return True
+
     def update_goods(self):
         """Refresh or update the merchant's inventory.
 

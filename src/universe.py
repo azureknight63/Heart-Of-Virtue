@@ -5,12 +5,16 @@ import src.secure_pickle as secure_pickle
 import src.map_placeholders as map_placeholders
 import json
 import inspect
+import logging
 import importlib
 from pathlib import Path
 from typing import Final
 from src.coordinate_config import CoordinateSystemConfig
 from src.narration import narrate
 from src.journal import Journal
+from src.shop_conditions import iter_merchants
+
+logger = logging.getLogger(__name__)
 
 RESOURCES_DIR: Final = Path(__file__).parent / "resources"
 
@@ -98,6 +102,24 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             for location in self.maps:
                 if "start" in location["name"] and self.starting_map_default is None:
                     self.starting_map_default = location
+            # Only a new world gets opening stock; a restored one keeps what was saved.
+            self._stock_empty_merchants()
+
+    def _stock_empty_merchants(self):
+        """Give every merchant with no goods its opening stock (issue #727).
+
+        Stock is otherwise rolled only on first shop open or every 1000 ticks,
+        which left merchant-bound containers (Jambo's back-room crate) empty on
+        a fresh game. One merchant failing to stock never breaks the build.
+        """
+        for merchant in iter_merchants(self.maps):
+            try:
+                merchant.stock_if_empty()
+            except Exception:
+                logger.exception(
+                    "Failed to stock merchant %r at world build",
+                    getattr(merchant, "name", merchant),
+                )
 
     # ---------------- JSON MAP SUPPORT -----------------
     def _json_maps_root_candidates(self):

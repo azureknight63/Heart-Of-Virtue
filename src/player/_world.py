@@ -3,6 +3,7 @@
 import time
 
 from src.narration import cprint
+from src.shop_conditions import iter_merchants
 
 
 class PlayerWorldMixin:
@@ -21,40 +22,16 @@ class PlayerWorldMixin:
 
         target_filter = phrase.lower().strip() if phrase else ""
 
-        # Helper: returns True for objects whose class MRO contains a class named 'Merchant'.
-        def _is_merchant_instance(obj):
-            if obj is None:
-                return False
-            cls = getattr(obj, "__class__", None)
-            if cls is None:
-                return False
-            try:
-                mro = getattr(cls, "mro", None)
-                if not callable(mro):
-                    return False
-                return any(getattr(c, "__name__", "") == "Merchant" for c in cls.mro())
-            except Exception:
-                return False
-
         merchants = []
-        for game_map in getattr(self.universe, "maps", []):  # each map is a dict
-            if not isinstance(game_map, dict):
+        for npc in iter_merchants(getattr(self.universe, "maps", [])):
+            try:
+                npc_name = (getattr(npc, "name", "") or "").lower()
+            except Exception:
+                # Skip any problematic object
                 continue
-            for coord, tile in game_map.items():
-                if coord == "name":
-                    continue
-                if not tile:
-                    continue
-                for npc in getattr(tile, "npcs_here", []):
-                    try:
-                        if _is_merchant_instance(npc):
-                            npc_name = (getattr(npc, "name", "") or "").lower()
-                            if target_filter and target_filter not in npc_name:
-                                continue
-                            merchants.append(npc)
-                    except Exception:
-                        # Skip any problematic object
-                        continue
+            if target_filter and target_filter not in npc_name:
+                continue
+            merchants.append(npc)
 
         if not merchants:
             cprint(
