@@ -37,7 +37,7 @@ import pytest
 
 pytest.importorskip("flask")
 
-#: Credential-shaped, and matched by ``app._SECRET_RE``. Not a real token.
+#: Credential-shaped, and matched by ``structured_log._SECRET_RE``. Not a real token.
 FAKE_TOKEN = "ghp_0000000000000000000000000000000000"
 
 #: Detail of exactly the kind an ``HTTPException`` description carries in

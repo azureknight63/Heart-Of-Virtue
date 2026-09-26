@@ -12,6 +12,7 @@ per-request line emitted by init_request_logging.
 
 import json
 import logging
+import logging.handlers
 import uuid
 from datetime import datetime
 
@@ -389,7 +390,9 @@ class TestConfigureLoggingLogFile:
         logger.handlers = []
         path = tmp_path / "app.log"
         configure_logging(
-            env={"LOG_LEVEL": "INFO", "LOG_FILE": str(path)}, logger=logger
+            env={"LOG_LEVEL": "INFO", "LOG_FILE": str(path)},
+            logger=logger,
+            log_dir=tmp_path,
         )
         logger.info("hello plain file")
         for handler in logger.handlers:
@@ -400,15 +403,56 @@ class TestConfigureLoggingLogFile:
         logger = _fresh_logger()
         logger.handlers = []
         monkeypatch.setattr(
-            logging,
-            "FileHandler",
+            logging.handlers,
+            "RotatingFileHandler",
             lambda *a, **k: (_ for _ in ()).throw(OSError("nope")),
         )
         # Must not raise — a bad LOG_FILE path degrades, never crashes the app
         configure_logging(
             env={"LOG_LEVEL": "INFO", "LOG_FILE": str(tmp_path / "x.log")},
             logger=logger,
+            log_dir=tmp_path,
         )
+        assert not any(isinstance(h, logging.FileHandler) for h in logger.handlers)
+
+    def test_log_file_outside_the_log_dir_is_refused(self, tmp_path):
+        """The import-time LOG_FILE handler used to open any path unconfined
+        (issue #698) while create_app's copy confined it; one owner, one rule."""
+        logger = _fresh_logger()
+        logger.handlers = []
+        outside = tmp_path / "elsewhere" / "x.log"
+        configure_logging(
+            env={"LOG_LEVEL": "INFO", "LOG_FILE": str(outside)},
+            logger=logger,
+            log_dir=tmp_path / "logs",
+        )
+        for handler in logger.handlers:
+            handler.close()
+        assert not any(isinstance(h, logging.FileHandler) for h in logger.handlers)
+        assert not outside.parent.exists()
+
+    def test_log_file_rotates(self, tmp_path):
+        from logging.handlers import RotatingFileHandler
+
+        from src.api import structured_log
+
+        logger = _fresh_logger()
+        logger.handlers = []
+        configure_logging(
+            env={"LOG_LEVEL": "INFO", "LOG_FILE": "app.log"},
+            logger=logger,
+            log_dir=tmp_path,
+        )
+        rotating = [h for h in logger.handlers if isinstance(h, RotatingFileHandler)]
+        try:
+            assert len(rotating) == 1
+            assert rotating[0].maxBytes == structured_log._LOG_FILE_MAX_BYTES
+            assert rotating[0].backupCount == structured_log._LOG_FILE_BACKUP_COUNT
+            # A relative LOG_FILE lands inside the log dir, not the cwd.
+            assert rotating[0].baseFilename == str((tmp_path / "app.log").resolve())
+        finally:
+            for handler in logger.handlers:
+                handler.close()
 
 
 class TestJsonlDirRetention:

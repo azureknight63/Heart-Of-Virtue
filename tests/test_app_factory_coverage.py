@@ -180,6 +180,113 @@ class TestLoggingConfiguration:
         assert len(root.handlers) == after_first
 
 
+class TestOneRootLoggerOwner:
+    """Issue #698 (and the duplicate-line half of #728).
+
+    Two modules used to install root handlers: ``structured_log.configure_logging``
+    at ``src.api.app`` import time, and ``app._configure_logging`` again inside
+    ``create_app()``. Each removed only handlers carrying its *own* marker, so
+    both sets survived: every record reached stderr twice (the prod journal at
+    LOG_LEVEL=INFO), LOG_FILE was opened twice (once unconfined and unrotated),
+    and only the second set carried ``_RedactSecretsFilter`` -- so the first
+    copy of every line, and the whole JSONL stream, went out unredacted.
+    """
+
+    # Credential-shaped (matches the OpenRouter ``sk-or-v1-`` family the
+    # redaction pattern covers); not a real key.
+    SECRET = "sk-or-v1-0123456789abcdef0123456789abcdef"
+
+    @pytest.fixture
+    def pristine_root(self):
+        """Snapshot the REAL root logger and restore it afterwards.
+
+        The test empties root itself, in the call phase: pytest attaches its
+        call-phase capture handlers *after* fixtures run, and
+        ``configure_logging`` withholds its console handler while any foreign
+        handler is present -- the opposite of the production shape (no foreign
+        handlers) this test must reproduce.
+        """
+        from src.api.app import _APP_LOG_NAMESPACES
+        from src.api.structured_log import _NOISY_LOGGERS
+
+        root = logging.getLogger()
+        saved_handlers, saved_level = root.handlers[:], root.level
+        names = _APP_LOG_NAMESPACES + _NOISY_LOGGERS
+        saved_levels = {n: logging.getLogger(n).level for n in names}
+        try:
+            yield root
+        finally:
+            for handler in root.handlers:
+                if handler not in saved_handlers:
+                    handler.close()
+            root.handlers[:] = saved_handlers
+            root.setLevel(saved_level)
+            for name, level in saved_levels.items():
+                logging.getLogger(name).setLevel(level)
+
+    def test_every_record_is_emitted_once_and_redacted_everywhere(
+        self, pristine_root, tmp_path, monkeypatch, capfd
+    ):
+        from src.api import structured_log
+        from src.api.app import _RedactSecretsFilter
+
+        log_dir = tmp_path / "logs"
+        log_file = log_dir / "app.log"
+        jsonl_dir = tmp_path / "jsonl"
+        # LOG_FILE is confined to the log directory; point that at tmp_path.
+        monkeypatch.setattr(structured_log, "_LOG_DIR", log_dir, raising=False)
+        monkeypatch.setenv("LOG_LEVEL", "INFO")
+        monkeypatch.setenv("LOG_FILE", str(log_file))
+        monkeypatch.setenv("LOG_JSONL_DIR", str(jsonl_dir))
+
+        # The production sequence: configure at import, then create_app().
+        pristine_root.handlers[:] = []
+        structured_log.configure_logging()
+        _make_app()
+
+        root = pristine_root
+        handlers = root.handlers[:]
+        assert handlers, "configure_logging installed no root handlers at all"
+
+        stderr_handlers = [
+            h
+            for h in handlers
+            if isinstance(h, logging.StreamHandler)
+            and not isinstance(h, logging.FileHandler)
+        ]
+        file_handlers = [h for h in handlers if isinstance(h, logging.FileHandler)]
+        assert len(stderr_handlers) == 1, stderr_handlers
+        assert len(file_handlers) == 1, file_handlers
+
+        unfiltered = [
+            h
+            for h in handlers
+            if not any(isinstance(f, _RedactSecretsFilter) for f in h.filters)
+        ]
+        assert not unfiltered, f"root handlers without redaction: {unfiltered}"
+
+        # hov.* inherits root; src.* may be pinned to WARNING by TESTING.
+        logging.getLogger("hov.probe698").info("info-698 key=%s", self.SECRET)
+        logging.getLogger("src.probe698").warning("warn-698 key=%s", self.SECRET)
+        for handler in handlers:
+            handler.flush()
+
+        err = capfd.readouterr().err
+        assert err.count("info-698") == 1, err
+        assert err.count("warn-698") == 1, err
+        assert self.SECRET not in err
+
+        file_text = log_file.read_text(encoding="utf-8")
+        jsonl_text = "".join(
+            p.read_text(encoding="utf-8") for p in jsonl_dir.glob("*.jsonl")
+        )
+        # Positive first, so the negative assertions below cannot pass vacuously.
+        for text in (file_text, jsonl_text):
+            assert "info-698" in text and "warn-698" in text, text
+            assert self.SECRET not in text
+            assert "[REDACTED]" in text
+
+
 class TestCreateApp:
     def test_returns_app_and_socketio(self):
         from flask import Flask
@@ -1034,26 +1141,49 @@ class TestSecretRedaction:
         record = self._filtered(self._record("moved to %s", ("the north gate",)))
         assert record.getMessage() == "moved to the north gate"
 
-    def test_the_filter_is_on_every_handler_this_module_installs(self):
-        """Filters run per handler. The StreamHandler is appended first, so a
-        file-handler-only filter emitted the unredacted record to stderr before
-        the redacting handler ever saw it."""
-        from src.api.app import (
-            _HOV_HANDLER_ATTR,
-            _RedactSecretsFilter,
-            _configure_logging,
-        )
+    def test_the_filter_is_on_every_handler_configure_logging_installs(
+        self, tmp_path
+    ):
+        """Filters run per handler, in order, so one unfiltered handler emits
+        the raw record before any redacting one sees it (issue #698). The
+        population is derived from the logger itself, with every optional
+        handler (LOG_FILE, JSONL) switched on."""
+        from src.api.app import _RedactSecretsFilter
+        from src.api.structured_log import configure_logging
+
+        logger = logging.getLogger("_test_redaction_every_handler")
+        logger.propagate = False
+        logger.handlers = []
+        try:
+            configure_logging(
+                env={
+                    "LOG_LEVEL": "INFO",
+                    "LOG_FILE": str(tmp_path / "app.log"),
+                    "LOG_JSONL_DIR": str(tmp_path / "jsonl"),
+                },
+                logger=logger,
+                log_dir=tmp_path,
+            )
+            assert len(logger.handlers) == 3, logger.handlers
+            for handler in logger.handlers:
+                assert any(
+                    isinstance(f, _RedactSecretsFilter) for f in handler.filters
+                ), handler
+        finally:
+            for handler in logger.handlers:
+                handler.close()
+            logger.handlers = []
+
+    def test_create_app_installs_no_root_handlers_of_its_own(self):
+        """The second owner was the bug (issue #698): ``_configure_logging``
+        now sets namespace levels only."""
+        from src.api.app import _configure_logging
 
         root = logging.getLogger()
         handlers, level = root.handlers[:], root.level
         try:
             _configure_logging()
-            ours = [h for h in root.handlers if getattr(h, _HOV_HANDLER_ATTR, False)]
-            assert ours, "expected at least the StreamHandler"
-            for handler in ours:
-                assert any(
-                    isinstance(f, _RedactSecretsFilter) for f in handler.filters
-                ), handler
+            assert root.handlers == handlers
         finally:
             root.handlers[:] = handlers
             root.setLevel(level)

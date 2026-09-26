@@ -33,8 +33,8 @@ from flask import jsonify
 # The 500 and unhandled-exception handlers below are the app's highest-volume
 # traceback source. They used to call ``traceback.print_exc()``, which writes
 # straight to stderr and never touches the logging pipeline — so
-# ``src/api/app.py``'s ``_RedactSecretsFilter``, installed on every handler
-# this app owns precisely to keep credentials out of emitted tracebacks, never
+# ``src/api/structured_log.py``'s ``_RedactSecretsFilter``, installed on every
+# root handler precisely to keep credentials out of emitted tracebacks, never
 # saw a single one of them. ``logger.exception`` routes the same detail
 # through that filter, and into LOG_FILE with it.
 logger = logging.getLogger(__name__)
