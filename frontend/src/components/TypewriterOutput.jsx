@@ -50,13 +50,25 @@ export default function TypewriterOutput({ text, speed, style = {}, onComplete, 
         }
     }, [displayedText, isComplete])
 
+    // The latest callback, read at completion. Callers pass inline arrows, so
+    // as an effect dependency onComplete changed on every parent render, and
+    // each re-render after completion re-fired it and smooth-scrolled back to
+    // the end: a player scrolling a long event could never reach its first
+    // lines (scrolling itself re-renders EventDialog).
+    // Kept current by an effect declared BEFORE the completion effect, so
+    // within one commit it always runs first.
+    const onCompleteRef = useRef(onComplete)
+    useEffect(() => {
+        onCompleteRef.current = onComplete
+    }, [onComplete])
+
     React.useEffect(() => {
-        if (isComplete && onComplete) {
-            onComplete()
+        if (isComplete && onCompleteRef.current) {
+            onCompleteRef.current()
             // Final scroll to ensure everything is visible
             bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
         }
-    }, [isComplete, onComplete])
+    }, [isComplete])
 
     return (
         <div

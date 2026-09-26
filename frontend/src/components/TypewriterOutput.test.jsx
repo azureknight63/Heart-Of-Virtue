@@ -27,6 +27,37 @@ describe('TypewriterOutput', () => {
         expect(onComplete).toHaveBeenCalledTimes(1)
     })
 
+    it('completes once and stops scrolling when the caller re-renders with a new onComplete', () => {
+        // EventDialog passes an inline arrow, so every re-render hands over a
+        // new function -- and scrolling the dialog re-renders it (the fade
+        // indicators are state). While onComplete was an effect dependency,
+        // each re-render re-ran completion and smooth-scrolled back to the
+        // end, so a player could never scroll up to the first lines, and the
+        // bottom fade stayed over the last one.
+        const scrollIntoView = vi.fn()
+        const original = Element.prototype.scrollIntoView
+        Element.prototype.scrollIntoView = scrollIntoView
+        try {
+            const first = vi.fn()
+            const { rerender } = render(<TypewriterOutput text="Hello" speed={10} onComplete={first} />)
+            act(() => { vi.advanceTimersByTime(200) })
+            expect(first).toHaveBeenCalledTimes(1)
+            const scrollsAtCompletion = scrollIntoView.mock.calls.length
+
+            const second = vi.fn()
+            const third = vi.fn()
+            rerender(<TypewriterOutput text="Hello" speed={10} onComplete={second} />)
+            rerender(<TypewriterOutput text="Hello" speed={10} onComplete={third} />)
+            act(() => { vi.advanceTimersByTime(200) })
+
+            expect(second).not.toHaveBeenCalled()
+            expect(third).not.toHaveBeenCalled()
+            expect(scrollIntoView).toHaveBeenCalledTimes(scrollsAtCompletion)
+        } finally {
+            Element.prototype.scrollIntoView = original
+        }
+    })
+
     it('fires onComplete for an empty beat', () => {
         // The engine emits genuinely empty beats (stage ops with no prose).
         // Without completion the caller never gets its continue affordance.
