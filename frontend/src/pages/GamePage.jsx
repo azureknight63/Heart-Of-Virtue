@@ -70,8 +70,8 @@ export default function GamePage() {
   )
   const { triggerTick } = useAutosave({
     // A 403 (test/guest session refusing to persist) is not a network
-    // failure and shouldn't be reported as one — see autosaveErrorMessage
-    // (#540 item 12).
+    // failure and shouldn't be reported as one, nor should a 5xx the server
+    // answered — see autosaveErrorMessage (#540 item 12, #731).
     onSaveError: (err) => showError(autosaveErrorMessage(err))
   })
 

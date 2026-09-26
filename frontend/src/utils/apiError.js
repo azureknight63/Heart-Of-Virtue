@@ -237,17 +237,38 @@ export function apiErrorDetail(err) {
  * persist for THIS session (a test/guest session with no `db_user_id`; see
  * project-combat-socket-qa-gotchas.md / the QA beta configs). Reporting it
  * as "check your connection" sends the player chasing their wifi for a
- * refusal their connection had no part in. Any other failure (no
- * `response` at all — a dropped connection or timeout — or a 5xx) keeps the
- * network-flavored copy, since those genuinely can be transport failures.
+ * refusal their connection had no part in.
+ *
+ * #731: the same was true of a 5xx. A response of any status means the
+ * connection worked, so only a failure with no `response` at all (a dropped
+ * connection or timeout) keeps the network-flavored copy. 502/503/504 are
+ * the gateway saying the app is down or restarting (a deploy, a worker
+ * recycle); any other 5xx is the app itself failing the save.
+ *
+ * None of the copy promises the lost save will be retried: there is no retry
+ * queue. useAutosave resets its tick counter whether or not the write landed,
+ * so the next attempt is simply the next scheduled autosave, a few actions
+ * later.
  *
  * @param {*} err - The rejected save call, as axios delivers it.
  * @returns {string} Player-facing autosave failure copy.
  */
 export function autosaveErrorMessage(err) {
-    if (err?.response?.status === 403) {
+    const status = err?.response?.status
+    if (status === 403) {
         return 'Your progress could not be saved: this session can\'t save games (guest/test session). '
             + 'Sign in with a full account to keep your progress.'
     }
+    if (GATEWAY_UNAVAILABLE_STATUSES.has(status)) {
+        return 'The server is busy or restarting. Your game continues and will try to save again as you play.'
+    }
+    if (status >= 500) {
+        return "The server couldn't save your progress. Your game continues. "
+            + 'If this keeps happening, please send it through Feedback.'
+    }
     return 'Failed to save your progress. Check your connection.'
 }
+
+// Statuses a reverse proxy answers with when the app behind it is down,
+// overloaded or mid-restart, as opposed to the app itself failing a request.
+const GATEWAY_UNAVAILABLE_STATUSES = new Set([502, 503, 504])
