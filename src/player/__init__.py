@@ -25,7 +25,7 @@ import src.items as items  # type: ignore
 import src.functions as functions  # type: ignore
 import src.moves as moves  # type: ignore
 import src.skilltree as skilltree  # type: ignore
-from src.combatant import Combatant
+from src.combatant import Combatant, exp_needed_for_level
 
 from ._leveling import PlayerLevelingMixin
 from ._combat import PlayerCombatMixin
@@ -143,7 +143,7 @@ class Player(
         ):  # initialize an exp pool for each skill subtype
             self.skill_exp[subtype] = 0
         self.level = 1
-        self.exp_to_level = 150
+        self.exp_to_level = exp_needed_for_level(self.level, self.intelligence)
         self.location_x, self.location_y = (0, 0)
         self.prev_location_x, self.prev_location_y = (
             0,
