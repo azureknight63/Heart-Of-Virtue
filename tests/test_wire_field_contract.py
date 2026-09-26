@@ -2878,31 +2878,12 @@ HELD_POST_COMBAT_EVENT_CONTRACT = {
 
 
 class TestPostCombatStoryWireContract:
-    class _Scene:
-        """A no-input post-combat tile event, as ``AfterDefeatingKingSlime`` is."""
-
-        name = "AfterTheFightScene"
-
-        def __init__(self, tile):
-            self.tile = tile
-            self.player = None
-            self.needs_input = False
-            self.completed = False
-
-        def check_conditions(self):
-            from src.narration import narrate
-
-            if not self.completed:
-                narrate("The churning stilled.")
-                self.completed = True
-                self.tile.events_here.remove(self)
-
     def _won_fight(self):
-        from tests._gs_fixtures import live_world
+        from tests._gs_fixtures import AfterTheFightScene, live_world
 
         player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
         tile = game_map[(0, 0)]
-        tile.events_here = [self._Scene(tile)]
+        tile.events_here = [AfterTheFightScene(tile)]
         with patch("src.api.combat_adapter.CombatStrategist"):
             player._combat_adapter = ApiCombatAdapter(player)
         player._combat_adapter._combat_tile = tile

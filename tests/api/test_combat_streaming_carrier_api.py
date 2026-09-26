@@ -29,6 +29,7 @@ from src.api.app import create_app
 from src.api.config import TestingConfig
 from src.api.schemas.combat_beat import BEAT_EVENT, ENDED_EVENT, RESOLVED_EVENT
 from src.combatant import wire_handle
+from tests.api._http import post_json
 
 
 class _StreamingTestingConfig(TestingConfig):
@@ -74,15 +75,6 @@ def emissions(streaming_app, monkeypatch):
     return captured
 
 
-def _post(client, url, payload, session_id):
-    return client.post(
-        url,
-        data=json.dumps(payload),
-        content_type="application/json",
-        headers={"Authorization": f"Bearer {session_id}"},
-    )
-
-
 @pytest.fixture
 def streaming_client(streaming_app):
     return streaming_app.test_client()
@@ -117,7 +109,7 @@ def streaming_session(streaming_app, streaming_client):
     player.current_room = tile
     tile.npcs_here = [enemy]
 
-    started = _post(
+    started = post_json(
         streaming_client,
         "/api/combat/start",
         {"enemy_id": wire_handle(enemy)},
@@ -149,7 +141,7 @@ def test_a_streamed_move_puts_beat_states_on_a_carrier_the_client_applies(
             for m in player.known_moves
             if not getattr(m, "passive", False) and m.name == "Attack"
         )
-        response = _post(
+        response = post_json(
             streaming_client,
             "/api/combat/move",
             {"move_type": "move", "move_id": move.name},
@@ -230,7 +222,7 @@ def test_the_beat_events_could_not_have_supplied_the_trail_instead(
             for m in player.known_moves
             if not getattr(m, "passive", False) and m.name == "Attack"
         )
-        response = _post(
+        response = post_json(
             streaming_client,
             "/api/combat/move",
             {"move_type": "move", "move_id": move.name},

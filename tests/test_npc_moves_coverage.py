@@ -2817,12 +2817,10 @@ class TestStatustypeCategoryTable:
 # ---------------------------------------------------------------------------
 
 
-#: NPC classes the population could not build (they need constructor args).
-_SKIPPED_NPC_CLASSES = set()
-
-
 def _npc_owned_move_population():
-    """``{move class: owner NPC class}`` for every move an NPC in the game uses.
+    """``({move class: owner NPC class}, skipped)`` for every move an NPC in
+    the game uses; ``skipped`` names the NPC classes that could not be built
+    (they need constructor arguments).
 
     Derived, not listed: every ``NPC`` subclass ``src.npc`` exports is built,
     and its ``known_moves`` plus every ``NewMove`` its ``skill_schedule``
@@ -2835,6 +2833,7 @@ def _npc_owned_move_population():
     from src.npc import NPC, Friend
 
     owners = {}
+    skipped = set()
     for obj in vars(npc_pkg).values():
         if not (inspect.isclass(obj) and issubclass(obj, NPC)):
             continue
@@ -2844,7 +2843,7 @@ def _npc_owned_move_population():
         except TypeError:
             # Only bases that need constructor arguments; anything else would
             # silently shrink the population (checked by the floor test).
-            _SKIPPED_NPC_CLASSES.add(obj.__name__)
+            skipped.add(obj.__name__)
             continue
         found = [type(m) for m in npc.known_moves]
         for grants in (getattr(npc, "skill_schedule", None) or {}).values():
@@ -2855,10 +2854,10 @@ def _npc_owned_move_population():
     def rank(owner):
         return (issubclass(owner, Friend), owner.__name__)
 
-    return {m: min(o, key=rank) for m, o in owners.items()}
+    return {m: min(o, key=rank) for m, o in owners.items()}, frozenset(skipped)
 
 
-_NPC_MOVES = _npc_owned_move_population()
+_NPC_MOVES, _SKIPPED_NPC_CLASSES = _npc_owned_move_population()
 
 
 def _hp_taken_by_execute(move_cls, owner_cls):
@@ -2944,6 +2943,11 @@ def _land_execute(move_cls, owner_cls, user_damage=None):
     assert not missed.called and not parried.called, (
         f"{move_cls.__name__}: the harness did not land the move "
         f"(miss={missed.called}, parry={parried.called}), so HP says nothing"
+    )
+    # And HP that dropped must have dropped to a landed blow (``hit``), not to
+    # some side channel -- otherwise "execute() took HP" measures the wrong thing.
+    assert dealt or target.hp >= hp_before, (
+        f"{move_cls.__name__}: target HP fell but hit() never ran"
     )
     return move, hp_before, target.hp, dealt
 

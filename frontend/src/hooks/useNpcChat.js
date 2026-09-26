@@ -177,7 +177,7 @@ const TIMED_OUT_MESSAGE = 'The conversation timed out — try again.'
 // The server runs one chat turn per player at a time and answers 409 to a
 // second that arrives while one is running -- a Retry after a timeout, while
 // the abandoned turn is still finishing (issue #618). Production serves
-// requests concurrently (an eventlet worker, deploy/heart-of-virtue.service),
+// requests concurrently (a gthread worker, deploy/heart-of-virtue.service),
 // so this is a line players do see.
 const STILL_COMPOSING_MESSAGE = 'Still composing a reply — give it a moment.'
 // The same 409 on `/open`: the gate is per player, not per NPC, so the turn in

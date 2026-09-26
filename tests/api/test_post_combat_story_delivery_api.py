@@ -24,6 +24,8 @@ import random
 
 import pytest
 
+from tools.harness.scenarios.base import pick_move_body
+
 # The scene's first words (src/story/ch02.py, AfterDefeatingKingSlime).
 SCENE = "AfterDefeatingKingSlime"
 SCENE_OPENING = "The churning stilled"
@@ -65,32 +67,6 @@ def king_slime_session(app, client, tmp_path, monkeypatch):
     return {"Authorization": f"Bearer {session_id}"}, player
 
 
-def _pick_move(battle):
-    """The request body for the current prompt: attack if possible, else close in."""
-    options = battle.get("available_options", [])
-    input_type = battle.get("input_type", "move_selection")
-    if input_type == "number_input":
-        default = options.get("default", 5) if isinstance(options, dict) else 5
-        return {"move_type": "number", "move_id": str(default)}
-    if input_type == "direction_selection":
-        return {"move_type": "direction", "direction": options[0]}
-    if input_type == "target_selection":
-        target = next(o for o in options if isinstance(o, dict) and o.get("id"))
-        return {"move_type": "target", "target_id": target["id"]}
-    fallbacks = {}
-    for opt in options:
-        if not isinstance(opt, dict) or not opt.get("available"):
-            continue
-        body = {"move_type": "move", "move_id": str(opt["index"])}
-        if opt.get("viable_targets"):
-            body["target_id"] = opt["viable_targets"][0]["id"]
-        if opt.get("category") == "Offensive" and opt.get("viable_targets"):
-            return body
-        if opt.get("name") in ("Advance", "Wait"):
-            fallbacks.setdefault(opt["name"], body)
-    return fallbacks.get("Advance") or fallbacks.get("Wait")
-
-
 def _kill_king_slime(client, headers, player):
     """Walk into the arena and win, WITHOUT a status read after the killing move.
 
@@ -118,7 +94,7 @@ def _kill_king_slime(client, headers, player):
     for _ in range(_MAX_ROUNDS):
         status = client.get("/api/combat/status", headers=headers).get_json()
         assert status.get("combat_active"), "fight ended outside a move"
-        body = _pick_move(status.get("battle_state") or {})
+        body = pick_move_body(status.get("battle_state") or {})
         assert body is not None, "no usable move"
         resp = client.post("/api/combat/move", json=body, headers=headers)
         assert resp.status_code == 200, resp.get_data(as_text=True)

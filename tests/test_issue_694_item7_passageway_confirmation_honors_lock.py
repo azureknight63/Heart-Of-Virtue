@@ -20,70 +20,19 @@ depth for callers that reach it without going through this queuing path
 
 This test drives the real shipped Eastern Gate placement through
 ``GameService.interact_with_target`` in API mode (non-None ``session_data``),
-the same fixture pattern ``tests/test_issue_669_grondia_eastern_gate_lock.py``
-uses for the engine-level ``enter()``/``_commit_teleport`` checks.
+built by ``tests/_gate_fixtures.py`` -- the fixture
+``tests/test_issue_669_grondia_eastern_gate_lock.py`` shares for the
+engine-level ``enter()``/``_commit_teleport`` checks.
 """
-
-import copy
 
 from src.api.services.game_service import GameService
 from src.combatant import wire_handle
 from src.events import set_story_gate
-from src.objects import Passageway
-from src.story.ch02 import AfterKingSlimeReturn
-from tests._gs_fixtures import live_world
-from tests._map_scan import class_ref, map_data
-from tests._source_scan import MAP_DIR
-
-GRONDIA_MAP = MAP_DIR / "grondia.json"
-GATE_TILE_KEY = "(15, 5)"
-GATE_NAME = "Eastern Gate"
-LOCK_FLAG = AfterKingSlimeReturn.GATE_KEY
-REACHABLE_DESTINATION = ("gs-test-map", (1, 0))
-GATE_WORLD_COORD = (0, 0)
-
-
-def _grondia_map_data():
-    for path, data in map_data():
-        if path == GRONDIA_MAP:
-            return data
-    raise AssertionError(f"{GRONDIA_MAP.name} is not among the shipped maps")
-
-
-def _gate_placement():
-    data = _grondia_map_data()
-    tile_payload = copy.deepcopy(data[GATE_TILE_KEY])
-    for payload in tile_payload.get("objects") or []:
-        ref = class_ref(payload)
-        if ref is not None and ref.props.get("name") == GATE_NAME:
-            return payload
-    raise AssertionError(f"{GATE_NAME} is no longer at Grondia {GATE_TILE_KEY}")
-
-
-def _build_gate_world():
-    """A live world carrying the real Eastern Gate placement, in API mode.
-
-    Mirrors ``tests/test_issue_669_grondia_eastern_gate_lock.py``'s
-    ``build_gate_world`` but leaves the destination reachable so a refused
-    crossing is attributable to the lock rather than a missing map.
-    """
-    player, game_map = live_world(
-        coords=(GATE_WORLD_COORD, REACHABLE_DESTINATION[1]), start=GATE_WORLD_COORD,
-    )
-    tile = game_map[GATE_WORLD_COORD]
-    payload = _gate_placement()
-    instance = player.universe._deserialize_saved_instance(payload, tile=tile)
-    assert isinstance(instance, Passageway)
-    if instance.tile is None:
-        instance.tile = tile
-    instance.player = player
-    instance.teleport_map, instance.teleport_tile = REACHABLE_DESTINATION
-    tile.objects_here = [instance]
-    return player, tile, instance
+from tests._gate_fixtures import GATE_WORLD_COORD, LOCK_FLAG, build_gate_world
 
 
 def test_locked_gate_declines_without_arming_a_confirmation():
-    player, _tile, gate = _build_gate_world()
+    player, _tile, gate = build_gate_world()
     game_service = GameService()
 
     result = game_service.interact_with_target(
@@ -106,7 +55,7 @@ def test_locked_gate_declines_without_arming_a_confirmation():
 
 
 def test_unlocked_gate_still_arms_the_confirmation():
-    player, _tile, gate = _build_gate_world()
+    player, _tile, gate = build_gate_world()
     set_story_gate(player, LOCK_FLAG)
     game_service = GameService()
 
