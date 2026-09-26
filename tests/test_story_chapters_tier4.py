@@ -1063,6 +1063,17 @@ class TestBetaTesterBriefing(unittest.TestCase):
         self.assertTrue(event.completed)
         self.assertEqual(self.tile.events_here, [])
 
+    def test_tester_notice_says_earlier_beta_saves_were_cleared(self):
+        """Beta 2 opened with every cloud save wiped; the notice has to say so,
+        or a returning tester reads an empty save list as lost progress."""
+        event = BetaTesterBriefing(self.player, self.tile, params=None)
+        event.process()
+        event.process(user_input="continue")
+        notice = event.description.lower()
+        self.assertIn("earlier beta", notice)
+        self.assertIn("saves", notice)
+        self.assertIn("cleared", notice)
+
 
 class TestCh02GuideToCitadel(unittest.TestCase):
     """Full coverage for Ch02GuideToCitadel event."""

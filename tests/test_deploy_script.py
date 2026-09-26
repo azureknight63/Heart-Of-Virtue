@@ -68,6 +68,9 @@ PREV_SHA = "fedcba9876543210fedcba9876543210fedcba98"   # the live frontend's
 OTHER_SHA = "abcdefabcdefabcdefabcdefabcdefabcdefabcd"  # a third, for the edge cases
 #: The main chunk "this run" built, as Get-LocalMainChunk would report it.
 BUILT_CHUNK = "assets/index-Built123.js"
+#: A -KeepMaintenance preview token, shaped like New-PreviewToken's.
+PREVIEW_TOKEN = "0123456789abcdef0123456789abcdef"
+PREVIEW_NAME = f"preview-{PREVIEW_TOKEN}.html"
 
 #: Production facts, pinned BY VALUE on purpose: if one changes in the script,
 #: test_the_layout_is_production_s fails and makes the reader look at both.
@@ -271,6 +274,7 @@ def pwsh():
 PHASE_RENDERERS = {
     "stage": f"New-StageScript -Sha '{FAKE_SHA}'",
     "swap": f"New-SwapAndLiftScript -Chunk '{BUILT_CHUNK}'",
+    "kept": f"New-SwapAndLiftScript -Chunk '{BUILT_CHUNK}' -PreviewToken '{PREVIEW_TOKEN}'",
     "status": "New-StatusScript",
     "on": "New-MaintenanceOnScript",
     "off": "New-MaintenanceOffScript",
@@ -444,6 +448,7 @@ def test_the_markers_that_steer_the_deploy_are_printed_exactly_once(rendered):
     once = {
         "stage": ['echo "HOV_MAINTENANCE=ON"', 'echo "HOV_MAINTENANCE=NO_LIVE_INDEX"', 'echo "HOV_BACKEND_HEALTH=OK"'],
         "swap": ['echo "HOV_PROMOTED=yes"', 'echo "HOV_ASSET_SERVED=OK"', 'echo "HOV_MAINTENANCE=OFF"'],
+        "kept": ['echo "HOV_PROMOTED=yes"', 'echo "HOV_ASSET_SERVED=OK"', 'echo "HOV_MAINTENANCE=KEPT"', 'echo "HOV_PREVIEW='],
     }
     for phase, markers in once.items():
         for marker in markers:
@@ -454,7 +459,8 @@ def test_the_markers_that_steer_the_deploy_are_printed_exactly_once(rendered):
 
 #: Lines that may name the live directory before the page goes up: reads only.
 READS_OF_LIVE_BEFORE_THE_RAISE = (
-    r"parked=\$\(docker exec \S+ sh -c 'if \[ -e LIVE/[\w.-]+ \]; then echo yes; else echo no; fi'\)",
+    r"parked=\$\(docker exec \S+ sh -c 'if \[ ! -e LIVE/[\w.-]+ \]; then echo no; elif ls LIVE/preview-\*\.html >/dev/null 2>&1; "
+    r"then echo kept; else echo yes; fi'\)",
     r'  echo "HOV_ERROR=LIVE/[\w.-]+ exists: [^"]*"',
     r"if docker exec \S+ awk -v p=LIVE '[^']*' /proc/self/mountinfo; then",
     r"live_commit=\$\(docker exec \S+ sh -c 'cat LIVE/[\w.-]+ 2>/dev/null \|\| echo NONE'\)",
@@ -470,7 +476,9 @@ class TestTheStagePhase:
         raise_line = f"cp {STAGING_DIR}/maintenance.html index.html"
         _assert_in_order(
             stage,
-            f"[ -e {LIVE_DIR}/{layout['PARKED']} ]",
+            f"[ ! -e {LIVE_DIR}/{layout['PARKED']} ]",
+            "HOV_REFUSED=KEPT_FOR_PREVIEW",
+            "HOV_REFUSED=UNLIFTED_PROMOTE",
             "HOV_REFUSED=LIVE_IS_MOUNTPOINT",
             "HOV_REFUSED=HOST_CANNOT_REACH_PUBLIC",
             'echo "HOV_LIVE_COMMIT=$live_commit"',
@@ -540,13 +548,14 @@ class TestTheStagePhase:
         stage = rendered["stage"]
         # Fail closed: a docker failure aborts (set -e) rather than reading as "not parked".
         parked = (
-            f"parked=$(docker exec {CONTAINER} sh -c 'if [ -e {LIVE_DIR}/{layout['PARKED']} ]; "
-            "then echo yes; else echo no; fi')\n"
-            'if [ "$parked" != no ]; then\n  echo "HOV_REFUSED=UNLIFTED_PROMOTE"\n'
+            f"parked=$(docker exec {CONTAINER} sh -c 'if [ ! -e {LIVE_DIR}/{layout['PARKED']} ]; then echo no; "
+            f"elif ls {LIVE_DIR}/{layout['PREVIEW_GLOB']} >/dev/null 2>&1; then echo kept; else echo yes; fi')\n"
         )
         _assert_in_order(
             stage,
             parked,
+            'if [ "$parked" = kept ]; then\n  echo "HOV_REFUSED=KEPT_FOR_PREVIEW"\n',
+            'if [ "$parked" != no ]; then\n  echo "HOV_REFUSED=UNLIFTED_PROMOTE"\n',
             'echo "HOV_REFUSED=LIVE_IS_MOUNTPOINT"\n  exit 1\n',
             'echo "HOV_REFUSED=HOST_CANNOT_REACH_PUBLIC"\n  exit 1\n',
             "docker cp ",
@@ -641,12 +650,78 @@ class TestTheSwapAndLiftPhase:
         assert after_lift == ['echo "HOV_MAINTENANCE=OFF"'], f"runs after the lift: {after_lift}"
 
 
+#: Where the two ssh #2 variants part: everything before it is the same text.
+STEP_3 = "\n# 3. "
+
+
+class TestTheKeptSwap:
+    """ssh call #2 under -KeepMaintenance: promote and prove exactly as the
+    default does, then leave the page up and place a private preview."""
+
+    def test_it_is_the_default_swap_up_to_step_3(self, rendered):
+        # So every promote-and-prove test above holds for the kept variant
+        # too, and the default's tail is the lift and nothing else.
+        swap, kept = rendered["swap"], rendered["kept"]
+        assert STEP_3 in swap and STEP_3 in kept
+        assert kept[:kept.index(STEP_3)] == swap[:swap.index(STEP_3)]
+        assert swap[swap.index(STEP_3):].count("docker exec") == 1
+        assert 'echo "HOV_MAINTENANCE=OFF"' in swap and "HOV_MAINTENANCE=KEPT" not in swap
+        assert "HOV_PREVIEW" not in swap and "preview-" not in swap
+
+    def test_it_never_puts_the_real_index_in_front(self, rendered, layout):
+        kept, parked = rendered["kept"], layout["PARKED"]
+        assert "HOV_MAINTENANCE=OFF" not in kept
+        # Nothing moves or removes the parked index, and nothing writes the
+        # live directory's index.html (PREVIOUS's is the previous build's).
+        assert re.search(r"\b(mv|rm)\b[^\n;&|]*" + re.escape(f"{LIVE_DIR}/{parked}"), kept) is None, kept
+        assert re.search(re.escape(LIVE_DIR) + r"/index\.html(?![.\w])", kept) is None, kept
+
+    def test_the_preview_is_copied_after_the_asset_proof_and_is_the_last_change(self, rendered, layout):
+        kept = rendered["kept"]
+        copy = f"docker exec {CONTAINER} sh -c 'cp {LIVE_DIR}/{layout['PARKED']} {LIVE_DIR}/{PREVIEW_NAME}'"
+        _assert_in_order(kept, f"mv {STAGING_DIR} {LIVE_DIR}", "curl -fsSL", 'echo "HOV_ASSET_SERVED=OK"', copy)
+        lines = kept.splitlines()
+        after = [line for line in lines[lines.index(copy) + 1:] if line.strip()]
+        assert after == [f'echo "HOV_PREVIEW={PREVIEW_NAME}"', 'echo "HOV_MAINTENANCE=KEPT"'], after
+
+    def test_a_malformed_token_is_refused_before_rendering(self, pwsh):
+        # The token is spliced into the remote script, and the file name it
+        # makes is the only thing keeping the preview private.
+        cases = {
+            f"'{PREVIEW_TOKEN}'": "rendered",
+            "'0123456789abcdef'": "rendered",                     # 16: the floor
+            "'0123456789abcde'": "refused",                       # 15
+            f"'{PREVIEW_TOKEN.upper()}'": "refused",
+            "'0123456789abcdeg'": "refused",
+            f"'{PREVIEW_TOKEN}; rm -rf /'": "refused",
+            "'../../index'": "refused",
+            f"\"{PREVIEW_TOKEN}`n\"": "refused",                  # .NET's $ matches before a final newline
+            f"'{'a' * 65}'": "refused",
+            "''": "refused",
+        }
+        outcomes = _render_outcomes(f"New-SwapAndLiftScript -Chunk '{BUILT_CHUNK}' -PreviewToken $case", cases)
+        assert dict(zip(cases, outcomes)) == cases
+
+    def test_the_token_is_128_random_bits_new_every_time(self, pwsh):
+        proc = _pwsh(DOT_SOURCE + "1..5 | ForEach-Object { \"TOKEN:$(New-PreviewToken)\" }\n", check=True)
+        tokens = re.findall(r"^TOKEN:(.*)$", proc.stdout, re.M)
+        assert len(tokens) == 5 and len(set(tokens)) == 5, tokens
+        assert all(re.fullmatch(r"[0-9a-f]{32}", token) for token in tokens), tokens
+
+    def test_no_file_the_build_ships_looks_like_a_preview(self, layout):
+        # The stage reads any preview-*.html beside a parked index as "kept on
+        # purpose", and -Maintenance Off deletes them all.
+        glob = layout["PREVIEW_GLOB"]
+        assert glob == "preview-*.html"
+        assert not list((REPO_ROOT / "frontend" / "public").rglob(glob))
+
+
 # ── -Status ──────────────────────────────────────────────────────────────────
 
 #: Commands -Status may run.
 READ_ONLY_COMMANDS = {
     "echo", "cd", "git", "systemctl", "curl", "docker", "sh", "grep", "head",
-    "wc", "tr", "test", "command", "awk", "set", "cat", "printf",
+    "wc", "tr", "test", "command", "awk", "set", "cat", "printf", "ls",
 }
 #: What the commands that can also write may be asked to do.
 ALLOWED_SUBCOMMANDS = {"git": {"rev-parse", "log", "status"}, "systemctl": {"is-active"}, "docker": {"exec"}}
@@ -740,12 +815,14 @@ def test_every_marker_the_deploy_reads_is_printed_by_some_phase(rendered, script
 
 
 class TestTheManualMaintenanceToggle:
-    def test_off_restores_the_raise_s_save_then_a_stopped_deploy_s_parked_index(self, rendered, layout):
+    def test_off_restores_a_parked_index_before_a_raise_s_save(self, rendered, layout):
+        # Parked first: it belongs to the build in the directory by
+        # construction; a save is whatever index.html was at some raise.
         off, saved, parked = rendered["off"], layout["SAVED"], layout["PARKED"]
         _assert_in_order(
             off,
-            f"if [ -f {saved} ]; then mv {saved} index.html; ",
-            f"elif [ -f {parked} ]; then mv {parked} index.html; ",
+            f"if [ -f {parked} ]; then mv {parked} index.html; ",
+            f"elif [ -f {saved} ]; then mv {saved} index.html; ",
             'else echo "HOV_ERROR=no saved index to restore"; exit 1; fi',
             'echo "HOV_MAINTENANCE=OFF"',
         )
@@ -757,6 +834,42 @@ class TestTheManualMaintenanceToggle:
             'echo "HOV_ERROR=the restored index is the maintenance page"; exit 1; fi',
             'echo "HOV_MAINTENANCE=OFF"',
         )
+
+    def test_off_closes_the_private_door_once_the_page_is_lifted(self, rendered, layout):
+        # Only after a restore that proved to be the real index, and only in
+        # the live directory the sh -c cd'd into.
+        off = rendered["off"]
+        _assert_in_order(
+            off,
+            f"cd {LIVE_DIR} && ",
+            f"if grep -q {layout['MARKER']} index.html; then",
+            f"fi && rm -f {layout['PREVIEW_GLOB']}'",
+            'echo "HOV_MAINTENANCE=OFF"',
+        )
+        assert off.count("rm ") == 1, off
+
+    def test_off_after_a_kept_deploy_restores_the_new_build_s_index(self, rendered, layout):
+        # After a kept deploy the live directory is the promoted build: its
+        # parked index is the one the swap proved names this run's chunk, and
+        # nothing left it; no saved index lives there, because the stage's
+        # save went to .prev with the previous build and was restored there.
+        # (A raise before the deploy -- the cutover's order -- saved into the
+        # same previous build.) So Off restores the new build's index.
+        kept, stage, off = rendered["kept"], rendered["stage"], rendered["off"]
+        parked, saved = layout["PARKED"], layout["SAVED"]
+        assert f'grep -oE "{layout["CHUNK_PATTERN"]}" {LIVE_DIR}/{parked} | head -n 1' in kept
+        assert re.search(r"\b(mv|rm)\b[^\n;&|]*" + re.escape(f"{LIVE_DIR}/{parked}"), kept) is None
+        # Every saved index the stage and the kept swap name, by full path,
+        # is the previous build's by the time the promote is done.
+        for text in (stage, kept):
+            assert f"{STAGING_DIR}/{saved}" not in text
+        assert f"mv {LIVE_DIR} {PREVIOUS_DIR}" in kept
+        saved_in_live = [m.group(0) for m in re.finditer(re.escape(LIVE_DIR) + r"(?![.\w])/" + re.escape(saved), kept)]
+        assert saved_in_live == [], saved_in_live
+        # The stage's raise saves into the live directory it later renames.
+        assert f"cd {LIVE_DIR} && {{ [ -f {saved} ]" in stage
+        # And Off takes a parked index first, whatever else is there.
+        assert off.index(f"if [ -f {parked} ]; then mv {parked} index.html;") < off.index(f"[ -f {saved} ]")
 
 
 # ── the PowerShell around the scripts ────────────────────────────────────────
@@ -788,7 +901,14 @@ function Invoke-RemoteScript {
     param($Script)
     $phase = if ($Script -cmatch 'HOV_PHASE=(\w+)') { $Matches[1] } else { 'unknown' }
     if (-not $global:Remote.ContainsKey($phase)) { throw "no scripted answer for phase '$phase'" }
-    Write-Host "CALL:$phase"
+    # The kept swap is the same phase; its call is labelled so a test sees
+    # which variant was sent, and the preview it names.
+    if ($Script.Contains('echo "HOV_MAINTENANCE=KEPT"')) {
+        if ($Script -cmatch 'echo "HOV_PREVIEW=(\S+)"') { Write-Host "SENT-PREVIEW:$($Matches[1])" }
+        Write-Host "CALL:$phase-kept"
+    } else {
+        Write-Host "CALL:$phase"
+    }
     $answer = $global:Remote[$phase]
     if ($answer.Exit -eq -1) { throw 'stub: connection reset mid-phase' }
     $global:LASTEXITCODE = $answer.Exit
@@ -817,7 +937,7 @@ LOCAL_STEPS = ["gate", "build", "built-from", "upload"]
 TO_THE_SWAP = LOCAL_STEPS + ["stage", "api:True", "index:data-hov-maintenance", "swap"]
 
 
-def _deploy(stage=GREEN_STAGE, swap=GREEN_SWAP, api=(True, True), index=(), prelude=""):
+def _deploy(stage=GREEN_STAGE, swap=GREEN_SWAP, api=(True, True), index=(), prelude="", keep=False):
     """Run the real Invoke-Deploy against scripted remote answers: the calls
     it made (``CALL:`` lines), its output and its exit code."""
     script = (
@@ -833,7 +953,7 @@ def _deploy(stage=GREEN_STAGE, swap=GREEN_SWAP, api=(True, True), index=(), prel
         + "}\n"
         + prelude
         # As the script's own top level runs Main: an escaping error exits 1.
-        + "try { Invoke-Deploy } catch { Write-Host \"$_\"; exit 1 }\n"
+        + f"try {{ Invoke-Deploy{' -KeepMaintenance' if keep else ''} }} catch {{ Write-Host \"$_\"; exit 1 }}\n"
     )
     proc = _pwsh(script)
     calls = re.findall(r"^CALL:(\S+)", proc.stdout, re.M)
@@ -1015,6 +1135,73 @@ class TestTheDeployStopsOnRed:
         )
         assert code == 1, output
         assert LIFT in output, output
+
+
+GREEN_KEPT_SWAP = PhaseAnswer(0, ["HOV_PHASE=swap", "HOV_PROMOTED=yes", f"HOV_NEW_CHUNK={BUILT_CHUNK}",
+                                  "HOV_ASSET_SERVED=OK", f"HOV_PREVIEW={PREVIEW_NAME}", "HOV_MAINTENANCE=KEPT"])
+TO_THE_KEPT_SWAP = TO_THE_SWAP[:-1] + ["swap-kept"]
+PREVIEW_URL = re.compile(re.escape(PUBLIC_BASE) + r"/preview-([0-9a-f]{32})\.html")
+KEPT_CAVEAT = "A reload or a sign-out lands on the maintenance page again"
+
+
+@pytest.mark.usefixtures("pwsh")
+class TestTheKeptDeploy:
+    """-KeepMaintenance: the same deploy up to the proof that the bundle is
+    served, then the page stays up and the operator gets a private URL."""
+
+    def test_green_sends_the_kept_swap_skips_the_post_lift_checks_and_says_how_to_lift(self):
+        # One API answer only: a post-lift check would dequeue a second and
+        # throw on the empty queue.
+        calls, output, code = _deploy(swap=GREEN_KEPT_SWAP, api=(True,), keep=True)
+        assert code == 0, output
+        assert calls == TO_THE_KEPT_SWAP, output
+        assert f"index:{BUILT_CHUNK}" not in calls, output
+        sent = re.findall(r"^SENT-PREVIEW:(\S+)", output, re.M)
+        printed = PREVIEW_URL.findall(output)
+        # The URL printed is the file the script it sent creates.
+        assert len(sent) == 1 and printed and set(printed) == {sent[0][len("preview-"):-len(".html")]}, output
+        _assert_in_order(output, PREVIEW_URL.search(output).group(0), KEPT_CAVEAT, LIFT)
+        assert COMPLETE not in output and INTERRUPTED not in output, output
+
+    def test_a_token_is_new_on_every_run(self):
+        runs = [_deploy(swap=GREEN_KEPT_SWAP, api=(True,), keep=True)[1] for _ in range(2)]
+        first, second = (re.findall(r"^SENT-PREVIEW:(\S+)", output, re.M) for output in runs)
+        assert first and second and first != second
+
+    def test_without_the_switch_the_default_swap_is_sent_and_checked_after_the_lift(self):
+        calls, output, code = _deploy()
+        assert code == 0, output
+        assert "swap-kept" not in calls and "SENT-PREVIEW" not in output, output
+        assert calls[-2:] == ["api:True", f"index:{BUILT_CHUNK}"], output
+
+    def test_it_offers_the_way_back_too(self):
+        calls, output, code = _deploy(swap=GREEN_KEPT_SWAP, api=(True,), keep=True)
+        _assert_in_order(output, LIFT, _rollback_line(PREV_SHA), BACKEND_OK_GATE, FRONTEND_ROLLBACK)
+
+    def test_a_connection_lost_after_the_preview_carries_on(self):
+        calls, output, code = _deploy(swap=GREEN_KEPT_SWAP._replace(exit=SSH_CONNECTION_LOST), api=(True,), keep=True)
+        assert code == 0, output
+        assert "placed the preview and then exited non-zero" in output and PREVIEW_URL.search(output), output
+
+    def test_a_kept_swap_that_failed_after_the_promote_is_promoted_not_kept(self):
+        calls, output, code = _deploy(swap=PhaseAnswer(1, [
+            "HOV_PHASE=swap", "HOV_PROMOTED=yes", f"HOV_NEW_CHUNK={BUILT_CHUNK}", "HOV_ASSET_SERVED=WRONG_TYPE (text/html)",
+        ]), api=(True,), keep=True)
+        assert code == 1, output
+        assert calls == TO_THE_KEPT_SWAP and PROMOTED_HEADLINE in output, output
+        assert not PREVIEW_URL.search(output), output
+
+    def test_a_deploy_over_a_kept_build_is_refused_with_the_ways_out(self):
+        # The kept build is not "known to work" -- that is what the private
+        # test is for -- and promoting over it would delete .prev, the last
+        # release players had.
+        for keep in (False, True):
+            calls, output, code = _deploy(stage=PhaseAnswer(1, ["HOV_PHASE=stage", "HOV_REFUSED=KEPT_FOR_PREVIEW"]), keep=keep)
+            assert code == 1, output
+            assert calls == LOCAL_STEPS + ["stage"], output
+            assert "Refused: a -KeepMaintenance deploy is behind the page" in output and PROMOTED_HEADLINE in output, output
+            _assert_in_order(output, LIFT, FRONTEND_ROLLBACK)
+            assert "stopped before the lift" not in output, output
 
 
 @pytest.mark.usefixtures("pwsh")
@@ -1409,9 +1596,19 @@ class TestTheDryRun:
         assert proc.returncode == 1, proc.stdout + proc.stderr
         assert "is not a version tag" in proc.stdout + proc.stderr
 
+    def test_keep_maintenance_prints_the_kept_ssh_2(self):
+        proc = self._dry_run("-KeepMaintenance")
+        output = proc.stdout + proc.stderr
+        assert proc.returncode == 0, output
+        assert 'echo "HOV_MAINTENANCE=KEPT"' in output and 'echo "HOV_MAINTENANCE=OFF"' not in output, output
+        assert re.search(r"cp \S+/index\.html\.parked \S+/preview-[0-9a-f]{32}\.html'", output), output
+        assert "Would not lift" in output and LIFT in output, output
+
     @pytest.mark.parametrize("arguments, refusal", [
         (("-DryRun", "-Status"), "-DryRun applies to the deploy only"),
         (("-Status", "-Maintenance", "On"), "Pick one of -Status or -Maintenance"),
+        (("-KeepMaintenance", "-Status"), "-KeepMaintenance applies to the deploy only"),
+        (("-KeepMaintenance", "-Maintenance", "Off"), "-KeepMaintenance applies to the deploy only"),
     ])
     def test_it_refuses_modes_that_do_not_combine(self, arguments, refusal):
         proc = _run_script(*arguments)
@@ -1469,13 +1666,14 @@ class TestTheStatusMode:
     section has to run even when an earlier one failed."""
 
     def _status(self, *, fetch_fails=False, server_exit=0, server_sha=PREV_SHA, live_commit=PREV_SHA,
-                unlifted="no", found=False, index_problem=None, drift=(1, 2)):
+                unlifted="no", found=False, index_problem=None, drift=(1, 2), preview="NONE"):
         server_lines = [
             "HOV_PHASE=status",
             f"HOV_STATUS_BACKEND_SHA={server_sha}",
             f"HOV_STATUS_LIVE_COMMIT={live_commit}",
             f"HOV_STATUS_DEPLOYED_CHUNK={BUILT_CHUNK}",
             f"HOV_STATUS_UNLIFTED_PROMOTE={unlifted}",
+            f"HOV_STATUS_PREVIEW={preview}",
         ]
         ahead, behind = drift
         problem = _ps_literal(index_problem) if index_problem else "$null"
@@ -1534,7 +1732,18 @@ try {{ Invoke-StatusMode; 'RESULT:ok' }} catch {{ "RESULT:threw:$_" }}
         assert expected in self._status(live_commit=live)
 
     def test_it_warns_about_an_unlifted_promote(self):
-        assert "promoted its build and stopped before the lift" in self._status(unlifted="yes")
+        out = self._status(unlifted="yes")
+        assert "promoted its build and stopped before the lift" in out and "Private preview" not in out, out
+
+    def test_it_names_a_kept_deploy_s_preview_url(self):
+        # The operator who lost the URL finds it here.
+        out = self._status(unlifted="yes", preview=PREVIEW_NAME)
+        assert f"Private preview: {PUBLIC_BASE}/{PREVIEW_NAME}" in out, out
+        assert "-KeepMaintenance deploy is behind the page" in out and "stopped before the lift" not in out, out
+
+    def test_a_preview_name_it_would_not_have_made_is_not_offered_as_a_url(self):
+        out = self._status(unlifted="yes", preview="preview-x.html")
+        assert "Private preview" not in out and "would not have named: preview-x.html" in out, out
 
     @pytest.mark.parametrize("kwargs, shows", [
         ({}, "app document"),
@@ -1704,6 +1913,7 @@ class TestTheScriptText:
     def test_the_modes_are_declared_in_the_param_block(self, param_block):
         assert re.search(r"\[switch\]\s*\$Status\b", param_block), "deploy.ps1 param(): no [switch]$Status"
         assert re.search(r"\[switch\]\s*\$DryRun\b", param_block), "deploy.ps1 param(): no [switch]$DryRun"
+        assert re.search(r"\[switch\]\s*\$KeepMaintenance\b", param_block), "deploy.ps1 param(): no [switch]$KeepMaintenance"
         assert re.search(r"ValidateSet\(\s*'On'\s*,\s*'Off'\s*\)\]\s*\[string\]\s*\$Maintenance\b", param_block), (
             "deploy.ps1 param(): -Maintenance lost ValidateSet('On','Off')"
         )

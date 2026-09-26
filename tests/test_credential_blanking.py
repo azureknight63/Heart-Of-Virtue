@@ -330,6 +330,13 @@ TOOLS_ALLOWED_LIVE_CREDENTIALS = {
         "credentials would leave a developer debugging a database that "
         "will not connect. It also never runs under pytest."
     ),
+    "wipe_cloud_saves.py": (
+        "An operator tool whose one job is the production saves table: the "
+        "beta-2 cutover runs it on the server to count, then clear, every "
+        "cloud save. Blanked credentials would point it at nothing. It deletes "
+        "only behind an exact typed phrase, and its tests pass a fake database "
+        "to run() rather than importing src.api.db."
+    ),
 }
 
 
