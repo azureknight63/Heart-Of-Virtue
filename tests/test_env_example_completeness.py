@@ -17,7 +17,7 @@ Three things make this check worth more than a grep:
 
 * The reader inventory is **derived, not transcribed**. A variable read through
   a helper (``limiter_from_env("X", ...)``) or through a module constant
-  (``_LOG_LEVEL_ENV = "LOG_LEVEL"``) is still a variable an operator must be
+  (``LOG_LEVEL_ENV = "LOG_LEVEL"``) is still a variable an operator must be
   told about, and both indirections exist in this tree today. The helpers are
   themselves discovered -- any function that forwards its own first parameter
   into an env read is one, transitively, so ``limiter_from_env`` is found even
@@ -88,8 +88,8 @@ def _module_level_strings(tree):
     """``NAME -> value`` for module-level ``NAME = "literal"`` assignments.
 
     Without this the scan has a blind spot exactly where a refactor puts one:
-    hoisting ``"LOG_LEVEL"`` into ``_LOG_LEVEL_ENV`` (which ``app.py`` does, so
-    that two reads 700 lines apart cannot drift) would otherwise erase the
+    hoisting ``"LOG_LEVEL"`` into ``LOG_LEVEL_ENV`` (which
+    ``src/api/structured_log.py`` does, so that its readers cannot drift) would otherwise erase the
     variable from the inventory.
     """
     constants = {}
@@ -439,7 +439,7 @@ class TestEveryEnvVarIsDocumented:
         names = env_names_read(*SCANNED_ROOTS)
         for expected in (
             "TURSO_DATABASE_URL",  # os.environ.get("...") literal
-            "LOG_LEVEL",  # os.environ.get(_LOG_LEVEL_ENV) module constant
+            "LOG_LEVEL",  # os.environ.get(LOG_LEVEL_ENV) module constant
             "REGISTER_RATE_LIMIT_PER_HOUR",  # limiter_from_env("...", ...)
             "COMBAT_SOCKET_STREAMING",  # _env_flag("...", default=False)
             "COMBAT_LLM_ENABLED",  # _first_env(self._ENABLED_ENV_VARS)

@@ -18,6 +18,7 @@ from src.env_bootstrap import PROJECT_ROOT as _REPO_ROOT
 from src.api.structured_log import (
     configure_logging,
     init_request_logging,
+    log_level_setting,
     resolve_log_level,
 )
 import src.universe as universe_module
@@ -30,12 +31,6 @@ configure_logging()
 
 
 _log = logging.getLogger(__name__)
-
-# Read for two different questions — "what level?" in _resolve_log_level and
-# "is there anything to neutralise?" in _testing_log_level — so both go
-# through _log_level_setting() below rather than through two literals that can
-# drift apart.
-_LOG_LEVEL_ENV = "LOG_LEVEL"
 
 # LOG_LEVEL is applied to these namespaces, never to the root logger. Root at
 # DEBUG also turns on urllib3/httpx/openai/werkzeug/engineio wire logging, which
@@ -60,23 +55,6 @@ _LOG_LEVEL_ENV = "LOG_LEVEL"
 _APP_LOG_NAMESPACES = ("src", "ai")
 
 
-def _log_level_setting():
-    """The configured LOG_LEVEL, or ``None`` when it is not configured.
-
-    Blank counts as unconfigured. ``LOG_LEVEL=`` in a ``.env`` reads as "no
-    opinion", and the test suite relies on that: ``.env`` ships
-    ``LOG_LEVEL=DEBUG``, and every ``load_project_env()`` in the tree
-    (``db.py``, ``rate_limiter.py``, ``ai/llm_client.py``) runs with
-    ``override=False``, which refills a *deleted* key but leaves an assigned
-    empty one alone. Blanking is therefore the only way ``tests/conftest.py``
-    can say "unset" and have it stick.
-    """
-    raw = os.environ.get(_LOG_LEVEL_ENV)
-    if raw is None or not str(raw).strip():
-        return None
-    return raw
-
-
 def _resolve_log_level(level_name=None):
     """Return the level to apply, or ``None`` for "leave levels alone".
 
@@ -86,13 +64,16 @@ def _resolve_log_level(level_name=None):
     in a variable whose entire purpose is "set this to see more" and used to
     produce a silent WARNING-level run with no explanation at all.
 
-    The parsing itself is :func:`src.api.structured_log.resolve_log_level`,
-    shared with the root handlers so both read the same variable one way.
+    Reading and parsing both live in :mod:`src.api.structured_log`
+    (``log_level_setting`` / ``resolve_log_level``), shared with the root
+    handlers so both read the same variable one way. ``warn=False``: the
+    import-time ``configure_logging()`` already reported an unrecognized
+    value, and one typo should produce one warning per boot.
     """
-    raw = level_name if level_name is not None else _log_level_setting()
+    raw = level_name if level_name is not None else log_level_setting()
     if raw is None:
         return None
-    return resolve_log_level(raw)
+    return resolve_log_level(raw, warn=False)
 
 
 def _configure_logging(level_name=None):
@@ -163,7 +144,7 @@ def _testing_log_level(config_class):
     """
     if not getattr(config_class, "TESTING", False):
         return None
-    if _log_level_setting() is None:
+    if log_level_setting() is None:
         return None
     return "WARNING"
 
@@ -867,7 +848,10 @@ def create_app(config_class=None):
     # LOG_LEVEL). Materialise the logger now, with DEBUG known, and take it
     # off so every app.logger record -- ours and Flask's own log_exception --
     # reaches only the redacting root handlers. app.logger is the
-    # ``src.api.app`` logger, i.e. this module's ``_log`` as well.
+    # ``src.api.app`` logger, i.e. this module's ``_log`` as well. Intended
+    # consequence: app.logger's debug output in a DEBUG config no longer
+    # bypasses LOG_LEVEL through default_handler -- it follows LOG_LEVEL like
+    # every other namespace, so set LOG_LEVEL=DEBUG to see it.
     app.logger.removeHandler(default_handler)
     # Every env-backed *app.config value* is read here and only here, because
     # runtime_config() is the one place that knows which of them a subclass has
