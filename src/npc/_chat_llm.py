@@ -1985,8 +1985,9 @@ class ConversationalNPCMixin:
             if module is not None and _prewarm_in_flight(module):
                 # The world-load prewarm is still building the singleton.
                 # Building a second one here would put discovery and
-                # validation on this request -- and, under eventlet, any of it
-                # that does not yield stalls every player's request (#637).
+                # validation on this request, holding one of the gthread
+                # worker's threads for the whole build while the prewarm is
+                # already doing the same work (#637).
                 # This turn gets the deterministic fallback; nothing is
                 # latched, so the next turn picks up the warm adapter.
                 return None
