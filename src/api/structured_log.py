@@ -198,6 +198,43 @@ def _resolve_log_file_setting(log_file, log_dir=None):
 
 _PLAIN_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 
+# LOG_LEVEL allow-list: level names only. ``getattr(logging, name)`` would
+# happily resolve any module attribute (LOG_LEVEL=BASIC_FORMAT is a string;
+# NOTSET means "log everything").
+_LOG_LEVELS = {
+    "CRITICAL": logging.CRITICAL,
+    "ERROR": logging.ERROR,
+    "WARNING": logging.WARNING,
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
+}
+
+
+def resolve_log_level(raw, default=logging.WARNING):
+    """The one LOG_LEVEL parser: root handlers here, namespaces in app.py.
+
+    Strips and upper-cases ``raw`` and looks it up in ``_LOG_LEVELS``. Unset or
+    blank returns ``default`` silently; anything else unrecognized returns
+    ``default`` with a warning -- ``LOG_LEVEL=TRACE`` is a typo in a variable
+    whose whole purpose is "set this to see more", and used to produce a
+    silent WARNING-level run.
+    """
+    if raw is None or not str(raw).strip():
+        return default
+    name = str(raw).strip().upper()
+    if name in _LOG_LEVELS:
+        return _LOG_LEVELS[name]
+    # ASCII only: this can be emitted to a cp1252 Windows console before any
+    # handler with a safer encoding is attached.
+    _log.warning(
+        "Unrecognized LOG_LEVEL %r; using %s. Accepted values: %s",
+        raw,
+        logging.getLevelName(default),
+        ", ".join(_LOG_LEVELS),
+    )
+    return default
+
+
 # Requests that would only log the act of logging (or monitor polling).
 _REQUEST_LOG_SKIP_PREFIXES = ("/api/logs/browser",)
 _REQUEST_LOG_SKIP_PATHS = frozenset({"/health"})
@@ -377,11 +414,7 @@ def configure_logging(env=None, logger=None, log_dir=None):
     env = os.environ if env is None else env
     logger = logging.getLogger() if logger is None else logger
 
-    level = getattr(
-        logging, str(env.get("LOG_LEVEL", "WARNING")).upper(), logging.WARNING
-    )
-    if not isinstance(level, int):
-        level = logging.WARNING
+    level = resolve_log_level(env.get("LOG_LEVEL"))
 
     for handler in list(logger.handlers):
         if getattr(handler, _HOV_MARKER, False):

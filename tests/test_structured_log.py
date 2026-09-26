@@ -36,6 +36,17 @@ def _fresh_logger():
     return logger
 
 
+@pytest.fixture
+def fresh_logger():
+    """:func:`_fresh_logger` whose handlers are closed and dropped on teardown."""
+    logger = _fresh_logger()
+    logger.handlers = []
+    yield logger
+    for handler in logger.handlers:
+        handler.close()
+    logger.handlers = []
+
+
 class _ListHandler(logging.Handler):
     """Collects formatted JSONL lines for assertions."""
 
@@ -226,6 +237,50 @@ class TestConfigureLogging:
         logger.handlers = []
         configure_logging(env={"LOG_LEVEL": "SHOUTING"}, logger=logger)
         assert logger.level == logging.WARNING
+
+
+class TestOneLogLevelParser:
+    """LOG_LEVEL was parsed twice: ``configure_logging`` did
+    ``getattr(logging, value.upper())`` -- no strip, and any module attribute
+    resolved (``NOTSET`` meant "log everything", ``BASIC_FORMAT`` a string) --
+    while ``app._resolve_log_level`` stripped and allow-listed. The root
+    handlers and the ``src``/``ai`` namespaces could disagree about the same
+    variable."""
+
+    RAW_VALUES = [" debug ", "info", "NOTSET", "BASIC_FORMAT", "TRACE", "\tError\n"]
+
+    @pytest.mark.parametrize("raw", RAW_VALUES)
+    def test_both_code_paths_agree(self, fresh_logger, raw):
+        from src.api.app import _resolve_log_level
+
+        configure_logging(env={"LOG_LEVEL": raw}, logger=fresh_logger)
+        assert fresh_logger.level == _resolve_log_level(raw), raw
+
+    @pytest.mark.parametrize("raw", RAW_VALUES)
+    def test_result_comes_from_the_one_allow_list(self, fresh_logger, raw):
+        from src.api import structured_log
+
+        expected = structured_log._LOG_LEVELS.get(raw.strip().upper(), logging.WARNING)
+        configure_logging(env={"LOG_LEVEL": raw}, logger=fresh_logger)
+        assert fresh_logger.level == expected, raw
+        assert structured_log.resolve_log_level(raw) == expected, raw
+
+    def test_unset_or_blank_is_the_default_without_a_warning(self, caplog):
+        from src.api.structured_log import resolve_log_level
+
+        with caplog.at_level(logging.WARNING, logger="src.api.structured_log"):
+            assert resolve_log_level(None) == logging.WARNING
+            assert resolve_log_level("  ", default=logging.ERROR) == logging.ERROR
+        assert "LOG_LEVEL" not in caplog.text
+
+    def test_unrecognized_warns_and_uses_the_default(self, caplog):
+        from src.api.structured_log import _LOG_LEVELS, resolve_log_level
+
+        with caplog.at_level(logging.WARNING, logger="src.api.structured_log"):
+            assert resolve_log_level("TRACE") == logging.WARNING
+        assert "Unrecognized LOG_LEVEL 'TRACE'" in caplog.text
+        for name in _LOG_LEVELS:
+            assert name in caplog.text
 
 
 class TestLogEvent:

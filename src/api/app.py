@@ -14,7 +14,11 @@ from src.api.config import Config, DevelopmentConfig
 from src.api.security_headers import register_security_headers
 from src.api.services import SessionManager, GameService
 from src.env_bootstrap import PROJECT_ROOT as _REPO_ROOT
-from src.api.structured_log import configure_logging, init_request_logging
+from src.api.structured_log import (
+    configure_logging,
+    init_request_logging,
+    resolve_log_level,
+)
 # Re-exported: tests and several docstrings name the filter as app.py's.
 from src.api.structured_log import _RedactSecretsFilter  # noqa: F401
 import src.universe as universe_module
@@ -33,17 +37,6 @@ _log = logging.getLogger(__name__)
 # through _log_level_setting() below rather than through two literals that can
 # drift apart.
 _LOG_LEVEL_ENV = "LOG_LEVEL"
-
-# Level names only — getattr(logging, name) would happily resolve any module
-# attribute (LOG_LEVEL=BASIC_FORMAT raised at import; NOTSET meant "log
-# everything").
-_LOG_LEVELS = {
-    "CRITICAL": logging.CRITICAL,
-    "ERROR": logging.ERROR,
-    "WARNING": logging.WARNING,
-    "INFO": logging.INFO,
-    "DEBUG": logging.DEBUG,
-}
 
 # LOG_LEVEL is applied to these namespaces, never to the root logger. Root at
 # DEBUG also turns on urllib3/httpx/openai/werkzeug/engineio wire logging, which
@@ -93,21 +86,14 @@ def _resolve_log_level(level_name=None):
     note in :func:`_configure_logging`), while ``LOG_LEVEL=TRACE`` is a typo
     in a variable whose entire purpose is "set this to see more" and used to
     produce a silent WARNING-level run with no explanation at all.
+
+    The parsing itself is :func:`src.api.structured_log.resolve_log_level`,
+    shared with the root handlers so both read the same variable one way.
     """
     raw = level_name if level_name is not None else _log_level_setting()
     if raw is None:
         return None
-    name = str(raw).strip().upper()
-    if name in _LOG_LEVELS:
-        return _LOG_LEVELS[name]
-    # ASCII only: this can be emitted to a cp1252 Windows console before any
-    # handler with a safer encoding is attached.
-    _log.warning(
-        "Unrecognized LOG_LEVEL %r; using WARNING. Accepted values: %s",
-        raw,
-        ", ".join(_LOG_LEVELS),
-    )
-    return logging.WARNING
+    return resolve_log_level(raw)
 
 
 def _configure_logging(level_name=None):
