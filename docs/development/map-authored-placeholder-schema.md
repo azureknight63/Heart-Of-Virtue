@@ -185,6 +185,18 @@ Every individual map file shrank (range: ~5%–82% smaller depending on how
 NPC/Item-heavy the map is), with no change to authored gameplay behavior —
 covered by `tests/test_map_placeholders.py`.
 
+## Map-level metadata
+
+A map JSON may carry a top-level `"metadata"` object alongside its tile keys.
+`Universe._load_all_json_maps` copies it onto the loaded map dict unchanged
+(`src/universe.py`, the `coord_str == "metadata"` branch). The keys read today:
+
+| Key | Read by | Meaning |
+|---|---|---|
+| `bgm` | `GameService` BGM resolution | The map's default music track; a tile-level `bgm` wins over it. |
+| `place` | NPC chat prompt (#717) | Prose naming where the map is, for the chat model. Not a UI title. |
+| `dev_only` | `src.universe.is_dev_only_map` (#737) | Only a literal `true` counts. Build-time merchant stocking skips the map, so a merchant no player can reach does not claim one of the world's unique items. Its merchants still stock on first shop open. `tests/test_issue_737_dev_only_maps_not_stocked.py` pins the flagged set and proves none of them is reachable from the production start map. |
+
 ## Known limitations (documented, not fixed here)
 
 - **`Gorran.name`** is a computed `@property` reading story-state flags
