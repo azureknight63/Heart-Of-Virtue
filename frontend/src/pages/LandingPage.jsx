@@ -428,7 +428,7 @@ function Footer() {
       <p style={{ fontFamily: 'var(--font-title)', fontStyle: 'italic', fontSize: 18, color: 'var(--ink-dim)' }}>
         Heart of Virtue
       </p>
-      <p>A text adventure by Alexander Egbert.</p>
+      <p>A narrative RPG by Alexander Egbert.</p>
       <p>
         <a href="https://github.com/azureknight63/Heart-Of-Virtue" target="_blank" rel="noreferrer">
           github.com/azureknight63/Heart-Of-Virtue

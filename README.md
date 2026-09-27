@@ -5,7 +5,7 @@
 [![Frontend Coverage](https://img.shields.io/badge/frontend--coverage-see%20dashboard-lightgray?style=flat-square)](docs/coverage/coverage-dashboard.md)
 [![License: PolyForm NC](https://img.shields.io/badge/code-PolyForm%20NC-blue?style=flat-square)](LICENSE-CODE)
 
-Adventure RPG. Follow former crusader Jean Claire into a strange and dangerous world
+A narrative RPG played in the browser. Follow former crusader Jean Claire into a strange and dangerous world
 as he tries to make sense of his situation and piece together the fragments of his
 tragic past.
 
