@@ -3489,9 +3489,12 @@ class ProviderChainMixin:
 
     A subclass declares, as data:
 
-    * ``_FALLBACK_ENV_VAR`` -- its own three-state opt in/out of the fan-out
+    * ``_FALLBACK_ENV_VARS`` -- its own three-state opt in/out of the fan-out
       (``_remote_fallback_setting``). Per feature on purpose: pinning chat to
-      one host must not pin combat, or the reverse.
+      one host must not pin combat, or the reverse. A one-name tuple read
+      through ``_first_env``, like ``_ENABLED_ENV_VARS``: that is the shape
+      the ``.env.example`` inventory tests resolve, and a bare string
+      attribute would hide the variable from them.
     * ``_FEATURE_LABEL`` -- names the feature in the "disabled" reason.
     * ``_round_timeout()`` -- the nominal per-call timeout the transports clip
       to the thread's deadline (``_call_timeout``).
@@ -3502,7 +3505,7 @@ class ProviderChainMixin:
     is dialled alone.
     """
 
-    _FALLBACK_ENV_VAR: str = ""
+    _FALLBACK_ENV_VARS: Tuple[str, ...] = ()
     _FEATURE_LABEL: str = "LLM adapter"
 
     def available(self) -> bool:
@@ -3719,9 +3722,64 @@ class ProviderChainMixin:
         logger.error("%s unknown provider=%s", type(self).__name__, provider)
         return None
 
+    def _structured_via_chain(
+        self, system_prompt: str, user_prompt: str, budget_seconds: float
+    ) -> Optional[Dict[str, Any]]:
+        """A ``generate_structured`` reply walked across the chain, in one budget.
+
+        The configured provider, when it is one the base client routes
+        (ollama, openrouter), is dialled exactly as ``GenericLLMClient.
+        _dispatch_chat`` always dialled it -- same transport, same timeouts --
+        so arming the chain changes nothing about the first attempt. Every
+        other hop goes through the chain transports held to a deadline
+        ``budget_seconds`` after this call started (:meth:`bounded_by`): each
+        call's timeout is clipped to what is left, and no hop starts with less
+        than ``_MIN_CALL_SECONDS`` left. A stalled fallback host therefore
+        cannot carry the call past the budget; only the primary's own
+        timeouts, which predate the chain, can.
+
+        Replies are parsed as JSON objects. Prose from a fallback host benches
+        that host's model (``_penalize_unparseable``) and the walk moves on.
+        """
+        deadline = time.monotonic() + budget_seconds
+        primary = self.provider
+
+        def call(provider: str) -> Optional[Any]:
+            if provider == primary and provider == "ollama":
+                return self._ollama_chat(system_prompt, user_prompt, True)
+            if provider == primary and provider == "openrouter":
+                return self._openrouter_chat(system_prompt, user_prompt, True)
+            with self.bounded_by(deadline):
+                return self._call_chain_provider(
+                    provider, system_prompt, user_prompt,
+                    _STRUCTURED_MAX_TOKENS, _DEFAULT_TEMPERATURE,
+                )
+
+        def accept(provider: str, res: Any) -> Optional[Dict[str, Any]]:
+            if isinstance(res, dict):
+                return res
+            parsed = _JSONTools.try_parse_json(_JSONTools._strip_thinking_tokens(str(res)))
+            if isinstance(parsed, dict):
+                return parsed
+            logger.warning(
+                "%s provider=%s answered without a JSON object; trying next.",
+                type(self).__name__, provider,
+            )
+            # Only a chain transport hands back a string (the base routes
+            # parse their own), and each records who served it.
+            GenericLLMClient._penalize_unparseable(self._last_served_model)
+            return None
+
+        return self._walk_provider_chain(
+            "%s._structured_via_chain" % type(self).__name__,
+            call,
+            accept,
+            budget_spent=lambda: deadline - time.monotonic() < _MIN_CALL_SECONDS,
+        )
+
     @classmethod
     def _remote_fallback_setting(cls) -> Optional[bool]:
-        """``_FALLBACK_ENV_VAR`` as three states, not two.
+        """``_FALLBACK_ENV_VARS`` as three states, not two.
 
         Read from the subclass's own variable -- ``NPC_CHAT_LLM_FALLBACK`` for
         chat, ``COMBAT_LLM_FALLBACK`` for the advisor -- so one feature's
@@ -3749,7 +3807,7 @@ class ProviderChainMixin:
         Anything set but unrecognised reads as a refusal. Fails closed, like
         every other gate on real network spend in this file.
         """
-        raw = cls._first_env((cls._FALLBACK_ENV_VAR,)) if cls._FALLBACK_ENV_VAR else ""
+        raw = cls._first_env(cls._FALLBACK_ENV_VARS)
         if not raw:
             return None
         return raw in _ENABLED_TRUE_VALUES
@@ -3770,9 +3828,9 @@ class ProviderChainMixin:
         Four configurations get no fallbacks: ``"none"`` returns an empty
         chain; a provider nobody named *for this feature* returns just that
         provider (inherited from ``MYNX_LLM_PROVIDER``, or the local default);
-        ``_FALLBACK_ENV_VAR=0`` returns just the named provider whatever it
+        ``_FALLBACK_ENV_VARS``=0 returns just the named provider whatever it
         is; and a deliberately named ``ollama`` returns just ollama unless
-        ``_FALLBACK_ENV_VAR=1`` says otherwise. All four are deliberate --
+        ``_FALLBACK_ENV_VARS``=1 says otherwise. All four are deliberate --
         see the comments below, which use chat's variable names because chat
         is where each rule was learned.
         """
@@ -4215,7 +4273,7 @@ class NpcChatLLMAdapter(ProviderChainMixin, GenericLLMClient):
     _MODEL_ENV_VARS = ("NPC_CHAT_LLM_MODEL", "MYNX_LLM_MODEL")
     # The fallback chain (ProviderChainMixin): chat's own opt in/out, and the
     # name its "disabled" reason uses.
-    _FALLBACK_ENV_VAR = "NPC_CHAT_LLM_FALLBACK"
+    _FALLBACK_ENV_VARS = ("NPC_CHAT_LLM_FALLBACK",)
     _FEATURE_LABEL = "NPC chat adapter"
 
     def __init__(self):

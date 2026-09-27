@@ -3,7 +3,7 @@ from typing import (
     Any, Callable, Dict, List, Literal, NamedTuple, Optional, Tuple, TypedDict,
 )
 
-from ai.llm_client import GenericLLMClient
+from ai.llm_client import GenericLLMClient, ProviderChainMixin
 from src.moves import DAMAGING_MOVE_CATEGORIES, whole_beats
 from src.text_format import pct as _pct
 
@@ -1095,7 +1095,7 @@ def wrap_suggestions_prompt(user_prompt: str, max_suggestions: int) -> str:
     )
 
 
-class CombatLLMAdapter(GenericLLMClient):
+class CombatLLMAdapter(ProviderChainMixin, GenericLLMClient):
     """``GenericLLMClient`` with per-feature combat overrides.
 
     The base client reads only the global ``MYNX_LLM_*`` variables, so the
@@ -1106,12 +1106,43 @@ class CombatLLMAdapter(GenericLLMClient):
     chat (ai/llm_client.py).
 
       - COMBAT_LLM_ENABLED=1                  -> override MYNX_LLM_ENABLED
-      - COMBAT_LLM_PROVIDER=ollama|openrouter -> override MYNX_LLM_PROVIDER
+      - COMBAT_LLM_PROVIDER=ollama|openrouter|groq|cerebras
+                                              -> override MYNX_LLM_PROVIDER
       - COMBAT_LLM_MODEL=<model_id>           -> override MYNX_LLM_MODEL
+      - COMBAT_LLM_FALLBACK=0|1               -> the fallback chain's opt out/in
 
-    Each list falls back to the MYNX_* name, so an existing MYNX_*-only
-    configuration keeps working exactly as before.
+    Each of the first three falls back to the MYNX_* name, so an existing
+    MYNX_*-only configuration keeps working exactly as before.
+
+    Fallback chain (#729): with ``COMBAT_LLM_PROVIDER`` named explicitly, a
+    structured request that the configured provider cannot answer walks on
+    through every other credentialed provider -- the same chain, and the same
+    consent rule, as NPC chat (``ProviderChainMixin``). A provider inherited
+    from ``MYNX_LLM_PROVIDER`` is dialled alone, ``COMBAT_LLM_FALLBACK=0``
+    pins the named host, and a named ``ollama`` stays local unless
+    ``COMBAT_LLM_FALLBACK=1``. The whole walk is held to
+    ``_CHAIN_BUDGET_SECONDS``; when it yields nothing the strategist's
+    deterministic scorer answers, as before.
     """
+
+    #: Total wall time one suggestion request may spend across the chain.
+    #: Equal to what the configured OpenRouter walk already allows itself
+    #: (``_openrouter_chat``: a 10s first attempt plus a 5s fallback), so a
+    #: fallback hop gets only what the primary left rather than stretching the
+    #: beat. A stalled fallback host is cut at this deadline; the primary's own
+    #: timeouts predate the chain and are not clipped.
+    _CHAIN_BUDGET_SECONDS = 15.0
+
+    #: Nominal timeout for one fallback call, before it is clipped to what
+    #: the chain budget has left. A healthy free model answers in ~2-4s; this
+    #: is NPC chat's default for the same reason.
+    _FALLBACK_CALL_TIMEOUT_SECONDS = 6.0
+
+    _FALLBACK_ENV_VARS = ("COMBAT_LLM_FALLBACK",)
+    _FEATURE_LABEL = "Tactical advisor adapter"
+
+    #: The providers ``GenericLLMClient._dispatch_chat`` routes on its own.
+    _BASE_ROUTED = ("ollama", "openrouter")
 
     # Declared as data rather than re-applied after super().__init__(): the
     # base class resolves the gate, runs model discovery and validates the
@@ -1132,6 +1163,47 @@ class CombatLLMAdapter(GenericLLMClient):
     _ENABLED_ENV_VARS = ("COMBAT_LLM_ENABLED", "MYNX_LLM_ENABLED")
     _PROVIDER_ENV_VARS = ("COMBAT_LLM_PROVIDER", "MYNX_LLM_PROVIDER")
     _MODEL_ENV_VARS = ("COMBAT_LLM_MODEL", "MYNX_LLM_MODEL")
+
+    @classmethod
+    def _round_timeout(cls) -> float:
+        """Nominal per-call timeout for a chain hop (``ProviderChainMixin``)."""
+        return cls._FALLBACK_CALL_TIMEOUT_SECONDS
+
+    def _single_base_route(self) -> bool:
+        """True when there is no chain to walk: one base-routed provider.
+
+        That configuration -- every install that has not named a combat
+        provider, or has pinned one with ``COMBAT_LLM_FALLBACK=0`` -- keeps the
+        base client's behaviour exactly, including its cached availability
+        probe, so arming the chain is the only thing that changes anything.
+        """
+        return self.provider in self._BASE_ROUTED and self._provider_chain() == [self.provider]
+
+    def available(self) -> bool:
+        if self._single_base_route():
+            return GenericLLMClient.available(self)
+        return super().available()
+
+    def _dispatch_chat(
+        self, system_prompt: str, user_prompt: str, structured: bool
+    ) -> Optional[Any]:
+        """Structured requests walk the fallback chain; everything else is unchanged.
+
+        The chain transports ask for JSON, so only ``generate_structured`` --
+        the strategist's only call -- fans out. A plain request, or a
+        configuration with nothing to fall back to, takes the base route.
+        """
+        if not structured or self._single_base_route():
+            return super()._dispatch_chat(system_prompt, user_prompt, structured)
+        if not self.available():
+            logger.warning(
+                "CombatLLMAdapter aborted: LLM not available. provider=%s reason=%s",
+                self.provider, self._unavailable_reason,
+            )
+            return None
+        return self._structured_via_chain(
+            system_prompt, user_prompt, self._CHAIN_BUDGET_SECONDS
+        )
 
 
 class CombatStrategist:
