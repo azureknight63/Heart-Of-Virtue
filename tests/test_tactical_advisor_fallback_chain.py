@@ -254,3 +254,61 @@ class TestOneImplementation:
             assert name not in NpcChatLLMAdapter.__dict__, name
             assert name not in CombatLLMAdapter.__dict__ or name == "available", name
             assert getattr(NpcChatLLMAdapter, name) is getattr(ProviderChainMixin, name), impl
+
+
+def _recording_post(calls):
+    def post(url, payload, headers, timeout, on_discarded=None):
+        calls.append(url)
+        return Resp(200, {"choices": [{"message": {"content": _GROQ_REPLY}}]})
+
+    return post
+
+
+class TestAnUnrecognisedProviderFailsClosed:
+    """A typo in ``*_LLM_PROVIDER`` is not consent to dial every remote host.
+
+    ``olama`` / ``openruoter`` used to count as an explicit provider and fan
+    out to every credentialed host behind it -- so a misspelt local-only
+    configuration shipped the prompt to OpenRouter and Groq. The chain is now
+    just the unknown name: dispatch reports it, and the feature falls back
+    (deterministic scorer for the advisor, canned dialogue for chat).
+    """
+
+    @pytest.mark.parametrize("typo", ["olama", "openruoter"])
+    def test_the_advisor_never_fans_out_from_a_typo(self, monkeypatch, keys, typo):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", typo)
+        adapter = _adapter()
+        calls = []
+        monkeypatch.setattr(llm, "_post_chat_completion", _recording_post(calls))
+        strategist = CombatStrategist(client=adapter)
+
+        assert adapter._provider_chain() == [typo]
+        assert adapter.generate_structured("sys", "user") is None
+        assert strategist.get_suggestions(_ctx()) == strategist._get_fallback_suggestions(_ctx(), 1)
+        assert calls == []
+
+    @pytest.mark.parametrize("typo", ["olama", "openruoter"])
+    def test_chat_never_fans_out_from_a_typo(self, monkeypatch, keys, typo):
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "1")
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", typo)
+        adapter = NpcChatLLMAdapter()
+        calls = []
+        monkeypatch.setattr(llm, "_post_chat_completion", _recording_post(calls))
+
+        assert adapter._provider_chain() == [typo]
+        assert adapter._call_llm("sys", "user") is None
+        assert calls == []
+
+    def test_chat_logs_the_unknown_provider_once_under_its_own_label(
+        self, monkeypatch, keys, caplog
+    ):
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "1")
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "olama")
+        adapter = NpcChatLLMAdapter()
+
+        with caplog.at_level("INFO", logger=llm.logger.name):
+            adapter._call_llm("sys", "user")
+
+        messages = [r.getMessage() for r in caplog.records]
+        assert "NpcChatLLMAdapter._call_llm unknown provider=olama" in messages
+        assert not any("no response from provider=olama" in m for m in messages)

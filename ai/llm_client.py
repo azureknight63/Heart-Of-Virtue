@@ -183,6 +183,11 @@ def _ollama_base_url() -> str:
     return os.getenv(_OLLAMA_BASE_URL_ENV, _OLLAMA_DEFAULT_BASE_URL).strip()
 
 
+def _is_chain_provider(name: str) -> bool:
+    """True when ``ProviderChainMixin`` has a transport for ``name``."""
+    return name == "ollama" or name in _OPENAI_COMPATIBLE_PROVIDERS
+
+
 def _provider_credential(name: str) -> str:
     """The env value ``name`` needs before it can be dialled at all, or ``""``.
 
@@ -3671,6 +3676,11 @@ class ProviderChainMixin:
                     label, provider,
                 )
                 return None
+            if not _is_chain_provider(provider):
+                # One line under the caller's label, and no "no response"
+                # warning after it: nothing was dialled.
+                logger.error("%s unknown provider=%s", label, provider)
+                continue
             try:
                 res = call_provider(provider)
             except Exception as e:
@@ -3825,18 +3835,27 @@ class ProviderChainMixin:
         429s at once. With a flat single-provider dispatch that meant canned
         dialogue until UTC midnight, even with other free tiers sitting unused.
 
-        Four configurations get no fallbacks: ``"none"`` returns an empty
-        chain; a provider nobody named *for this feature* returns just that
+        Five configurations get no fallbacks: ``"none"`` returns an empty
+        chain; a name no transport serves (a typo) returns just that name,
+        which the walk reports and skips; a provider nobody named *for this feature* returns just that
         provider (inherited from ``MYNX_LLM_PROVIDER``, or the local default);
         ``_FALLBACK_ENV_VARS``=0 returns just the named provider whatever it
         is; and a deliberately named ``ollama`` returns just ollama unless
-        ``_FALLBACK_ENV_VARS``=1 says otherwise. All four are deliberate --
+        ``_FALLBACK_ENV_VARS``=1 says otherwise. All five are deliberate --
         see the comments below, which use chat's variable names because chat
         is where each rule was learned.
         """
         if not self.provider or self.provider == PROVIDER_DISABLED:
             # "none" is the disabled sentinel: dial nothing at all.
             return []
+        if not _is_chain_provider(self.provider):
+            # A name no transport serves -- in practice a typo, `olama` or
+            # `openruoter`. It is still "explicit", and it used to arm the
+            # fan-out: a misspelt local-only configuration shipped the prompt
+            # to every credentialed remote host. Fail closed instead: the
+            # chain is the unknown name alone, the walk reports it, and the
+            # feature takes its non-LLM fallback.
+            return [self.provider]
         if not self._provider_explicit:
             # A credential sitting in the env (.env is loaded at import for
             # other features) is not consent to dial a provider nobody
