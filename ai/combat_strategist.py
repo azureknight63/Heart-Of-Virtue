@@ -3,7 +3,13 @@ from typing import (
     Any, Callable, Dict, List, Literal, NamedTuple, Optional, Tuple, TypedDict,
 )
 
-from ai.llm_client import GenericLLMClient
+from ai.llm_client import (
+    GenericLLMClient,
+    ProviderChainMixin,
+    _DEFAULT_ROUND_TIMEOUT_SECONDS,
+    _OPENROUTER_PRIMARY_TIMEOUT_SECONDS,
+    _OPENROUTER_RETRY_TIMEOUT_SECONDS,
+)
 from src.moves import DAMAGING_MOVE_CATEGORIES, whole_beats
 from src.text_format import pct as _pct
 
@@ -397,6 +403,10 @@ class TacticalState(TypedDict):
     # Pre-rendered "low–high" band, not a number: it is prompt/reasoning text.
     estimated_damage: str
     incoming_lethal: bool
+    # Issue #720: the unresisted lethal status the charge inflicts ("Death"),
+    # or None. It is what makes a no-damage charge lethal; see
+    # `_lethal_status_of`.
+    incoming_lethal_status: Optional[str]
     # Issue #686: the charge's display name, and whether it is worth naming in
     # EVERY reason (a heavy/deadly telegraph, or a potentially lethal hit). A
     # routine wind-up is not: it would clutter every line, every beat.
@@ -434,6 +444,8 @@ class IncomingThreat(TypedDict):
     estimated_damage: str
     midpoint: int
     potentially_lethal: bool
+    # Issue #720: see `_lethal_status_of`.
+    lethal_status: Optional[str]
 
 
 class WorstThreat(TypedDict):
@@ -448,6 +460,7 @@ class WorstThreat(TypedDict):
     beats_until_resolve: Optional[int]
     estimated_damage: str
     potentially_lethal: bool
+    lethal_status: Optional[str]
     # The charging move's display name and whether it is a heavy/deadly
     # telegraph (issue #686); None/False when nothing is incoming.
     move_name: Optional[str]
@@ -670,6 +683,15 @@ def _answers_the_charge(name: Any, state: TacticalState) -> bool:
     return state["in_defensive_window"] and name in _DEFENSIVE_MOVE_NAMES
 
 
+def _deals_no_damage(mip: Optional[Dict[str, Any]]) -> bool:
+    """True only when the engine says this charge takes no HP (issue #714).
+
+    An explicit ``deals_damage: False``; a payload without the key is priced
+    as a blow, so a missing field can never silence a real hit.
+    """
+    return (mip or {}).get("deals_damage") is False
+
+
 def _incoming_beats(mip: Optional[Dict[str, Any]]) -> Optional[int]:
     """Beats until a charging enemy move lands, or None if nothing is coming.
 
@@ -692,10 +714,74 @@ def _incoming_beats(mip: Optional[Dict[str, Any]]) -> Optional[int]:
     lethal) lands in 2 beat(s)". Only an explicit False skips; a payload
     without the key keeps the old behaviour, so a missing field can never
     silence a real blow.
+
+    Except when it inflicts an unresisted lethal status (issue #720,
+    `_lethal_status_of`): DeathKnell deals no damage but kills outright.
     """
-    if not mip or mip.get("deals_damage") is False:
+    if not mip:
+        return None
+    if _deals_no_damage(mip) and _lethal_status_of(mip) is None:
         return None
     return _beat_count(mip.get("beats_until_resolve"))
+
+
+#: What a reason calls a lethal status the payload does not name.
+_UNNAMED_LETHAL_STATUS = "a lethal status"
+
+
+def _lethal_status_of(mip: Optional[Dict[str, Any]]) -> Optional[str]:
+    """The name of the lethal status a charge inflicts on Jean, or None.
+
+    Issue #720, maintainer's call: price LETHAL statuses only. Reads the
+    wire's ``inflicts_status`` (``Move.status_threat`` in src/moves/_base.py:
+    the engine decides lethality, ``State.lethal``, and resistance,
+    ``Combatant.resists_status``). Only an explicit ``resisted: True`` clears
+    it; an unknown answer (None) still warns, because an unwarned one-shot is
+    the worse failure. Poison, fatigue drain and every other non-lethal status
+    return None and stay unpriced.
+
+    ``resisted`` is the answer of the move's TARGET, which may be an ally.
+    This reads the payload only and does not filter by target, in parity with
+    the damage path: `_threat_worth_defending` drops a charge aimed elsewhere
+    (`_aimed_elsewhere`) before any Dodge/Parry is scored, while the roster
+    line, INCOMING alert and `_rank_enemies` describe every charge on the
+    field, a damaging surge at Gorran included (pinned by
+    ``TestDeathAimedAtAnAlly``).
+    """
+    status = (mip or {}).get("inflicts_status")
+    if not isinstance(status, dict) or status.get("lethal") is not True:
+        return None
+    if status.get("resisted") is True:
+        return None
+    return status.get("name") or _UNNAMED_LETHAL_STATUS
+
+
+def _lethal_status_clause(status: str) -> str:
+    """How every advisor line names an unresisted lethal status (issue #720).
+
+    One phrasing for the prompt's INCOMING alert and roster line, the charge
+    note and the Dodge/Parry and locked-defence reasons -- it replaces the
+    "~0–0 dmg" band a no-damage move estimates to, which says nothing true.
+    """
+    return f"inflicts {status}, unresisted"
+
+
+def _lethal_status_suffix(status: Optional[str]) -> str:
+    """``" (inflicts Death, unresisted)"`` after a charge's name, or ``""``
+    when no unresisted lethal status is incoming."""
+    return f" ({_lethal_status_clause(status)})" if status else ""
+
+
+def _threat_impact(threat: IncomingThreat, dmg_suffix: str) -> str:
+    """What one charge does to Jean, for the INCOMING alert and roster line.
+
+    The lethal status when there is one (issue #720), otherwise the damage
+    band followed by ``dmg_suffix`` (" dmg" / " estimated dmg").
+    """
+    status = threat["lethal_status"]
+    if status:
+        return _lethal_status_clause(status)
+    return f"~{threat['estimated_damage']}{dmg_suffix}"
 
 
 # ENGINE-OWNED: the routine member of `TELEGRAPH_SEVERITIES` (src/moves/_base.py),
@@ -1095,7 +1181,7 @@ def wrap_suggestions_prompt(user_prompt: str, max_suggestions: int) -> str:
     )
 
 
-class CombatLLMAdapter(GenericLLMClient):
+class CombatLLMAdapter(ProviderChainMixin, GenericLLMClient):
     """``GenericLLMClient`` with per-feature combat overrides.
 
     The base client reads only the global ``MYNX_LLM_*`` variables, so the
@@ -1106,12 +1192,43 @@ class CombatLLMAdapter(GenericLLMClient):
     chat (ai/llm_client.py).
 
       - COMBAT_LLM_ENABLED=1                  -> override MYNX_LLM_ENABLED
-      - COMBAT_LLM_PROVIDER=ollama|openrouter -> override MYNX_LLM_PROVIDER
+      - COMBAT_LLM_PROVIDER=ollama|openrouter|groq|cerebras
+                                              -> override MYNX_LLM_PROVIDER
       - COMBAT_LLM_MODEL=<model_id>           -> override MYNX_LLM_MODEL
+      - COMBAT_LLM_FALLBACK=0|1               -> the fallback chain's opt out/in
 
-    Each list falls back to the MYNX_* name, so an existing MYNX_*-only
-    configuration keeps working exactly as before.
+    Each of the first three falls back to the MYNX_* name, so an existing
+    MYNX_*-only configuration keeps working exactly as before.
+
+    Fallback chain (#729): with ``COMBAT_LLM_PROVIDER`` named explicitly, a
+    structured request that the configured provider cannot answer walks on
+    through every other credentialed provider -- the same chain, and the same
+    consent rule, as NPC chat (``ProviderChainMixin``). A provider inherited
+    from ``MYNX_LLM_PROVIDER`` is dialled alone, ``COMBAT_LLM_FALLBACK=0``
+    pins the named host, and a named ``ollama`` stays local unless
+    ``COMBAT_LLM_FALLBACK=1``. The fallback hops (and a named groq/cerebras
+    primary) are held to ``_CHAIN_BUDGET_SECONDS``; a base-routed primary
+    (ollama, openrouter) keeps its own timeouts. When the walk yields nothing
+    the strategist's deterministic scorer answers, as before.
     """
+
+    #: Total wall time one suggestion request may spend across the chain.
+    #: Equal to what the configured OpenRouter walk already allows itself
+    #: (``_openrouter_chat``: its first attempt plus its fallback attempt), so
+    #: a fallback hop gets only what the primary left rather than stretching
+    #: the beat. A stalled fallback host is cut at this deadline; a
+    #: base-routed primary's own timeouts predate the chain and are not clipped.
+    _CHAIN_BUDGET_SECONDS = float(
+        _OPENROUTER_PRIMARY_TIMEOUT_SECONDS + _OPENROUTER_RETRY_TIMEOUT_SECONDS
+    )
+
+    #: Nominal timeout for one fallback call, before it is clipped to what
+    #: the chain budget has left. A healthy free model answers in ~2-4s; this
+    #: is NPC chat's default for the same reason.
+    _FALLBACK_CALL_TIMEOUT_SECONDS = _DEFAULT_ROUND_TIMEOUT_SECONDS
+
+    _FALLBACK_ENV_VARS = ("COMBAT_LLM_FALLBACK",)
+    _FEATURE_LABEL = "Tactical advisor adapter"
 
     # Declared as data rather than re-applied after super().__init__(): the
     # base class resolves the gate, runs model discovery and validates the
@@ -1132,6 +1249,68 @@ class CombatLLMAdapter(GenericLLMClient):
     _ENABLED_ENV_VARS = ("COMBAT_LLM_ENABLED", "MYNX_LLM_ENABLED")
     _PROVIDER_ENV_VARS = ("COMBAT_LLM_PROVIDER", "MYNX_LLM_PROVIDER")
     _MODEL_ENV_VARS = ("COMBAT_LLM_MODEL", "MYNX_LLM_MODEL")
+
+    @classmethod
+    def _round_timeout(cls) -> float:
+        """Nominal per-call timeout for a chain hop (``ProviderChainMixin``)."""
+        return cls._FALLBACK_CALL_TIMEOUT_SECONDS
+
+    def _single_base_route(self, chain: List[str]) -> bool:
+        """True when there is no chain to walk: one base-routed provider.
+
+        That configuration -- every install that has not named a combat
+        provider, or has pinned one with ``COMBAT_LLM_FALLBACK=0`` -- keeps the
+        base client's behaviour exactly, including its cached availability
+        probe, so arming the chain is the only thing that changes anything.
+        ``chain`` is the caller's ``_provider_chain()``, built once.
+        """
+        return self.provider in self._BASE_ROUTED and chain == [self.provider]
+
+    def available(self) -> bool:
+        """The base client's cached probe when there is no chain, else the chain's.
+
+        Overrides ``ProviderChainMixin.available`` only to keep the
+        single-provider configuration on the base answer (a cached probe, and
+        "Unknown provider" wording) byte for byte; with the chain armed it is
+        the mixin's chain-aware answer, from one ``_provider_chain()`` build.
+        """
+        chain = self._provider_chain()
+        if self._single_base_route(chain):
+            return GenericLLMClient.available(self)
+        return self._chain_available(chain)
+
+    def _dispatch_chat(
+        self, system_prompt: str, user_prompt: str, structured: bool
+    ) -> Optional[Any]:
+        """Structured requests walk the fallback chain; everything else is unchanged.
+
+        The chain transports ask for JSON, so only ``generate_structured`` --
+        the strategist's only call -- fans out. A plain request, or a
+        configuration with nothing to fall back to, takes the base route.
+
+        The chain path does not call :meth:`available`: ``get_suggestions``
+        has just asked, and for an ollama primary that is a ``/api/tags``
+        round trip the beat would pay twice. The gate and the credential check
+        it needs are env reads (``_chain_credentialed``); a dead Ollama
+        primary is found by dialling it, and the walk moves on.
+        """
+        if not structured:
+            return super()._dispatch_chat(system_prompt, user_prompt, structured)
+        chain = self._provider_chain()
+        if self._single_base_route(chain):
+            return super()._dispatch_chat(system_prompt, user_prompt, structured)
+        label = self._log_dispatch_start(system_prompt, user_prompt, structured)
+        if not self.enabled or not self._chain_credentialed(chain):
+            logger.warning(
+                "%s aborted: LLM not available. provider=%s reason=%s",
+                label,
+                self.provider,
+                self._unavailable_reason if self.enabled else "adapter disabled",
+            )
+            return None
+        return self._structured_via_chain(
+            system_prompt, user_prompt, self._CHAIN_BUDGET_SECONDS, chain=chain
+        )
 
 
 class CombatStrategist:
@@ -1349,6 +1528,7 @@ class CombatStrategist:
             "in_defensive_window": in_window,
             "estimated_damage": threat["estimated_damage"],
             "incoming_lethal": threat["potentially_lethal"],
+            "incoming_lethal_status": threat["lethal_status"],
             "incoming_move": threat["move_name"],
             "incoming_flagged": incoming_beats is not None
             and (threat["telegraphed"] or threat["potentially_lethal"]),
@@ -1434,18 +1614,21 @@ class CombatStrategist:
                 f"{charge} in ~{min_bui} beat(s) but status effect impairs {name} "
                 "reliability; consider UseItem or accepting the hit."
             )
-        if state["dodge_impaired"] and est_lethal:
-            # Even impaired, better than a one-shot
-            return 88, (
-                f"{charge} is potentially lethal in ~{min_bui} beat(s); "
-                f"{name} reliability is reduced by status effect but still "
-                "preferable to dying."
-            )
         if est_lethal:
-            return 97, (
-                f"{charge} is potentially lethal (~{est_damage} dmg), landing in "
-                f"~{min_bui} beat(s); {name} is critical."
+            # Issue #720: a lethal STATUS is named, never a "~0–0 dmg" band.
+            status = state["incoming_lethal_status"]
+            impact = (
+                _lethal_status_clause(status) if status
+                else f"is potentially lethal (~{est_damage} dmg)"
             )
+            lead = f"{charge} {impact}, landing in ~{min_bui} beat(s)"
+            if state["dodge_impaired"]:
+                # Even impaired, better than a one-shot
+                return 88, (
+                    f"{lead}; {name} reliability is reduced by status effect "
+                    "but still preferable to dying."
+                )
+            return 97, f"{lead}; {name} is critical."
         if state["defensively_vulnerable"]:
             return 95, (
                 f"{charge} landing in ~{min_bui} beat(s) and Jean's defenses are "
@@ -1467,7 +1650,9 @@ class CombatStrategist:
         beats = state["incoming_beats"]
         if beats is None or not state["incoming_flagged"]:
             return None
-        lethal = " (potentially lethal)" if state["incoming_lethal"] else ""
+        lethal = _lethal_status_suffix(state["incoming_lethal_status"])
+        if not lethal and state["incoming_lethal"]:
+            lethal = " (potentially lethal)"
         charge = state["incoming_move"]
         lead = f"{_sentence_case(charge)}{lethal} lands in {beats} beat(s)"
         if beats > _LAST_DEFENSIBLE_BEAT:
@@ -1536,7 +1721,10 @@ class CombatStrategist:
         ):
             score = _LOCKED_DEFENCE_SCORES[(name, state["incoming_lethal"])]
             # Not implied by the lock: the lock note is derived on its own.
-            charge = state["incoming_move"] or _UNNAMED_CHARGE
+            charge = (
+                f"{state['incoming_move'] or _UNNAMED_CHARGE}"
+                f"{_lethal_status_suffix(state['incoming_lethal_status'])}"
+            )
             beats = state["incoming_beats"]
             if name == "Withdraw":
                 return score, (
@@ -1910,10 +2098,10 @@ class CombatStrategist:
             else " Jean's defenses may reduce impact."
         )
         lethal_note = ", LETHAL" if threat["potentially_lethal"] else ""
+        impact = _threat_impact(threat, " dmg")
         return (
             f"⚠ INCOMING: {enemy.get('name')} lands {mip.get('name')} "
-            f"in ~{bui} beat(s) (~{threat['estimated_damage']} dmg"
-            f"{lethal_note}). "
+            f"in ~{bui} beat(s) ({impact}{lethal_note}). "
             f"{CombatStrategist._charge_timing_note(bui)}.{vuln_note}"
         )
 
@@ -1945,10 +2133,11 @@ class CombatStrategist:
             lethal_tag = (
                 " ⚠ POTENTIALLY LETHAL" if threat["potentially_lethal"] else ""
             )
+            impact = _threat_impact(threat, " estimated dmg")
             mip_str = (
                 f", Charging: {mip.get('name')} "
                 f"({bui} beat{'s' if bui != 1 else ''} until impact, "
-                f"~{threat['estimated_damage']} estimated dmg{lethal_tag})"
+                f"{impact}{lethal_tag})"
             )
 
         # Enemy status effects — use enemy perspective notes
@@ -2189,11 +2378,18 @@ class CombatStrategist:
 
         Protection is not available for the enemy's view of the player, so the
         estimate is conservative (raw power before mitigation).
+
+        An unresisted lethal status (issue #720, `_lethal_status_of`) is
+        potentially lethal whatever the damage; a move the engine says deals
+        no damage (``deals_damage`` False -- DeathKnell) is estimated at 0.
         """
+        lethal_status = _lethal_status_of(mip)
         try:
             multiplier = float(mip.get("damage_multiplier", 1.0))
         except (TypeError, ValueError):
             multiplier = 1.0
+        if _deals_no_damage(mip):
+            multiplier = 0.0
         enemy_damage = (enemy.get("stats") or {}).get("damage", 0) or enemy.get(
             "damage", 0
         )
@@ -2205,7 +2401,11 @@ class CombatStrategist:
         return {
             "estimated_damage": f"{low}–{high}",
             "midpoint": midpoint,
-            "potentially_lethal": midpoint >= player_hp * _LETHAL_HP_FRACTION,
+            "potentially_lethal": (
+                lethal_status is not None
+                or midpoint >= player_hp * _LETHAL_HP_FRACTION
+            ),
+            "lethal_status": lethal_status,
         }
 
     def _worst_incoming_threat(
@@ -2222,6 +2422,7 @@ class CombatStrategist:
             "beats_until_resolve": None,
             "estimated_damage": "0–0",
             "potentially_lethal": False,
+            "lethal_status": None,
             "move_name": None,
             "telegraphed": False,
         }
@@ -2243,6 +2444,7 @@ class CombatStrategist:
                     "beats_until_resolve": bui,
                     "estimated_damage": threat["estimated_damage"],
                     "potentially_lethal": threat["potentially_lethal"],
+                    "lethal_status": threat["lethal_status"],
                     "move_name": _charge_name(mip),
                     "telegraphed": _is_telegraphed(mip),
                 }

@@ -34,6 +34,13 @@
 #                             heartbeat, not a per-request deadline: a long
 #                             request does not kill the worker, but a stalled
 #                             main loop does, at 120s.
+#   -c deploy/gunicorn.conf.py puts the secret-redaction filter on gunicorn's
+#                             own error/access loggers (#741); the path is
+#                             relative to WorkingDirectory. Added 2026-09-27;
+#                             install this unit only AFTER deploy.ps1 has
+#                             shipped the code (the unit cannot boot without
+#                             this file). On a rollback past #741, restore the
+#                             old unit first. See docs/development/deployment.md.
 [Unit]
 Description=Heart of Virtue Flask API
 After=network.target docker.service
@@ -44,6 +51,7 @@ WorkingDirectory=/home/alex/heart-of-virtue
 EnvironmentFile=/home/alex/heart-of-virtue/.env
 # Binds all interfaces, but ufw only admits port 5000 from the Docker network (nginx).
 ExecStart=/home/alex/heart-of-virtue/.venv/bin/gunicorn \
+    -c deploy/gunicorn.conf.py \
     --worker-class gthread -w 1 --threads 32 \
     --bind 0.0.0.0:5000 \
     --timeout 120 \

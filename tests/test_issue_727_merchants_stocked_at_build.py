@@ -13,7 +13,7 @@ import pytest
 
 from src.secure_pickle import serialize_for_save
 from src.shop_conditions import UniqueItemInjectionCondition, iter_merchants
-from src.universe import Universe
+from src.universe import Universe, live_maps
 from tests._real_map_helpers import map_named
 from tests._world_fixtures import fresh_built_world, merchant_on_map
 
@@ -25,21 +25,30 @@ def test_jambos_counter_is_stocked_on_a_fresh_game(tent):
 
 
 def test_every_merchant_in_the_world_has_goods_after_build():
+    """Every merchant a player can reach; dev-only maps are skipped (#737)."""
     player = fresh_built_world()
-    merchants = list(iter_merchants(player.universe.maps))
+    merchants = list(iter_merchants(live_maps(player.universe.maps)))
     assert merchants, "no merchants found -- iter_merchants is not walking the maps"
-    unstocked = [m.name for m in merchants if not m.has_goods()]
+    unstocked = [merchant.name for merchant in merchants if not merchant.has_goods()]
     assert unstocked == []
 
 
 def test_authored_stock_is_kept_rather_than_rerolled():
-    """Milo's map authors his counter and floor stock; stocking at build only
-    fills merchants that have nothing, so it must not replace his."""
+    """A merchant whose map authors its stock keeps it: ``stock_if_empty``
+    only fills merchants that have nothing.
+
+    No live map authors merchant stock, and Milo's map is dev-only (#737), so
+    the build never reaches him -- call ``stock_if_empty`` on him directly.
+    """
     player = fresh_built_world()
     milo = merchant_on_map(player.universe, "milos-shop", "Milo")
     milos_shop = map_named(player.universe, "milos-shop")
-    assert "Restorative" in [i.name for i in milo.inventory]
-    assert "Spear" in [i.name for i in milos_shop[(2, 3)].items_here]
+    authored = [item.name for item in milo.inventory]
+    assert "Restorative" in authored
+
+    assert milo.stock_if_empty() is False
+    assert [item.name for item in milo.inventory] == authored
+    assert "Spear" in [item.name for item in milos_shop[(2, 3)].items_here]
 
 
 def _load_through_the_api(save_blob):
@@ -65,7 +74,7 @@ def test_loading_a_save_does_not_reroll_stock_or_the_unique_registry():
     jambo = merchant_on_map(saved.universe, "grondia-jambos_shop", "Jambo")
     # A claimed unique makes the registry non-empty, so "unchanged" means something.
     assert UniqueItemInjectionCondition().inject_unique_items(jambo)
-    stock = [i.name for i in jambo.inventory]
+    stock = [item.name for item in jambo.inventory]
     claims = set(saved.universe.unique_items_spawned)
     assert claims
 
@@ -75,7 +84,7 @@ def test_loading_a_save_does_not_reroll_stock_or_the_unique_registry():
     assert loaded is not None, "load_game rejected the save"
     restored = merchant_on_map(loaded.universe, "grondia-jambos_shop", "Jambo")
     assert restored is not jambo
-    assert [i.name for i in restored.inventory] == stock
+    assert [item.name for item in restored.inventory] == stock
     assert loaded.universe.unique_items_spawned == claims
 
 

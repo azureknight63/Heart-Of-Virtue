@@ -7,6 +7,7 @@ issue #727), so every release is checked against that world's registry.
 from src.items import AncientRelic, CrystalTear, DragonHeartGem
 from src.npc import Merchant
 from src.objects import Container
+from tests._fake_world import bind_rooms_to_shared_map
 
 
 class DummyRoom:
@@ -17,7 +18,8 @@ class DummyRoom:
 
 class DummyUniverse:
     def __init__(self, rooms):
-        self.map = rooms
+        """Bind the rooms' shared map and track uniques, as a built world does."""
+        bind_rooms_to_shared_map(rooms)
         self.unique_items_spawned = set()
 
 

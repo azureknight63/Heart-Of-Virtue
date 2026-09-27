@@ -302,11 +302,23 @@ describe('autosaveErrorMessage', () => {
     );
   });
 
-  // Pins what the docstring says: only 403 and 5xx get their own copy, so any
-  // other 4xx still gets the connection wording even though the server answered.
-  it.each([400, 401, 409, 413])('keeps the network-flavored copy for a %i (any 4xx other than 403)', (status) => {
+  // #738: a 401 is an expired session, not the player's wifi. The axios 401
+  // interceptor (api/client.js) already sends the player to /login, so the
+  // copy names the flow that actually follows.
+  it('reports a 401 as an expired session, not a connection problem', () => {
+    const msg = autosaveErrorMessage({ response: { status: 401 } });
+    expect(msg).not.toMatch(/connection/i);
+    expect(msg).toBe('Your session expired; sign in again to keep saving.');
+  });
+
+  // #738: the server answered, so any other 4xx is a refusal, not the network.
+  it.each([400, 404, 409, 413, 422])('reports a %i as the server refusing the save (any 4xx other than 401/403)', (status) => {
     const msg = autosaveErrorMessage({ response: { status } });
-    expect(msg).toBe('Failed to save your progress. Check your connection.');
+    expect(msg).not.toMatch(/connection/i);
+    expect(msg).toBe(
+      'The server refused the save. Your game continues. '
+      + 'If this keeps happening, please send it through Feedback.'
+    );
   });
 
   it.each([502, 503, 504])('reports a %i as the server being busy or restarting', (status) => {

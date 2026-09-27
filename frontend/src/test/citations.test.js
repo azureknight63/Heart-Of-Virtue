@@ -228,6 +228,12 @@ const CITATIONS = [
         anchor: '/api/logs/browser',
         claim: 'console output is mirrored to the browser-log endpoint',
     }),
+    cite({
+        where: 'utils/apiError.js',
+        about: 'api/client.js',
+        anchor: 'redirectToLogin()',
+        claim: "the 401 interceptor sends the player to sign-in, so the autosave 401 copy's 'sign in again' names a real flow",
+    }),
 
     cite({
         where: 'utils/logger.js',

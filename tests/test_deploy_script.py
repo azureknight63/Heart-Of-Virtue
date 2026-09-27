@@ -122,6 +122,11 @@ def _rollback_line(sha):
     return f"git reset --hard {sha} && .venv/bin/pip install"
 
 
+def _previous_unit_line(app, sha):
+    """The command that extracts the pre-#741 unit from a rollback target."""
+    return f"git -C {app} show {sha}:deploy/heart-of-virtue.service > /tmp/heart-of-virtue.service"
+
+
 # ── the sandbox every pwsh runs in ───────────────────────────────────────────
 
 #: Prepended to every pwsh command. Functions win over applications and
@@ -1257,6 +1262,33 @@ class TestTheRollbackTarget:
         assert "evil.example" not in output and "git reset --hard" not in output, output
         assert "reflog" in output, output
 
+    def test_a_named_rollback_first_checks_the_target_can_boot_the_unit(self):
+        """#741: the installed unit passes ``-c deploy/gunicorn.conf.py``, so a
+        backend reset to a commit without that file does not boot. The help
+        gives a read-only check for it, and says what to do, before the
+        restart command."""
+        help_text = _pwsh(DOT_SOURCE + f"Write-StuckHelp -State Promoted -RollbackSha '{PREV_SHA}'\n", check=True).stdout
+        app = PRODUCTION_LAYOUT["APP"]
+        check = f"git -C {app} cat-file -e {PREV_SHA}:deploy/gunicorn.conf.py 2>/dev/null || echo PRE_741_UNIT_NEEDED"
+        assert check in help_text, help_text
+        _assert_in_order(
+            help_text, check, "object store", "previous unit", _previous_unit_line(app, PREV_SHA),
+            "gthread-switch-runbook.md step 4", _rollback_line(PREV_SHA),
+        )
+
+    def test_an_unnamed_rollback_gets_the_same_boot_check_before_its_reset(self):
+        """#741: with no commit named, the operator finds one in the reflog;
+        the same read-only check and the same way to the previous unit come
+        between finding it and resetting to it."""
+        help_text = _pwsh(DOT_SOURCE + "Write-StuckHelp -State Promoted -RollbackNote 'x'\n", check=True).stdout
+        app = PRODUCTION_LAYOUT["APP"]
+        _assert_in_order(
+            help_text, f"git -C {app} reflog -n 10",
+            f"git -C {app} cat-file -e <sha>:deploy/gunicorn.conf.py 2>/dev/null || echo PRE_741_UNIT_NEEDED",
+            "object store", _previous_unit_line(app, "<sha>"), "gthread-switch-runbook.md step 4",
+            "then reset to it",
+        )
+
     def test_two_different_values_mean_neither_is_trusted(self):
         lines = _stage_lines(live="NONE", prev=PREV_SHA, health="FAIL")
         lines.insert(1, f"HOV_PREV_SHA={OTHER_SHA}")
@@ -1780,7 +1812,7 @@ def test_the_runbook_s_emergency_commands_are_the_ones_the_script_prints():
     printed = {
         "backend": [line.strip().replace(PREV_SHA, "<ROLLBACK_SHA>") for line in named.stdout.splitlines() if line.startswith("    cd ")],
         "frontend": [line.strip() for line in named.stdout.splitlines() if line.startswith("    docker exec ")],
-        "reflog": [line.strip() for line in unnamed.stdout.splitlines() if line.startswith("    git -C ")],
+        "reflog": [line.strip() for line in unnamed.stdout.splitlines() if line.startswith("    git -C ") and " reflog " in line],
     }
     runbook = RUNBOOK.read_text(encoding="utf-8")
     for kind, lines in printed.items():

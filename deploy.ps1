@@ -1174,16 +1174,32 @@ function Write-StuckHelp {
         Replace('<URL>', $LocalHealthUrl).Replace('<DELAY>', "$HealthDelaySeconds")
     $frontendRollback = "docker exec $Container sh -c 'test -d $PreviousDir && rm -rf $LiveDir && mv $PreviousDir $LiveDir && { [ ! -f $LiveDir/$SavedIndex ] || mv $LiveDir/$SavedIndex $LiveDir/index.html; }'"
 
+    # #741: the unit passes -c deploy/gunicorn.conf.py, and a checkout without
+    # that file cannot boot under it. Read-only, so it goes before any reset.
+    # $sha is a validated full SHA or the literal placeholder '<sha>'.
+    $unitCheckLines = {
+        param([string]$sha)
+        "    git -C $AppDir cat-file -e ${sha}:deploy/gunicorn.conf.py 2>/dev/null || echo PRE_741_UNIT_NEEDED"
+        '    If it printed PRE_741_UNIT_NEEDED, the target predates #741 (or is not in the server''s object store),'
+        '    and needs the previous unit, without -c deploy/gunicorn.conf.py, before any restart. Take it from the target:'
+        "    git -C $AppDir show ${sha}:deploy/heart-of-virtue.service > /tmp/heart-of-virtue.service"
+        '    then install it as ubuntu@ as in docs/development/gthread-switch-runbook.md step 4.'
+    }
+
     $backendRollbackLines = @()
     if ($RollbackSha -cmatch $FullShaPattern) {
+        $backendRollbackLines += '    (on the server) first check the target can boot the installed unit:'
+        $backendRollbackLines += & $unitCheckLines $RollbackSha
         $backendRollbackLines += '    (on the server) put back the backend that matches the previous frontend:'
         $backendRollbackLines += "    cd $AppDir && git reset --hard $RollbackSha && $BackendInstallCommand && sudo systemctl restart $ServiceName && sleep $RestartSettleSeconds && { $healthPoll; }"
         $backendRollbackLines += '    Go on only if it printed BACKEND_OK.'
     } else {
         if ($RollbackNote) { $backendRollbackLines += "    $RollbackNote" }
-        $backendRollbackLines += "    (on the server) find the commit the previous frontend was built from ($PreviousDir/$CommitFile, or the reflog),"
-        $backendRollbackLines += '    then reset to it, reinstall and restart as the runbook shows; go on only once /health answers:'
+        $backendRollbackLines += "    (on the server) find the commit the previous frontend was built from ($PreviousDir/$CommitFile, or the reflog):"
         $backendRollbackLines += "    git -C $AppDir reflog -n 10"
+        $backendRollbackLines += '    check that commit (<sha> below) can boot the installed unit:'
+        $backendRollbackLines += & $unitCheckLines '<sha>'
+        $backendRollbackLines += '    then reset to it, reinstall and restart as the runbook shows; go on only once /health answers.'
     }
     $goBackFrontend = @(
         '    (on the server) then the previous frontend -- this also lifts the page:',

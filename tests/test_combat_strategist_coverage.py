@@ -1242,7 +1242,9 @@ class TestEngineOwnedStatusSets:
         Static parse, not instantiation: several states need a live combatant
         (or extra constructor arguments) that a stub cannot supply, and the
         name that reaches the wire is the ``name="..."`` the constructor
-        passes to ``State``, not the Python class name.
+        passes to ``State``, not the Python class name -- or, for a state a
+        move declares (``State.STATUS_NAME``), the class-level constant the
+        constructor passes on as ``name=self.STATUS_NAME``.
         """
         tree = ast.parse(_STATES_PY.read_text(encoding="utf-8"))
         for node in tree.body:
@@ -1253,6 +1255,14 @@ class TestEngineOwnedStatusSets:
                     isinstance(sub, ast.keyword)
                     and sub.arg == "name"
                     and isinstance(sub.value, ast.Constant)
+                ) or (
+                    isinstance(sub, ast.Assign)
+                    and any(
+                        isinstance(t, ast.Name) and t.id == "STATUS_NAME"
+                        for t in sub.targets
+                    )
+                    and isinstance(sub.value, ast.Constant)
+                    and isinstance(sub.value.value, str)
                 ):
                     yield sub.value.value, node
                     break

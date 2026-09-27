@@ -28,40 +28,37 @@ describe('npcChat', () => {
     );
   });
 
-  it('sends a response with the default tone', () => {
+  // #705: no client-side default. The server ignores the tone (it defaults to
+  // "neutral" and the prompt never reads it), so a default here could only
+  // drift -- it was 'direct', a tone JEAN_TONES retired in #591.
+  it('omits jean_tone when no tone is given', () => {
     npcChat.respond('npc_session_123', 'Hello there');
-    expect(apiClient.post).toHaveBeenCalledWith(
-      '/npc/chat/respond',
-      {
-        npc_key: 'npc_session_123',
-        jean_text: 'Hello there',
-        jean_tone: 'direct',
-      },
-      withDeadline
-    );
+    const [, body] = apiClient.post.mock.calls[0];
+    expect(body).toEqual({ npc_key: 'npc_session_123', jean_text: 'Hello there' });
+    expect(body).not.toHaveProperty('jean_tone');
   });
 
   it('sends a response with an explicit tone', () => {
-    npcChat.respond('npc_session_123', 'Back off', 'guarded');
+    npcChat.respond('npc_session_123', 'Back off', 'skeptical');
     expect(apiClient.post).toHaveBeenCalledWith(
       '/npc/chat/respond',
       {
         npc_key: 'npc_session_123',
         jean_text: 'Back off',
-        jean_tone: 'guarded',
+        jean_tone: 'skeptical',
       },
       withDeadline
     );
   });
 
   it('sends the turn_id that makes a retried turn idempotent (#636)', () => {
-    npcChat.respond('npc_session_123', 'Back off', 'guarded', { turnId: 'turn_0123456789' });
+    npcChat.respond('npc_session_123', 'Back off', 'skeptical', { turnId: 'turn_0123456789' });
     expect(apiClient.post).toHaveBeenCalledWith(
       '/npc/chat/respond',
       {
         npc_key: 'npc_session_123',
         jean_text: 'Back off',
-        jean_tone: 'guarded',
+        jean_tone: 'skeptical',
         turn_id: 'turn_0123456789',
       },
       withDeadline
@@ -69,7 +66,7 @@ describe('npcChat', () => {
   });
 
   it('bounds a re-send by the deadline the caller has left (#636)', () => {
-    npcChat.respond('npc_session_123', 'Back off', 'guarded', { turnId: 'turn_0123456789', timeoutMs: 4200 });
+    npcChat.respond('npc_session_123', 'Back off', 'skeptical', { turnId: 'turn_0123456789', timeoutMs: 4200 });
     expect(apiClient.post).toHaveBeenCalledWith(
       '/npc/chat/respond',
       expect.objectContaining({ turn_id: 'turn_0123456789' }),

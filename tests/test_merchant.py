@@ -10,6 +10,7 @@ from src.npc import Merchant
 from src.items import Item, Shortsword, Restorative, Gold
 from src.shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
 from src.objects import Container
+from tests._fake_world import bind_rooms_to_shared_map
 
 # ---------- Test Fakes / Helpers ----------
 
@@ -39,7 +40,8 @@ class FakeRoom:
 
 class FakeUniverse:
     def __init__(self, rooms):
-        self.map = rooms
+        """Bind the rooms' shared map and track uniques, as a built world does."""
+        bind_rooms_to_shared_map(rooms)
         self.unique_items_spawned = set()
 
 class FakePlayer:

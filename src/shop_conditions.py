@@ -80,8 +80,9 @@ def _room_objects(room: Any) -> Iterable[Any]:
 def iter_rooms(rooms_source: Any) -> Iterator[Any]:
     """Yield the room objects held in ``rooms_source``.
 
-    ``rooms_source`` is a universe/tile map, which is a dict keyed by ``(x, y)``
-    coordinates (``src/universe.py``) but may be a plain list in test harnesses.
+    ``rooms_source`` is a tile's map (``MapTile.map``), which is a dict keyed by
+    ``(x, y)`` coordinates (``src/tiles.py``) but may be a plain list in test
+    harnesses.
     Iterating a dict directly yields coordinate tuples rather than rooms, so the
     dict case is unwrapped via ``.values()``. Non-room entries (raw strings or
     nested dicts left by partial map loads) and non-iterable sources are skipped.
@@ -97,6 +98,20 @@ def iter_rooms(rooms_source: Any) -> Iterator[Any]:
         if isinstance(room, (str, bytes, dict)):
             continue
         yield room
+
+
+def merchant_rooms_source(merchant: Any) -> Any:
+    """The map ``merchant`` stands on: its room's ``map``, or None.
+
+    A real ``MapTile`` carries the coordinate-keyed dict of the map it belongs
+    to as ``.map`` (``src/tiles.py``). ``Universe`` has no ``.map`` -- only
+    ``.maps``, every loaded map -- so reading it there finds nothing (#739).
+    Feed the result to :func:`iter_rooms`.
+    """
+    room = getattr(merchant, "current_room", None)
+    if room is None:
+        return None
+    return getattr(room, "map", None)
 
 
 def _is_merchant(obj: Any) -> bool:
@@ -407,18 +422,15 @@ class UniqueItemInjectionCondition(ShopCondition):
             setattr(item, "unique_condition", self.name or "Unique Item Injection")
 
             # Attempt to locate a merchant container (first match)
-            container = None
             try:
-                universe = getattr(
-                    getattr(merchant, "current_room", None), "universe", None
+                container = next(
+                    (
+                        obj
+                        for room in iter_rooms(merchant_rooms_source(merchant))
+                        for obj in iter_merchant_containers(room, merchant)
+                    ),
+                    None,
                 )
-                if universe is not None:
-                    for room in iter_rooms(getattr(universe, "map", None)):
-                        for obj in iter_merchant_containers(room, merchant):
-                            container = obj
-                            break
-                        if container is not None:
-                            break
             except Exception as exc:  # noqa: BLE001
                 # Stays broad so a malformed world never aborts the injection
                 # (that would leak the already-claimed unique_items_spawned
@@ -460,6 +472,7 @@ class UniqueItemInjectionCondition(ShopCondition):
 
 __all__ = [
     "iter_rooms",
+    "merchant_rooms_source",
     "iter_merchant_containers",
     "ShopCondition",
     "ValueModifierCondition",

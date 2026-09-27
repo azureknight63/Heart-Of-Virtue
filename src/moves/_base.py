@@ -1509,6 +1509,10 @@ class Move:  # master class for all moves
     # Jean from full to dead, labelled DEADLY. Heavy moves OPT IN by
     # overriding this; the author names the threat rather than a threshold
     # guessing it (2.0x of a Slime is a scratch, 1.8x of a boss a wound).
+    # A move below ~2x may still be "heavy" when something else makes it land
+    # like one -- WailStrike centres on 1.26x but ignores protection (#740) --
+    # but it must declare that on its own class, not inherit it; the
+    # TestTelegraphSeverity guard fails an inherited sub-2x "heavy".
     # The serializer reads it off the move with a getattr default, so a
     # rename would degrade every warning to "normal" without a missing key;
     # tests/test_wire_field_contract.py::
@@ -1632,6 +1636,41 @@ class Move:  # master class for all moves
         checks every NPC-used move against what ``execute()`` actually does.
         """
         return self.category in DAMAGING_MOVE_CATEGORIES
+
+    #: The ``State`` subclass ``execute()`` attempts to inflict on the move's
+    #: target, or None (issue #720). A move that inflicts one sets it as a
+    #: class attribute; tests/test_npc_moves_coverage.py::
+    #: TestInflictedStatusMatchesExecute checks every NPC-used move's
+    #: declaration against the ``inflict()`` calls its ``execute()`` makes.
+    #: (The wire key is ``inflicts_status``: the ``status_threat`` dict.)
+    inflicted_state_cls = None
+
+    def status_threat(self, target):
+        """What this move's status means for ``target``, or None if it has none.
+
+        ``{"name", "statustype", "lethal", "resisted"}``: the declared state
+        (``inflicted_state_cls``), whether it kills outright (``State.lethal``),
+        and whether ``target`` is immune to it (``Combatant.resists_status``).
+        ``resisted`` is None when there is no target to ask. Shipped on the
+        wire so the Tactical Advisor can treat an unresisted lethal status as
+        an incoming threat even though the move deals no damage (DeathKnell).
+        """
+        # Off the CLASS, and only a real State subclass: an instance attribute
+        # (which a crafted save could carry) or a stray declaration is no
+        # threat rather than whatever object it names.
+        state_cls = type(self).inflicted_state_cls
+        if not (isinstance(state_cls, type) and issubclass(state_cls, states.State)):
+            return None
+        # Read off the class, never an instance: several declared states roll
+        # ``random`` in their constructors, and this runs on every serialize.
+        statustype = state_cls.STATUSTYPE
+        resists = getattr(target, "resists_status", None)
+        return {
+            "name": state_cls.STATUS_NAME,
+            "statustype": statustype,
+            "lethal": bool(state_cls.lethal),
+            "resisted": resists(statustype) if callable(resists) else None,
+        }
 
     def beats_until_resolve(self):
         """Beats from now until this move's effect lands, or None once it has.

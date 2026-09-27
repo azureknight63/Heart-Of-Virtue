@@ -9,7 +9,7 @@ what "green" means, and what to do when it stops.
 | Piece | Where | Notes |
 |---|---|---|
 | SPA (built `frontend/dist`) | `/var/www/html/wp-content/HeartOfVirtue`, served by the nginx container `webserver`, which mounts the web root read-only; the deploy writes through the `wordpress` (php-fpm) container, which mounts the same volume writable | static files beside WordPress; the web server must rewrite every `/games/HeartOfVirtue/*` route to `index.html` |
-| API (gunicorn, `wsgi.py`) | host, systemd unit `heart-of-virtue`, port 5000 | checkout at `/home/alex/heart-of-virtue`, `.venv`; `FLASK_ENV=production` comes from the unit or the server's `.env` (`wsgi.py` refuses anything else). The unit is mirrored in this repo at `deploy/heart-of-virtue.service` — a **gthread** worker, `-w 1 --threads 32`, `--timeout 120`. `deploy.ps1` restarts that unit but does not install it, so changing the file means copying it to the server yourself; `tests/test_npc_chat_turn_budget.py` holds the Procfile and the chat budget to it |
+| API (gunicorn, `wsgi.py`) | host, systemd unit `heart-of-virtue`, port 5000 | checkout at `/home/alex/heart-of-virtue`, `.venv`; `FLASK_ENV=production` comes from the unit or the server's `.env` (`wsgi.py` refuses anything else). The unit is mirrored in this repo at `deploy/heart-of-virtue.service` — a **gthread** worker, `-w 1 --threads 32`, `--timeout 120`, plus `-c deploy/gunicorn.conf.py` for log redaction (#741). `deploy.ps1` restarts that unit but does not install it, so changing the file means copying it to the server yourself; `tests/test_npc_chat_turn_budget.py` holds the Procfile and the chat budget to it, and `tests/test_log_redaction_foreign_sinks.py` holds the unit and the Procfile to the `-c` flag |
 | `/games/HeartOfVirtue/api/*` | proxied by the web server to the host API | the SPA's own `/api/info` fetch proves this path works |
 
 Not in this repo and not visible from here: the web server's config inside the
@@ -59,6 +59,47 @@ and the order they go in for the gthread switch are in
 The code and the unit must change together when a change depends on the
 worker, as this one did: the one-loop `db.py` fails every query under the old
 eventlet unit.
+
+**Pending unit install (#741, 2026-09-27): `-c deploy/gunicorn.conf.py`.** The
+unit now loads a gunicorn config that puts the secret-redaction filter on
+gunicorn's own `gunicorn.error` / `gunicorn.access` loggers, which write
+`/var/log/heart-of-virtue/error.log` and `access.log` through handlers
+`structured_log.configure_logging` never sees. Until the edited unit is
+installed, **production's error.log stays unredacted**: an exception that
+escapes Flask (engineio's middleware, for instance) lands there with its full
+traceback. This needs the `ubuntu@` install step at the next deploy, and the
+order is the reverse of the gthread switch's — **code first, then the unit**,
+because the new unit fails to boot on a checkout that has no
+`deploy/gunicorn.conf.py` (nor `src/api/log_redaction.py`, which it imports):
+
+1. `deploy.ps1` (here) — ships the code; the old unit ignores the new file.
+2. **ubuntu@:** copy and install the unit as in
+   [gthread-switch-runbook.md](gthread-switch-runbook.md) step 4, then
+   `sudo systemctl restart heart-of-virtue`.
+3. **alex@:** `systemctl status heart-of-virtue` and
+   `ps -o args= -p "$(systemctl show heart-of-virtue -p MainPID --value)"` should show
+   `-c deploy/gunicorn.conf.py`.
+
+A backend rollback to a commit before #741 must put the previous unit back
+first, for the same reason. The rollback help `deploy.ps1` prints checks for
+this before its restart command, whether or not it could name the commit
+(`cat-file -e <sha>:deploy/gunicorn.conf.py`, printing `PRE_741_UNIT_NEEDED`
+when the file is missing — or when `<sha>` is not in the server's object
+store at all). The previous unit comes from the target commit itself:
+
+```bash
+git -C /home/alex/heart-of-virtue show <sha>:deploy/heart-of-virtue.service > /tmp/heart-of-virtue.service
+```
+
+then install `/tmp/heart-of-virtue.service` as `ubuntu@` as in
+[gthread-switch-runbook.md](gthread-switch-runbook.md) step 4.
+
+The handlers werkzeug, engineio and socketio attach to the worker's stderr
+(the journal) are covered without the unit change: `configure_logging` redacts
+those loggers at the logger (`src/api/log_redaction.py`,
+`SELF_HANDLING_LOGGERS`). That is not all of stderr: anything written there
+without going through `logging` — a raw traceback from
+`threading.excepthook` in a thread that dies, for one — is not redacted.
 
 Every build the script deploys carries the commit it was built from, in a
 `.hov-commit` file beside its `index.html`. That is how a rollback names the

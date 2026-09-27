@@ -516,6 +516,16 @@ class Combatant:
         import src.functions as functions
         return functions.combat_status_resistance(self, status_type, default)
 
+    def resists_status(self, status_type):
+        """True when a status of ``status_type`` can never land on this combatant.
+
+        Delegates to :func:`functions.status_immune`, the same rule
+        ``functions.inflict``'s fast-fail uses. (``force``/``min_chance``
+        callers bypass it, which is theirs to declare.)
+        """
+        import src.functions as functions
+        return functions.status_immune(self, status_type)
+
     def clamp_hp(self):
         """Clamp ``hp`` into [0, maxhp], coercing non-finite hp/maxhp to 0.
 

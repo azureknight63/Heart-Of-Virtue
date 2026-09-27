@@ -11,6 +11,7 @@ from src.npc._shop import MerchantShopMixin
 from src.items import Item, Shortsword, Restorative, Gold, Consumable
 from src.objects import Container
 from src.shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
+from tests._fake_world import bind_rooms_to_shared_map
 
 # Fakes for room/universe/player
 class FakeRoom:
@@ -46,8 +47,7 @@ class FakeRoom:
         return item
 
 class FakeUniverse:
-    def __init__(self, rooms):
-        self.map = rooms
+    """Plain stand-in for ``room.universe``; call sites bind the rooms' map."""
 
 class FakePlayer:
     def __init__(self):
@@ -168,8 +168,8 @@ def test_reset_stock_state_edge_cases():
     assert m.inventory == []
     
     # 3. room_items list remove throws exception & isinstance(room, str) check (L288)
-    uni = FakeUniverse([room, "string_room_to_trigger_L288"])
-    room.universe = uni
+    bind_rooms_to_shared_map([room, "string_room_to_trigger_L288"])
+    room.universe = FakeUniverse()
     
     class FaultyList(list):
         def remove(self, x):

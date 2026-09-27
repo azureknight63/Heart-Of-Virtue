@@ -2700,6 +2700,43 @@ class TestTelegraphSeverity:
 
         assert getattr(moves, cls_name).telegraph_severity == expected
 
+    def test_wail_strike_declares_heavy_itself(self):
+        """#740: WailStrike centres on 1.26x but ignores protection, so it is
+        heavy by the maintainer's call -- a declaration, not an inheritance."""
+        from src.moves import WailStrike
+
+        assert "telegraph_severity" in WailStrike.__dict__
+        assert WailStrike.telegraph_severity == "heavy"
+
+    def test_sub_floor_heavy_moves_declare_it_on_their_own_class(self):
+        """A move whose hit centres below the floor but still telegraphs as
+        "heavy" is an exception to the Move comment's rule of thumb, so it
+        must be a deliberate override on its own class -- never inherited
+        from a surge base whose power the move then scales down (#740).
+        """
+        with patch("builtins.print"):
+            population = {
+                move_cls: move_cls(owner_cls())
+                for move_cls, owner_cls in _NPC_MOVES.items()
+            }
+        assert population
+        sub_floor_heavy = {
+            cls
+            for cls, move in population.items()
+            if move.effective_damage_multiplier() < HEAVY_MULTIPLIER_FLOOR
+            and cls.telegraph_severity == "heavy"
+        }
+        assert sub_floor_heavy, "no sub-floor heavy move found; guard is vacuous"
+        inherited = sorted(
+            cls.__name__
+            for cls in sub_floor_heavy
+            if "telegraph_severity" not in cls.__dict__
+        )
+        assert not inherited, (
+            f"moves below {HEAVY_MULTIPLIER_FLOOR}x inherit 'heavy' rather "
+            f"than declaring it: {inherited}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # statustype -> wire category
@@ -2730,12 +2767,25 @@ def _statustypes_declared_in_states_module():
         if isinstance(target, ast.Name)
     }
     found = set()
+
+    def _resolve(value):
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            found.add(value.value)
+        elif isinstance(value, ast.Name) and value.id in constants:
+            found.add(constants[value.id])
+
     for node in ast.walk(tree):
         if isinstance(node, ast.keyword) and node.arg == "statustype":
-            if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
-                found.add(node.value.value)
-            elif isinstance(node.value, ast.Name) and node.value.id in constants:
-                found.add(constants[node.value.id])
+            _resolve(node.value)
+        # A class-level ``STATUSTYPE = ...`` that the constructor passes on as
+        # ``statustype=self.STATUSTYPE`` (see ``State.STATUSTYPE``).
+        if isinstance(node, ast.ClassDef):
+            for stmt in node.body:
+                if isinstance(stmt, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == "STATUSTYPE"
+                    for t in stmt.targets
+                ):
+                    _resolve(stmt.value)
         # `State.__init__`'s own signature default, which no keyword node covers.
         if isinstance(node, ast.FunctionDef):
             args = node.args
@@ -2876,8 +2926,10 @@ def _hp_taken_by_execute(move_cls, owner_cls):
 
 #: What :func:`_land_execute` returns. ``dealt`` is every damage value
 #: ``execute()`` handed to ``hit()`` -- after protection and the move's own
-#: scaling, before the target's resistances.
-_Landed = namedtuple("_Landed", "move hp_before hp_after dealt")
+#: scaling, before the target's resistances. ``inflicted`` is the class of
+#: every state ``execute()`` tried to ``inflict()`` on its target, landed or
+#: resisted (issue #720).
+_Landed = namedtuple("_Landed", "move hp_before hp_after dealt inflicted")
 
 
 def _land_execute(move_cls, owner_cls, user_damage=None):
@@ -2938,7 +2990,21 @@ def _land_execute(move_cls, owner_cls, user_damage=None):
             dealt.append(damage)
             return real_hit(self, damage, glance)
 
-        with patch("random.randint", return_value=0), patch(
+        import src.functions as functions
+
+        real_inflict = functions.inflict
+        inflicted = []
+
+        def spy_inflict(state, whom, *args, **kwargs):
+            # Attempts, not landings: the declaration names what the move
+            # TRIES to inflict; whether it lands is the target's resistance.
+            if whom is target:
+                inflicted.append(type(state))
+            return real_inflict(state, whom, *args, **kwargs)
+
+        with patch.object(functions, "inflict", spy_inflict), patch(
+            "random.randint", return_value=0
+        ), patch(
             "random.uniform", side_effect=lambda a, b: (a + b) / 2
         ), patch("random.random", return_value=0.5), patch(
             "src.moves._base.facing_damage_multiplier", return_value=1.0
@@ -2958,7 +3024,7 @@ def _land_execute(move_cls, owner_cls, user_damage=None):
     assert dealt or target.hp >= hp_before, (
         f"{move_cls.__name__}: target HP fell but hit() never ran"
     )
-    return _Landed(move, hp_before, target.hp, dealt)
+    return _Landed(move, hp_before, target.hp, dealt, inflicted)
 
 
 class TestDealsDamageMatchesExecute:
@@ -3100,3 +3166,252 @@ class TestExecuteDamageIsUnchangedBy721:
         import src.moves as moves
 
         assert _measure_execute(getattr(moves, cls_name))[1] == expected
+
+
+# ---------------------------------------------------------------------------
+# inflicted_state_cls vs execute() -- issue #720
+#
+# DeathKnell deals no HP damage (#714) and only attempts states.Death, so the
+# advisor read it as nothing incoming. ``Move.inflicted_state_cls`` is the
+# engine's answer to "which status does this move try to put on its target?",
+# shipped on the wire with whether the target resists it. The declaration is
+# checked against what ``execute()`` actually attempts, never a hand list.
+# ---------------------------------------------------------------------------
+
+
+class TestInflictedStatusMatchesExecute:
+    """``Move.inflicted_state_cls`` must name the state ``execute()`` attempts.
+
+    A lethal move that declared nothing would silently delete the advisor's
+    warning for it -- the failure #720 exists to close -- so every NPC-used
+    move is landed and its ``inflict()`` calls on the target are recorded.
+    """
+
+    def test_the_population_is_real(self):
+        """Floor: an enumerator that found nothing, or a spy that recorded
+        nothing, would pass every parametrized case below."""
+        import src.states as states
+        from src.moves import DeathKnell
+
+        observed = {
+            cls: _land_execute(cls, owner).inflicted
+            for cls, owner in _NPC_MOVES.items()
+        }
+        assert len(observed) >= _MIN_POPULATION, observed
+        assert any(observed.values()), "no status-inflicting move found"
+        assert not all(observed.values()), "no status-free move found"
+        assert observed[DeathKnell] == [states.Death]
+
+    @pytest.mark.parametrize(
+        "move_cls",
+        sorted(_NPC_MOVES, key=lambda c: c.__name__),
+        ids=lambda c: c.__name__,
+    )
+    def test_declaration_matches_execute(self, move_cls):
+        landed = _land_execute(move_cls, _NPC_MOVES[move_cls])
+        declared = landed.move.inflicted_state_cls
+        expected = {declared} if declared is not None else set()
+        assert set(landed.inflicted) == expected, (
+            f"{move_cls.__name__} declares inflicted_state_cls={declared!r} but "
+            f"execute() attempted {landed.inflicted!r} on its target"
+        )
+
+
+class TestStatusThreat:
+    """``Move.status_threat(target)``: the declared status, whether it is
+    lethal, and whether ``target`` resists it (``Combatant.resists_status``)."""
+
+    def _knell(self, death_resistance=None):
+        from tests._combat_fixtures import wraith_casting
+
+        _, move, jean = wraith_casting(
+            "DeathKnell", jean=_player(), death_resistance=death_resistance
+        )
+        return move, jean
+
+    def test_only_death_is_lethal(self):
+        import src.states as states
+
+        lethal = {
+            name
+            for name, cls in vars(states).items()
+            if inspect.isclass(cls)
+            and issubclass(cls, states.State)
+            and cls.lethal
+        }
+        assert lethal == {"Death"}
+
+    def test_default_jean_resists_death_knell(self):
+        move, jean = self._knell()
+        assert move.status_threat(jean) == {
+            "name": "Death",
+            "statustype": "death",
+            "lethal": True,
+            "resisted": True,
+        }
+
+    def test_a_jean_without_death_resistance_does_not(self):
+        move, jean = self._knell(death_resistance=0.0)
+        threat = move.status_threat(jean)
+        assert threat["lethal"] is True and threat["resisted"] is False
+
+    def test_partial_resistance_is_not_resisted(self):
+        """inflict() still rolls ``chance * (1 - resistance)``: 0.5 is a coin
+        flip on dying, not a resist."""
+        move, jean = self._knell(death_resistance=0.5)
+        assert move.status_threat(jean)["resisted"] is False
+
+    def test_unknown_target_leaves_resisted_open(self):
+        move, _ = self._knell()
+        assert move.status_threat(None)["resisted"] is None
+
+    def test_a_status_free_move_has_no_threat(self):
+        from src.moves import NpcAttack
+
+        with patch("builtins.print"):
+            npc = _make_npc()
+        assert NpcAttack(npc).status_threat(_player()) is None
+
+    def test_poison_is_published_but_not_lethal(self):
+        from src.moves import VenomClaw
+
+        with patch("builtins.print"):
+            npc = _make_npc()
+        threat = VenomClaw(npc).status_threat(_player())
+        assert threat["name"] == "Poisoned" and threat["lethal"] is False
+
+    def test_reading_the_threat_does_not_consume_the_global_rng(self):
+        """Serialization runs every beat; Poisoned's constructor rolls its
+        duration, so building one to read its name advanced ``random`` and
+        shifted every later combat roll (K1)."""
+        import random
+
+        from src.moves import VenomClaw
+
+        with patch("builtins.print"):
+            npc = _make_npc()
+        move = VenomClaw(npc)
+        jean = _player()
+        before = random.getstate()
+        move.status_threat(jean)
+        assert random.getstate() == before
+
+    def test_a_degraded_target_does_not_raise(self):
+        """No State is constructed, so a target the state's constructor
+        could not handle (here: a bare object) still yields the threat."""
+        from src.moves import VenomClaw
+
+        with patch("builtins.print"):
+            npc = _make_npc()
+        threat = VenomClaw(npc).status_threat(object())
+        assert threat["name"] == "Poisoned" and threat["resisted"] is None
+
+
+class TestDeclaredStateClassConstants:
+    """``status_threat`` reads ``STATUS_NAME``/``STATUSTYPE`` off the class
+    instead of constructing a throwaway State; they must equal what an
+    instance carries, for every state an NPC-used move declares."""
+
+    def _declared(self):
+        return {cls.inflicted_state_cls for cls in _NPC_MOVES} - {None}
+
+    def test_the_population_is_real(self):
+        import src.states as states
+
+        declared = self._declared()
+        assert states.Death in declared and states.Poisoned in declared
+
+    def test_class_constants_match_an_instance(self):
+        import random
+
+        saved = random.getstate()
+        try:
+            random.seed(720)
+            for state_cls in self._declared():
+                instance = state_cls(_player())
+                assert state_cls.STATUS_NAME == instance.name, state_cls
+                assert state_cls.STATUSTYPE == instance.statustype, state_cls
+        finally:
+            random.setstate(saved)
+
+
+class TestEveryDeclaredStateHasItsConstants:
+    """F3 #2: ``status_threat`` ships ``STATUS_NAME``/``STATUSTYPE`` read off
+    the declared class. A declared state still on the ``State`` defaults
+    (None) would reach the advisor nameless and -- ``resists_status(None)``
+    -- reported unresisted. Walks EVERY ``Move`` subclass in every
+    ``src.moves`` submodule (player, ally and NPC alike), not ``_NPC_MOVES``.
+    """
+
+    @staticmethod
+    def _declaring_moves():
+        import importlib
+        import pkgutil
+
+        import src.moves as moves_pkg
+        from src.moves._base import Move
+
+        found = set()
+        for info in pkgutil.iter_modules(moves_pkg.__path__):
+            module = importlib.import_module(f"src.moves.{info.name}")
+            for _, obj in inspect.getmembers(module, inspect.isclass):
+                if issubclass(obj, Move):
+                    found.add(obj)
+        return found, {c for c in found if c.inflicted_state_cls is not None}
+
+    def test_the_population_is_real(self):
+        from src.moves import DeathKnell, VenomClaw
+
+        every_move, declaring = self._declaring_moves()
+        assert len(every_move) >= 80, len(every_move)
+        assert {DeathKnell, VenomClaw} <= declaring
+
+    def test_every_declared_state_defines_name_and_type(self):
+        import src.states as states
+
+        _, declaring = self._declaring_moves()
+        missing = sorted(
+            f"{move_cls.__name__} -> {move_cls.inflicted_state_cls!r}"
+            for move_cls in declaring
+            if not (
+                inspect.isclass(move_cls.inflicted_state_cls)
+                and issubclass(move_cls.inflicted_state_cls, states.State)
+                and move_cls.inflicted_state_cls.STATUS_NAME
+                and move_cls.inflicted_state_cls.STATUSTYPE
+            )
+        )
+        assert not missing, missing
+
+
+class TestStatusThreatReadsTheClassDeclaration:
+    """F3 #3: ``inflicted_state_cls`` is read off the move's CLASS and must be
+    a ``State`` subclass. An instance attribute (a crafted save can set one)
+    or a non-State declaration yields no threat rather than whatever object
+    it names."""
+
+    def _npc_attack(self):
+        from src.moves import NpcAttack
+
+        with patch("builtins.print"):
+            npc = _make_npc()
+        return NpcAttack(npc)
+
+    def test_an_instance_attribute_is_ignored(self):
+        import src.states as states
+
+        move = self._npc_attack()
+        move.inflicted_state_cls = states.Death
+        assert move.status_threat(_player()) is None
+
+    @pytest.mark.parametrize(
+        "bogus",
+        [int, "Death", object()],
+        ids=["non-State-class", "string", "instance"],
+    )
+    def test_a_non_state_declaration_is_no_threat(self, bogus):
+        from src.moves import NpcAttack
+
+        with patch("builtins.print"):
+            npc = _make_npc()
+        bad_cls = type("BadDecl", (NpcAttack,), {"inflicted_state_cls": bogus})
+        assert bad_cls(npc).status_threat(_player()) is None

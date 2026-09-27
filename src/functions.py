@@ -808,10 +808,19 @@ def inflict(state, target, chance=1.0, force=False, min_chance=0.0):
     """
     # Fast-fail path unless forcing
     if not force:
-        resistance = target.status_resistance.get(getattr(state, "statustype", ""), 0.0)
+        statustype = getattr(state, "statustype", "")
+        if min_chance <= 0 and status_immune(target, statustype):
+            return False  # Immune
+        # The RAW read below is deliberate, not a missed use of
+        # combat_status_resistance: the roll must stay exactly the
+        # pre-predicate formula, which TestInflictOutcomeUnchangedByTheImmunity
+        # Predicate (tests/test_functions_stack_inflict.py) pins. Edge: a
+        # numeric-string resistance is coerced by the predicate ("1" is
+        # immune) but not here ("0.5" still raises TypeError, as it always did).
+        resistance = target.status_resistance.get(statustype, 0.0)
         effective_chance = max(min_chance, chance * (1 - resistance))
         if effective_chance <= 0:
-            return False  # Immune
+            return False  # No chance (chance <= 0, or out-of-range data)
         if effective_chance < 1.0:
             # Only roll RNG if we aren't guaranteed success
             if random.random() > effective_chance:
@@ -1417,6 +1426,17 @@ def combat_status_resistance(target, status_type, default=0.0):
     if not math.isfinite(value):
         value = float(default)
     return min(1.0, max(0.0, value))
+
+
+def status_immune(target, status_type):
+    """True when a status of ``status_type`` can never land on ``target``.
+
+    ``inflict`` rolls ``chance * (1 - resistance)``, so only a full (clamped)
+    resistance of 1.0 makes the attempt impossible; anything less is a
+    chance, not a resist. The single immunity rule behind both
+    ``Combatant.resists_status`` and ``inflict``'s fast-fail.
+    """
+    return combat_status_resistance(target, status_type) >= 1.0
 
 
 def end_combat_cleanup(target):
