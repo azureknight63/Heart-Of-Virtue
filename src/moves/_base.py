@@ -1509,6 +1509,10 @@ class Move:  # master class for all moves
     # Jean from full to dead, labelled DEADLY. Heavy moves OPT IN by
     # overriding this; the author names the threat rather than a threshold
     # guessing it (2.0x of a Slime is a scratch, 1.8x of a boss a wound).
+    # A move below ~2x may still be "heavy" when something else makes it land
+    # like one -- WailStrike centres on 1.26x but ignores protection (#740) --
+    # but it must declare that on its own class, not inherit it; the
+    # TestTelegraphSeverity guard fails an inherited sub-2x "heavy".
     # The serializer reads it off the move with a getattr default, so a
     # rename would degrade every warning to "normal" without a missing key;
     # tests/test_wire_field_contract.py::
