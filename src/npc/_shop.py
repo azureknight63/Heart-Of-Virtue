@@ -227,7 +227,12 @@ class MerchantShopMixin:
     # ── Room/item helpers ──────────────────────────────────────────────────────
 
     def _resolve_rooms_source(self):
-        """Return the map dict for the current room, or None if unavailable."""
+        """Return the map dict for the current room, or None if unavailable.
+
+        Kept as the mixin's seam over :func:`merchant_rooms_source` so tests can
+        stub it per merchant; ``test_issue_739_unique_lands_in_crate`` pins that
+        it returns that function's result by identity.
+        """
         return merchant_rooms_source(self)
 
     def _remove_placed_item_from_room(self, item: Item):

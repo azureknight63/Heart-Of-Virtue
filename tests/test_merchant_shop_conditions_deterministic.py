@@ -23,16 +23,15 @@ class DummyRoom:
         return cls(merchandise=merchandise)
 
 class DummyUniverse:
-    def __init__(self, rooms):
-        bind_rooms_to_shared_map(rooms)
+    """Plain stand-in for ``room.universe``; the rooms' map is bound by the builder."""
 
 
 def make_merchant():
     m = Merchant(name="Tester", description="desc", damage=1, aggro=False, exp_award=0,
                  stock_count=0, always_stock=None, specialties=None, enchantment_rate=0.0)
     room = DummyRoom()
-    universe = DummyUniverse([room])
-    room.universe = universe
+    bind_rooms_to_shared_map([room])
+    room.universe = DummyUniverse()
     m.current_room = room
     return m
 

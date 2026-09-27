@@ -43,12 +43,12 @@ def test_authored_stock_is_kept_rather_than_rerolled():
     player = fresh_built_world()
     milo = merchant_on_map(player.universe, "milos-shop", "Milo")
     milos_shop = map_named(player.universe, "milos-shop")
-    authored = [i.name for i in milo.inventory]
+    authored = [item.name for item in milo.inventory]
     assert "Restorative" in authored
 
     assert milo.stock_if_empty() is False
-    assert [i.name for i in milo.inventory] == authored
-    assert "Spear" in [i.name for i in milos_shop[(2, 3)].items_here]
+    assert [item.name for item in milo.inventory] == authored
+    assert "Spear" in [item.name for item in milos_shop[(2, 3)].items_here]
 
 
 def _load_through_the_api(save_blob):
@@ -74,7 +74,7 @@ def test_loading_a_save_does_not_reroll_stock_or_the_unique_registry():
     jambo = merchant_on_map(saved.universe, "grondia-jambos_shop", "Jambo")
     # A claimed unique makes the registry non-empty, so "unchanged" means something.
     assert UniqueItemInjectionCondition().inject_unique_items(jambo)
-    stock = [i.name for i in jambo.inventory]
+    stock = [item.name for item in jambo.inventory]
     claims = set(saved.universe.unique_items_spawned)
     assert claims
 
@@ -84,7 +84,7 @@ def test_loading_a_save_does_not_reroll_stock_or_the_unique_registry():
     assert loaded is not None, "load_game rejected the save"
     restored = merchant_on_map(loaded.universe, "grondia-jambos_shop", "Jambo")
     assert restored is not jambo
-    assert [i.name for i in restored.inventory] == stock
+    assert [item.name for item in restored.inventory] == stock
     assert loaded.universe.unique_items_spawned == claims
 
 

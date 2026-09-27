@@ -65,8 +65,7 @@ def make_merchant(name="Tester"):
             return item
 
     class FakeUniverse:
-        def __init__(self, rooms):
-            bind_rooms_to_shared_map(rooms)
+        """Plain stand-in for ``room.universe``; the rooms' map is bound below."""
 
     m = Merchant(
         name=name,
@@ -77,8 +76,8 @@ def make_merchant(name="Tester"):
         stock_count=5,
     )
     room = FakeRoom()
-    universe = FakeUniverse([room])
-    room.universe = universe
+    bind_rooms_to_shared_map([room])
+    room.universe = FakeUniverse()
     m.current_room = room
     return m
 
