@@ -431,8 +431,10 @@ def llm_gate_envs(names: Iterable[str]) -> Tuple[str, ...]:
 #:   the state-guard revision call never run and their tests pass for the
 #:   wrong reason. Blanking is safe: ``_round_timeout`` wraps the ``float()``
 #:   in ``except (TypeError, ValueError)``.
-#: * ``NPC_CHAT_LLM_FALLBACK`` -- three-state. ``_remote_fallback_setting``
-#:   reads a blank as "unset", which is the default this suite wants.
+#: * ``NPC_CHAT_LLM_FALLBACK`` / ``COMBAT_LLM_FALLBACK`` -- three-state, one
+#:   per feature (``ProviderChainMixin._FALLBACK_ENV_VARS``).
+#:   ``_remote_fallback_setting`` reads a blank as "unset", which is the
+#:   default this suite wants.
 #: * ``LLM_LOG_RAW_BODIES`` -- transcribes whole provider bodies to the log.
 #: * ``OPENROUTER_SITE`` / ``_SITE_TITLE`` -- ranking headers; both read as
 #:   ``os.getenv(...).strip() or None``, so blank is exactly absent.
@@ -448,6 +450,7 @@ def llm_gate_envs(names: Iterable[str]) -> Tuple[str, ...]:
 #: call the blanked chain never dials. Fix the read sites (give them
 #: ``_round_timeout``'s ``except``) before adding them here.
 LLM_SETTING_ENVS = (
+    "COMBAT_LLM_FALLBACK",
     "LLM_LOG_RAW_BODIES",
     "NPC_CHAT_LLM_FALLBACK",
     "NPC_CHAT_LLM_TIMEOUT",
