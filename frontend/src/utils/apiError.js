@@ -252,7 +252,7 @@ const GATEWAY_UNAVAILABLE_STATUSES = new Set([502, 503, 504])
  * which is where the player lands anyway — the axios 401 interceptor
  * (api/client.js) calls redirectToLogin() before this toast is shown, and
  * autosave goes through that client. Every other 4xx is the server refusing
- * the save. Only a failure with no `response` at all (dropped connection,
+ * the save. Only a failure with no error status (dropped connection,
  * timeout) keeps the network-flavored copy.
  *
  * None of the copy promises the lost save will be retried: there is no retry
@@ -260,11 +260,18 @@ const GATEWAY_UNAVAILABLE_STATUSES = new Set([502, 503, 504])
  * so the next attempt is simply the next scheduled autosave, a few actions
  * later.
  *
+ * Status -> copy: 401 sign in again; 403 session can't save; 502/503/504 busy
+ * or restarting; other 5xx couldn't save; other 4xx refused; no error status
+ * check your connection.
+ *
  * @param {*} err - The rejected save call, as axios delivers it.
  * @returns {string} Player-facing autosave failure copy.
  */
 export function autosaveErrorMessage(err) {
     const status = err?.response?.status
+    if (status === 401) {
+        return 'Your session expired; sign in again to keep saving.'
+    }
     if (status === 403) {
         return 'Your progress could not be saved: this session can\'t save games (guest/test session). '
             + 'Sign in with a full account to keep your progress.'
@@ -272,15 +279,13 @@ export function autosaveErrorMessage(err) {
     if (GATEWAY_UNAVAILABLE_STATUSES.has(status)) {
         return 'The server is busy or restarting. Your game continues and will try to save again as you play.'
     }
-    if (status === 401) {
-        return 'Your session expired; sign in again to keep saving.'
-    }
     if (status >= 500) {
         return "The server couldn't save your progress. Your game continues. "
             + 'If this keeps happening, please send it through Feedback.'
     }
     if (status >= 400) {
-        return 'The server refused the save.'
+        return 'The server refused the save. Your game continues. '
+            + 'If this keeps happening, please send it through Feedback.'
     }
     return 'Failed to save your progress. Check your connection.'
 }

@@ -315,7 +315,10 @@ describe('autosaveErrorMessage', () => {
   it.each([400, 404, 409, 413, 422])('reports a %i as the server refusing the save (any 4xx other than 401/403)', (status) => {
     const msg = autosaveErrorMessage({ response: { status } });
     expect(msg).not.toMatch(/connection/i);
-    expect(msg).toBe('The server refused the save.');
+    expect(msg).toBe(
+      'The server refused the save. Your game continues. '
+      + 'If this keeps happening, please send it through Feedback.'
+    );
   });
 
   it.each([502, 503, 504])('reports a %i as the server being busy or restarting', (status) => {
