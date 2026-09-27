@@ -421,14 +421,15 @@ class UniqueItemInjectionCondition(ShopCondition):
             setattr(item, "unique_condition", self.name or "Unique Item Injection")
 
             # Attempt to locate a merchant container (first match)
-            container = None
             try:
-                for room in iter_rooms(merchant_rooms_source(merchant)):
-                    for obj in iter_merchant_containers(room, merchant):
-                        container = obj
-                        break
-                    if container is not None:
-                        break
+                container = next(
+                    (
+                        obj
+                        for room in iter_rooms(merchant_rooms_source(merchant))
+                        for obj in iter_merchant_containers(room, merchant)
+                    ),
+                    None,
+                )
             except Exception as exc:  # noqa: BLE001
                 # Stays broad so a malformed world never aborts the injection
                 # (that would leak the already-claimed unique_items_spawned

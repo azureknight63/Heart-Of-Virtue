@@ -14,6 +14,7 @@ import pytest
 from src.items import Restorative, Gold, Shortsword
 from src.npc import Merchant
 from src.api.serializers.shop_serializer import ShopSerializer, _serialize_shop_item, _serialize_buyback_item
+from tests._fake_world import bind_rooms_to_shared_map
 
 
 # ---------------------------------------------------------------------------
@@ -65,12 +66,7 @@ def make_merchant(name="Tester"):
 
     class FakeUniverse:
         def __init__(self, rooms):
-            # A real Universe has no ``map`` (issue #739): each room carries the
-            # coordinate-keyed dict of its map as ``room.map``, like a MapTile.
-            game_map = {(index, 0): room for index, room in enumerate(rooms)}
-            for room in rooms:
-                if not isinstance(room, str):
-                    room.map = game_map
+            bind_rooms_to_shared_map(rooms)
 
     m = Merchant(
         name=name,

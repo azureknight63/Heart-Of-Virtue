@@ -7,6 +7,7 @@ issue #727), so every release is checked against that world's registry.
 from src.items import AncientRelic, CrystalTear, DragonHeartGem
 from src.npc import Merchant
 from src.objects import Container
+from tests._fake_world import bind_rooms_to_shared_map
 
 
 class DummyRoom:
@@ -17,12 +18,7 @@ class DummyRoom:
 
 class DummyUniverse:
     def __init__(self, rooms):
-        # A real Universe has no ``map`` (issue #739): each room carries the
-        # coordinate-keyed dict of its map as ``room.map``, like a MapTile.
-        game_map = {(index, 0): room for index, room in enumerate(rooms)}
-        for room in rooms:
-            if not isinstance(room, str):
-                room.map = game_map
+        bind_rooms_to_shared_map(rooms)
         self.unique_items_spawned = set()
 
 
