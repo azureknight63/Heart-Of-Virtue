@@ -13,20 +13,27 @@
 # of which production uses).
 #
 # Why the flags matter to application code:
-#   --worker-class eventlet   many requests are served CONCURRENTLY in one
-#                             process (greenlets, cooperative). Two requests
-#                             from one player can interleave, which is what
-#                             GameService's chat-turn and loot-phase locks are
-#                             for. gunicorn's eventlet worker monkey-patches
-#                             the stdlib, so those threading locks are green.
+#   gthread worker            many requests are served CONCURRENTLY in one
+#                             process, on real OS threads. Two requests from
+#                             one player can interleave, which is what
+#                             GameService's chat-turn and inventory locks are
+#                             for. It replaced the eventlet worker on
+#                             2026-09-26: eventlet's monkey-patching hung
+#                             asyncio DB calls on Python 3.13 (#726), and
+#                             src/api/db.py's one-loop client cannot run under
+#                             it. tests/test_npc_chat_turn_budget.py rejects a
+#                             patching worker here.
+#   --threads 32              the concurrency limit. A chat turn can hold a
+#                             thread for ~21s and every connected Socket.IO
+#                             client holds one while connected (the combat
+#                             socket is off in production today).
 #   -w 1                      one process, and sessions live in its memory.
 #                             Raising this breaks sessions until they move to
 #                             shared storage.
 #   --timeout 120             for a NON-sync worker this is a liveness
 #                             heartbeat, not a per-request deadline: a long
-#                             request does not kill the worker, but one that
-#                             blocks the event loop (unpatched C-level I/O)
-#                             does, at 120s.
+#                             request does not kill the worker, but a stalled
+#                             main loop does, at 120s.
 [Unit]
 Description=Heart of Virtue Flask API
 After=network.target docker.service
@@ -37,7 +44,7 @@ WorkingDirectory=/home/alex/heart-of-virtue
 EnvironmentFile=/home/alex/heart-of-virtue/.env
 # Binds all interfaces, but ufw only admits port 5000 from the Docker network (nginx).
 ExecStart=/home/alex/heart-of-virtue/.venv/bin/gunicorn \
-    --worker-class eventlet -w 1 \
+    --worker-class gthread -w 1 --threads 32 \
     --bind 0.0.0.0:5000 \
     --timeout 120 \
     --access-logfile /var/log/heart-of-virtue/access.log \

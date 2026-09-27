@@ -90,7 +90,10 @@ def _declared_requirements():
 
 def _unit_worker_class():
     """The worker class the production unit runs, or ``sync`` if unflagged."""
-    unit = _UNIT.read_text(encoding="utf-8")
+    # The command, not the file: the unit's header comments discuss worker
+    # classes too, and a guard that reads a comment can be satisfied by one.
+    lines = [ln for ln in _UNIT.read_text(encoding="utf-8").splitlines() if not ln.lstrip().startswith("#")]
+    unit = "\n".join(lines)
     assert "gunicorn" in unit, f"{_UNIT.name} no longer runs gunicorn"
     match = re.search(r"--worker-class[ =](\S+)", unit)
     return match.group(1) if match else "sync"
@@ -145,18 +148,19 @@ def test_the_client_does_not_claim_a_process_model_the_unit_contradicts():
 def test_the_transport_pin_stands_until_its_rationale_is_re_derived():
     """Behaviour is unchanged on purpose: the old reason died, not the decision.
 
-    The pin now rests on (a) an unverified proxy, (b) ``async_mode="threading"``
-    under an eventlet worker, and (c) the pending move off eventlet (#653).
-    Until all three are settled, the client keeps polling and this says so.
+    The pin now rests on (a) an unverified proxy and (b) thread capacity on
+    the gthread worker. (``async_mode="threading"`` under eventlet, and the
+    pending move off eventlet, were settled when the unit moved to gthread on
+    2026-09-26.) Until both are settled, the client keeps polling.
     """
     assert _client_transports() == ("polling",), (
         "socketClient.js changed transports while #653's reasons still hold: "
-        "the proxy's Upgrade handling is unverified, async_mode=threading "
-        "under an eventlet worker is unsupported, and the worker is due to "
-        "migrate. Settle those first, then change this test."
+        "the proxy's Upgrade handling is unverified, and every connected "
+        "client holds one of the gthread worker's threads. Settle those "
+        "first, then change this test."
     )
     assert 'async_mode="threading"' in _APP.read_text(encoding="utf-8"), (
-        "src/api/app.py no longer pins async_mode=threading; under an "
-        "eventlet worker that is exactly the question #653 asks, so re-derive "
+        "src/api/app.py no longer pins async_mode=threading, the mode the "
+        "gthread worker and the transport pin were derived for; re-derive "
         "the pin rather than letting the two drift"
     )

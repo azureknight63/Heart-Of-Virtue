@@ -1171,141 +1171,75 @@ class TestDatabaseClass:
             if original_url:
                 os.environ["TURSO_DATABASE_URL"] = original_url
 
-    def test_get_client_creates_client_with_url(self, monkeypatch):
-        """monkeypatch, not os.environ: `src.api.db.Database` is a process-wide
-        singleton that reads TURSO_DATABASE_URL lazily, so a leaked value makes
-        a *later* test build a real libsql client and attempt real DNS against
-        test.example.com. That failed only in certain orderings, which
-        --dist loadfile happened to hide by putting the two files on different
-        workers. monkeypatch restores the environment at teardown.
-        """
+    # Everything below goes through the real code path with only
+    # libsql_client.create_client faked, on a PRIVATE instance: the module
+    # singleton is shared with every other test in the process, and these
+    # tests used to pass or fail depending on what an earlier one left in it.
+    # The client runs on Database's own loop thread (see the class docstring
+    # and tests/test_db_concurrent_callers.py for why).
+
+    @pytest.fixture
+    def fresh(self, monkeypatch):
         from src.api.db import Database
 
-        db = Database()
-        db._client = None
         monkeypatch.setenv("TURSO_DATABASE_URL", "libsql://test.example.com")
         monkeypatch.setenv("TURSO_AUTH_TOKEN", "test-token")
-        try:
-            with patch("src.api.db.libsql_client.create_client") as mock_create:
-                mock_client = MagicMock()
-                mock_create.return_value = mock_client
-                client = db.get_client()
-            assert client is mock_client
-            # The credentials must actually be forwarded: a client built
-            # without auth_token would authenticate as nobody and every query
-            # would fail at runtime, not here.
-            mock_create.assert_called_once_with(
-                "libsql://test.example.com", auth_token="test-token"
-            )
-            # ...and it is cached on the singleton for reuse.
-            assert db._client is mock_client
-        finally:
-            db._client = None
+        client = AsyncMock()
+        client.execute = AsyncMock(return_value="rows")
+        client.batch = AsyncMock(return_value=["r1", "r2"])
+        with patch("src.api.db.libsql_client.create_client", return_value=client) as create:
+            yield object.__new__(Database), client, create
 
-    def test_get_client_reuses_existing_valid_client(self):
-        from src.api.db import Database
-
-        db = Database()
-        mock_client = MagicMock()
-        mock_client._session = None  # No session → skip loop check
-        db._client = mock_client
-        try:
-            result = db.get_client()
-            assert result is mock_client
-        finally:
-            db._client = None
-
-    def test_get_client_recreates_when_session_closed(self, monkeypatch):
-        from src.api.db import Database
-
-        db = Database()
-        mock_client = MagicMock()
-        mock_session = MagicMock()
-        mock_session.closed = True
-        mock_client._session = mock_session
-        db._client = mock_client
-        monkeypatch.setenv("TURSO_DATABASE_URL", "libsql://test.example.com")
-        try:
-            with patch("src.api.db.libsql_client.create_client") as mock_create:
-                new_client = MagicMock()
-                mock_create.return_value = new_client
-                result = db.get_client()
-            assert result is new_client
-            # The stale client must be replaced, not merely bypassed --
-            # keeping it cached would leak its aiohttp session (issue #406).
-            assert db._client is new_client
-            assert db._client is not mock_client
-        finally:
-            db._client = None
+    def test_get_client_creates_one_client_with_url_and_reuses_it(self, fresh):
+        db, client, create = fresh
+        assert db.get_client() is client
+        assert db.get_client() is client
+        # Once: rebuilding per call was the churn behind #728.
+        create.assert_called_once_with("libsql://test.example.com", auth_token="test-token")
 
     @pytest.mark.asyncio
-    async def test_execute_delegates_to_client(self):
-        from src.api.db import Database
-
-        db = Database()
-        mock_client = AsyncMock()
-        mock_client.execute = AsyncMock(return_value="rows")
-        with patch.object(db, "get_client", return_value=mock_client):
-            result = await db.execute("SELECT ?", ["jean"])
+    async def test_execute_delegates_to_client(self, fresh):
+        db, client, _ = fresh
+        result = await db.execute("SELECT ?", ["jean"])
         assert result == "rows"
         # Params must be forwarded, or every parameterized query in the app
         # silently becomes an unbound one.
-        mock_client.execute.assert_awaited_once_with("SELECT ?", ["jean"])
+        client.execute.assert_awaited_once_with("SELECT ?", ["jean"])
 
     @pytest.mark.asyncio
-    async def test_execute_defaults_params_to_none(self):
-        from src.api.db import Database
-
-        db = Database()
-        mock_client = AsyncMock()
-        with patch.object(db, "get_client", return_value=mock_client):
-            await db.execute("SELECT 1")
-        mock_client.execute.assert_awaited_once_with("SELECT 1", None)
+    async def test_execute_defaults_params_to_none(self, fresh):
+        db, client, _ = fresh
+        await db.execute("SELECT 1")
+        client.execute.assert_awaited_once_with("SELECT 1", None)
 
     @pytest.mark.asyncio
-    async def test_batch_delegates_to_client(self):
-        from src.api.db import Database
-
-        db = Database()
-        mock_client = AsyncMock()
-        mock_client.batch = AsyncMock(return_value=["r1", "r2"])
-        with patch.object(db, "get_client", return_value=mock_client):
-            result = await db.batch(["stmt1", "stmt2"])
+    async def test_batch_delegates_to_client(self, fresh):
+        db, client, _ = fresh
+        result = await db.batch(["stmt1", "stmt2"])
         assert result == ["r1", "r2"]
-        mock_client.batch.assert_awaited_once_with(["stmt1", "stmt2"])
+        client.batch.assert_awaited_once_with(["stmt1", "stmt2"])
 
     @pytest.mark.asyncio
-    async def test_close_clears_client(self):
-        from src.api.db import Database
-
-        db = Database()
-        mock_client = AsyncMock()
-        mock_client.close = AsyncMock()
-        db._client = mock_client
+    async def test_close_closes_the_client_and_the_next_call_rebuilds(self, fresh):
+        db, client, create = fresh
+        await db.execute("SELECT 1")
         await db.close()
         # Both halves matter: dropping the reference without awaiting close()
         # leaks the aiohttp session, and awaiting close() without dropping the
         # reference hands the next caller a closed client.
-        mock_client.close.assert_awaited_once_with()
-        assert db._client is None
+        client.close.assert_awaited_once_with()
+        await db.execute("SELECT 1")
+        assert create.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_close_when_no_client_noop(self):
-        """Idempotent close: the second call must not construct a client.
-
-        This test previously had no assertion at all -- it passed as long as
-        `close()` did not raise, which would also be true of an
-        implementation that called `get_client()` first (opening a *new*
-        connection in order to close it).
-        """
-        from src.api.db import Database
-
-        db = Database()
-        db._client = None
-        with patch.object(Database, "get_client") as mock_get:
-            await db.close()
-        mock_get.assert_not_called()
-        assert db._client is None
+    async def test_close_when_no_client_noop(self, fresh):
+        """Idempotent close: it must not construct a client in order to close
+        one (an earlier version had no assertion and would have passed that)."""
+        db, client, create = fresh
+        await db.close()
+        await db.close()
+        create.assert_not_called()
+        client.close.assert_not_awaited()
 
 
 class TestGetGoldAmountLivesInGameService:

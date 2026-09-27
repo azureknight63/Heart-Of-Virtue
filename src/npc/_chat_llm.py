@@ -764,9 +764,9 @@ _CHAT_DEADLINE_SECONDS = 12.0
 # the Procfile -- one sync worker, 30s timeout, sessions in memory -- where a
 # request that outlived the timeout killed the worker and every player's
 # session with it. Production turned out to run something else entirely
-# (deploy/heart-of-virtue.service, read from the server 2026-09-19): an
-# eventlet worker, where requests are concurrent greenlets and --timeout 120
-# is a liveness heartbeat rather than a per-request deadline. So nothing kills
+# (deploy/heart-of-virtue.service): a concurrent worker -- eventlet then,
+# gthread since 2026-09-26 -- where --timeout 120 is a liveness heartbeat
+# rather than a per-request deadline. So nothing kills
 # a long turn; the ceiling stays because a player should not watch a spinner
 # for half a minute (maintainer decision 2026-09-19: keep a turn under ~25s).
 # The ceiling plus one nominal call must still stay inside the worker timeout

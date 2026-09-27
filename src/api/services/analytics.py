@@ -250,10 +250,9 @@ def run_with_private_client(work, timeout=None):
     """Run ``await work(client)`` on a private, short-lived libsql client.
 
     For code outside a request (the flush thread, the CLI, the digest thread).
-    Deliberately not ``src.api.db.db``: that singleton swaps its client whenever
-    it is used from a different event loop, and closes the old one if its loop
-    is running, which from another thread would close the client an in-flight
-    save request is using.
+    Deliberately not ``src.api.db.db``, the client every request shares: a
+    slow or unreachable analytics write, bounded here by its own timeouts,
+    then never occupies the connection a player's save is waiting on.
     """
     async def _run():
         client = create_client_from_env()

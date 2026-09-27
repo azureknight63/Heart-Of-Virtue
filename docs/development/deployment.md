@@ -9,7 +9,7 @@ what "green" means, and what to do when it stops.
 | Piece | Where | Notes |
 |---|---|---|
 | SPA (built `frontend/dist`) | `/var/www/html/wp-content/HeartOfVirtue`, served by the nginx container `webserver`, which mounts the web root read-only; the deploy writes through the `wordpress` (php-fpm) container, which mounts the same volume writable | static files beside WordPress; the web server must rewrite every `/games/HeartOfVirtue/*` route to `index.html` |
-| API (gunicorn, `wsgi.py`) | host, systemd unit `heart-of-virtue`, port 5000 | checkout at `/home/alex/heart-of-virtue`, `.venv`; `FLASK_ENV=production` comes from the unit or the server's `.env` (`wsgi.py` refuses anything else). The unit is mirrored in this repo at `deploy/heart-of-virtue.service` — an **eventlet** worker, `-w 1`, `--timeout 120`. `deploy.ps1` restarts that unit but does not install it, so changing the file means copying it to the server yourself; `tests/test_npc_chat_turn_budget.py` holds the Procfile and the chat budget to it |
+| API (gunicorn, `wsgi.py`) | host, systemd unit `heart-of-virtue`, port 5000 | checkout at `/home/alex/heart-of-virtue`, `.venv`; `FLASK_ENV=production` comes from the unit or the server's `.env` (`wsgi.py` refuses anything else). The unit is mirrored in this repo at `deploy/heart-of-virtue.service` — a **gthread** worker, `-w 1 --threads 32`, `--timeout 120`. `deploy.ps1` restarts that unit but does not install it, so changing the file means copying it to the server yourself; `tests/test_npc_chat_turn_budget.py` holds the Procfile and the chat budget to it |
 | `/games/HeartOfVirtue/api/*` | proxied by the web server to the host API | the SPA's own `/api/info` fetch proves this path works |
 
 Not in this repo and not visible from here: the web server's config inside the
@@ -30,20 +30,35 @@ the client sent — otherwise a client can spoof any IP and bypass the
 limiter. That confirmation requires reading the live container's web server
 config, which is not available from this repo.
 
-**gunicorn is held below 26 (issue #653).** gunicorn 26.0 removed the eventlet
-worker the unit runs, so `requirements-api.txt` says `gunicorn>=23.0,<26` and
-`eventlet>=0.40.3` (the floor gunicorn 24+ enforces when it starts that worker).
-The server's hand-installed eventlet 0.40.0 no longer satisfies that floor, so
-the next deploy's `pip install -r requirements-api.txt` **will upgrade eventlet**
-on the server (gunicorn is left alone if it is already inside the range). 0.40.0
-only boots under a gunicorn older than 24, and the server's gunicorn version has
-never been read — check `.venv/bin/gunicorn --version` and
-`.venv/bin/pip show eventlet` there before that deploy. The bound is a pin, not the fix: the pending
-migration moves the unit off `--worker-class eventlet` (and re-derives the
-client's polling-only Socket.IO transport, `frontend/src/api/socketClient.js`,
-on the new worker), after which the ceiling can lift.
-`tests/test_npc_chat_turn_budget.py` fails if the requirements admit a gunicorn
-without the worker class the unit names.
+**The worker is gthread (since 2026-09-26; it was eventlet).** The unit runs
+`gunicorn --worker-class gthread -w 1 --threads 32 --timeout 120`: one process,
+because sessions live in its memory, serving requests concurrently on real OS
+threads. It left eventlet for two measured reasons: under eventlet's
+monkey-patching, asyncio database calls never complete on Python 3.13 (#726),
+and `src/api/db.py` now runs its one Turso client on a dedicated event loop,
+which is what stopped concurrent requests cancelling each other's queries --
+and which cannot work under a patched hub. `requirements-api.txt` no longer
+installs eventlet, and gunicorn is `>=23.0,<27` (the `<26` ceiling existed only
+because 26.0 removed the eventlet worker). `tests/test_npc_chat_turn_budget.py`
+fails if the unit names a patching worker, runs more than one worker, or has
+fewer than 8 threads.
+
+`--threads` is the concurrency limit: a chat turn can hold a thread for ~21s,
+and every connected Socket.IO client holds one for as long as it is connected.
+The combat socket is off in production (`COMBAT_SOCKET_STREAMING` unset), so
+today only requests count against it; turning the socket on makes the thread
+count a cap on concurrent socket players.
+
+**Changing the unit is a manual step, and not one `alex` can do.** `deploy.ps1`
+restarts the unit but never installs it, and `alex`'s sudo covers only restart
+and status. Installing an edited `deploy/heart-of-virtue.service` means copying
+it to `/etc/systemd/system/` and reloading systemd as `ubuntu@`; the commands
+and the order they go in for the gthread switch are in
+[gthread-switch-runbook.md](gthread-switch-runbook.md).
+
+The code and the unit must change together when a change depends on the
+worker, as this one did: the one-loop `db.py` fails every query under the old
+eventlet unit.
 
 Every build the script deploys carries the commit it was built from, in a
 `.hov-commit` file beside its `index.html`. That is how a rollback names the
