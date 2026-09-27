@@ -94,10 +94,12 @@ def _openrouter_fails(adapter, calls, cost=0.0, clock=None):
     adapter._openrouter_chat = dead
 
 
-def _groq_posts(calls, reply=_GROQ_REPLY):
+def _posts(calls, record=lambda url, payload: ("post", url, payload.get("model"))):
+    """A ``_post_chat_completion`` double that answers ``_GROQ_REPLY`` and
+    appends ``record(url, payload)`` to ``calls`` for every request."""
     def post(url, payload, headers, timeout, on_discarded=None):
-        calls.append(("post", url, payload.get("model")))
-        return Resp(200, {"choices": [{"message": {"content": reply}}]})
+        calls.append(record(url, payload))
+        return Resp(200, {"choices": [{"message": {"content": _GROQ_REPLY}}]})
 
     return post
 
@@ -110,7 +112,7 @@ class TestTheChainServesTheAdvisor:
         adapter = _adapter()
         calls = []
         _openrouter_fails(adapter, calls)
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls))
 
         out = CombatStrategist(client=adapter).get_suggestions(_ctx())
 
@@ -121,17 +123,14 @@ class TestTheChainServesTheAdvisor:
     def test_the_fallback_keeps_json_mode(self, monkeypatch, keys):
         monkeypatch.setenv("COMBAT_LLM_PROVIDER", "openrouter")
         adapter = _adapter()
-        seen = {}
+        seen = []
         _openrouter_fails(adapter, [])
-
-        def post(url, payload, headers, timeout, on_discarded=None):
-            seen.update(payload)
-            return Resp(200, {"choices": [{"message": {"content": _GROQ_REPLY}}]})
-
-        monkeypatch.setattr(llm, "_post_chat_completion", post)
+        monkeypatch.setattr(
+            llm, "_post_chat_completion", _posts(seen, lambda url, payload: payload)
+        )
         adapter.generate_structured("sys", "user")
 
-        assert seen.get("response_format") == {"type": "json_object"}
+        assert seen[0].get("response_format") == {"type": "json_object"}
 
     def test_a_named_groq_is_dispatchable_not_an_unknown_provider(self, monkeypatch, keys):
         """.env.example used to warn that naming groq made the advisor report
@@ -139,7 +138,7 @@ class TestTheChainServesTheAdvisor:
         monkeypatch.setenv("COMBAT_LLM_PROVIDER", "groq")
         adapter = _adapter()
         calls = []
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls))
 
         assert adapter.available() is True
         assert adapter.generate_structured("sys", "user")["suggestions"][0]["reasoning"] == (
@@ -170,7 +169,7 @@ class TestConsent:
         adapter = _adapter()
         calls = []
         _openrouter_fails(adapter, calls)
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls))
 
         assert adapter.provider == "openrouter"
         assert adapter._provider_chain() == ["openrouter"]
@@ -183,7 +182,7 @@ class TestConsent:
         adapter = _adapter()
         calls = []
         _openrouter_fails(adapter, calls)
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls))
 
         assert adapter._provider_chain() == ["openrouter"]
         assert adapter.generate_structured("sys", "user") is None
@@ -239,7 +238,7 @@ class TestTheBeatBudget:
         _openrouter_fails(
             adapter, dialled, cost=CombatLLMAdapter._CHAIN_BUDGET_SECONDS, clock=clock
         )
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(dialled))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(dialled))
 
         assert adapter.generate_structured("sys", "user") is None
         assert dialled == ["openrouter"]
@@ -266,13 +265,19 @@ class TestOneImplementation:
         assert CombatLLMAdapter._round_timeout() == CombatLLMAdapter._FALLBACK_CALL_TIMEOUT_SECONDS
         assert NpcChatLLMAdapter._round_timeout() > 0
 
+    def test_a_subclass_without_a_fallback_variable_fails_closed(self):
+        """An empty ``_FALLBACK_ENV_VARS`` read as "unset" -- the fan-out
+        default -- so a subclass that forgot to declare one could never be
+        pinned to its named host."""
+        from ai.llm_client import ProviderChainMixin
 
-def _recording_post(calls):
-    def post(url, payload, headers, timeout, on_discarded=None):
-        calls.append(url)
-        return Resp(200, {"choices": [{"message": {"content": _GROQ_REPLY}}]})
+        class Bare(ProviderChainMixin, GenericLLMClient):
+            pass
 
-    return post
+        with pytest.raises(NotImplementedError, match="Bare must declare _FALLBACK_ENV_VARS"):
+            Bare._remote_fallback_setting()
+        for cls in (CombatLLMAdapter, NpcChatLLMAdapter):
+            assert cls._FALLBACK_ENV_VARS, cls
 
 
 class TestAnUnrecognisedProviderFailsClosed:
@@ -290,7 +295,7 @@ class TestAnUnrecognisedProviderFailsClosed:
         monkeypatch.setenv("COMBAT_LLM_PROVIDER", typo)
         adapter = _adapter()
         calls = []
-        monkeypatch.setattr(llm, "_post_chat_completion", _recording_post(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls, lambda url, payload: url))
         strategist = CombatStrategist(client=adapter)
 
         assert adapter._provider_chain() == [typo]
@@ -304,7 +309,7 @@ class TestAnUnrecognisedProviderFailsClosed:
         monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", typo)
         adapter = NpcChatLLMAdapter()
         calls = []
-        monkeypatch.setattr(llm, "_post_chat_completion", _recording_post(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls, lambda url, payload: url))
 
         assert adapter._provider_chain() == [typo]
         assert adapter._call_llm("sys", "user") is None
@@ -345,7 +350,7 @@ class TestOneBeatOneProbe:
         monkeypatch.setattr(llm.requests, "get", get)
         adapter = _adapter()
         adapter._ollama_chat = lambda system_prompt, user_prompt, structured: None
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts([]))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts([]))
         return adapter, probes
 
     def test_one_advisor_beat_probes_ollama_at_most_once(self, armed_ollama):
@@ -402,6 +407,88 @@ class TestOneBeatOneProbe:
 
         assert adapter.generate_structured("sys", "user") is None
         assert benched == []
+
+
+class TestADeadOllamaPrimaryIsNotDialledTwice:
+    """With the chain armed, ``get_suggestions`` probes an ollama primary and
+    a dead verdict used to be discarded: ``_base_route`` then dialled
+    ``_ollama_chat`` (up to 30s) anyway, eating the fallback hops' budget."""
+
+    @pytest.fixture
+    def dead_ollama(self, monkeypatch, keys, clock):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("COMBAT_LLM_MODEL", "llama3.1:8b")
+        monkeypatch.setenv("COMBAT_LLM_FALLBACK", "1")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+        def get(url, timeout=None, **kwargs):
+            raise requests.exceptions.ConnectionError("refused")
+
+        monkeypatch.setattr(llm.requests, "get", get)
+        adapter = _adapter()
+        dialled = []
+        adapter._ollama_chat = lambda **kw: dialled.append("ollama_chat")
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(dialled))
+        return adapter, dialled
+
+    def test_the_probes_dead_verdict_skips_the_primary(self, dead_ollama):
+        adapter, dialled = dead_ollama
+
+        out = CombatStrategist(client=adapter).get_suggestions(_ctx())
+
+        assert [s["reasoning"] for s in out] == ["served by groq"]
+        assert "ollama_chat" not in dialled
+        assert dialled[0][0] == "post"
+
+    def test_a_stale_verdict_dials_the_primary_again(self, dead_ollama, clock):
+        adapter, dialled = dead_ollama
+        assert adapter.available() is True  # the chain answers; the probe failed
+
+        clock.now += CombatLLMAdapter._PRIMARY_PROBE_TTL_SECONDS + 1
+        adapter.generate_structured("sys", "user")
+
+        assert dialled[0] == "ollama_chat"
+
+
+class TestOnlyTheServingModelIsBenched:
+    """A base-routed primary does not record ``_last_served_model``, so prose
+    from it used to bench whatever an EARLIER call on this thread had left
+    there -- a healthy model that served nothing this hop."""
+
+    def test_prose_from_a_base_routed_primary_benches_no_stale_model(
+        self, monkeypatch, keys
+    ):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "openrouter")
+        adapter = _adapter()
+        benched = []
+        monkeypatch.setattr(
+            GenericLLMClient, "_penalize_unparseable",
+            classmethod(lambda cls, model_id: benched.append(model_id)),
+        )
+        adapter._openrouter_chat = lambda **kw: "just prose, no JSON"
+        monkeypatch.setattr(llm, "_post_chat_completion", lambda *a, **k: Resp(503))
+        adapter._last_served_model = "groq:stale-from-an-earlier-call"
+
+        assert adapter.generate_structured("sys", "user") is None
+        assert benched == []
+
+    def test_prose_from_a_chain_hop_still_benches_that_hop(self, monkeypatch, keys):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "openrouter")
+        adapter = _adapter()
+        benched = []
+        monkeypatch.setattr(
+            GenericLLMClient, "_penalize_unparseable",
+            classmethod(lambda cls, model_id: benched.append(model_id)),
+        )
+        _openrouter_fails(adapter, [])
+        monkeypatch.setattr(
+            llm, "_post_chat_completion",
+            lambda *a, **k: Resp(200, {"choices": [{"message": {"content": "prose"}}]}),
+        )
+
+        assert adapter.generate_structured("sys", "user") is None
+        groq = llm._OPENAI_COMPATIBLE_PROVIDERS["groq"]["default_model"]
+        assert benched == ["groq:%s" % groq]
 
 
 class TestTheSharedTransportsNameTheirCaller:
@@ -471,8 +558,89 @@ class TestEachHopDialsItsOwnModel:
         monkeypatch.setenv("GROQ_MODEL", groq_model)
         adapter = _adapter()
         calls = []
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls))
 
         adapter.generate_structured("sys", "user")
 
         assert calls[0][2] == expected
+
+
+class TestTheOllamaHopDialsAnOllamaModel:
+    """``self.model`` names the PRIMARY's model. An Ollama fallback hop behind
+    an openrouter primary with a pinned slug used to send that slug to the
+    local host, and behind groq/cerebras it sent ``"auto"`` -- either way a
+    404, so the local fallback the chain promises never served anything.
+    The hop discovers an installed tag the way an ollama primary does."""
+
+    @pytest.fixture
+    def local(self, monkeypatch, keys):
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        posted = []
+        probes = []
+
+        def get(url, timeout=None, **kwargs):
+            probes.append(url)
+            return Resp(200, {"models": [{"name": "qwen2:7b"}, {"name": "llama3.1:8b"}]})
+
+        def post(url, json=None, timeout=None, **kwargs):
+            posted.append(json["model"])
+            return Resp(200, {"message": {"content": "{}"}})
+
+        monkeypatch.setattr(llm.requests, "get", get)
+        monkeypatch.setattr(llm.requests, "post", post)
+        return posted, probes
+
+    @pytest.mark.parametrize("provider, model", [
+        ("openrouter", "vendor/pinned:free"),
+        ("groq", ""),
+        ("cerebras", ""),
+    ])
+    def test_the_advisors_ollama_hop_sends_an_installed_tag(
+        self, monkeypatch, local, provider, model
+    ):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", provider)
+        monkeypatch.setenv("COMBAT_LLM_MODEL", model)
+        adapter = _adapter()
+
+        adapter._call_ollama("sys", "user", 10, 0.1)
+
+        assert local[0] == ["llama3.1:8b"]
+
+    @pytest.mark.parametrize("provider, model", [
+        ("openrouter", "vendor/pinned:free"),
+        ("groq", ""),
+    ])
+    def test_chats_ollama_hop_sends_an_installed_tag(
+        self, monkeypatch, local, provider, model
+    ):
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "1")
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", provider)
+        monkeypatch.setenv("NPC_CHAT_LLM_MODEL", model)
+        with patch.object(GenericLLMClient, "_discover_openrouter_model"), patch.object(
+            GenericLLMClient, "_validate_and_fallback_openrouter"
+        ):
+            adapter = NpcChatLLMAdapter()
+
+        adapter._call_ollama("sys", "user", 10, 0.1)
+
+        assert local[0] == ["llama3.1:8b"]
+
+    def test_an_ollama_primary_keeps_its_own_model(self, monkeypatch, local):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("COMBAT_LLM_MODEL", "mistral:7b")
+        adapter = _adapter()
+
+        adapter._call_ollama("sys", "user", 10, 0.1)
+
+        assert local[0] == ["mistral:7b"]
+
+    def test_the_hop_discovers_once_per_adapter(self, monkeypatch, local):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "groq")
+        adapter = _adapter()
+        posted, probes = local
+
+        adapter._call_ollama("sys", "user", 10, 0.1)
+        adapter._call_ollama("sys", "user", 10, 0.1)
+
+        assert posted == ["llama3.1:8b", "llama3.1:8b"]
+        assert len(probes) == 1

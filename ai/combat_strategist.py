@@ -3,7 +3,13 @@ from typing import (
     Any, Callable, Dict, List, Literal, NamedTuple, Optional, Tuple, TypedDict,
 )
 
-from ai.llm_client import GenericLLMClient, ProviderChainMixin
+from ai.llm_client import (
+    GenericLLMClient,
+    ProviderChainMixin,
+    _DEFAULT_ROUND_TIMEOUT_SECONDS,
+    _OPENROUTER_PRIMARY_TIMEOUT_SECONDS,
+    _OPENROUTER_RETRY_TIMEOUT_SECONDS,
+)
 from src.moves import DAMAGING_MOVE_CATEGORIES, whole_beats
 from src.text_format import pct as _pct
 
@@ -1200,23 +1206,26 @@ class CombatLLMAdapter(ProviderChainMixin, GenericLLMClient):
     consent rule, as NPC chat (``ProviderChainMixin``). A provider inherited
     from ``MYNX_LLM_PROVIDER`` is dialled alone, ``COMBAT_LLM_FALLBACK=0``
     pins the named host, and a named ``ollama`` stays local unless
-    ``COMBAT_LLM_FALLBACK=1``. The whole walk is held to
-    ``_CHAIN_BUDGET_SECONDS``; when it yields nothing the strategist's
-    deterministic scorer answers, as before.
+    ``COMBAT_LLM_FALLBACK=1``. The fallback hops (and a named groq/cerebras
+    primary) are held to ``_CHAIN_BUDGET_SECONDS``; a base-routed primary
+    (ollama, openrouter) keeps its own timeouts. When the walk yields nothing
+    the strategist's deterministic scorer answers, as before.
     """
 
     #: Total wall time one suggestion request may spend across the chain.
     #: Equal to what the configured OpenRouter walk already allows itself
-    #: (``_openrouter_chat``: a 10s first attempt plus a 5s fallback), so a
-    #: fallback hop gets only what the primary left rather than stretching the
-    #: beat. A stalled fallback host is cut at this deadline; the primary's own
-    #: timeouts predate the chain and are not clipped.
-    _CHAIN_BUDGET_SECONDS = 15.0
+    #: (``_openrouter_chat``: its first attempt plus its fallback attempt), so
+    #: a fallback hop gets only what the primary left rather than stretching
+    #: the beat. A stalled fallback host is cut at this deadline; a
+    #: base-routed primary's own timeouts predate the chain and are not clipped.
+    _CHAIN_BUDGET_SECONDS = float(
+        _OPENROUTER_PRIMARY_TIMEOUT_SECONDS + _OPENROUTER_RETRY_TIMEOUT_SECONDS
+    )
 
     #: Nominal timeout for one fallback call, before it is clipped to what
     #: the chain budget has left. A healthy free model answers in ~2-4s; this
     #: is NPC chat's default for the same reason.
-    _FALLBACK_CALL_TIMEOUT_SECONDS = 6.0
+    _FALLBACK_CALL_TIMEOUT_SECONDS = _DEFAULT_ROUND_TIMEOUT_SECONDS
 
     _FALLBACK_ENV_VARS = ("COMBAT_LLM_FALLBACK",)
     _FEATURE_LABEL = "Tactical advisor adapter"
@@ -1255,7 +1264,7 @@ class CombatLLMAdapter(ProviderChainMixin, GenericLLMClient):
         probe, so arming the chain is the only thing that changes anything.
         ``chain`` is the caller's ``_provider_chain()``, built once.
         """
-        return self.provider in GenericLLMClient._BASE_ROUTED and chain == [self.provider]
+        return self.provider in self._BASE_ROUTED and chain == [self.provider]
 
     def available(self) -> bool:
         """The base client's cached probe when there is no chain, else the chain's.
@@ -1290,10 +1299,11 @@ class CombatLLMAdapter(ProviderChainMixin, GenericLLMClient):
         chain = self._provider_chain()
         if self._single_base_route(chain):
             return super()._dispatch_chat(system_prompt, user_prompt, structured)
-        self._log_dispatch_start(system_prompt, user_prompt, structured)
+        label = self._log_dispatch_start(system_prompt, user_prompt, structured)
         if not self.enabled or not self._chain_credentialed(chain):
             logger.warning(
-                "CombatLLMAdapter aborted: LLM not available. provider=%s reason=%s",
+                "%s aborted: LLM not available. provider=%s reason=%s",
+                label,
                 self.provider,
                 self._unavailable_reason if self.enabled else "adapter disabled",
             )

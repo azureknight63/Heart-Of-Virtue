@@ -784,6 +784,12 @@ _ROUND_TIMEOUT_CEILING_SECONDS = 7.0
 #: slow-but-fine tail (see ``NpcChatLLMAdapter._round_timeout``).
 _DEFAULT_ROUND_TIMEOUT_SECONDS = 6.0
 
+#: ``_openrouter_chat``'s per-attempt timeouts: the first model gets the long
+#: one, the fallback attempt fails fast. ``CombatLLMAdapter`` derives its chain
+#: budget from their sum, so the two stay in step.
+_OPENROUTER_PRIMARY_TIMEOUT_SECONDS = 10
+_OPENROUTER_RETRY_TIMEOUT_SECONDS = 5
+
 #: A ``requests`` timeout: one float applied to EACH phase, or a
 #: ``(connect, read)`` pair.
 _Timeout = Union[float, Tuple[float, float]]
@@ -1260,29 +1266,42 @@ class GenericLLMClient:
 
     def _discover_ollama_model(self):
         """Try to find an available Ollama model if the default is missing."""
+        found = self._installed_ollama_model(self.model)
+        if found:
+            self.model = found
+
+    def _installed_ollama_model(self, wanted: str) -> Optional[str]:
+        """The tag to dial on the local host: ``wanted`` if installed, else a preferred one.
+
+        None when the host cannot be asked or lists nothing -- the caller keeps
+        whatever it had. Shared by the ollama primary's discovery above and the
+        chain's Ollama fallback hop (``ProviderChainMixin._ollama_hop_model``),
+        so both pick the same model from the same list.
+        """
         if requests is None:
-            return
+            return None
         try:
             r = requests.get(self.base_url + "/api/tags", timeout=1.5)
-            if r.status_code == 200:
-                data = r.json()
-                models = [m.get("name") for m in data.get("models", [])]
-                if models and self.model not in models:
-                    # Prefer gemma, then llama, then the first one available
-                    for pref in ["gemma", "llama", "mistral", "phi"]:
-                        for m in models:
-                            if pref in m.lower():
-                                self.model = m
-                                return
-                    self.model = models[0]
+            if r.status_code != 200:
+                return None
+            models = [m.get("name") for m in r.json().get("models", [])]
         except Exception as e:
             # Keeping the configured default is the right fallback, but doing
             # it silently made "Ollama is not running" indistinguishable from
             # "Ollama serves a different model than we asked for".
             logger.debug(
                 "Ollama model discovery failed at %s (%s); keeping model=%s.",
-                self.base_url, e, self.model,
+                self.base_url, e, wanted,
             )
+            return None
+        if not models or wanted in models:
+            return wanted if models else None
+        # Prefer gemma, then llama, then the first one available
+        for pref in ["gemma", "llama", "mistral", "phi"]:
+            for m in models:
+                if pref in m.lower():
+                    return m
+        return models[0]
 
     # ------------------------------------------------------------------
     # Disk cache helpers (Chester-style)
@@ -2308,7 +2327,10 @@ class GenericLLMClient:
 
         def attempt(model_id: str, attempt_no: int) -> Optional[Any]:
             # Shorter timeout for a fallback attempt, to fail fast.
-            timeout = 10 if attempt_no == 1 else 5
+            timeout = (
+                _OPENROUTER_PRIMARY_TIMEOUT_SECONDS if attempt_no == 1
+                else _OPENROUTER_RETRY_TIMEOUT_SECONDS
+            )
             logger.info(
                 "_openrouter_chat attempting model_id=%s attempt=%s/%s timeout=%s",
                 model_id, attempt_no, max_attempts, timeout,
@@ -3535,6 +3557,17 @@ class ProviderChainMixin:
     "disabled" reason names that variable, so a subclass listing an inherited
     fallback gate first would tell the operator to set the wrong one.
 
+    Host attributes it reads from ``GenericLLMClient`` (set in its
+    ``__init__``/``_resolve_provider``): ``enabled``, ``provider`` and
+    ``_provider_explicit``, ``model``, ``base_url``, ``_openrouter_api_key``,
+    ``_available``/``_unavailable_reason``, ``_ENABLED_ENV_VARS``,
+    ``_BASE_ROUTED``; and methods ``available``, ``_base_route``,
+    ``_installed_ollama_model``, ``_ollama_payload``, ``_chat_payload``,
+    ``_extract_chat_content``, ``_openrouter_candidates``,
+    ``_rotate_openrouter``, ``_openrouter_attempt``,
+    ``_build_openrouter_headers``, ``_is_model_failed``/``_mark_model_failed``
+    and ``_first_env``.
+
     The consent rule is inherited unchanged: only the FIRST entry in
     ``_PROVIDER_ENV_VARS`` arms the chain (see ``GenericLLMClient.
     _resolve_provider``), so a provider inherited from ``MYNX_LLM_PROVIDER``
@@ -3544,10 +3577,16 @@ class ProviderChainMixin:
     _FALLBACK_ENV_VARS: Tuple[str, ...] = ()
     _FEATURE_LABEL: str = "LLM adapter"
 
-    def _round_timeout(self) -> float:
+    #: How long a failed ollama-primary probe is trusted by the walk that
+    #: follows it (:meth:`_primary_known_dead`). Long enough to cover one
+    #: probe-then-dispatch, short enough that a restarted host is retried.
+    _PRIMARY_PROBE_TTL_SECONDS = 5.0
+
+    @classmethod
+    def _round_timeout(cls) -> float:
         """Nominal per-call timeout (seconds); every subclass declares its own."""
         raise NotImplementedError(
-            "%s must define _round_timeout (ProviderChainMixin contract)" % type(self).__name__
+            "%s must define _round_timeout (ProviderChainMixin contract)" % cls.__name__
         )
 
     def available(self) -> bool:
@@ -3605,11 +3644,15 @@ class ProviderChainMixin:
             # and the reason it promises "recomputed rather than cached".
             self._available = None
             if super().available():
+                self._primary_probe_failed_at = None
                 return True
             if all(name == "ollama" for name in chain):
                 # Nothing behind it, so the probe's verdict is the answer --
                 # and _unavailable_reason already names the host and the error.
                 return False
+            # Kept, briefly, so the walk that follows this probe does not dial
+            # the host it just found dead (_primary_known_dead).
+            self._primary_probe_failed_at = time.monotonic()
             # A dead local host is not the end of the answer when the chain has
             # something behind it. This method is a question about the CHAIN
             # (see the docstring above), and an ollama-pinned adapter that opted
@@ -3619,6 +3662,22 @@ class ProviderChainMixin:
             self._unavailable_reason = None
 
         return self._chain_credentialed(chain)
+
+    def _primary_known_dead(self) -> bool:
+        """True when :meth:`_chain_available` found the ollama primary dead just now.
+
+        The advisor probes in ``get_suggestions`` and walks the chain straight
+        after; without this the walk discarded that verdict and dialled
+        ``_ollama_chat`` (up to 30s) anyway, spending the fallback hops' budget
+        on a host already known to be down. The verdict lives
+        ``_PRIMARY_PROBE_TTL_SECONDS``, so a host that comes back is dialled
+        again on a later request.
+        """
+        failed_at = self.__dict__.get("_primary_probe_failed_at")
+        return (
+            failed_at is not None
+            and time.monotonic() - failed_at < self._PRIMARY_PROBE_TTL_SECONDS
+        )
 
     def _chain_credentialed(self, chain: List[str]) -> bool:
         """True when some member of ``chain`` has its credential; records why not.
@@ -3693,8 +3752,8 @@ class ProviderChainMixin:
     @staticmethod
     def _turn_budget_spent() -> bool:
         """True inside a turn with too little left to start another call."""
-        left = _turn_budget_left()
-        return left is not None and left < _MIN_CALL_SECONDS
+        deadline = getattr(_TURN_BUDGET, "deadline", None)
+        return deadline is not None and _deadline_spent(deadline)
 
     def _walk_provider_chain(
         self,
@@ -3726,7 +3785,7 @@ class ProviderChainMixin:
         for provider in chain:
             if spent():
                 logger.warning(
-                    "%s turn budget spent before provider=%s; stopping the chain.",
+                    "%s budget spent before provider=%s; stopping the chain.",
                     label, provider,
                 )
                 return None
@@ -3783,8 +3842,25 @@ class ProviderChainMixin:
             return self._call_openai_compatible(
                 provider, system_prompt, user_prompt, max_tokens, temperature
             )
-        logger.error("%s unknown provider=%s", type(self).__name__, provider)
+        # Unreachable from _walk_provider_chain, which reports and skips an
+        # unknown name before dialling; a silent None guard for direct callers.
         return None
+
+    @staticmethod
+    def _stripped_or_none(label: str, provider: str, res: Any) -> Optional[str]:
+        """A raw reply with thinking tokens stripped, or None (logged) when nothing is left.
+
+        Empty-after-stripping is a miss, not proof the model cannot answer, so
+        nothing is benched -- the walk just moves on. Shared by every chain
+        walk's ``accept``.
+        """
+        stripped = _JSONTools._strip_thinking_tokens(str(res))
+        if not stripped:
+            logger.warning(
+                "%s empty after stripping thinking tokens. provider=%s", label, provider,
+            )
+            return None
+        return stripped
 
     def _structured_via_chain(
         self,
@@ -3816,7 +3892,17 @@ class ProviderChainMixin:
         primary = self.provider
 
         def call(provider: str) -> Optional[Any]:
-            if provider == primary and provider in GenericLLMClient._BASE_ROUTED:
+            # Cleared per hop so accept() benches only a model that served
+            # THIS hop: the base routes do not record one, and a value left by
+            # an earlier call on this thread would take the penalty instead.
+            self._last_served_model = None
+            if provider == primary and provider in self._BASE_ROUTED:
+                if self._primary_known_dead():
+                    logger.info(
+                        "%s skipping provider=%s: its probe just failed.",
+                        type(self).__name__, provider,
+                    )
+                    return None
                 return self._base_route(provider, system_prompt, user_prompt, True)
             with self.bounded_by(deadline):
                 return self._call_chain_provider(
@@ -3824,15 +3910,13 @@ class ProviderChainMixin:
                     _STRUCTURED_MAX_TOKENS, _DEFAULT_TEMPERATURE,
                 )
 
+        label = "%s._structured_via_chain" % type(self).__name__
+
         def accept(provider: str, res: Any) -> Optional[Dict[str, Any]]:
             if isinstance(res, dict):
                 return res
-            stripped = _JSONTools._strip_thinking_tokens(str(res))
-            if not stripped:
-                logger.warning(
-                    "%s provider=%s answered empty after stripping thinking tokens; "
-                    "trying next.", type(self).__name__, provider,
-                )
+            stripped = self._stripped_or_none(label, provider, res)
+            if stripped is None:
                 return None
             parsed = _JSONTools.try_parse_json(stripped)
             if isinstance(parsed, dict):
@@ -3841,13 +3925,15 @@ class ProviderChainMixin:
                 "%s provider=%s answered without a JSON object; trying next.",
                 type(self).__name__, provider,
             )
-            # Only a chain transport hands back a string (the base routes
-            # parse their own), and each records who served it.
-            GenericLLMClient._penalize_unparseable(self._last_served_model)
+            # Each chain transport records who served it; a base-routed
+            # primary records nothing, and nothing is benched on its account.
+            served = self._last_served_model
+            if served:
+                GenericLLMClient._penalize_unparseable(served)
             return None
 
         return self._walk_provider_chain(
-            "%s._structured_via_chain" % type(self).__name__,
+            label,
             call,
             accept,
             budget_spent=functools.partial(_deadline_spent, deadline),
@@ -3884,6 +3970,12 @@ class ProviderChainMixin:
         Anything set but unrecognised reads as a refusal. Fails closed, like
         every other gate on real network spend in this file.
         """
+        if not cls._FALLBACK_ENV_VARS:
+            # Empty would read as "unset", i.e. the fan-out default, and leave
+            # the subclass with no way to be pinned. Fail closed, loudly.
+            raise NotImplementedError(
+                "%s must declare _FALLBACK_ENV_VARS (ProviderChainMixin contract)" % cls.__name__
+            )
         raw = cls._first_env(cls._FALLBACK_ENV_VARS)
         if not raw:
             return None
@@ -3904,8 +3996,9 @@ class ProviderChainMixin:
 
         Five configurations get no fallbacks: ``"none"`` returns an empty
         chain; a name no transport serves (a typo) returns just that name,
-        which the walk reports and skips; a provider nobody named *for this feature* returns just that
-        provider (inherited from ``MYNX_LLM_PROVIDER``, or the local default);
+        which the walk reports and skips; a provider nobody named *for this
+        feature* returns just that provider (inherited from
+        ``MYNX_LLM_PROVIDER``, or the local default);
         ``_FALLBACK_ENV_VARS``=0 returns just the named provider whatever it
         is; and a deliberately named ``ollama`` returns just ollama unless
         ``_FALLBACK_ENV_VARS``=1 says otherwise. All five are deliberate --
@@ -4040,8 +4133,8 @@ class ProviderChainMixin:
         It used to RE-RAISE an HTTP error after recording it, alone among the
         three chain methods (``_call_ollama`` and ``_openrouter_attempt`` both
         return None), which made the chain walk's broad ``except``
-        (``_walk_provider_chain``) load-bearing for this one method's contract rather than a genuine safety net. All
-        three now agree: a provider that cannot answer yields None and the
+        (``_walk_provider_chain``) load-bearing for this one method's contract
+        rather than a genuine safety net. All three now agree: a provider that cannot answer yields None and the
         chain moves on.
         """
         cfg = _OPENAI_COMPATIBLE_PROVIDERS.get(provider)
@@ -4157,12 +4250,34 @@ class ProviderChainMixin:
         self._last_served_model = served_id
         return content
 
+    def _ollama_hop_model(self) -> str:
+        """The model an Ollama call through the chain sends.
+
+        ``self.model`` only when ollama IS the configured provider -- then it is
+        the operator's tag, or what ``__init__``'s discovery picked. Behind any
+        other provider it names that primary's model (an OpenRouter slug, or
+        ``"auto"`` behind groq/cerebras) and the local host 404s it, so the hop
+        asks the host what it has installed, the same way an ollama primary
+        does (``_installed_ollama_model``). Found once per adapter; a failed
+        lookup is not cached, so a host that comes up later is still found.
+        """
+        if self.provider == "ollama":
+            return self.model
+        cached = self.__dict__.get("_ollama_hop_tag")
+        if cached:
+            return cached
+        found = self._installed_ollama_model(DEFAULT_MODEL)
+        if found:
+            self._ollama_hop_tag = found
+        return found or DEFAULT_MODEL
+
     def _call_ollama(
         self, system: str, user: str, max_tokens: int, temperature: float
     ) -> Optional[str]:
         if requests is None:
             return None
-        served_id = self._served_id("ollama", self.model)
+        model = self._ollama_hop_model()
+        served_id = self._served_id("ollama", model)
         # Enforce the unparseable-output bench _parse_or_penalize records
         # under this same id — without the check the entry was written but
         # nothing ever read it, so a JSON-incapable local model was re-dialled
@@ -4175,7 +4290,7 @@ class ProviderChainMixin:
         r = None
         try:
             payload = self._ollama_payload(
-                model=self.model,
+                model=model,
                 system=system,
                 user=user,
                 max_tokens=max_tokens,
@@ -5195,23 +5310,14 @@ class NpcChatLLMAdapter(ProviderChainMixin, GenericLLMClient):
             logger.warning("NpcChatLLMAdapter._call_llm aborted: adapter disabled.")
             return None
 
-        def accept(provider: str, res: Any) -> Optional[str]:
-            # Strip chain-of-thought tokens before the caller parses JSON.
-            stripped = _JSONTools._strip_thinking_tokens(str(res))
-            if not stripped:
-                logger.warning(
-                    "NpcChatLLMAdapter._call_llm empty after stripping thinking tokens. provider=%s",
-                    provider,
-                )
-                return None
-            return stripped
-
+        label = "NpcChatLLMAdapter._call_llm"
         return self._walk_provider_chain(
-            "NpcChatLLMAdapter._call_llm",
+            label,
             lambda provider: self._call_chain_provider(
                 provider, system_prompt, user_prompt, max_tokens, temperature
             ),
-            accept,
+            # Strip chain-of-thought tokens before the caller parses JSON.
+            lambda provider, res: self._stripped_or_none(label, provider, res),
         )
 
     def _generate_parsed(
