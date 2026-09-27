@@ -66,6 +66,11 @@ def _ctx(enemy_payload):
     }
 
 
+def _names_the_status(text):
+    """True when ``text`` names Death as a STATUS, not just the move."""
+    return "Death" in text.replace("Death Knell", "")
+
+
 class TestDeathKnell:
     def test_resisted_death_is_not_incoming(self, strategist):
         """Default Jean resists Death: the #714 behaviour stands."""
@@ -92,7 +97,7 @@ class TestDeathKnell:
         enemy = _enemy_mid_cast("DeathKnell", death_resistance=0.0)
         top = strategist._get_fallback_suggestions(_ctx(enemy), 1)[0]
         assert top["move_name"] in ("Dodge", "Parry"), top
-        assert "Death" in top["reasoning"].replace("Death Knell", ""), top
+        assert _names_the_status(top["reasoning"]), top
 
 
 class TestDeathAimedAtAnAlly:
@@ -162,11 +167,6 @@ class TestNonLethalStatusStaysUnpriced:
                "inflicts_status": {"name": "Death", "statustype": "death",
                                    "lethal": True, "resisted": None}}
         assert _incoming_beats(mip) == 4
-
-
-def _names_the_status(text):
-    """True when ``text`` names Death as a STATUS, not just the move."""
-    return "Death" in text.replace("Death Knell", "")
 
 
 def _line(prompt, marker):
