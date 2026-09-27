@@ -70,7 +70,7 @@ def _module_constants(tree):
         if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
             try:
                 constants[node.targets[0].id] = ast.literal_eval(node.value)
-            except ValueError:
+            except (ValueError, TypeError, SyntaxError):
                 continue
     return constants
 

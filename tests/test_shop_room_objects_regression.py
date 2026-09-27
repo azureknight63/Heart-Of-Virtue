@@ -235,18 +235,14 @@ def test_inject_unique_items_logs_when_container_lookup_fails(caplog):
     merchant, room = _merchant_in_world()
     merchant.inventory = []
 
-    class ExplodingRoom(RealisticRoom):
+    class ExplodingRoom:
+        universe = room.universe
+
         @property
         def map(self):
             raise RuntimeError("map unavailable")
 
-        @map.setter
-        def map(self, value):
-            # No-op: RealisticRoom.__init__ assigns ``self.map``, which a
-            # getter-only property would reject; the getter must keep raising.
-            pass
-
-    merchant.current_room = ExplodingRoom(universe=room.universe)
+    merchant.current_room = ExplodingRoom()
 
     with caplog.at_level(logging.WARNING, logger="src.shop_conditions"):
         injected = UniqueItemInjectionCondition().inject_unique_items(merchant)

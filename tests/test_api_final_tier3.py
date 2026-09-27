@@ -73,8 +73,6 @@ class TestGameServiceBasics:
         player.universe = Mock()
         player.universe.story = {}
         player.universe.game_tick = 0
-        player.universe.map = Mock()
-        player.universe.map.current_tile = Mock()
         player.position = Mock()
         player.position.x = 5
         player.position.y = 5
@@ -1044,7 +1042,6 @@ class TestGameServicePlayerOperations:
         player.universe = Mock()
         player.universe.story = {}
         player.universe.game_tick = 0
-        player.universe.map = Mock()
         player.universe.current_tile = Mock()
         return player
 

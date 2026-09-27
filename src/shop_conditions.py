@@ -80,8 +80,9 @@ def _room_objects(room: Any) -> Iterable[Any]:
 def iter_rooms(rooms_source: Any) -> Iterator[Any]:
     """Yield the room objects held in ``rooms_source``.
 
-    ``rooms_source`` is a universe/tile map, which is a dict keyed by ``(x, y)``
-    coordinates (``src/universe.py``) but may be a plain list in test harnesses.
+    ``rooms_source`` is a tile's map (``MapTile.map``), which is a dict keyed by
+    ``(x, y)`` coordinates (``src/tiles.py``) but may be a plain list in test
+    harnesses.
     Iterating a dict directly yields coordinate tuples rather than rooms, so the
     dict case is unwrapped via ``.values()``. Non-room entries (raw strings or
     nested dicts left by partial map loads) and non-iterable sources are skipped.

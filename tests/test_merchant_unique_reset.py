@@ -18,6 +18,7 @@ class DummyRoom:
 
 class DummyUniverse:
     def __init__(self, rooms):
+        """Bind the rooms' shared map and track uniques, as a built world does."""
         bind_rooms_to_shared_map(rooms)
         self.unique_items_spawned = set()
 
