@@ -1402,6 +1402,10 @@ class WailStrike(TelegraphedSurge):
     # stays 1.8 because TelegraphedSurge.evaluate() feeds it into power.
     # See Move._EXECUTE_DAMAGE_SCALE.
     _EXECUTE_DAMAGE_SCALE = 0.7
+    # Heavy despite centring on 1.26x (issue #740): it ignores protection,
+    # so against an armoured Jean it lands like a heavy blow. Declared here,
+    # not inherited from TelegraphedSurge, so the exception is deliberate.
+    telegraph_severity = "heavy"
     _EXTRA_PREP_BEATS = 3
 
     def __init__(self, npc):

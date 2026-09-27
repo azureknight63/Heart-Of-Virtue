@@ -2700,6 +2700,43 @@ class TestTelegraphSeverity:
 
         assert getattr(moves, cls_name).telegraph_severity == expected
 
+    def test_wail_strike_declares_heavy_itself(self):
+        """#740: WailStrike centres on 1.26x but ignores protection, so it is
+        heavy by the maintainer's call -- a declaration, not an inheritance."""
+        from src.moves import WailStrike
+
+        assert "telegraph_severity" in WailStrike.__dict__
+        assert WailStrike.telegraph_severity == "heavy"
+
+    def test_sub_floor_heavy_moves_declare_it_on_their_own_class(self):
+        """A move whose hit centres below the floor but still telegraphs as
+        "heavy" is an exception to the Move comment's rule of thumb, so it
+        must be a deliberate override on its own class -- never inherited
+        from a surge base whose power the move then scales down (#740).
+        """
+        with patch("builtins.print"):
+            population = {
+                move_cls: move_cls(owner_cls())
+                for move_cls, owner_cls in _NPC_MOVES.items()
+            }
+        assert population
+        sub_floor_heavy = {
+            cls
+            for cls, move in population.items()
+            if move.effective_damage_multiplier() < HEAVY_MULTIPLIER_FLOOR
+            and cls.telegraph_severity == "heavy"
+        }
+        assert sub_floor_heavy, "no sub-floor heavy move found; guard is vacuous"
+        inherited = sorted(
+            cls.__name__
+            for cls in sub_floor_heavy
+            if "telegraph_severity" not in cls.__dict__
+        )
+        assert not inherited, (
+            f"moves below {HEAVY_MULTIPLIER_FLOOR}x inherit 'heavy' rather "
+            f"than declaring it: {inherited}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # statustype -> wire category
