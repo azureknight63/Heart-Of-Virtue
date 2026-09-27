@@ -51,10 +51,9 @@ from pathlib import Path
 
 from flask import g, request
 
-from src.api.log_redaction import (  # noqa: F401 -- _SECRET_RE re-exported
+from src.api.log_redaction import (
     SELF_HANDLING_LOGGERS,
     _RedactSecretsFilter,
-    _SECRET_RE,
     _scrub,
     redact_logger,
 )
@@ -237,7 +236,7 @@ def _redact_values(value):
     from them afterwards (``str(exc_value)``, a freshly rendered traceback,
     the ``record.data`` payload). String dict keys are scrubbed as well as
     values -- :func:`log_event` turns caller kwargs into keys. It runs on
-    values rather than on the finished JSON line because ``_SECRET_RE``'s webhook branch ends in
+    values rather than on the finished JSON line because ``log_redaction._SECRET_RE``'s webhook branch ends in
     ``\S+``, which on a compact line would swallow the closing quote and
     everything after it. Non-JSON values are stringified first, which is what
     ``to_compact_json``'s ``default=str`` would have done with them anyway.
@@ -260,7 +259,7 @@ class _RedactingFormatter(logging.Formatter):
     """A plain-text formatter whose finished line is scrubbed once more.
 
     Belt and braces behind the filter: anything a format string pulls from
-    the record that the filter did not rewrite still passes ``_SECRET_RE``.
+    the record that the filter did not rewrite still passes ``log_redaction._SECRET_RE``.
     Safe on plain text, unlike on JSON (see :func:`_redact_values`).
     """
 
@@ -367,7 +366,8 @@ def configure_logging(env=None, logger=None, log_dir=None):
     Also redacts, at the logger, every library logger that attaches a handler
     of its own (``SELF_HANDLING_LOGGERS``, issue #741) -- those handlers are
     not ``logger``'s, so the per-handler filter below never reaches them.
-    Done whatever ``logger`` is: the libraries' loggers are process-global.
+    Applied regardless of the ``logger`` argument: the libraries' loggers are
+    process-global.
     """
     env = os.environ if env is None else env
     logger = logging.getLogger() if logger is None else logger
