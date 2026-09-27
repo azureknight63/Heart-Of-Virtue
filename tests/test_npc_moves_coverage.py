@@ -3333,3 +3333,85 @@ class TestDeclaredStateClassConstants:
                 assert state_cls.STATUSTYPE == instance.statustype, state_cls
         finally:
             random.setstate(saved)
+
+
+class TestEveryDeclaredStateHasItsConstants:
+    """F3 #2: ``status_threat`` ships ``STATUS_NAME``/``STATUSTYPE`` read off
+    the declared class. A declared state still on the ``State`` defaults
+    (None) would reach the advisor nameless and -- ``resists_status(None)``
+    -- reported unresisted. Walks EVERY ``Move`` subclass in every
+    ``src.moves`` submodule (player, ally and NPC alike), not ``_NPC_MOVES``.
+    """
+
+    @staticmethod
+    def _declaring_moves():
+        import importlib
+        import pkgutil
+
+        import src.moves as moves_pkg
+        from src.moves._base import Move
+
+        found = set()
+        for info in pkgutil.iter_modules(moves_pkg.__path__):
+            module = importlib.import_module(f"src.moves.{info.name}")
+            for _, obj in inspect.getmembers(module, inspect.isclass):
+                if issubclass(obj, Move):
+                    found.add(obj)
+        return found, {c for c in found if c.inflicted_state_cls is not None}
+
+    def test_the_population_is_real(self):
+        from src.moves import DeathKnell, VenomClaw
+
+        every_move, declaring = self._declaring_moves()
+        assert len(every_move) >= 80, len(every_move)
+        assert {DeathKnell, VenomClaw} <= declaring
+
+    def test_every_declared_state_defines_name_and_type(self):
+        import src.states as states
+
+        _, declaring = self._declaring_moves()
+        missing = sorted(
+            f"{move_cls.__name__} -> {move_cls.inflicted_state_cls!r}"
+            for move_cls in declaring
+            if not (
+                inspect.isclass(move_cls.inflicted_state_cls)
+                and issubclass(move_cls.inflicted_state_cls, states.State)
+                and move_cls.inflicted_state_cls.STATUS_NAME
+                and move_cls.inflicted_state_cls.STATUSTYPE
+            )
+        )
+        assert not missing, missing
+
+
+class TestStatusThreatReadsTheClassDeclaration:
+    """F3 #3: ``inflicted_state_cls`` is read off the move's CLASS and must be
+    a ``State`` subclass. An instance attribute (a crafted save can set one)
+    or a non-State declaration yields no threat rather than whatever object
+    it names."""
+
+    def _npc_attack(self):
+        from src.moves import NpcAttack
+
+        with patch("builtins.print"):
+            npc = _make_npc()
+        return NpcAttack(npc)
+
+    def test_an_instance_attribute_is_ignored(self):
+        import src.states as states
+
+        move = self._npc_attack()
+        move.inflicted_state_cls = states.Death
+        assert move.status_threat(_player()) is None
+
+    @pytest.mark.parametrize(
+        "bogus",
+        [int, "Death", object()],
+        ids=["non-State-class", "string", "instance"],
+    )
+    def test_a_non_state_declaration_is_no_threat(self, bogus):
+        from src.moves import NpcAttack
+
+        with patch("builtins.print"):
+            npc = _make_npc()
+        bad_cls = type("BadDecl", (NpcAttack,), {"inflicted_state_cls": bogus})
+        assert bad_cls(npc).status_threat(_player()) is None

@@ -1655,8 +1655,11 @@ class Move:  # master class for all moves
         wire so the Tactical Advisor can treat an unresisted lethal status as
         an incoming threat even though the move deals no damage (DeathKnell).
         """
-        state_cls = self.inflicted_state_cls
-        if state_cls is None:
+        # Off the CLASS, and only a real State subclass: an instance attribute
+        # (which a crafted save could carry) or a stray declaration is no
+        # threat rather than whatever object it names.
+        state_cls = type(self).inflicted_state_cls
+        if not (isinstance(state_cls, type) and issubclass(state_cls, states.State)):
             return None
         # Read off the class, never an instance: several declared states roll
         # ``random`` in their constructors, and this runs on every serialize.
