@@ -174,6 +174,15 @@ def gunicorn_loggers():
             _restore(snapshot)
 
 
+def _log_a_leaky_request_error(logger):
+    """What gunicorn writes when an exception escapes the WSGI app: a message
+    and a traceback that both carry the secret."""
+    try:
+        raise RuntimeError(f"engineio middleware blew up with {_SECRET}")
+    except RuntimeError:
+        logger.exception("Error handling request %s", f"/socket.io/?key={_SECRET}")
+
+
 @pytest.mark.parametrize("logger_name", GUNICORN_LOGGERS)
 def test_a_secret_logged_by_gunicorn_is_redacted_after_the_config_loads(
     gunicorn_loggers, logger_name
@@ -190,10 +199,7 @@ def test_a_secret_logged_by_gunicorn_is_redacted_after_the_config_loads(
     logger.propagate = False  # the fixture restores it
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
-    try:
-        raise RuntimeError(f"engineio middleware blew up with {_SECRET}")
-    except RuntimeError:
-        logger.exception("Error handling request %s", f"/socket.io/?key={_SECRET}")
+    _log_a_leaky_request_error(logger)
 
     written = stream.getvalue()
     assert "Error handling request" in written
@@ -219,10 +225,7 @@ def test_gunicorn_s_real_log_files_stay_redacted_across_a_hup(gunicorn_loggers, 
     boot_handlers = log.error_log.handlers + log.access_log.handlers
     log.setup(cfg)                   # HUP: setup() again, new handlers
     try:
-        try:
-            raise RuntimeError(f"engineio middleware blew up with {_SECRET}")
-        except RuntimeError:
-            log.exception("Error handling request %s", f"/socket.io/?key={_SECRET}")
+        _log_a_leaky_request_error(log)
         log.access_log.info("GET /socket.io/?key=%s 200", _SECRET)
     finally:
         for handler in boot_handlers:

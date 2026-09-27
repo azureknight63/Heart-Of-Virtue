@@ -8,9 +8,9 @@ imports from it.
 
 A record gets redacted in one of two places:
 
-* **On a handler** -- ``structured_log.configure_logging`` puts
+* **On a handler** — ``structured_log.configure_logging`` puts
   :class:`_RedactSecretsFilter` on every handler it installs (#698).
-* **On a logger** -- :func:`redact_logger`, for loggers whose *library*
+* **On a logger** — :func:`redact_logger`, for loggers whose *library*
   installs handlers of its own, which ``configure_logging`` never sees. A
   logger-level filter runs in ``Logger.handle`` before the record reaches any
   handler at all: the library's own, one added later, or the root handlers the
@@ -161,16 +161,16 @@ class _RedactSecretsFilter(logging.Filter):
 #: Enumerated from the installed packages' ``addHandler`` call sites, not
 #: guessed; re-check them when one of these dependencies changes major version:
 #:
-#: * ``werkzeug`` -- ``werkzeug._internal._log`` adds a ``_ColorStreamHandler``
+#: * ``werkzeug`` — ``werkzeug._internal._log`` adds a ``_ColorStreamHandler``
 #:   (stderr) on first use when no handler in the chain accepts the logger's
 #:   effective level (INFO). With the root console at the default WARNING and
 #:   no LOG_JSONL_DIR, nothing does, so the dev server's "Error on request"
 #:   tracebacks went to stderr raw. Dev server only.
-#: * ``engineio.server`` / ``socketio.server`` -- ``BaseServer.__init__`` adds a
+#: * ``engineio.server`` / ``socketio.server`` — ``BaseServer.__init__`` adds a
 #:   ``StreamHandler`` (stderr) whenever the logger's level is unset, at ERROR
 #:   when ``logger=False``. That is production: create_app passes
 #:   ``logger=app.debug``, and a gunicorn worker's stderr is the journal.
-#: * ``engineio.client`` / ``socketio.client`` -- the same code in the client
+#: * ``engineio.client`` / ``socketio.client`` — the same code in the client
 #:   classes. Nothing in the tree builds a client today; listed so one that
 #:   does is covered.
 #:
@@ -178,7 +178,7 @@ class _RedactSecretsFilter(logging.Filter):
 #: it, #734); urllib3 and requests (``NullHandler``); charset_normalizer (a
 #: stream handler only under ``explain=True``); aiohttp and openai (CLI entry
 #: points only). gunicorn's handlers belong to the master's configuration,
-#: not the app's -- see :data:`GUNICORN_LOGGERS`.
+#: not the app's — see :data:`GUNICORN_LOGGERS`.
 SELF_HANDLING_LOGGERS = (
     "werkzeug",
     "engineio.server",
