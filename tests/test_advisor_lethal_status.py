@@ -18,6 +18,7 @@ from ai.combat_strategist import (
     _DEFENSIVE_WINDOW_BEATS,
     CombatStrategist,
     _incoming_beats,
+    _lethal_status_clause,
 )
 from src.api.serializers.combat import CombatantSerializer
 from tests._combat_fixtures import wraith_casting
@@ -126,3 +127,71 @@ class TestNonLethalStatusStaysUnpriced:
                "inflicts_status": {"name": "Death", "statustype": "death",
                                    "lethal": True, "resisted": None}}
         assert _incoming_beats(mip) == 4
+
+
+def _names_the_status(text):
+    """True when ``text`` names Death as a STATUS, not just the move."""
+    return "Death" in text.replace("Death Knell", "")
+
+
+def _line(prompt, marker):
+    return next(line for line in prompt.splitlines() if marker in line)
+
+
+class TestTheStatusIsNamedNotABand:
+    """K2 (maintainer's call): an unresisted lethal status is rendered as
+    what it is -- "(inflicts Death, unresisted)" -- never as the "~0–0 dmg"
+    band a no-damage move estimates to, and every rendering shares one
+    clause (`_lethal_status_clause`)."""
+
+    def test_the_clause(self):
+        assert _lethal_status_clause("Death") == "inflicts Death, unresisted"
+
+    def test_the_incoming_alert_names_the_status(self, strategist):
+        enemy = _enemy_mid_cast("DeathKnell", death_resistance=0.0)
+        alert = _line(strategist._build_user_prompt(_ctx(enemy)), "INCOMING")
+        assert "(inflicts Death, unresisted, LETHAL)" in alert, alert
+        assert "0–0" not in alert, alert
+
+    def test_the_roster_line_names_the_status(self, strategist):
+        enemy = _enemy_mid_cast("DeathKnell", death_resistance=0.0)
+        roster = _line(strategist._build_user_prompt(_ctx(enemy)), "Charging:")
+        assert "inflicts Death, unresisted" in roster, roster
+        assert "0–0" not in roster, roster
+
+    def test_a_damaging_charge_keeps_its_band(self, strategist):
+        """No lethal status: the damage band is still the whole story."""
+        enemy = _enemy_mid_cast("DeathKnell", death_resistance=0.0)
+        enemy["move_in_process"]["inflicts_status"] = None
+        enemy["move_in_process"]["deals_damage"] = True
+        roster = _line(strategist._build_user_prompt(_ctx(enemy)), "Charging:")
+        assert "estimated dmg" in roster and "inflicts" not in roster, roster
+
+    def test_every_reason_uses_the_one_clause(self, strategist):
+        enemy = _enemy_mid_cast("DeathKnell", death_resistance=0.0)
+        suggestions = strategist._get_fallback_suggestions(_ctx(enemy), 3)
+        clause = _lethal_status_clause("Death")
+        for s in suggestions:
+            assert clause in s["reasoning"], s
+
+
+class TestFatigueLockedDefence:
+    """K13: Jean below 10% fatigue with Dodge/Parry priced out -- the
+    locked-defence advice must still say the charge kills by status."""
+
+    def test_the_locked_defence_reason_names_the_status(self, strategist):
+        enemy = _enemy_mid_cast("DeathKnell", death_resistance=0.0)
+        ctx = _ctx(enemy)
+        ctx["player"]["fatigue"] = 5  # < 10% of 100
+        ctx["available_moves"] = [
+            {"name": "Rest", "category": "Miscellaneous", "available": True},
+            {"name": "Withdraw", "category": "Maneuver", "available": True},
+        ]
+        ctx["fatigue_locked_moves"] = [
+            {"name": "Dodge", "category": "Maneuver", "fatigue_cost": 25},
+            {"name": "Parry", "category": "Maneuver", "fatigue_cost": 20},
+        ]
+        top = strategist._get_fallback_suggestions(ctx, 1)[0]
+        assert top["move_name"] in ("Withdraw", "Rest"), top
+        assert "fatigue-locked" in top["reasoning"], top
+        assert _names_the_status(top["reasoning"]), top
