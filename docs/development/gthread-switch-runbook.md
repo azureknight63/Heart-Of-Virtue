@@ -66,6 +66,11 @@ grep -- --worker-class /etc/systemd/system/heart-of-virtue.service
 
 The last line should show `--worker-class gthread -w 1 --threads 32`.
 
+**Later change to the same unit (#741):** the unit now also passes
+`-c deploy/gunicorn.conf.py`. Reusing this step for it inverts the order —
+deploy the code *before* installing the unit, since the unit cannot boot
+without that file. See deployment.md, "Pending unit install (#741)".
+
 ## 5. Deploy, keeping the page up (here)
 
 ```powershell
