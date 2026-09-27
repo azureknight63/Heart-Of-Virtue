@@ -1559,31 +1559,24 @@ class TestCombatantWireContract:
         of the move's own TARGET, not assumed: default Jean resists Death, a
         Jean stripped of that resistance does not.
         """
-        from src.moves import DeathKnell, NpcAttack
-        from src.npc._enemies import WailWraith
+        from src.moves import NpcAttack
+        from tests._combat_fixtures import wraith_casting
 
-        def knell_at(jean):
-            enemy = WailWraith()
-            enemy.target = jean
-            move = DeathKnell(enemy)
-            move.target = jean
-            move.current_stage = 0
+        def knell_at(**resistances):
+            enemy, move, jean = wraith_casting("DeathKnell", **resistances)
             move.beats_left = 2
-            enemy.current_move = move
             return CombatantSerializer.serialize_combatant(enemy, reference=jean)[
                 "current_move"
             ]["inflicts_status"]
 
-        resisting = knell_at(Player())
+        resisting = knell_at()
         assert resisting == {
             "name": "Death",
             "statustype": "death",
             "lethal": True,
             "resisted": True,
         }
-        mortal = Player()
-        mortal.status_resistance["death"] = 0.0
-        assert knell_at(mortal)["resisted"] is False
+        assert knell_at(death_resistance=0.0)["resisted"] is False
         plain = _serialize_mid_cast(NpcAttack, Slime)["current_move"]
         assert plain["inflicts_status"] is None
 

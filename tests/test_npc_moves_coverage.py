@@ -3169,10 +3169,10 @@ class TestExecuteDamageIsUnchangedBy721:
 
 
 # ---------------------------------------------------------------------------
-# inflicted_status vs execute() -- issue #720
+# inflicted_state_cls vs execute() -- issue #720
 #
 # DeathKnell deals no HP damage (#714) and only attempts states.Death, so the
-# advisor read it as nothing incoming. ``Move.inflicted_status()`` is the
+# advisor read it as nothing incoming. ``Move.inflicted_state_cls`` is the
 # engine's answer to "which status does this move try to put on its target?",
 # shipped on the wire with whether the target resists it. The declaration is
 # checked against what ``execute()`` actually attempts, never a hand list.
@@ -3180,7 +3180,7 @@ class TestExecuteDamageIsUnchangedBy721:
 
 
 class TestInflictedStatusMatchesExecute:
-    """``Move.inflicted_status()`` must name the state ``execute()`` attempts.
+    """``Move.inflicted_state_cls`` must name the state ``execute()`` attempts.
 
     A lethal move that declared nothing would silently delete the advisor's
     warning for it -- the failure #720 exists to close -- so every NPC-used
@@ -3209,10 +3209,10 @@ class TestInflictedStatusMatchesExecute:
     )
     def test_declaration_matches_execute(self, move_cls):
         landed = _land_execute(move_cls, _NPC_MOVES[move_cls])
-        declared = landed.move.inflicted_status()
+        declared = landed.move.inflicted_state_cls
         expected = {declared} if declared is not None else set()
         assert set(landed.inflicted) == expected, (
-            f"{move_cls.__name__} declares inflicted_status()={declared!r} but "
+            f"{move_cls.__name__} declares inflicted_state_cls={declared!r} but "
             f"execute() attempted {landed.inflicted!r} on its target"
         )
 
@@ -3222,16 +3222,11 @@ class TestStatusThreat:
     lethal, and whether ``target`` resists it (``Combatant.resists_status``)."""
 
     def _knell(self, death_resistance=None):
-        from src.moves import DeathKnell
-        from src.npc._enemies import WailWraith
+        from tests._combat_fixtures import wraith_casting
 
-        jean = _player()
-        if death_resistance is not None:
-            jean.status_resistance["death"] = death_resistance
-        with patch("builtins.print"):
-            wraith = WailWraith()
-        move = DeathKnell(wraith)
-        move.target = jean
+        _, move, jean = wraith_casting(
+            "DeathKnell", jean=_player(), death_resistance=death_resistance
+        )
         return move, jean
 
     def test_only_death_is_lethal(self):
@@ -3318,7 +3313,7 @@ class TestDeclaredStateClassConstants:
     instance carries, for every state an NPC-used move declares."""
 
     def _declared(self):
-        return {cls.inflicts_status for cls in _NPC_MOVES} - {None}
+        return {cls.inflicted_state_cls for cls in _NPC_MOVES} - {None}
 
     def test_the_population_is_real(self):
         import src.states as states

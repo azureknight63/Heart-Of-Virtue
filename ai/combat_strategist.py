@@ -677,6 +677,15 @@ def _answers_the_charge(name: Any, state: TacticalState) -> bool:
     return state["in_defensive_window"] and name in _DEFENSIVE_MOVE_NAMES
 
 
+def _deals_no_damage(mip: Optional[Dict[str, Any]]) -> bool:
+    """True only when the engine says this charge takes no HP (issue #714).
+
+    An explicit ``deals_damage: False``; a payload without the key is priced
+    as a blow, so a missing field can never silence a real hit.
+    """
+    return (mip or {}).get("deals_damage") is False
+
+
 def _incoming_beats(mip: Optional[Dict[str, Any]]) -> Optional[int]:
     """Beats until a charging enemy move lands, or None if nothing is coming.
 
@@ -705,7 +714,7 @@ def _incoming_beats(mip: Optional[Dict[str, Any]]) -> Optional[int]:
     """
     if not mip:
         return None
-    if mip.get("deals_damage") is False and _lethal_status_of(mip) is None:
+    if _deals_no_damage(mip) and _lethal_status_of(mip) is None:
         return None
     return _beat_count(mip.get("beats_until_resolve"))
 
@@ -2317,7 +2326,7 @@ class CombatStrategist:
             multiplier = float(mip.get("damage_multiplier", 1.0))
         except (TypeError, ValueError):
             multiplier = 1.0
-        if mip.get("deals_damage") is False:
+        if _deals_no_damage(mip):
             multiplier = 0.0
         enemy_damage = (enemy.get("stats") or {}).get("damage", 0) or enemy.get(
             "damage", 0

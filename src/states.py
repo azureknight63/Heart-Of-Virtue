@@ -82,7 +82,7 @@ class State:  # master class for all states
     lethal = False
 
     # Class-level name/statustype, for a state a move declares it inflicts
-    # (``Move.inflicts_status``): ``Move.status_threat`` reads them here
+    # (``Move.inflicted_state_cls``):``Move.status_threat`` reads them here
     # rather than constructing a throwaway instance, whose constructor may
     # roll ``random`` (Poisoned, Slimed, ...). Such a state passes these to
     # ``super().__init__`` so the two cannot drift; tests/
