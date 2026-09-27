@@ -3,7 +3,13 @@ from typing import (
     Any, Callable, Dict, List, Literal, NamedTuple, Optional, Tuple, TypedDict,
 )
 
-from ai.llm_client import GenericLLMClient, ProviderChainMixin
+from ai.llm_client import (
+    GenericLLMClient,
+    ProviderChainMixin,
+    _DEFAULT_ROUND_TIMEOUT_SECONDS,
+    _OPENROUTER_PRIMARY_TIMEOUT_SECONDS,
+    _OPENROUTER_RETRY_TIMEOUT_SECONDS,
+)
 from src.moves import DAMAGING_MOVE_CATEGORIES, whole_beats
 from src.text_format import pct as _pct
 
@@ -1182,16 +1188,18 @@ class CombatLLMAdapter(ProviderChainMixin, GenericLLMClient):
 
     #: Total wall time one suggestion request may spend across the chain.
     #: Equal to what the configured OpenRouter walk already allows itself
-    #: (``_openrouter_chat``: a 10s first attempt plus a 5s fallback), so a
-    #: fallback hop gets only what the primary left rather than stretching the
-    #: beat. A stalled fallback host is cut at this deadline; the primary's own
-    #: timeouts predate the chain and are not clipped.
-    _CHAIN_BUDGET_SECONDS = 15.0
+    #: (``_openrouter_chat``: its first attempt plus its fallback attempt), so
+    #: a fallback hop gets only what the primary left rather than stretching
+    #: the beat. A stalled fallback host is cut at this deadline; a
+    #: base-routed primary's own timeouts predate the chain and are not clipped.
+    _CHAIN_BUDGET_SECONDS = float(
+        _OPENROUTER_PRIMARY_TIMEOUT_SECONDS + _OPENROUTER_RETRY_TIMEOUT_SECONDS
+    )
 
     #: Nominal timeout for one fallback call, before it is clipped to what
     #: the chain budget has left. A healthy free model answers in ~2-4s; this
     #: is NPC chat's default for the same reason.
-    _FALLBACK_CALL_TIMEOUT_SECONDS = 6.0
+    _FALLBACK_CALL_TIMEOUT_SECONDS = _DEFAULT_ROUND_TIMEOUT_SECONDS
 
     _FALLBACK_ENV_VARS = ("COMBAT_LLM_FALLBACK",)
     _FEATURE_LABEL = "Tactical advisor adapter"

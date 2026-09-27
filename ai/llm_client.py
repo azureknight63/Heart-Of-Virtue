@@ -784,6 +784,12 @@ _ROUND_TIMEOUT_CEILING_SECONDS = 7.0
 #: slow-but-fine tail (see ``NpcChatLLMAdapter._round_timeout``).
 _DEFAULT_ROUND_TIMEOUT_SECONDS = 6.0
 
+#: ``_openrouter_chat``'s per-attempt timeouts: the first model gets the long
+#: one, the fallback attempt fails fast. ``CombatLLMAdapter`` derives its chain
+#: budget from their sum, so the two stay in step.
+_OPENROUTER_PRIMARY_TIMEOUT_SECONDS = 10
+_OPENROUTER_RETRY_TIMEOUT_SECONDS = 5
+
 #: A ``requests`` timeout: one float applied to EACH phase, or a
 #: ``(connect, read)`` pair.
 _Timeout = Union[float, Tuple[float, float]]
@@ -2321,7 +2327,10 @@ class GenericLLMClient:
 
         def attempt(model_id: str, attempt_no: int) -> Optional[Any]:
             # Shorter timeout for a fallback attempt, to fail fast.
-            timeout = 10 if attempt_no == 1 else 5
+            timeout = (
+                _OPENROUTER_PRIMARY_TIMEOUT_SECONDS if attempt_no == 1
+                else _OPENROUTER_RETRY_TIMEOUT_SECONDS
+            )
             logger.info(
                 "_openrouter_chat attempting model_id=%s attempt=%s/%s timeout=%s",
                 model_id, attempt_no, max_attempts, timeout,
@@ -3731,8 +3740,8 @@ class ProviderChainMixin:
     @staticmethod
     def _turn_budget_spent() -> bool:
         """True inside a turn with too little left to start another call."""
-        left = _turn_budget_left()
-        return left is not None and left < _MIN_CALL_SECONDS
+        deadline = getattr(_TURN_BUDGET, "deadline", None)
+        return deadline is not None and _deadline_spent(deadline)
 
     def _walk_provider_chain(
         self,
@@ -3824,6 +3833,22 @@ class ProviderChainMixin:
         logger.error("%s unknown provider=%s", type(self).__name__, provider)
         return None
 
+    @staticmethod
+    def _stripped_or_none(label: str, provider: str, res: Any) -> Optional[str]:
+        """A raw reply with thinking tokens stripped, or None (logged) when nothing is left.
+
+        Empty-after-stripping is a miss, not proof the model cannot answer, so
+        nothing is benched -- the walk just moves on. Shared by every chain
+        walk's ``accept``.
+        """
+        stripped = _JSONTools._strip_thinking_tokens(str(res))
+        if not stripped:
+            logger.warning(
+                "%s empty after stripping thinking tokens. provider=%s", label, provider,
+            )
+            return None
+        return stripped
+
     def _structured_via_chain(
         self,
         system_prompt: str,
@@ -3868,15 +3893,13 @@ class ProviderChainMixin:
                     _STRUCTURED_MAX_TOKENS, _DEFAULT_TEMPERATURE,
                 )
 
+        label = "%s._structured_via_chain" % type(self).__name__
+
         def accept(provider: str, res: Any) -> Optional[Dict[str, Any]]:
             if isinstance(res, dict):
                 return res
-            stripped = _JSONTools._strip_thinking_tokens(str(res))
-            if not stripped:
-                logger.warning(
-                    "%s provider=%s answered empty after stripping thinking tokens; "
-                    "trying next.", type(self).__name__, provider,
-                )
+            stripped = self._stripped_or_none(label, provider, res)
+            if stripped is None:
                 return None
             parsed = _JSONTools.try_parse_json(stripped)
             if isinstance(parsed, dict):
@@ -3891,7 +3914,7 @@ class ProviderChainMixin:
             return None
 
         return self._walk_provider_chain(
-            "%s._structured_via_chain" % type(self).__name__,
+            label,
             call,
             accept,
             budget_spent=functools.partial(_deadline_spent, deadline),
@@ -5261,23 +5284,14 @@ class NpcChatLLMAdapter(ProviderChainMixin, GenericLLMClient):
             logger.warning("NpcChatLLMAdapter._call_llm aborted: adapter disabled.")
             return None
 
-        def accept(provider: str, res: Any) -> Optional[str]:
-            # Strip chain-of-thought tokens before the caller parses JSON.
-            stripped = _JSONTools._strip_thinking_tokens(str(res))
-            if not stripped:
-                logger.warning(
-                    "NpcChatLLMAdapter._call_llm empty after stripping thinking tokens. provider=%s",
-                    provider,
-                )
-                return None
-            return stripped
-
+        label = "NpcChatLLMAdapter._call_llm"
         return self._walk_provider_chain(
-            "NpcChatLLMAdapter._call_llm",
+            label,
             lambda provider: self._call_chain_provider(
                 provider, system_prompt, user_prompt, max_tokens, temperature
             ),
-            accept,
+            # Strip chain-of-thought tokens before the caller parses JSON.
+            lambda provider, res: self._stripped_or_none(label, provider, res),
         )
 
     def _generate_parsed(

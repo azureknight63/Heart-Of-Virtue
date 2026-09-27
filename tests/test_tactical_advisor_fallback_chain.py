@@ -94,10 +94,12 @@ def _openrouter_fails(adapter, calls, cost=0.0, clock=None):
     adapter._openrouter_chat = dead
 
 
-def _groq_posts(calls, reply=_GROQ_REPLY):
+def _posts(calls, record=lambda url, payload: ("post", url, payload.get("model"))):
+    """A ``_post_chat_completion`` double that answers ``_GROQ_REPLY`` and
+    appends ``record(url, payload)`` to ``calls`` for every request."""
     def post(url, payload, headers, timeout, on_discarded=None):
-        calls.append(("post", url, payload.get("model")))
-        return Resp(200, {"choices": [{"message": {"content": reply}}]})
+        calls.append(record(url, payload))
+        return Resp(200, {"choices": [{"message": {"content": _GROQ_REPLY}}]})
 
     return post
 
@@ -110,7 +112,7 @@ class TestTheChainServesTheAdvisor:
         adapter = _adapter()
         calls = []
         _openrouter_fails(adapter, calls)
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls))
 
         out = CombatStrategist(client=adapter).get_suggestions(_ctx())
 
@@ -121,17 +123,14 @@ class TestTheChainServesTheAdvisor:
     def test_the_fallback_keeps_json_mode(self, monkeypatch, keys):
         monkeypatch.setenv("COMBAT_LLM_PROVIDER", "openrouter")
         adapter = _adapter()
-        seen = {}
+        seen = []
         _openrouter_fails(adapter, [])
-
-        def post(url, payload, headers, timeout, on_discarded=None):
-            seen.update(payload)
-            return Resp(200, {"choices": [{"message": {"content": _GROQ_REPLY}}]})
-
-        monkeypatch.setattr(llm, "_post_chat_completion", post)
+        monkeypatch.setattr(
+            llm, "_post_chat_completion", _posts(seen, lambda url, payload: payload)
+        )
         adapter.generate_structured("sys", "user")
 
-        assert seen.get("response_format") == {"type": "json_object"}
+        assert seen[0].get("response_format") == {"type": "json_object"}
 
     def test_a_named_groq_is_dispatchable_not_an_unknown_provider(self, monkeypatch, keys):
         """.env.example used to warn that naming groq made the advisor report
@@ -139,7 +138,7 @@ class TestTheChainServesTheAdvisor:
         monkeypatch.setenv("COMBAT_LLM_PROVIDER", "groq")
         adapter = _adapter()
         calls = []
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls))
 
         assert adapter.available() is True
         assert adapter.generate_structured("sys", "user")["suggestions"][0]["reasoning"] == (
@@ -170,7 +169,7 @@ class TestConsent:
         adapter = _adapter()
         calls = []
         _openrouter_fails(adapter, calls)
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls))
 
         assert adapter.provider == "openrouter"
         assert adapter._provider_chain() == ["openrouter"]
@@ -183,7 +182,7 @@ class TestConsent:
         adapter = _adapter()
         calls = []
         _openrouter_fails(adapter, calls)
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls))
 
         assert adapter._provider_chain() == ["openrouter"]
         assert adapter.generate_structured("sys", "user") is None
@@ -239,7 +238,7 @@ class TestTheBeatBudget:
         _openrouter_fails(
             adapter, dialled, cost=CombatLLMAdapter._CHAIN_BUDGET_SECONDS, clock=clock
         )
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(dialled))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(dialled))
 
         assert adapter.generate_structured("sys", "user") is None
         assert dialled == ["openrouter"]
@@ -267,14 +266,6 @@ class TestOneImplementation:
         assert NpcChatLLMAdapter._round_timeout() > 0
 
 
-def _recording_post(calls):
-    def post(url, payload, headers, timeout, on_discarded=None):
-        calls.append(url)
-        return Resp(200, {"choices": [{"message": {"content": _GROQ_REPLY}}]})
-
-    return post
-
-
 class TestAnUnrecognisedProviderFailsClosed:
     """A typo in ``*_LLM_PROVIDER`` is not consent to dial every remote host.
 
@@ -290,7 +281,7 @@ class TestAnUnrecognisedProviderFailsClosed:
         monkeypatch.setenv("COMBAT_LLM_PROVIDER", typo)
         adapter = _adapter()
         calls = []
-        monkeypatch.setattr(llm, "_post_chat_completion", _recording_post(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls, lambda url, payload: url))
         strategist = CombatStrategist(client=adapter)
 
         assert adapter._provider_chain() == [typo]
@@ -304,7 +295,7 @@ class TestAnUnrecognisedProviderFailsClosed:
         monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", typo)
         adapter = NpcChatLLMAdapter()
         calls = []
-        monkeypatch.setattr(llm, "_post_chat_completion", _recording_post(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls, lambda url, payload: url))
 
         assert adapter._provider_chain() == [typo]
         assert adapter._call_llm("sys", "user") is None
@@ -345,7 +336,7 @@ class TestOneBeatOneProbe:
         monkeypatch.setattr(llm.requests, "get", get)
         adapter = _adapter()
         adapter._ollama_chat = lambda system_prompt, user_prompt, structured: None
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts([]))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts([]))
         return adapter, probes
 
     def test_one_advisor_beat_probes_ollama_at_most_once(self, armed_ollama):
@@ -423,7 +414,7 @@ class TestADeadOllamaPrimaryIsNotDialledTwice:
         adapter = _adapter()
         dialled = []
         adapter._ollama_chat = lambda **kw: dialled.append("ollama_chat")
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(dialled))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(dialled))
         return adapter, dialled
 
     def test_the_probes_dead_verdict_skips_the_primary(self, dead_ollama):
@@ -512,7 +503,7 @@ class TestEachHopDialsItsOwnModel:
         monkeypatch.setenv("GROQ_MODEL", groq_model)
         adapter = _adapter()
         calls = []
-        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(calls))
+        monkeypatch.setattr(llm, "_post_chat_completion", _posts(calls))
 
         adapter.generate_structured("sys", "user")
 
