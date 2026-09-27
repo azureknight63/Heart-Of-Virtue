@@ -367,8 +367,9 @@ class TestUniqueItemInjection:
         merchant = SimpleNamespace(name="Bartho", inventory=[])
         container = SimpleNamespace(inventory=[], merchant=merchant)
         room = SimpleNamespace(objects_here=[container])
-        universe = SimpleNamespace(map={(0, 0): room}, unique_items_spawned=set())
-        merchant.current_room = SimpleNamespace(universe=universe)
+        room.map = {(0, 0): room}  # a MapTile carries its map; Universe has none
+        room.universe = SimpleNamespace(unique_items_spawned=set())
+        merchant.current_room = room
 
         injected = UniqueItemInjectionCondition().inject_unique_items(merchant)
 
@@ -378,17 +379,15 @@ class TestUniqueItemInjection:
     def test_container_lookup_failure_logs_and_falls_back_to_the_merchant(
         self, caplog
     ):
-        class ExplodingMap:
-            def __init__(self):
-                self.unique_items_spawned = set()
+        class ExplodingRoom:
+            universe = SimpleNamespace(unique_items_spawned=set())
 
             @property
             def map(self):
                 raise RuntimeError("malformed world")
 
         merchant = SimpleNamespace(
-            name="Bartho", inventory=[],
-            current_room=SimpleNamespace(universe=ExplodingMap()),
+            name="Bartho", inventory=[], current_room=ExplodingRoom(),
         )
 
         with caplog.at_level(logging.WARNING, logger="src.shop_conditions"):

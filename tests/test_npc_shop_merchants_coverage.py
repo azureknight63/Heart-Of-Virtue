@@ -47,7 +47,12 @@ class FakeRoom:
 
 class FakeUniverse:
     def __init__(self, rooms):
-        self.map = rooms
+        # A real Universe has no ``map`` (issue #739): each room carries the
+        # coordinate-keyed dict of its map as ``room.map``, like a MapTile.
+        game_map = {(index, 0): room for index, room in enumerate(rooms)}
+        for room in rooms:
+            if not isinstance(room, str):
+                room.map = game_map
 
 class FakePlayer:
     def __init__(self):

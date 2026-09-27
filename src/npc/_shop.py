@@ -53,6 +53,7 @@ from src.shop_conditions import (  # type: ignore
     UniqueItemInjectionCondition,
     iter_merchant_containers,
     iter_rooms,
+    merchant_rooms_source,
     unique_registry_for,
 )
 
@@ -226,19 +227,8 @@ class MerchantShopMixin:
     # ── Room/item helpers ──────────────────────────────────────────────────────
 
     def _resolve_rooms_source(self):
-        """Return the map dict/list for the current room, or None if unavailable.
-
-        Supports both a real Room.map and the test-harness pattern where
-        room.universe.map is provided instead.
-        """
-        if not self.current_room:
-            return None
-        rooms_source = getattr(self.current_room, "map", None)
-        if rooms_source is None:
-            uni = getattr(self.current_room, "universe", None)
-            if uni is not None:
-                rooms_source = getattr(uni, "map", None)
-        return rooms_source
+        """Return the map dict for the current room, or None if unavailable."""
+        return merchant_rooms_source(self)
 
     def _remove_placed_item_from_room(self, item: Item):
         """Remove an item that was just placed into inventory from the room's item list."""

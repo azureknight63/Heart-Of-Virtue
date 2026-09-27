@@ -60,10 +60,16 @@ class RealisticRoom:
 
 
 class RealisticUniverse:
-    """Universe stand-in whose ``map`` is coordinate-keyed, as in universe.py."""
+    """Universe stand-in holding the unique-item registry.
+
+    Like the real ``Universe`` it has no ``map`` (issue #739): it binds each
+    room's ``map`` to one coordinate-keyed dict, as a built MapTile carries.
+    """
 
     def __init__(self, rooms):
-        self.map = {(index, 0): room for index, room in enumerate(rooms)}
+        game_map = {(index, 0): room for index, room in enumerate(rooms)}
+        for room in rooms:
+            room.map = game_map
         self.unique_items_spawned = set()
 
 
@@ -227,18 +233,19 @@ def test_inject_unique_items_falls_back_to_inventory_without_container():
 
 
 def test_inject_unique_items_logs_when_container_lookup_fails(caplog):
-    merchant, _room = _merchant_in_world()
+    merchant, room = _merchant_in_world()
     merchant.inventory = []
 
-    class ExplodingUniverse:
-        def __init__(self):
-            self.unique_items_spawned = set()
-
+    class ExplodingRoom(RealisticRoom):
         @property
         def map(self):
             raise RuntimeError("map unavailable")
 
-    merchant.current_room.universe = ExplodingUniverse()
+        @map.setter
+        def map(self, value):
+            pass
+
+    merchant.current_room = ExplodingRoom(universe=room.universe)
 
     with caplog.at_level(logging.WARNING, logger="src.shop_conditions"):
         injected = UniqueItemInjectionCondition().inject_unique_items(merchant)
