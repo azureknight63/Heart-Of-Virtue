@@ -718,6 +718,11 @@ def _turn_budget_left() -> Optional[float]:
     return None if deadline is None else deadline - time.monotonic()
 
 
+def _deadline_spent(deadline: float) -> bool:
+    """True when too little is left before ``deadline`` to start another call."""
+    return deadline - time.monotonic() < _MIN_CALL_SECONDS
+
+
 #: Why this thread's most recent OpenRouter attempt failed
 #: (``_REASON_RATE_LIMITED``, ``_http_reason()``, ``_exc_reason()``), for the
 #: validation failure log (#729); the full vocabulary is the ``_REASON_*``
@@ -1065,6 +1070,12 @@ class GenericLLMClient:
     _ENABLED_ENV_VARS: Tuple[str, ...] = ("MYNX_LLM_ENABLED",)
     _PROVIDER_ENV_VARS: Tuple[str, ...] = ("MYNX_LLM_PROVIDER",)
     _MODEL_ENV_VARS: Tuple[str, ...] = ("MYNX_LLM_MODEL",)
+
+    #: The providers this class dials on its own (``_dispatch_chat`` through
+    #: ``_base_route``). The one list, read also by ``ProviderChainMixin``'s
+    #: structured walk and by ``CombatLLMAdapter``, so "which hosts have a
+    #: base transport" cannot drift between them.
+    _BASE_ROUTED: Tuple[str, ...] = ("ollama", "openrouter")
 
     # Class-level defaults so an instance built with ``__new__`` -- which tests
     # do to skip network discovery -- still answers these, and answers them the
@@ -1763,6 +1774,30 @@ class GenericLLMClient:
             "reason": None if avail else self._unavailable_reason,
         }
 
+    def _base_route(
+        self, provider: str, system_prompt: str, user_prompt: str, structured: bool
+    ) -> Optional[Any]:
+        """One call through this class's own transport for a ``_BASE_ROUTED`` provider."""
+        if provider == "ollama":
+            return self._ollama_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=structured)
+        return self._openrouter_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=structured)
+
+    def _log_dispatch_start(
+        self, system_prompt: str, user_prompt: str, structured: bool
+    ) -> str:
+        """Log the start of a generate_* request; return its label.
+
+        One format for every dispatch path, including a subclass that routes
+        around this class's ``_dispatch_chat`` (``CombatLLMAdapter``'s chain).
+        """
+        label = "generate_structured" if structured else "generate_plain"
+        logger.info(
+            "%s start provider=%s model=%s structured=%s prompt_chars=%s",
+            label, self.provider, self.model, structured,
+            len(system_prompt) + len(user_prompt),
+        )
+        return label
+
     def _dispatch_chat(
         self, system_prompt: str, user_prompt: str, structured: bool
     ) -> Optional[Any]:
@@ -1775,23 +1810,15 @@ class GenericLLMClient:
         the configured provider's chat method, and the broad exception net
         around that call. Callers do their own result validation/logging.
         """
-        label = "generate_structured" if structured else "generate_plain"
-        logger.info(
-            "%s start provider=%s model=%s structured=%s prompt_chars=%s",
-            label, self.provider, self.model, structured,
-            len(system_prompt) + len(user_prompt),
-        )
+        label = self._log_dispatch_start(system_prompt, user_prompt, structured)
         if not self.available():
             logger.warning("%s aborted: LLM not available. provider=%s", label, self.provider)
             return None
         try:
-            if self.provider == "ollama":
-                return self._ollama_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=structured)
-            elif self.provider == "openrouter":
-                return self._openrouter_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=structured)
-            else:
-                logger.error("%s unknown provider=%s", label, self.provider)
-                return None
+            if self.provider in self._BASE_ROUTED:
+                return self._base_route(self.provider, system_prompt, user_prompt, structured)
+            logger.error("%s unknown provider=%s", label, self.provider)
+            return None
         except Exception as e:
             logger.error("%s exception provider=%s model=%s error=%s", label, self.provider, self.model, e, exc_info=True)
             return None
@@ -3538,6 +3565,14 @@ class ProviderChainMixin:
         Recomputed rather than cached: this is a handful of env reads, and the
         live fixtures rewrite provider credentials between modules.
         """
+        return self._chain_available(self._provider_chain())
+
+    def _chain_available(self, chain: List[str]) -> bool:
+        """:meth:`available` for a chain the caller already built.
+
+        Split out so a caller holding the chain (``CombatLLMAdapter``) does not
+        rebuild it -- and re-log its saturated providers -- a second time.
+        """
         if not self.enabled:
             # Named for the feature and its own gate, not the base class's
             # generic "Adapter disabled".
@@ -3546,8 +3581,6 @@ class ProviderChainMixin:
                 self._FEATURE_LABEL, self._ENABLED_ENV_VARS[0],
             )
             return False
-
-        chain = self._provider_chain()
 
         # An ollama-primary adapter gets the base class's real reachability
         # probe. _call_ollama falls back to a default base_url, so there is no
@@ -3575,6 +3608,14 @@ class ProviderChainMixin:
             self._available = None
             self._unavailable_reason = None
 
+        return self._chain_credentialed(chain)
+
+    def _chain_credentialed(self, chain: List[str]) -> bool:
+        """True when some member of ``chain`` has its credential; records why not.
+
+        The no-network half of :meth:`_chain_available`: env reads only, no
+        Ollama probe.
+        """
         usable = [name for name in chain if self._provider_credentialed(name)]
         self._available = bool(usable)
         self._unavailable_reason = (
@@ -3651,6 +3692,7 @@ class ProviderChainMixin:
         call_provider: Callable[[str], Optional[Any]],
         accept: Callable[[str, Any], Optional[Any]],
         budget_spent: Optional[Callable[[], bool]] = None,
+        chain: Optional[List[str]] = None,
     ) -> Optional[Any]:
         """Try each provider in ``_provider_chain`` until one yields a usable reply.
 
@@ -3659,9 +3701,11 @@ class ProviderChainMixin:
         or None to move on (empty after stripping, not JSON, ...).
         ``budget_spent()`` is asked before each provider and stops the walk
         when it says so; it defaults to this thread's turn budget
-        (:meth:`bounded_by`). Returns the first accepted value, else None.
+        (:meth:`bounded_by`). ``chain`` is the chain a caller already built,
+        else it is built here. Returns the first accepted value, else None.
         """
-        chain = self._provider_chain()
+        if chain is None:
+            chain = self._provider_chain()
         if not chain:
             logger.warning(
                 "%s no provider configured (provider=%s); skipping.", label, self.provider,
@@ -3733,7 +3777,11 @@ class ProviderChainMixin:
         return None
 
     def _structured_via_chain(
-        self, system_prompt: str, user_prompt: str, budget_seconds: float
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        budget_seconds: float,
+        chain: Optional[List[str]] = None,
     ) -> Optional[Dict[str, Any]]:
         """A ``generate_structured`` reply walked across the chain, in one budget.
 
@@ -3749,16 +3797,17 @@ class ProviderChainMixin:
         timeouts, which predate the chain, can.
 
         Replies are parsed as JSON objects. Prose from a fallback host benches
-        that host's model (``_penalize_unparseable``) and the walk moves on.
+        that host's model (``_penalize_unparseable``) and the walk moves on; a
+        reply that is empty once thinking tokens are stripped just moves on,
+        as it does for chat -- a miss is not proof the model cannot do JSON.
+        ``chain`` is passed through to :meth:`_walk_provider_chain`.
         """
         deadline = time.monotonic() + budget_seconds
         primary = self.provider
 
         def call(provider: str) -> Optional[Any]:
-            if provider == primary and provider == "ollama":
-                return self._ollama_chat(system_prompt, user_prompt, True)
-            if provider == primary and provider == "openrouter":
-                return self._openrouter_chat(system_prompt, user_prompt, True)
+            if provider == primary and provider in GenericLLMClient._BASE_ROUTED:
+                return self._base_route(provider, system_prompt, user_prompt, True)
             with self.bounded_by(deadline):
                 return self._call_chain_provider(
                     provider, system_prompt, user_prompt,
@@ -3768,7 +3817,14 @@ class ProviderChainMixin:
         def accept(provider: str, res: Any) -> Optional[Dict[str, Any]]:
             if isinstance(res, dict):
                 return res
-            parsed = _JSONTools.try_parse_json(_JSONTools._strip_thinking_tokens(str(res)))
+            stripped = _JSONTools._strip_thinking_tokens(str(res))
+            if not stripped:
+                logger.warning(
+                    "%s provider=%s answered empty after stripping thinking tokens; "
+                    "trying next.", type(self).__name__, provider,
+                )
+                return None
+            parsed = _JSONTools.try_parse_json(stripped)
             if isinstance(parsed, dict):
                 return parsed
             logger.warning(
@@ -3784,7 +3840,8 @@ class ProviderChainMixin:
             "%s._structured_via_chain" % type(self).__name__,
             call,
             accept,
-            budget_spent=lambda: deadline - time.monotonic() < _MIN_CALL_SECONDS,
+            budget_spent=functools.partial(_deadline_spent, deadline),
+            chain=chain,
         )
 
     @classmethod

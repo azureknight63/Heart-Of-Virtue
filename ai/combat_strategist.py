@@ -1176,9 +1176,6 @@ class CombatLLMAdapter(ProviderChainMixin, GenericLLMClient):
     _FALLBACK_ENV_VARS = ("COMBAT_LLM_FALLBACK",)
     _FEATURE_LABEL = "Tactical advisor adapter"
 
-    #: The providers ``GenericLLMClient._dispatch_chat`` routes on its own.
-    _BASE_ROUTED = ("ollama", "openrouter")
-
     # Declared as data rather than re-applied after super().__init__(): the
     # base class resolves the gate, runs model discovery and validates the
     # provider *inside* __init__, so an override applied afterwards had combat
@@ -1204,20 +1201,29 @@ class CombatLLMAdapter(ProviderChainMixin, GenericLLMClient):
         """Nominal per-call timeout for a chain hop (``ProviderChainMixin``)."""
         return cls._FALLBACK_CALL_TIMEOUT_SECONDS
 
-    def _single_base_route(self) -> bool:
+    def _single_base_route(self, chain: List[str]) -> bool:
         """True when there is no chain to walk: one base-routed provider.
 
         That configuration -- every install that has not named a combat
         provider, or has pinned one with ``COMBAT_LLM_FALLBACK=0`` -- keeps the
         base client's behaviour exactly, including its cached availability
         probe, so arming the chain is the only thing that changes anything.
+        ``chain`` is the caller's ``_provider_chain()``, built once.
         """
-        return self.provider in self._BASE_ROUTED and self._provider_chain() == [self.provider]
+        return self.provider in GenericLLMClient._BASE_ROUTED and chain == [self.provider]
 
     def available(self) -> bool:
-        if self._single_base_route():
+        """The base client's cached probe when there is no chain, else the chain's.
+
+        Overrides ``ProviderChainMixin.available`` only to keep the
+        single-provider configuration on the base answer (a cached probe, and
+        "Unknown provider" wording) byte for byte; with the chain armed it is
+        the mixin's chain-aware answer, from one ``_provider_chain()`` build.
+        """
+        chain = self._provider_chain()
+        if self._single_base_route(chain):
             return GenericLLMClient.available(self)
-        return super().available()
+        return self._chain_available(chain)
 
     def _dispatch_chat(
         self, system_prompt: str, user_prompt: str, structured: bool
@@ -1227,17 +1233,28 @@ class CombatLLMAdapter(ProviderChainMixin, GenericLLMClient):
         The chain transports ask for JSON, so only ``generate_structured`` --
         the strategist's only call -- fans out. A plain request, or a
         configuration with nothing to fall back to, takes the base route.
+
+        The chain path does not call :meth:`available`: ``get_suggestions``
+        has just asked, and for an ollama primary that is a ``/api/tags``
+        round trip the beat would pay twice. The gate and the credential check
+        it needs are env reads (``_chain_credentialed``); a dead Ollama
+        primary is found by dialling it, and the walk moves on.
         """
-        if not structured or self._single_base_route():
+        if not structured:
             return super()._dispatch_chat(system_prompt, user_prompt, structured)
-        if not self.available():
+        chain = self._provider_chain()
+        if self._single_base_route(chain):
+            return super()._dispatch_chat(system_prompt, user_prompt, structured)
+        self._log_dispatch_start(system_prompt, user_prompt, structured)
+        if not self.enabled or not self._chain_credentialed(chain):
             logger.warning(
                 "CombatLLMAdapter aborted: LLM not available. provider=%s reason=%s",
-                self.provider, self._unavailable_reason,
+                self.provider,
+                self._unavailable_reason if self.enabled else "adapter disabled",
             )
             return None
         return self._structured_via_chain(
-            system_prompt, user_prompt, self._CHAIN_BUDGET_SECONDS
+            system_prompt, user_prompt, self._CHAIN_BUDGET_SECONDS, chain=chain
         )
 
 

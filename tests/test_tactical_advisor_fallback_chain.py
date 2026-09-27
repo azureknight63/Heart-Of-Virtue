@@ -314,6 +314,85 @@ class TestAnUnrecognisedProviderFailsClosed:
         assert not any("no response from provider=olama" in m for m in messages)
 
 
+class TestOneBeatOneProbe:
+    """An ollama primary with the chain armed used to probe ``/api/tags`` twice
+    per beat -- once from ``get_suggestions`` and again from ``_dispatch_chat``
+    -- and to rebuild the chain (and its saturation log) at every step."""
+
+    @pytest.fixture
+    def armed_ollama(self, monkeypatch, keys):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("COMBAT_LLM_MODEL", "llama3.1:8b")
+        monkeypatch.setenv("COMBAT_LLM_FALLBACK", "1")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        probes = []
+
+        def get(url, timeout=None, **kwargs):
+            probes.append(url)
+            return Resp(200, {"models": []})
+
+        monkeypatch.setattr(llm.requests, "get", get)
+        adapter = _adapter()
+        adapter._ollama_chat = lambda system_prompt, user_prompt, structured: None
+        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts([]))
+        return adapter, probes
+
+    def test_one_advisor_beat_probes_ollama_at_most_once(self, armed_ollama):
+        adapter, probes = armed_ollama
+
+        out = CombatStrategist(client=adapter).get_suggestions(_ctx())
+
+        assert [s["reasoning"] for s in out] == ["served by groq"]
+        assert len([u for u in probes if u.endswith("/api/tags")]) <= 1
+
+    def test_the_chain_is_built_once_per_dispatch(self, armed_ollama, monkeypatch):
+        adapter, _ = armed_ollama
+        built = []
+        real = type(adapter)._provider_chain
+
+        def counting(self):
+            built.append(1)
+            return real(self)
+
+        monkeypatch.setattr(type(adapter), "_provider_chain", counting)
+        adapter.generate_structured("sys", "user")
+
+        assert len(built) == 1
+
+    def test_the_chain_path_emits_the_base_start_log(self, armed_ollama, caplog):
+        adapter, _ = armed_ollama
+
+        with caplog.at_level("INFO", logger=llm.logger.name):
+            adapter.generate_structured("sys", "user")
+
+        assert any(
+            r.getMessage().startswith(
+                "generate_structured start provider=ollama model=llama3.1:8b structured=True"
+            )
+            for r in caplog.records
+        )
+
+    def test_an_empty_reply_moves_on_without_benching_the_model(
+        self, monkeypatch, keys
+    ):
+        """Match chat: an answer that is empty after stripping thinking tokens
+        is a miss, not proof the model cannot do JSON."""
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "groq")
+        adapter = _adapter()
+        benched = []
+        monkeypatch.setattr(
+            GenericLLMClient, "_penalize_unparseable",
+            classmethod(lambda cls, model_id: benched.append(model_id)),
+        )
+        # A transport that hands back a string with nothing in it once the
+        # thinking is stripped -- _call_ollama returns "" as-is, for one.
+        adapter._call_chain_provider = lambda *a, **k: "<think>hmm</think>"
+        adapter._last_served_model = "groq:some-model"
+
+        assert adapter.generate_structured("sys", "user") is None
+        assert benched == []
+
+
 class TestTheSharedTransportsNameTheirCaller:
     """The mixin's transports used to log "NpcChatLLMAdapter" whoever called
     them, so an advisor outage read as a chat outage in the logs."""
