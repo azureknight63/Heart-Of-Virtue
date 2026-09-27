@@ -1633,6 +1633,41 @@ class Move:  # master class for all moves
         """
         return self.category in DAMAGING_MOVE_CATEGORIES
 
+    #: The ``State`` subclass ``execute()`` attempts to inflict on the move's
+    #: target, or None (issue #720). A move that inflicts one sets it as a
+    #: class attribute; tests/test_npc_moves_coverage.py::
+    #: TestInflictedStatusMatchesExecute checks every NPC-used move's
+    #: declaration against the ``inflict()`` calls its ``execute()`` makes.
+    inflicts_status = None
+
+    def inflicted_status(self):
+        """The ``State`` class this move tries to put on its target, or None."""
+        return self.inflicts_status
+
+    def status_threat(self, target):
+        """What this move's status means for ``target``, or None if it has none.
+
+        ``{"name", "statustype", "lethal", "resisted"}``: the declared state
+        (``inflicted_status``), whether it kills outright (``State.lethal``),
+        and whether ``target`` is immune to it (``Combatant.resists_status``).
+        ``resisted`` is None when there is no target to ask. Shipped on the
+        wire so the Tactical Advisor can treat an unresisted lethal status as
+        an incoming threat even though the move deals no damage (DeathKnell).
+        """
+        state_cls = self.inflicted_status()
+        if state_cls is None:
+            return None
+        # Built only to read its name and statustype: a State's constructor
+        # just records fields, and every declared state takes the target alone.
+        probe = state_cls(target)
+        resists = getattr(target, "resists_status", None)
+        return {
+            "name": probe.name,
+            "statustype": probe.statustype,
+            "lethal": bool(state_cls.lethal),
+            "resisted": resists(probe.statustype) if callable(resists) else None,
+        }
+
     def beats_until_resolve(self):
         """Beats from now until this move's effect lands, or None once it has.
 

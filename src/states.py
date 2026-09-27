@@ -76,6 +76,11 @@ class State:  # master class for all states
     _COMPOUND_DURATION_MULT = 1.1
     _COMPOUND_REFRESH_DIVISOR = 4
 
+    # True for a state that kills outright on application (``Death``). The
+    # Tactical Advisor treats a move inflicting an unresisted lethal state as
+    # an incoming lethal threat (issue #720); other statuses stay unpriced.
+    lethal = False
+
     def __init__(
         self,
         name,
@@ -883,6 +888,8 @@ class Death(State):
     the ordinary defeat pipeline take it from there (is_alive()/check_revive()
     still run as normal, so a revive-capable state can still save the target).
     """
+
+    lethal = True
 
     def __init__(self, target):
         super().__init__(
