@@ -12,6 +12,8 @@ serializer, so a renamed engine method or wire key fails these tests rather
 than a hand-built dict agreeing with itself.
 """
 
+from unittest.mock import patch
+
 import pytest
 
 from ai.combat_strategist import (
@@ -91,6 +93,39 @@ class TestDeathKnell:
         top = strategist._get_fallback_suggestions(_ctx(enemy), 1)[0]
         assert top["move_name"] in ("Dodge", "Parry"), top
         assert "Death" in top["reasoning"].replace("Death Knell", ""), top
+
+
+class TestDeathAimedAtAnAlly:
+    """F3 #1: ``resisted`` is the TARGET's answer, and the target may be an
+    ally. A Death aimed at Gorran is not Jean's to Dodge -- the tactical state
+    drops it via `_aimed_elsewhere`, exactly as it drops a surge at Gorran."""
+
+    def test_death_knell_at_gorran_does_not_recommend_jeans_dodge(
+        self, strategist
+    ):
+        from src.npc._friends import Gorran
+
+        wraith, move, jean = wraith_casting("DeathKnell")
+        with patch("builtins.print"):
+            gorran = Gorran()
+        gorran.status_resistance["death"] = 0.0
+        move.target = gorran
+        wraith.target = gorran
+        for beats_left in range(1, 30):
+            move.beats_left = beats_left
+            if move.beats_until_resolve() == _DEFENSIVE_WINDOW_BEATS:
+                break
+        enemy = CombatantSerializer.serialize_combatant(wraith, reference=jean)
+        mip = enemy["move_in_process"]
+        assert mip["inflicts_status"]["resisted"] is False  # Gorran's answer
+        assert mip["target_id"] == CombatantSerializer.stream_id(gorran)
+        ctx = _ctx(enemy)
+        ctx["player"]["id"] = CombatantSerializer.stream_id(jean)
+        state = strategist._derive_tactical_state(ctx)
+        assert state["incoming_beats"] is None
+        assert not state["incoming_lethal"]
+        top = strategist._get_fallback_suggestions(ctx, 1)[0]
+        assert top["move_name"] not in ("Dodge", "Parry"), top
 
 
 class TestNonLethalStatusStaysUnpriced:

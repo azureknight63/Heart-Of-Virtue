@@ -733,6 +733,14 @@ def _lethal_status_of(mip: Optional[Dict[str, Any]]) -> Optional[str]:
     it; an unknown answer (None) still warns, because an unwarned one-shot is
     the worse failure. Poison, fatigue drain and every other non-lethal status
     return None and stay unpriced.
+
+    ``resisted`` is the answer of the move's TARGET, which may be an ally.
+    This reads the payload only and does not filter by target, in parity with
+    the damage path: `_threat_worth_defending` drops a charge aimed elsewhere
+    (`_aimed_elsewhere`) before any Dodge/Parry is scored, while the roster
+    line, INCOMING alert and `_rank_enemies` describe every charge on the
+    field, a damaging surge at Gorran included (pinned by
+    ``TestDeathAimedAtAnAlly``).
     """
     status = (mip or {}).get("inflicts_status")
     if not isinstance(status, dict) or status.get("lethal") is not True:
