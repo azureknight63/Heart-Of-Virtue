@@ -47,6 +47,7 @@ from src.npc import Merchant
 from src.npc._shop import _NEVER_STOCK_FAMILIES
 from src.objects import Container
 from src.shop_conditions import UniqueItemInjectionCondition, ValueModifierCondition
+from tests._fake_world import bind_rooms_to_shared_map
 
 
 class RealisticRoom:
@@ -67,9 +68,7 @@ class RealisticUniverse:
     """
 
     def __init__(self, rooms):
-        game_map = {(index, 0): room for index, room in enumerate(rooms)}
-        for room in rooms:
-            room.map = game_map
+        bind_rooms_to_shared_map(rooms)
         self.unique_items_spawned = set()
 
 
@@ -243,6 +242,8 @@ def test_inject_unique_items_logs_when_container_lookup_fails(caplog):
 
         @map.setter
         def map(self, value):
+            # No-op: RealisticRoom.__init__ assigns ``self.map``, which a
+            # getter-only property would reject; the getter must keep raising.
             pass
 
     merchant.current_room = ExplodingRoom(universe=room.universe)

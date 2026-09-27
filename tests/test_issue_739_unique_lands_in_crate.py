@@ -9,7 +9,7 @@ invented ``universe.map`` made it look like the crate path worked.
 These tests use a real built world, so no fake can supply the missing attribute.
 """
 
-from src.shop_conditions import UniqueItemInjectionCondition
+from src.shop_conditions import UniqueItemInjectionCondition, merchant_rooms_source
 from tests._real_map_helpers import map_named
 from tests._world_fixtures import fresh_built_world, merchant_on_map
 
@@ -42,8 +42,6 @@ def test_injected_unique_lands_in_jambos_back_room_crate():
 
 def test_rooms_source_of_a_real_merchant_is_its_current_map():
     """The shared room resolver finds the merchant's map on a real world."""
-    from src.shop_conditions import merchant_rooms_source
-
     player = fresh_built_world()
     jambo = merchant_on_map(player.universe, JAMBOS_SHOP, "Jambo")
 

@@ -36,12 +36,20 @@ def tile_exists(map_to_check, x, y):
 
 
 def is_dev_only_map(game_map):
-    """True when a map (loaded dict or raw JSON) is flagged
-    ``metadata.dev_only: true`` -- a test/dev map no player can reach."""
+    """True when a map is flagged ``metadata.dev_only: true``.
+
+    Accepts a loaded map dict or raw map JSON. A flagged map is a test/dev map
+    no player can reach.
+    """
     if not isinstance(game_map, dict):
         return False
     metadata = game_map.get("metadata")
     return isinstance(metadata, dict) and metadata.get("dev_only") is True
+
+
+def live_maps(maps):
+    """``maps`` without the dev-only ones (``is_dev_only_map``), order kept."""
+    return [game_map for game_map in maps if not is_dev_only_map(game_map)]
 
 
 class Universe:  # "globals" for the game state can be stored here, as well as all the maps
@@ -145,8 +153,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         merchants. They still stock on first shop open.
         """
         try:
-            live_maps = [m for m in self.maps if not is_dev_only_map(m)]
-            for merchant in iter_merchants(live_maps):
+            for merchant in iter_merchants(live_maps(self.maps)):
                 try:
                     merchant.stock_if_empty()
                 except Exception:

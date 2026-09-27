@@ -35,17 +35,13 @@ SWEEP_SEEDS = (REPRO_SEED,) + tuple(s for s in range(0, 120) if s != REPRO_SEED)
 def _find_merchant(universe, class_name: str):
     """Return the first NPC of ``class_name`` in ``universe``, with its room.
 
-    ``universe.map`` is only the map the player currently stands on, and Jambo
-    lives on another one — so walk ``universe.maps``, which holds every map
-    the universe loaded, and fall back to the current map.
+    Walks ``universe.maps``, which holds every map the universe loaded. A real
+    ``Universe`` has no ``map`` attribute (issue #739), so there is no
+    current-map fallback to consult.
     """
     from src.shop_conditions import iter_rooms
 
-    sources = list(getattr(universe, "maps", None) or [])
-    current = getattr(universe, "map", None)
-    if current is not None:
-        sources.append(current)
-    for source in sources:
+    for source in getattr(universe, "maps", None) or []:
         for room in iter_rooms(source):
             for npc in getattr(room, "npcs_here", []) or []:
                 if type(npc).__name__ == class_name:

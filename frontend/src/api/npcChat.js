@@ -50,7 +50,8 @@ const npcChat = {
    * @param {string} npcKey - Session key returned from /open
    * @param {string} jeanText - Jean's dialogue text
    * @param {string} [jeanTone] - Jean's portrait emotion for the line (the tone of the option
-   *   picked). Omitted, the field is not sent; the server accepts it for shape only (#705).
+   *   picked). When omitted, `jean_tone` is not sent; the server defaults it to 'neutral'
+   *   and ignores it (#705).
    * @param {object} [options]
    * @param {string} [options.turnId] - Idempotency key for this turn (#636): one per
    *   option click, reused by that click's Retry, so a turn the server already
