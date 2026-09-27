@@ -265,6 +265,20 @@ class TestOneImplementation:
         assert CombatLLMAdapter._round_timeout() == CombatLLMAdapter._FALLBACK_CALL_TIMEOUT_SECONDS
         assert NpcChatLLMAdapter._round_timeout() > 0
 
+    def test_a_subclass_without_a_fallback_variable_fails_closed(self):
+        """An empty ``_FALLBACK_ENV_VARS`` read as "unset" -- the fan-out
+        default -- so a subclass that forgot to declare one could never be
+        pinned to its named host."""
+        from ai.llm_client import ProviderChainMixin
+
+        class Bare(ProviderChainMixin, GenericLLMClient):
+            pass
+
+        with pytest.raises(NotImplementedError, match="Bare must declare _FALLBACK_ENV_VARS"):
+            Bare._remote_fallback_setting()
+        for cls in (CombatLLMAdapter, NpcChatLLMAdapter):
+            assert cls._FALLBACK_ENV_VARS, cls
+
 
 class TestAnUnrecognisedProviderFailsClosed:
     """A typo in ``*_LLM_PROVIDER`` is not consent to dial every remote host.
@@ -434,6 +448,47 @@ class TestADeadOllamaPrimaryIsNotDialledTwice:
         adapter.generate_structured("sys", "user")
 
         assert dialled[0] == "ollama_chat"
+
+
+class TestOnlyTheServingModelIsBenched:
+    """A base-routed primary does not record ``_last_served_model``, so prose
+    from it used to bench whatever an EARLIER call on this thread had left
+    there -- a healthy model that served nothing this hop."""
+
+    def test_prose_from_a_base_routed_primary_benches_no_stale_model(
+        self, monkeypatch, keys
+    ):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "openrouter")
+        adapter = _adapter()
+        benched = []
+        monkeypatch.setattr(
+            GenericLLMClient, "_penalize_unparseable",
+            classmethod(lambda cls, model_id: benched.append(model_id)),
+        )
+        adapter._openrouter_chat = lambda **kw: "just prose, no JSON"
+        monkeypatch.setattr(llm, "_post_chat_completion", lambda *a, **k: Resp(503))
+        adapter._last_served_model = "groq:stale-from-an-earlier-call"
+
+        assert adapter.generate_structured("sys", "user") is None
+        assert benched == []
+
+    def test_prose_from_a_chain_hop_still_benches_that_hop(self, monkeypatch, keys):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "openrouter")
+        adapter = _adapter()
+        benched = []
+        monkeypatch.setattr(
+            GenericLLMClient, "_penalize_unparseable",
+            classmethod(lambda cls, model_id: benched.append(model_id)),
+        )
+        _openrouter_fails(adapter, [])
+        monkeypatch.setattr(
+            llm, "_post_chat_completion",
+            lambda *a, **k: Resp(200, {"choices": [{"message": {"content": "prose"}}]}),
+        )
+
+        assert adapter.generate_structured("sys", "user") is None
+        groq = llm._OPENAI_COMPATIBLE_PROVIDERS["groq"]["default_model"]
+        assert benched == ["groq:%s" % groq]
 
 
 class TestTheSharedTransportsNameTheirCaller:

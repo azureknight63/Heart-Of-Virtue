@@ -1238,7 +1238,7 @@ class CombatLLMAdapter(ProviderChainMixin, GenericLLMClient):
         probe, so arming the chain is the only thing that changes anything.
         ``chain`` is the caller's ``_provider_chain()``, built once.
         """
-        return self.provider in GenericLLMClient._BASE_ROUTED and chain == [self.provider]
+        return self.provider in self._BASE_ROUTED and chain == [self.provider]
 
     def available(self) -> bool:
         """The base client's cached probe when there is no chain, else the chain's.
@@ -1273,10 +1273,11 @@ class CombatLLMAdapter(ProviderChainMixin, GenericLLMClient):
         chain = self._provider_chain()
         if self._single_base_route(chain):
             return super()._dispatch_chat(system_prompt, user_prompt, structured)
-        self._log_dispatch_start(system_prompt, user_prompt, structured)
+        label = self._log_dispatch_start(system_prompt, user_prompt, structured)
         if not self.enabled or not self._chain_credentialed(chain):
             logger.warning(
-                "CombatLLMAdapter aborted: LLM not available. provider=%s reason=%s",
+                "%s aborted: LLM not available. provider=%s reason=%s",
+                label,
                 self.provider,
                 self._unavailable_reason if self.enabled else "adapter disabled",
             )

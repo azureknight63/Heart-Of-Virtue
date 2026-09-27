@@ -3557,6 +3557,17 @@ class ProviderChainMixin:
     "disabled" reason names that variable, so a subclass listing an inherited
     fallback gate first would tell the operator to set the wrong one.
 
+    Host attributes it reads from ``GenericLLMClient`` (set in its
+    ``__init__``/``_resolve_provider``): ``enabled``, ``provider`` and
+    ``_provider_explicit``, ``model``, ``base_url``, ``_openrouter_api_key``,
+    ``_available``/``_unavailable_reason``, ``_ENABLED_ENV_VARS``,
+    ``_BASE_ROUTED``; and methods ``available``, ``_base_route``,
+    ``_installed_ollama_model``, ``_ollama_payload``, ``_chat_payload``,
+    ``_extract_chat_content``, ``_openrouter_candidates``,
+    ``_rotate_openrouter``, ``_openrouter_attempt``,
+    ``_build_openrouter_headers``, ``_is_model_failed``/``_mark_model_failed``
+    and ``_first_env``.
+
     The consent rule is inherited unchanged: only the FIRST entry in
     ``_PROVIDER_ENV_VARS`` arms the chain (see ``GenericLLMClient.
     _resolve_provider``), so a provider inherited from ``MYNX_LLM_PROVIDER``
@@ -3571,10 +3582,11 @@ class ProviderChainMixin:
     #: probe-then-dispatch, short enough that a restarted host is retried.
     _PRIMARY_PROBE_TTL_SECONDS = 5.0
 
-    def _round_timeout(self) -> float:
+    @classmethod
+    def _round_timeout(cls) -> float:
         """Nominal per-call timeout (seconds); every subclass declares its own."""
         raise NotImplementedError(
-            "%s must define _round_timeout (ProviderChainMixin contract)" % type(self).__name__
+            "%s must define _round_timeout (ProviderChainMixin contract)" % cls.__name__
         )
 
     def available(self) -> bool:
@@ -3830,7 +3842,8 @@ class ProviderChainMixin:
             return self._call_openai_compatible(
                 provider, system_prompt, user_prompt, max_tokens, temperature
             )
-        logger.error("%s unknown provider=%s", type(self).__name__, provider)
+        # Unreachable from _walk_provider_chain, which reports and skips an
+        # unknown name before dialling; a silent None guard for direct callers.
         return None
 
     @staticmethod
@@ -3879,7 +3892,11 @@ class ProviderChainMixin:
         primary = self.provider
 
         def call(provider: str) -> Optional[Any]:
-            if provider == primary and provider in GenericLLMClient._BASE_ROUTED:
+            # Cleared per hop so accept() benches only a model that served
+            # THIS hop: the base routes do not record one, and a value left by
+            # an earlier call on this thread would take the penalty instead.
+            self._last_served_model = None
+            if provider == primary and provider in self._BASE_ROUTED:
                 if self._primary_known_dead():
                     logger.info(
                         "%s skipping provider=%s: its probe just failed.",
@@ -3908,9 +3925,11 @@ class ProviderChainMixin:
                 "%s provider=%s answered without a JSON object; trying next.",
                 type(self).__name__, provider,
             )
-            # Only a chain transport hands back a string (the base routes
-            # parse their own), and each records who served it.
-            GenericLLMClient._penalize_unparseable(self._last_served_model)
+            # Each chain transport records who served it; a base-routed
+            # primary records nothing, and nothing is benched on its account.
+            served = self._last_served_model
+            if served:
+                GenericLLMClient._penalize_unparseable(served)
             return None
 
         return self._walk_provider_chain(
@@ -3951,6 +3970,12 @@ class ProviderChainMixin:
         Anything set but unrecognised reads as a refusal. Fails closed, like
         every other gate on real network spend in this file.
         """
+        if not cls._FALLBACK_ENV_VARS:
+            # Empty would read as "unset", i.e. the fan-out default, and leave
+            # the subclass with no way to be pinned. Fail closed, loudly.
+            raise NotImplementedError(
+                "%s must declare _FALLBACK_ENV_VARS (ProviderChainMixin contract)" % cls.__name__
+            )
         raw = cls._first_env(cls._FALLBACK_ENV_VARS)
         if not raw:
             return None
@@ -3971,8 +3996,9 @@ class ProviderChainMixin:
 
         Five configurations get no fallbacks: ``"none"`` returns an empty
         chain; a name no transport serves (a typo) returns just that name,
-        which the walk reports and skips; a provider nobody named *for this feature* returns just that
-        provider (inherited from ``MYNX_LLM_PROVIDER``, or the local default);
+        which the walk reports and skips; a provider nobody named *for this
+        feature* returns just that provider (inherited from
+        ``MYNX_LLM_PROVIDER``, or the local default);
         ``_FALLBACK_ENV_VARS``=0 returns just the named provider whatever it
         is; and a deliberately named ``ollama`` returns just ollama unless
         ``_FALLBACK_ENV_VARS``=1 says otherwise. All five are deliberate --
@@ -4107,8 +4133,8 @@ class ProviderChainMixin:
         It used to RE-RAISE an HTTP error after recording it, alone among the
         three chain methods (``_call_ollama`` and ``_openrouter_attempt`` both
         return None), which made the chain walk's broad ``except``
-        (``_walk_provider_chain``) load-bearing for this one method's contract rather than a genuine safety net. All
-        three now agree: a provider that cannot answer yields None and the
+        (``_walk_provider_chain``) load-bearing for this one method's contract
+        rather than a genuine safety net. All three now agree: a provider that cannot answer yields None and the
         chain moves on.
         """
         cfg = _OPENAI_COMPATIBLE_PROVIDERS.get(provider)
