@@ -476,3 +476,84 @@ class TestEachHopDialsItsOwnModel:
         adapter.generate_structured("sys", "user")
 
         assert calls[0][2] == expected
+
+
+class TestTheOllamaHopDialsAnOllamaModel:
+    """``self.model`` names the PRIMARY's model. An Ollama fallback hop behind
+    an openrouter primary with a pinned slug used to send that slug to the
+    local host, and behind groq/cerebras it sent ``"auto"`` -- either way a
+    404, so the local fallback the chain promises never served anything.
+    The hop discovers an installed tag the way an ollama primary does."""
+
+    @pytest.fixture
+    def local(self, monkeypatch, keys):
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        posted = []
+        probes = []
+
+        def get(url, timeout=None, **kwargs):
+            probes.append(url)
+            return Resp(200, {"models": [{"name": "qwen2:7b"}, {"name": "llama3.1:8b"}]})
+
+        def post(url, json=None, timeout=None, **kwargs):
+            posted.append(json["model"])
+            return Resp(200, {"message": {"content": "{}"}})
+
+        monkeypatch.setattr(llm.requests, "get", get)
+        monkeypatch.setattr(llm.requests, "post", post)
+        return posted, probes
+
+    @pytest.mark.parametrize("provider, model", [
+        ("openrouter", "vendor/pinned:free"),
+        ("groq", ""),
+        ("cerebras", ""),
+    ])
+    def test_the_advisors_ollama_hop_sends_an_installed_tag(
+        self, monkeypatch, local, provider, model
+    ):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", provider)
+        monkeypatch.setenv("COMBAT_LLM_MODEL", model)
+        adapter = _adapter()
+
+        adapter._call_ollama("sys", "user", 10, 0.1)
+
+        assert local[0] == ["llama3.1:8b"]
+
+    @pytest.mark.parametrize("provider, model", [
+        ("openrouter", "vendor/pinned:free"),
+        ("groq", ""),
+    ])
+    def test_chats_ollama_hop_sends_an_installed_tag(
+        self, monkeypatch, local, provider, model
+    ):
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "1")
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", provider)
+        monkeypatch.setenv("NPC_CHAT_LLM_MODEL", model)
+        with patch.object(GenericLLMClient, "_discover_openrouter_model"), patch.object(
+            GenericLLMClient, "_validate_and_fallback_openrouter"
+        ):
+            adapter = NpcChatLLMAdapter()
+
+        adapter._call_ollama("sys", "user", 10, 0.1)
+
+        assert local[0] == ["llama3.1:8b"]
+
+    def test_an_ollama_primary_keeps_its_own_model(self, monkeypatch, local):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("COMBAT_LLM_MODEL", "mistral:7b")
+        adapter = _adapter()
+
+        adapter._call_ollama("sys", "user", 10, 0.1)
+
+        assert local[0] == ["mistral:7b"]
+
+    def test_the_hop_discovers_once_per_adapter(self, monkeypatch, local):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "groq")
+        adapter = _adapter()
+        posted, probes = local
+
+        adapter._call_ollama("sys", "user", 10, 0.1)
+        adapter._call_ollama("sys", "user", 10, 0.1)
+
+        assert posted == ["llama3.1:8b", "llama3.1:8b"]
+        assert len(probes) == 1

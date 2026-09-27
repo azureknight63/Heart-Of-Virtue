@@ -1260,29 +1260,42 @@ class GenericLLMClient:
 
     def _discover_ollama_model(self):
         """Try to find an available Ollama model if the default is missing."""
+        found = self._installed_ollama_model(self.model)
+        if found:
+            self.model = found
+
+    def _installed_ollama_model(self, wanted: str) -> Optional[str]:
+        """The tag to dial on the local host: ``wanted`` if installed, else a preferred one.
+
+        None when the host cannot be asked or lists nothing -- the caller keeps
+        whatever it had. Shared by the ollama primary's discovery above and the
+        chain's Ollama fallback hop (``ProviderChainMixin._ollama_hop_model``),
+        so both pick the same model from the same list.
+        """
         if requests is None:
-            return
+            return None
         try:
             r = requests.get(self.base_url + "/api/tags", timeout=1.5)
-            if r.status_code == 200:
-                data = r.json()
-                models = [m.get("name") for m in data.get("models", [])]
-                if models and self.model not in models:
-                    # Prefer gemma, then llama, then the first one available
-                    for pref in ["gemma", "llama", "mistral", "phi"]:
-                        for m in models:
-                            if pref in m.lower():
-                                self.model = m
-                                return
-                    self.model = models[0]
+            if r.status_code != 200:
+                return None
+            models = [m.get("name") for m in r.json().get("models", [])]
         except Exception as e:
             # Keeping the configured default is the right fallback, but doing
             # it silently made "Ollama is not running" indistinguishable from
             # "Ollama serves a different model than we asked for".
             logger.debug(
                 "Ollama model discovery failed at %s (%s); keeping model=%s.",
-                self.base_url, e, self.model,
+                self.base_url, e, wanted,
             )
+            return None
+        if not models or wanted in models:
+            return wanted if models else None
+        # Prefer gemma, then llama, then the first one available
+        for pref in ["gemma", "llama", "mistral", "phi"]:
+            for m in models:
+                if pref in m.lower():
+                    return m
+        return models[0]
 
     # ------------------------------------------------------------------
     # Disk cache helpers (Chester-style)
@@ -4157,12 +4170,34 @@ class ProviderChainMixin:
         self._last_served_model = served_id
         return content
 
+    def _ollama_hop_model(self) -> str:
+        """The model an Ollama call through the chain sends.
+
+        ``self.model`` only when ollama IS the configured provider -- then it is
+        the operator's tag, or what ``__init__``'s discovery picked. Behind any
+        other provider it names that primary's model (an OpenRouter slug, or
+        ``"auto"`` behind groq/cerebras) and the local host 404s it, so the hop
+        asks the host what it has installed, the same way an ollama primary
+        does (``_installed_ollama_model``). Found once per adapter; a failed
+        lookup is not cached, so a host that comes up later is still found.
+        """
+        if self.provider == "ollama":
+            return self.model
+        cached = self.__dict__.get("_ollama_hop_tag")
+        if cached:
+            return cached
+        found = self._installed_ollama_model(DEFAULT_MODEL)
+        if found:
+            self._ollama_hop_tag = found
+        return found or DEFAULT_MODEL
+
     def _call_ollama(
         self, system: str, user: str, max_tokens: int, temperature: float
     ) -> Optional[str]:
         if requests is None:
             return None
-        served_id = self._served_id("ollama", self.model)
+        model = self._ollama_hop_model()
+        served_id = self._served_id("ollama", model)
         # Enforce the unparseable-output bench _parse_or_penalize records
         # under this same id — without the check the entry was written but
         # nothing ever read it, so a JSON-incapable local model was re-dialled
@@ -4175,7 +4210,7 @@ class ProviderChainMixin:
         r = None
         try:
             payload = self._ollama_payload(
-                model=self.model,
+                model=model,
                 system=system,
                 user=user,
                 max_tokens=max_tokens,
