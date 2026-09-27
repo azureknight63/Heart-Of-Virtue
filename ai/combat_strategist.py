@@ -1174,9 +1174,10 @@ class CombatLLMAdapter(ProviderChainMixin, GenericLLMClient):
     consent rule, as NPC chat (``ProviderChainMixin``). A provider inherited
     from ``MYNX_LLM_PROVIDER`` is dialled alone, ``COMBAT_LLM_FALLBACK=0``
     pins the named host, and a named ``ollama`` stays local unless
-    ``COMBAT_LLM_FALLBACK=1``. The whole walk is held to
-    ``_CHAIN_BUDGET_SECONDS``; when it yields nothing the strategist's
-    deterministic scorer answers, as before.
+    ``COMBAT_LLM_FALLBACK=1``. The fallback hops (and a named groq/cerebras
+    primary) are held to ``_CHAIN_BUDGET_SECONDS``; a base-routed primary
+    (ollama, openrouter) keeps its own timeouts. When the walk yields nothing
+    the strategist's deterministic scorer answers, as before.
     """
 
     #: Total wall time one suggestion request may spend across the chain.

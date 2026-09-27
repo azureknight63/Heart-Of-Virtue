@@ -3764,7 +3764,7 @@ class ProviderChainMixin:
         for provider in chain:
             if spent():
                 logger.warning(
-                    "%s turn budget spent before provider=%s; stopping the chain.",
+                    "%s budget spent before provider=%s; stopping the chain.",
                     label, provider,
                 )
                 return None
