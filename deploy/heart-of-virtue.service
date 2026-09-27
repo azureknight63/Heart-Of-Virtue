@@ -36,9 +36,11 @@
 #                             main loop does, at 120s.
 #   -c deploy/gunicorn.conf.py puts the secret-redaction filter on gunicorn's
 #                             own error/access loggers (#741); the path is
-#                             relative to WorkingDirectory. Added 2026-09-27,
-#                             so the server's copy of this unit needs the
-#                             install step above before production has it.
+#                             relative to WorkingDirectory. Added 2026-09-27;
+#                             install this unit only AFTER deploy.ps1 has
+#                             shipped the code (the unit cannot boot without
+#                             this file). On a rollback past #741, restore the
+#                             old unit first. See docs/development/deployment.md.
 [Unit]
 Description=Heart of Virtue Flask API
 After=network.target docker.service
