@@ -82,11 +82,15 @@ class State:  # master class for all states
     lethal = False
 
     # Class-level name/statustype, for a state a move declares it inflicts
-    # (``Move.inflicted_state_cls``):``Move.status_threat`` reads them here
+    # (``Move.inflicted_state_cls``): ``Move.status_threat`` reads them here
     # rather than constructing a throwaway instance, whose constructor may
     # roll ``random`` (Poisoned, Slimed, ...). Such a state passes these to
     # ``super().__init__`` so the two cannot drift; tests/
     # test_npc_moves_coverage.py::TestDeclaredStateClassConstants checks it.
+    # REQUIRED only for a state some move declares -- the half-migration is
+    # intentional: states no move declares keep None here and pass literal
+    # names. TestEveryDeclaredStateHasItsConstants fails if a declared state
+    # is left on these defaults.
     STATUS_NAME = None
     STATUSTYPE = None
 

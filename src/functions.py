@@ -811,6 +811,12 @@ def inflict(state, target, chance=1.0, force=False, min_chance=0.0):
         statustype = getattr(state, "statustype", "")
         if min_chance <= 0 and status_immune(target, statustype):
             return False  # Immune
+        # The RAW read below is deliberate, not a missed use of
+        # combat_status_resistance: the roll must stay exactly the
+        # pre-predicate formula, which TestInflictOutcomeUnchangedByTheImmunity
+        # Predicate (tests/test_functions_stack_inflict.py) pins. Edge: a
+        # numeric-string resistance is coerced by the predicate ("1" is
+        # immune) but not here ("0.5" still raises TypeError, as it always did).
         resistance = target.status_resistance.get(statustype, 0.0)
         effective_chance = max(min_chance, chance * (1 - resistance))
         if effective_chance <= 0:

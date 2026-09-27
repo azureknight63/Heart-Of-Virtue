@@ -733,6 +733,14 @@ def _lethal_status_of(mip: Optional[Dict[str, Any]]) -> Optional[str]:
     it; an unknown answer (None) still warns, because an unwarned one-shot is
     the worse failure. Poison, fatigue drain and every other non-lethal status
     return None and stay unpriced.
+
+    ``resisted`` is the answer of the move's TARGET, which may be an ally.
+    This reads the payload only and does not filter by target, in parity with
+    the damage path: `_threat_worth_defending` drops a charge aimed elsewhere
+    (`_aimed_elsewhere`) before any Dodge/Parry is scored, while the roster
+    line, INCOMING alert and `_rank_enemies` describe every charge on the
+    field, a damaging surge at Gorran included (pinned by
+    ``TestDeathAimedAtAnAlly``).
     """
     status = (mip or {}).get("inflicts_status")
     if not isinstance(status, dict) or status.get("lethal") is not True:
@@ -750,6 +758,24 @@ def _lethal_status_clause(status: str) -> str:
     "~0–0 dmg" band a no-damage move estimates to, which says nothing true.
     """
     return f"inflicts {status}, unresisted"
+
+
+def _lethal_status_suffix(status: Optional[str]) -> str:
+    """``" (inflicts Death, unresisted)"`` after a charge's name, or ``""``
+    when no unresisted lethal status is incoming."""
+    return f" ({_lethal_status_clause(status)})" if status else ""
+
+
+def _threat_impact(threat: IncomingThreat, dmg_suffix: str) -> str:
+    """What one charge does to Jean, for the INCOMING alert and roster line.
+
+    The lethal status when there is one (issue #720), otherwise the damage
+    band followed by ``dmg_suffix`` (" dmg" / " estimated dmg").
+    """
+    status = threat["lethal_status"]
+    if status:
+        return _lethal_status_clause(status)
+    return f"~{threat['estimated_damage']}{dmg_suffix}"
 
 
 # ENGINE-OWNED: the routine member of `TELEGRAPH_SEVERITIES` (src/moves/_base.py),
@@ -1571,9 +1597,6 @@ class CombatStrategist:
         # `_charge_note` does outside the window -- the name `_charge_name`
         # already resolved into the state, never a second naming path.
         charge = _sentence_case(state["incoming_move"] or _UNNAMED_CHARGE)
-        # Issue #720: a lethal STATUS is named, never a "~0–0 dmg" band.
-        status = state["incoming_lethal_status"]
-        lethal_how = f" ({_lethal_status_clause(status)})" if status else ""
 
         if state["dodge_impaired"] and not est_lethal:
             # Status effect reduces defensive move value when the hit is survivable
@@ -1581,23 +1604,21 @@ class CombatStrategist:
                 f"{charge} in ~{min_bui} beat(s) but status effect impairs {name} "
                 "reliability; consider UseItem or accepting the hit."
             )
-        if state["dodge_impaired"] and est_lethal:
-            # Even impaired, better than a one-shot
-            return 88, (
-                f"{charge} is potentially lethal{lethal_how} in ~{min_bui} "
-                f"beat(s); {name} reliability is reduced by status effect but still "
-                "preferable to dying."
-            )
-        if est_lethal and status:
-            return 97, (
-                f"{charge} {_lethal_status_clause(status)}, landing in "
-                f"~{min_bui} beat(s); {name} is critical."
-            )
         if est_lethal:
-            return 97, (
-                f"{charge} is potentially lethal (~{est_damage} dmg), landing in "
-                f"~{min_bui} beat(s); {name} is critical."
+            # Issue #720: a lethal STATUS is named, never a "~0–0 dmg" band.
+            status = state["incoming_lethal_status"]
+            impact = (
+                _lethal_status_clause(status) if status
+                else f"is potentially lethal (~{est_damage} dmg)"
             )
+            lead = f"{charge} {impact}, landing in ~{min_bui} beat(s)"
+            if state["dodge_impaired"]:
+                # Even impaired, better than a one-shot
+                return 88, (
+                    f"{lead}; {name} reliability is reduced by status effect "
+                    "but still preferable to dying."
+                )
+            return 97, f"{lead}; {name} is critical."
         if state["defensively_vulnerable"]:
             return 95, (
                 f"{charge} landing in ~{min_bui} beat(s) and Jean's defenses are "
@@ -1619,13 +1640,9 @@ class CombatStrategist:
         beats = state["incoming_beats"]
         if beats is None or not state["incoming_flagged"]:
             return None
-        status = state["incoming_lethal_status"]
-        if status:
-            lethal = f" ({_lethal_status_clause(status)})"
-        elif state["incoming_lethal"]:
+        lethal = _lethal_status_suffix(state["incoming_lethal_status"])
+        if not lethal and state["incoming_lethal"]:
             lethal = " (potentially lethal)"
-        else:
-            lethal = ""
         charge = state["incoming_move"]
         lead = f"{_sentence_case(charge)}{lethal} lands in {beats} beat(s)"
         if beats > _LAST_DEFENSIBLE_BEAT:
@@ -1694,10 +1711,10 @@ class CombatStrategist:
         ):
             score = _LOCKED_DEFENCE_SCORES[(name, state["incoming_lethal"])]
             # Not implied by the lock: the lock note is derived on its own.
-            charge = state["incoming_move"] or _UNNAMED_CHARGE
-            status = state["incoming_lethal_status"]
-            if status:
-                charge = f"{charge} ({_lethal_status_clause(status)})"
+            charge = (
+                f"{state['incoming_move'] or _UNNAMED_CHARGE}"
+                f"{_lethal_status_suffix(state['incoming_lethal_status'])}"
+            )
             beats = state["incoming_beats"]
             if name == "Withdraw":
                 return score, (
@@ -2071,11 +2088,7 @@ class CombatStrategist:
             else " Jean's defenses may reduce impact."
         )
         lethal_note = ", LETHAL" if threat["potentially_lethal"] else ""
-        status = threat["lethal_status"]
-        impact = (
-            _lethal_status_clause(status) if status
-            else f"~{threat['estimated_damage']} dmg"
-        )
+        impact = _threat_impact(threat, " dmg")
         return (
             f"⚠ INCOMING: {enemy.get('name')} lands {mip.get('name')} "
             f"in ~{bui} beat(s) ({impact}{lethal_note}). "
@@ -2110,11 +2123,7 @@ class CombatStrategist:
             lethal_tag = (
                 " ⚠ POTENTIALLY LETHAL" if threat["potentially_lethal"] else ""
             )
-            status = threat["lethal_status"]
-            impact = (
-                _lethal_status_clause(status) if status
-                else f"~{threat['estimated_damage']} estimated dmg"
-            )
+            impact = _threat_impact(threat, " estimated dmg")
             mip_str = (
                 f", Charging: {mip.get('name')} "
                 f"({bui} beat{'s' if bui != 1 else ''} until impact, "

@@ -12,6 +12,8 @@ serializer, so a renamed engine method or wire key fails these tests rather
 than a hand-built dict agreeing with itself.
 """
 
+from unittest.mock import patch
+
 import pytest
 
 from ai.combat_strategist import (
@@ -64,6 +66,11 @@ def _ctx(enemy_payload):
     }
 
 
+def _names_the_status(text):
+    """True when ``text`` names Death as a STATUS, not just the move."""
+    return "Death" in text.replace("Death Knell", "")
+
+
 class TestDeathKnell:
     def test_resisted_death_is_not_incoming(self, strategist):
         """Default Jean resists Death: the #714 behaviour stands."""
@@ -90,7 +97,40 @@ class TestDeathKnell:
         enemy = _enemy_mid_cast("DeathKnell", death_resistance=0.0)
         top = strategist._get_fallback_suggestions(_ctx(enemy), 1)[0]
         assert top["move_name"] in ("Dodge", "Parry"), top
-        assert "Death" in top["reasoning"].replace("Death Knell", ""), top
+        assert _names_the_status(top["reasoning"]), top
+
+
+class TestDeathAimedAtAnAlly:
+    """F3 #1: ``resisted`` is the TARGET's answer, and the target may be an
+    ally. A Death aimed at Gorran is not Jean's to Dodge -- the tactical state
+    drops it via `_aimed_elsewhere`, exactly as it drops a surge at Gorran."""
+
+    def test_death_knell_at_gorran_does_not_recommend_jeans_dodge(
+        self, strategist
+    ):
+        from src.npc._friends import Gorran
+
+        wraith, move, jean = wraith_casting("DeathKnell")
+        with patch("builtins.print"):
+            gorran = Gorran()
+        gorran.status_resistance["death"] = 0.0
+        move.target = gorran
+        wraith.target = gorran
+        for beats_left in range(1, 30):
+            move.beats_left = beats_left
+            if move.beats_until_resolve() == _DEFENSIVE_WINDOW_BEATS:
+                break
+        enemy = CombatantSerializer.serialize_combatant(wraith, reference=jean)
+        mip = enemy["move_in_process"]
+        assert mip["inflicts_status"]["resisted"] is False  # Gorran's answer
+        assert mip["target_id"] == CombatantSerializer.stream_id(gorran)
+        ctx = _ctx(enemy)
+        ctx["player"]["id"] = CombatantSerializer.stream_id(jean)
+        state = strategist._derive_tactical_state(ctx)
+        assert state["incoming_beats"] is None
+        assert not state["incoming_lethal"]
+        top = strategist._get_fallback_suggestions(ctx, 1)[0]
+        assert top["move_name"] not in ("Dodge", "Parry"), top
 
 
 class TestNonLethalStatusStaysUnpriced:
@@ -127,11 +167,6 @@ class TestNonLethalStatusStaysUnpriced:
                "inflicts_status": {"name": "Death", "statustype": "death",
                                    "lethal": True, "resisted": None}}
         assert _incoming_beats(mip) == 4
-
-
-def _names_the_status(text):
-    """True when ``text`` names Death as a STATUS, not just the move."""
-    return "Death" in text.replace("Death Knell", "")
 
 
 def _line(prompt, marker):
@@ -173,6 +208,25 @@ class TestTheStatusIsNamedNotABand:
         clause = _lethal_status_clause("Death")
         for s in suggestions:
             assert clause in s["reasoning"], s
+
+
+class TestImpairedDefence:
+    """F3 #4: an impaired Dodge against an unresisted Death still names the
+    status, in the same "<charge> <impact>, landing in" phrasing as the
+    unimpaired reason."""
+
+    def test_the_impaired_reason_names_the_status(self, strategist):
+        enemy = _enemy_mid_cast("DeathKnell", death_resistance=0.0)
+        ctx = _ctx(enemy)
+        ctx["player"]["status_effects"] = [{"name": "Slimed"}]
+        state = strategist._derive_tactical_state(ctx)
+        assert state["dodge_impaired"] and state["incoming_lethal"]
+        score, reason = CombatStrategist._score_defensive_move("Dodge", state)
+        assert score == 88, reason
+        assert (
+            f"Death Knell {_lethal_status_clause('Death')}, landing in"
+            in reason
+        ), reason
 
 
 class TestFatigueLockedDefence:
