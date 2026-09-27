@@ -3557,6 +3557,11 @@ class ProviderChainMixin:
     _FALLBACK_ENV_VARS: Tuple[str, ...] = ()
     _FEATURE_LABEL: str = "LLM adapter"
 
+    #: How long a failed ollama-primary probe is trusted by the walk that
+    #: follows it (:meth:`_primary_known_dead`). Long enough to cover one
+    #: probe-then-dispatch, short enough that a restarted host is retried.
+    _PRIMARY_PROBE_TTL_SECONDS = 5.0
+
     def _round_timeout(self) -> float:
         """Nominal per-call timeout (seconds); every subclass declares its own."""
         raise NotImplementedError(
@@ -3618,11 +3623,15 @@ class ProviderChainMixin:
             # and the reason it promises "recomputed rather than cached".
             self._available = None
             if super().available():
+                self._primary_probe_failed_at = None
                 return True
             if all(name == "ollama" for name in chain):
                 # Nothing behind it, so the probe's verdict is the answer --
                 # and _unavailable_reason already names the host and the error.
                 return False
+            # Kept, briefly, so the walk that follows this probe does not dial
+            # the host it just found dead (_primary_known_dead).
+            self._primary_probe_failed_at = time.monotonic()
             # A dead local host is not the end of the answer when the chain has
             # something behind it. This method is a question about the CHAIN
             # (see the docstring above), and an ollama-pinned adapter that opted
@@ -3632,6 +3641,22 @@ class ProviderChainMixin:
             self._unavailable_reason = None
 
         return self._chain_credentialed(chain)
+
+    def _primary_known_dead(self) -> bool:
+        """True when :meth:`_chain_available` found the ollama primary dead just now.
+
+        The advisor probes in ``get_suggestions`` and walks the chain straight
+        after; without this the walk discarded that verdict and dialled
+        ``_ollama_chat`` (up to 30s) anyway, spending the fallback hops' budget
+        on a host already known to be down. The verdict lives
+        ``_PRIMARY_PROBE_TTL_SECONDS``, so a host that comes back is dialled
+        again on a later request.
+        """
+        failed_at = self.__dict__.get("_primary_probe_failed_at")
+        return (
+            failed_at is not None
+            and time.monotonic() - failed_at < self._PRIMARY_PROBE_TTL_SECONDS
+        )
 
     def _chain_credentialed(self, chain: List[str]) -> bool:
         """True when some member of ``chain`` has its credential; records why not.
@@ -3830,6 +3855,12 @@ class ProviderChainMixin:
 
         def call(provider: str) -> Optional[Any]:
             if provider == primary and provider in GenericLLMClient._BASE_ROUTED:
+                if self._primary_known_dead():
+                    logger.info(
+                        "%s skipping provider=%s: its probe just failed.",
+                        type(self).__name__, provider,
+                    )
+                    return None
                 return self._base_route(provider, system_prompt, user_prompt, True)
             with self.bounded_by(deadline):
                 return self._call_chain_provider(

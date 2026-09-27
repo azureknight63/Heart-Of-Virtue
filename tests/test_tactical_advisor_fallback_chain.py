@@ -404,6 +404,47 @@ class TestOneBeatOneProbe:
         assert benched == []
 
 
+class TestADeadOllamaPrimaryIsNotDialledTwice:
+    """With the chain armed, ``get_suggestions`` probes an ollama primary and
+    a dead verdict used to be discarded: ``_base_route`` then dialled
+    ``_ollama_chat`` (up to 30s) anyway, eating the fallback hops' budget."""
+
+    @pytest.fixture
+    def dead_ollama(self, monkeypatch, keys, clock):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("COMBAT_LLM_MODEL", "llama3.1:8b")
+        monkeypatch.setenv("COMBAT_LLM_FALLBACK", "1")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+        def get(url, timeout=None, **kwargs):
+            raise requests.exceptions.ConnectionError("refused")
+
+        monkeypatch.setattr(llm.requests, "get", get)
+        adapter = _adapter()
+        dialled = []
+        adapter._ollama_chat = lambda **kw: dialled.append("ollama_chat")
+        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(dialled))
+        return adapter, dialled
+
+    def test_the_probes_dead_verdict_skips_the_primary(self, dead_ollama):
+        adapter, dialled = dead_ollama
+
+        out = CombatStrategist(client=adapter).get_suggestions(_ctx())
+
+        assert [s["reasoning"] for s in out] == ["served by groq"]
+        assert "ollama_chat" not in dialled
+        assert dialled[0][0] == "post"
+
+    def test_a_stale_verdict_dials_the_primary_again(self, dead_ollama, clock):
+        adapter, dialled = dead_ollama
+        assert adapter.available() is True  # the chain answers; the probe failed
+
+        clock.now += CombatLLMAdapter._PRIMARY_PROBE_TTL_SECONDS + 1
+        adapter.generate_structured("sys", "user")
+
+        assert dialled[0] == "ollama_chat"
+
+
 class TestTheSharedTransportsNameTheirCaller:
     """The mixin's transports used to log "NpcChatLLMAdapter" whoever called
     them, so an advisor outage read as a chat outage in the logs."""
