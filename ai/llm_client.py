@@ -4221,8 +4221,15 @@ class ProviderChainMixin:
         return content
 
     def _get_openrouter_model(self) -> Optional[str]:
-        """Return the configured model or the first available free model."""
-        if self.model and self.model != DEFAULT_MODEL:
+        """The OpenRouter model to lead with: a pin, else the first free model.
+
+        ``self.model`` is a pin only when OpenRouter IS the configured
+        provider. As a fallback hop behind groq or ollama it names that
+        primary's model -- an Ollama tag or a Groq slug -- and sending it here
+        is at best a 400 and at worst a paid OpenRouter model billed to the
+        operator. A hop always takes the free cache or the auto router.
+        """
+        if self.provider == "openrouter" and self.model and self.model != DEFAULT_MODEL:
             return self.model
         if GenericLLMClient._free_models_cache:
             return GenericLLMClient._free_models_cache[0]

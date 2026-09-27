@@ -312,3 +312,51 @@ class TestAnUnrecognisedProviderFailsClosed:
         messages = [r.getMessage() for r in caplog.records]
         assert "NpcChatLLMAdapter._call_llm unknown provider=olama" in messages
         assert not any("no response from provider=olama" in m for m in messages)
+
+
+class TestEachHopDialsItsOwnModel:
+    """``*_LLM_MODEL`` names the PRIMARY's model. An OpenRouter fallback hop
+    behind a groq or ollama primary used to send that slug to OpenRouter --
+    at best a 400, at worst a paid model on the operator's account."""
+
+    def test_an_openrouter_hop_behind_groq_ignores_the_combat_model(self, monkeypatch, keys):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "groq")
+        monkeypatch.setenv("COMBAT_LLM_MODEL", "anthropic/some-paid-model")
+        adapter = _adapter()
+
+        assert adapter._get_openrouter_model() == llm._OPENROUTER_AUTO_ROUTER
+
+    def test_an_openrouter_hop_behind_ollama_ignores_the_chat_model(self, monkeypatch, keys):
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "1")
+        monkeypatch.setenv("NPC_CHAT_LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("NPC_CHAT_LLM_FALLBACK", "1")
+        monkeypatch.setenv("NPC_CHAT_LLM_MODEL", "llama3.1:8b")
+        adapter = NpcChatLLMAdapter()
+        monkeypatch.setattr(GenericLLMClient, "_free_models_cache", ["vendor/free:free"])
+
+        assert adapter._get_openrouter_model() == "vendor/free:free"
+
+    def test_an_openrouter_primary_still_honours_its_pin(self, monkeypatch, keys):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "openrouter")
+        monkeypatch.setenv("COMBAT_LLM_MODEL", "vendor/pinned:free")
+        adapter = _adapter()
+
+        assert adapter._get_openrouter_model() == "vendor/pinned:free"
+
+    @pytest.mark.parametrize("groq_model, expected", [
+        ("groq/own-model", "groq/own-model"),
+        ("", llm._OPENAI_COMPATIBLE_PROVIDERS["groq"]["default_model"]),
+    ])
+    def test_a_groq_primary_reads_groq_model_not_combat_model(
+        self, monkeypatch, keys, groq_model, expected
+    ):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "groq")
+        monkeypatch.setenv("COMBAT_LLM_MODEL", "vendor/meant-for-openrouter")
+        monkeypatch.setenv("GROQ_MODEL", groq_model)
+        adapter = _adapter()
+        calls = []
+        monkeypatch.setattr(llm, "_post_chat_completion", _groq_posts(calls))
+
+        adapter.generate_structured("sys", "user")
+
+        assert calls[0][2] == expected

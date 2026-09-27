@@ -2879,6 +2879,7 @@ class TestCallOpenrouter:
         monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
         adapter = NpcChatLLMAdapter()
         adapter._openrouter_api_key = "key"
+        adapter.provider = "openrouter"  # a pin leads only on an OpenRouter primary
         adapter.model = "stale/model:free"
         adapter._openrouter_site = None
         adapter._openrouter_site_title = None
@@ -2929,6 +2930,7 @@ class TestCallOpenrouter:
         """
         adapter = NpcChatLLMAdapter()
         adapter._openrouter_api_key = "key"
+        adapter.provider = "openrouter"  # a pin leads only on an OpenRouter primary
         adapter.model = "stale/model:free"
         GenericLLMClient._free_models_cache = []
 
@@ -2959,6 +2961,9 @@ class TestGetOpenrouterModel:
     def test_explicit_model_returned(self, monkeypatch):
         monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
         adapter = NpcChatLLMAdapter()
+        # A pin applies only to an OpenRouter primary; behind any other
+        # provider self.model names that provider's model, not OpenRouter's.
+        adapter.provider = "openrouter"
         adapter.model = "explicit/model"
         assert adapter._get_openrouter_model() == "explicit/model"
 
