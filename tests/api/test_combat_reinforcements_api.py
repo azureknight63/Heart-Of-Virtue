@@ -15,22 +15,7 @@ sys.path.insert(0, str(ROOT))
 # of wire_handle), so the NPC on the tile and the enemy it becomes share one
 # identity -- only the combat payload's ally_/enemy_ prefix separates them.
 from src.combatant import wire_handle, combatant_handle  # noqa: E402
-
-
-def _post_json(client, url, payload, session_id):
-    return client.post(
-        url,
-        data=json.dumps(payload),
-        content_type="application/json",
-        headers={"Authorization": f"Bearer {session_id}"},
-    )
-
-
-def _get_json(client, url, session_id):
-    return client.get(
-        url,
-        headers={"Authorization": f"Bearer {session_id}"},
-    )
+from tests.api._http import get_json, post_json  # noqa: E402
 
 
 def _ensure_player_room(player):
@@ -89,7 +74,7 @@ def test_reinforcements_spawn_and_events_surface_during_combat(app, client, auth
         enemy.hp = 999
         tile.npcs_here = [enemy]
 
-        start_response = _post_json(
+        start_response = post_json(
             client,
             "/api/combat/start",
             {"enemy_id": wire_handle(enemy)},
@@ -106,13 +91,13 @@ def test_reinforcements_spawn_and_events_surface_during_combat(app, client, auth
 
         player.combat_events = [ReinforcementEvent(player, tile)]
 
-        status_before = _get_json(client, "/api/combat/status", session_id)
+        status_before = get_json(client, "/api/combat/status", session_id)
         assert status_before.status_code == 200
         status_before_data = json.loads(status_before.data)
         enemies_before = status_before_data.get("battle_state", {}).get("enemies", [])
         assert len(enemies_before) == 1
 
-        move_response = _post_json(
+        move_response = post_json(
             client,
             "/api/combat/move",
             {
@@ -136,7 +121,7 @@ def test_reinforcements_spawn_and_events_surface_during_combat(app, client, auth
             event_id = event.get("event_id")
 
         if not event_id:
-            status_after_move = _get_json(client, "/api/combat/status", session_id)
+            status_after_move = get_json(client, "/api/combat/status", session_id)
             assert status_after_move.status_code == 200
             status_after_data = json.loads(status_after_move.data)
             status_events = status_after_data.get("events_triggered", [])
@@ -146,7 +131,7 @@ def test_reinforcements_spawn_and_events_surface_during_combat(app, client, auth
                 assert status_event.get("input_type") == "choice"
                 event_id = status_event.get("event_id")
 
-        pending_response = _get_json(client, "/api/world/events/pending", session_id)
+        pending_response = get_json(client, "/api/world/events/pending", session_id)
         assert pending_response.status_code == 200
         pending_data = json.loads(pending_response.data)
         pending_ids = [e.get("event_id") for e in pending_data.get("events", [])]
@@ -156,7 +141,7 @@ def test_reinforcements_spawn_and_events_surface_during_combat(app, client, auth
         assert event_id, "Expected combat event dialog to surface"
         assert event_id in pending_ids
 
-        input_response = _post_json(
+        input_response = post_json(
             client,
             "/api/world/events/input",
             {"event_id": event_id, "user_input": "continue"},
@@ -168,7 +153,7 @@ def test_reinforcements_spawn_and_events_surface_during_combat(app, client, auth
         assert input_data.get("success") is True
         assert "reinforcements" in input_data.get("output_text", "").lower()
 
-        status_after = _get_json(client, "/api/combat/status", session_id)
+        status_after = get_json(client, "/api/combat/status", session_id)
         assert status_after.status_code == 200
         status_after_data = json.loads(status_after.data)
         assert status_after_data.get("combat_active") is True
@@ -188,7 +173,7 @@ def test_move_executes_and_advances_beats_after_reinforcements(app, client, auth
         enemy.friend = False
         tile.npcs_here = [enemy]
 
-        start_response = _post_json(
+        start_response = post_json(
             client,
             "/api/combat/start",
             {"enemy_id": wire_handle(enemy)},
@@ -213,7 +198,7 @@ def test_move_executes_and_advances_beats_after_reinforcements(app, client, auth
 
         beat_before = getattr(player, "combat_beat", 0)
 
-        move_response = _post_json(
+        move_response = post_json(
             client,
             "/api/combat/move",
             {"move_type": "move", "move_id": "Attack", "target_id": f"enemy_{combatant_handle(enemy)}"},

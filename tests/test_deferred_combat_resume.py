@@ -36,7 +36,7 @@ def world():
 
 def _stash_with_points_pending(game_service, player, enemies):
     player.pending_attribute_points = 1
-    assert game_service._defer_combat_for_level_up(player, enemies)
+    assert game_service._defer_combat_for_level_up(player, enemies, {})
 
 
 def _win(game_service, player, slime):

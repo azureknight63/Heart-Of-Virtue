@@ -22,8 +22,8 @@ const BASE = '/npc/chat'
  * call is clipped to what the turn has left and the chain stops once it is
  * spent, so a turn ends at `_TURN_CEILING_SECONDS` (src/npc/_chat_llm.py) plus
  * at most one call. This waits a little longer than that, and stays inside the
- * production worker's timeout (deploy/heart-of-virtue.service: 120s, and on an
- * eventlet worker that bounds a STALLED worker rather than a slow request).
+ * production worker's timeout (deploy/heart-of-virtue.service: 120s, and on its
+ * gthread worker that bounds a STALLED worker rather than a slow request).
  * Both bounds are derived from the engine constants by
  * tests/test_npc_chat_turn_budget.py, not restated here.
  */

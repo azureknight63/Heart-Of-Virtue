@@ -39,6 +39,7 @@ from src.api.services.game_service import GameService
 from src.combatant import index_by_handle, wire_handle
 from src.items import Restorative
 from src.npc import Slime
+from tests._gs_fixtures import AfterTheFightScene
 
 
 #: A loot-table entry with a 100% chance and a fixed quantity, so ``roll_loot``
@@ -982,30 +983,6 @@ def test_the_victory_dialog_describes_the_whole_gold_drop(won_fight):
     assert sorted(p.count for p in piles) == [rolled, carried]
 
 
-class _AfterTheFightScene:
-    """A post-combat tile event shaped like ``AfterDefeatingKingSlime``: it
-    needs no input, narrates once, completes and leaves the tile -- so it is
-    never in ``pending_events`` and ``events_triggered`` is its only carrier."""
-
-    name = "AfterTheFightScene"
-    TEXT = "The churning stilled."
-
-    def __init__(self, tile):
-        self.tile = tile
-        self.player = None
-        self.needs_input = False
-        self.completed = False
-
-    def check_conditions(self):
-        from src.narration import narrate
-
-        if self.player.in_combat or self.completed:
-            return
-        narrate(self.TEXT)
-        self.completed = True
-        self.tile.events_here.remove(self)
-
-
 class TestThePostCombatStoryRidesCollectLoot:
     """Issue #683: a won fight's no-input scene is delivered by collect-loot.
 
@@ -1017,12 +994,12 @@ class TestThePostCombatStoryRidesCollectLoot:
     @pytest.fixture
     def fight(self, won_fight):
         fight = won_fight()
-        fight.fight_tile.events_here = [_AfterTheFightScene(fight.fight_tile)]
+        fight.fight_tile.events_here = [AfterTheFightScene(fight.fight_tile)]
         return fight
 
     @staticmethod
     def _scenes(events):
-        return [e for e in events or [] if e.get("name") == _AfterTheFightScene.name]
+        return [e for e in events or [] if e.get("name") == AfterTheFightScene.name]
 
     def test_a_status_read_echoes_the_scene_without_consuming_it(
         self, fight, game_service
@@ -1032,7 +1009,7 @@ class TestThePostCombatStoryRidesCollectLoot:
 
         for status in (first, second):
             (scene,) = self._scenes(status.get("events_triggered"))
-            assert scene["output_text"].startswith(_AfterTheFightScene.TEXT)
+            assert scene["output_text"].startswith(AfterTheFightScene.TEXT)
             assert scene["post_combat"] is True
 
     def test_collect_loot_hands_over_what_a_status_read_fired(self, fight, game_service):
@@ -1041,7 +1018,7 @@ class TestThePostCombatStoryRidesCollectLoot:
         result = game_service.collect_combat_loot(fight.player, [], session_data={})
 
         (scene,) = self._scenes(result["events_triggered"])
-        assert scene["output_text"].startswith(_AfterTheFightScene.TEXT)
+        assert scene["output_text"].startswith(AfterTheFightScene.TEXT)
         after = game_service.get_combat_status(fight.player, session_data={})
         assert self._scenes(after.get("events_triggered")) == []
 
@@ -1051,7 +1028,7 @@ class TestThePostCombatStoryRidesCollectLoot:
         result = game_service.collect_combat_loot(fight.player, [], session_data={})
 
         (scene,) = self._scenes(result["events_triggered"])
-        assert scene["output_text"].startswith(_AfterTheFightScene.TEXT)
+        assert scene["output_text"].startswith(AfterTheFightScene.TEXT)
         assert self._scenes(
             game_service.collect_combat_loot(fight.player, [])["events_triggered"]
         ) == []
@@ -1094,7 +1071,7 @@ class TestPostCombatDeliverySerialisesWithCollectLoot:
     @pytest.fixture
     def fight(self, won_fight):
         fight = won_fight()
-        fight.fight_tile.events_here = [_AfterTheFightScene(fight.fight_tile)]
+        fight.fight_tile.events_here = [AfterTheFightScene(fight.fight_tile)]
         return fight
 
     def test_collect_loot_racing_a_status_poll_still_delivers_the_scene(
@@ -1135,7 +1112,7 @@ class TestPostCombatDeliverySerialisesWithCollectLoot:
         assert collected.get("success") is True
         scenes = [
             e for e in collected.get("events_triggered") or []
-            if e.get("name") == _AfterTheFightScene.name
+            if e.get("name") == AfterTheFightScene.name
         ]
         assert len(scenes) == 1, collected.get("events_triggered")
 
@@ -1173,7 +1150,7 @@ class TestPostCombatDeliverySerialisesWithCollectLoot:
         poll.join(timeout=5)
 
         def scenes(events):
-            return [e for e in events or [] if e.get("name") == _AfterTheFightScene.name]
+            return [e for e in events or [] if e.get("name") == AfterTheFightScene.name]
 
         assert len(scenes(collected.get("events_triggered"))) == 1
         # collect-loot already took the scene, so the resumed poll -- built

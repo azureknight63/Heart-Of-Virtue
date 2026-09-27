@@ -12,15 +12,7 @@ import json
 
 import pytest
 from src.combatant import wire_handle
-
-
-def _post_json(client, url, payload, session_id):
-    return client.post(
-        url,
-        data=json.dumps(payload),
-        content_type="application/json",
-        headers={"Authorization": f"Bearer {session_id}"},
-    )
+from tests.api._http import post_json
 
 
 def _another_room(player, current_tile):
@@ -76,7 +68,7 @@ def test_a_fled_rumbler_chain_does_not_follow_jean_into_another_fight(
         elsewhere.npcs_here.append(bat)
 
         # Jean picks a fight somewhere else entirely.
-        start = _post_json(
+        start = post_json(
             client, "/api/combat/start", {"enemy_id": wire_handle(bat)}, session_id
         )
         assert start.status_code == 201, start.data

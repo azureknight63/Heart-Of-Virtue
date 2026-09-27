@@ -12,6 +12,7 @@ per-request line emitted by init_request_logging.
 
 import json
 import logging
+import logging.handlers
 import uuid
 from datetime import datetime
 
@@ -33,6 +34,17 @@ def _fresh_logger():
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
     return logger
+
+
+@pytest.fixture
+def fresh_logger():
+    """:func:`_fresh_logger` whose handlers are closed and dropped on teardown."""
+    logger = _fresh_logger()
+    logger.handlers = []
+    yield logger
+    for handler in logger.handlers:
+        handler.close()
+    logger.handlers = []
 
 
 class _ListHandler(logging.Handler):
@@ -227,6 +239,64 @@ class TestConfigureLogging:
         assert logger.level == logging.WARNING
 
 
+class TestOneLogLevelParser:
+    """LOG_LEVEL was parsed twice: ``configure_logging`` did
+    ``getattr(logging, value.upper())`` -- no strip, and any module attribute
+    resolved (``NOTSET`` meant "log everything", ``BASIC_FORMAT`` a string) --
+    while ``app._resolve_log_level`` stripped and allow-listed. The root
+    handlers and the ``src``/``ai`` namespaces could disagree about the same
+    variable."""
+
+    RAW_VALUES = [" debug ", "info", "NOTSET", "BASIC_FORMAT", "TRACE", "\tError\n"]
+
+    @pytest.mark.parametrize("raw", RAW_VALUES)
+    def test_both_code_paths_agree(self, fresh_logger, raw):
+        from src.api.app import _resolve_log_level
+
+        configure_logging(env={"LOG_LEVEL": raw}, logger=fresh_logger)
+        assert fresh_logger.level == _resolve_log_level(raw), raw
+
+    @pytest.mark.parametrize("raw", RAW_VALUES)
+    def test_result_comes_from_the_one_allow_list(self, fresh_logger, raw):
+        from src.api import structured_log
+
+        expected = structured_log._LOG_LEVELS.get(raw.strip().upper(), logging.WARNING)
+        configure_logging(env={"LOG_LEVEL": raw}, logger=fresh_logger)
+        assert fresh_logger.level == expected, raw
+        assert structured_log.resolve_log_level(raw) == expected, raw
+
+    def test_unset_or_blank_is_the_default_without_a_warning(self, caplog):
+        from src.api.structured_log import resolve_log_level
+
+        with caplog.at_level(logging.WARNING, logger="src.api.structured_log"):
+            assert resolve_log_level(None) == logging.WARNING
+            assert resolve_log_level("  ", default=logging.ERROR) == logging.ERROR
+        assert "LOG_LEVEL" not in caplog.text
+
+    @pytest.mark.parametrize(
+        "alias, expected",
+        [("WARN", logging.WARNING), ("fatal", logging.CRITICAL)],
+    )
+    def test_stdlib_aliases_resolve_silently(self, caplog, alias, expected):
+        """``logging`` itself accepts ``WARN`` and ``FATAL``; the allow-list
+        dropped them, so ``WARN`` logged a spurious "Unrecognized" warning and
+        ``FATAL`` fell from CRITICAL to WARNING."""
+        from src.api.structured_log import resolve_log_level
+
+        with caplog.at_level(logging.WARNING, logger="src.api.structured_log"):
+            assert resolve_log_level(alias) == expected
+        assert "Unrecognized" not in caplog.text
+
+    def test_unrecognized_warns_and_uses_the_default(self, caplog):
+        from src.api.structured_log import _LOG_LEVELS, resolve_log_level
+
+        with caplog.at_level(logging.WARNING, logger="src.api.structured_log"):
+            assert resolve_log_level("TRACE") == logging.WARNING
+        assert "Unrecognized LOG_LEVEL 'TRACE'" in caplog.text
+        for name in _LOG_LEVELS:
+            assert name in caplog.text
+
+
 class TestLogEvent:
     def test_emits_named_event_with_data(self):
         logger = _fresh_logger()
@@ -389,26 +459,63 @@ class TestConfigureLoggingLogFile:
         logger.handlers = []
         path = tmp_path / "app.log"
         configure_logging(
-            env={"LOG_LEVEL": "INFO", "LOG_FILE": str(path)}, logger=logger
+            env={"LOG_LEVEL": "INFO", "LOG_FILE": str(path)},
+            logger=logger,
+            log_dir=tmp_path,
         )
         logger.info("hello plain file")
         for handler in logger.handlers:
             handler.close()
         assert "hello plain file" in path.read_text(encoding="utf-8")
 
-    def test_log_file_oserror_is_swallowed(self, tmp_path, monkeypatch):
-        logger = _fresh_logger()
-        logger.handlers = []
+    def test_log_file_oserror_is_swallowed(self, tmp_path, monkeypatch, fresh_logger):
         monkeypatch.setattr(
-            logging,
-            "FileHandler",
+            logging.handlers,
+            "RotatingFileHandler",
             lambda *a, **k: (_ for _ in ()).throw(OSError("nope")),
         )
         # Must not raise — a bad LOG_FILE path degrades, never crashes the app
         configure_logging(
             env={"LOG_LEVEL": "INFO", "LOG_FILE": str(tmp_path / "x.log")},
-            logger=logger,
+            logger=fresh_logger,
+            log_dir=tmp_path,
         )
+        assert not any(
+            isinstance(h, logging.FileHandler) for h in fresh_logger.handlers
+        )
+
+    def test_log_file_outside_the_log_dir_is_refused(self, tmp_path, fresh_logger):
+        """The import-time LOG_FILE handler used to open any path unconfined
+        (issue #698) while create_app's copy confined it; one owner, one rule."""
+        outside = tmp_path / "elsewhere" / "x.log"
+        configure_logging(
+            env={"LOG_LEVEL": "INFO", "LOG_FILE": str(outside)},
+            logger=fresh_logger,
+            log_dir=tmp_path / "logs",
+        )
+        assert not any(
+            isinstance(h, logging.FileHandler) for h in fresh_logger.handlers
+        )
+        assert not outside.parent.exists()
+
+    def test_log_file_rotates(self, tmp_path, fresh_logger):
+        from src.api import structured_log
+
+        configure_logging(
+            env={"LOG_LEVEL": "INFO", "LOG_FILE": "app.log"},
+            logger=fresh_logger,
+            log_dir=tmp_path,
+        )
+        rotating = [
+            h
+            for h in fresh_logger.handlers
+            if isinstance(h, logging.handlers.RotatingFileHandler)
+        ]
+        assert len(rotating) == 1
+        assert rotating[0].maxBytes == structured_log._LOG_FILE_MAX_BYTES
+        assert rotating[0].backupCount == structured_log._LOG_FILE_BACKUP_COUNT
+        # A relative LOG_FILE lands inside the log dir, not the cwd.
+        assert rotating[0].baseFilename == str((tmp_path / "app.log").resolve())
 
 
 class TestJsonlDirRetention:
@@ -448,3 +555,122 @@ class TestJsonlDirRetention:
         configure_logging(env={"LOG_JSONL_DIR": str(tmp_path)}, logger=logger)
         for h in logger.handlers:
             h.close()
+
+
+class TestEveryDestinationIsRedacted:
+    """#698 scrub: the filter scrubbed record fields, but each formatter
+    re-derived text the filter never saw. ``JsonlFormatter`` re-rendered the
+    raw traceback from ``exc_info`` and wrote ``str(exc_value)`` and
+    ``record.data`` unscrubbed, so a credential inside an exception or an
+    event payload reached the JSONL file with the filter installed on it."""
+
+    SECRET = "sk-or-v1-" + "a1b2c3d4e5f6" * 3
+    WEBHOOK = "https://discord.com/api/webhooks/123456/" + "Tok3n" * 6
+
+    def _emit_everywhere(self, tmp_path, logger):
+        jsonl_dir = tmp_path / "backend"
+        configure_logging(
+            env={
+                "LOG_LEVEL": "INFO",
+                "LOG_FILE": "app.log",
+                "LOG_JSONL_DIR": str(jsonl_dir),
+            },
+            logger=logger,
+            log_dir=tmp_path,
+        )
+        try:
+            try:
+                raise RuntimeError("provider refused key=%s" % self.SECRET)
+            except RuntimeError:
+                logger.exception("llm call failed")
+            logger.warning(
+                "payload event",
+                extra={"data": {"key": self.SECRET, "hook": self.WEBHOOK}},
+            )
+        finally:
+            for handler in logger.handlers:
+                handler.close()
+        jsonl = "".join(p.read_text(encoding="utf-8") for p in jsonl_dir.glob("*.jsonl"))
+        plain = (tmp_path / "app.log").read_text(encoding="utf-8")
+        return jsonl, plain
+
+    def test_no_secret_reaches_any_destination(self, tmp_path, capfd, fresh_logger):
+        jsonl, plain = self._emit_everywhere(tmp_path, fresh_logger)
+        console = capfd.readouterr().err
+        destinations = {"jsonl": jsonl, "file": plain, "console": console}
+        # Non-vacuity: every destination received both records.
+        for name, text in destinations.items():
+            assert "llm call failed" in text, name
+            assert "RuntimeError" in text, name
+        for name, text in destinations.items():
+            assert self.SECRET not in text, name
+            assert "Tok3nTok3n" not in text, name
+            assert "[REDACTED]" in text, name
+
+    def test_payload_keys_are_scrubbed_too(self):
+        """``_redact_values`` scrubbed dict values but passed keys through, so
+        ``log_event(..., **{token: 1})``-shaped payloads leaked the key."""
+        from src.api.structured_log import _redact_values
+
+        scrubbed = _redact_values({self.SECRET: {"inner " + self.SECRET: 1}})
+        assert self.SECRET not in json.dumps(scrubbed)
+        assert scrubbed == {"[REDACTED]": {"inner [REDACTED]": 1}}
+
+    def test_jsonl_lines_stay_valid_json_after_redaction(self, tmp_path, fresh_logger):
+        jsonl, _ = self._emit_everywhere(tmp_path, fresh_logger)
+        lines = [line for line in jsonl.splitlines() if line.strip()]
+        assert len(lines) == 2
+        envelopes = [json.loads(line) for line in lines]
+        payload = envelopes[1]["data"]
+        assert payload["key"] == "[REDACTED]"
+        assert payload["hook"] == "[REDACTED]"
+
+
+class TestRedactSecretsFilterEdges:
+    SECRET = "sk-or-v1-" + "f0e1d2c3b4a5" * 3
+
+    @staticmethod
+    def _record(msg, args):
+        return logging.LogRecord("src.probe", logging.ERROR, __file__, 1, msg, args, None)
+
+    def test_a_record_whose_args_do_not_format_is_still_scrubbed(self):
+        """``getMessage()`` raising (bad %-args) skipped the scrub entirely,
+        and ``Handler.handleError`` then prints the raw ``msg`` and ``args``
+        to stderr."""
+        from src.api.structured_log import _RedactSecretsFilter
+
+        record = self._record(
+            "key=%s token=%s tail=" + self.SECRET, (self.SECRET,)
+        )
+        with pytest.raises(TypeError):
+            record.getMessage()  # the precondition: formatting really fails
+
+        assert _RedactSecretsFilter().filter(record) is True
+        assert self.SECRET not in str(record.msg)
+        assert self.SECRET not in repr(record.args)
+        assert "[REDACTED]" in str(record.msg)
+        assert "[REDACTED]" in repr(record.args)
+
+    def test_a_second_pass_over_the_same_record_is_idempotent(self, monkeypatch):
+        """One record passes the same filter once per handler (three with
+        LOG_FILE and LOG_JSONL_DIR set). Idempotence is the contract: the
+        second pass leaves an already-scrubbed record exactly as it was and
+        does not redo the traceback work. What happens to a record mutated
+        *between* passes is deliberately not asserted -- that is not a
+        behaviour anything should rely on."""
+        from src.api.structured_log import _RedactSecretsFilter
+
+        redactor = _RedactSecretsFilter()
+        record = self._record("key=%s", (self.SECRET,))
+        assert redactor.filter(record) is True
+        first = (record.msg, record.args, record.exc_text, record.stack_info)
+        assert self.SECRET not in record.getMessage()
+        assert record.getMessage().count("[REDACTED]") == 1
+
+        calls = []
+        monkeypatch.setattr(
+            _RedactSecretsFilter, "_redact_traceback", staticmethod(calls.append)
+        )
+        assert redactor.filter(record) is True
+        assert (record.msg, record.args, record.exc_text, record.stack_info) == first
+        assert calls == [], "the second pass redid the traceback scrub"

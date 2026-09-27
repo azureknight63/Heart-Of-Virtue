@@ -413,6 +413,14 @@ def test_inventory_entries_without_a_name_are_dropped():
     assert inv == [{"name": "Restorative", "type": "consumable", "count": 2}]
 
 
+def test_the_exp_to_level_fallback_is_a_fresh_players_first_threshold():
+    """Issue #710 moved Jean's first threshold onto the leveling curve; the
+    fallback for a player missing the attribute must be that same number."""
+    from src.player import Player
+
+    assert sf._PLAYER_SCALARS["exp_to_level"] == Player().exp_to_level
+
+
 def test_missing_player_attributes_fall_back_to_the_documented_defaults():
     """A partially-constructed player must still produce a valid document."""
     bare = type("Bare", (), {})()
@@ -529,3 +537,13 @@ def test_convert_returns_the_path_and_leaves_the_pickle_untouched(tmp_path):
     assert sf.convert_pickle_save_to_v2(FakePlayer(), str(out)) == str(out)
     assert pickle_path.read_bytes() == b"\x80\x04original-bytes"
     assert sf.loads_v2(out.read_text(encoding="utf-8"), strict=True)["player"]["level"] == 4
+
+
+def test_the_stat_fallback_matches_a_fresh_players_defaults():
+    """save_format's _DEFAULT_STAT feeds the exp_to_level fallback; if
+    Player's starting stats move, the fallback must move with them."""
+    from src.player import Player
+    from src.save_format import _DEFAULT_STAT
+
+    jean = Player()
+    assert _DEFAULT_STAT == jean.intelligence_base == jean.intelligence

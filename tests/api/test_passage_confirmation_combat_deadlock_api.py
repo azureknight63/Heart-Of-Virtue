@@ -27,21 +27,9 @@ from src.combatant import wire_handle
 from src.events import PassagewayTransitionEvent
 from src.npc import Slime
 from src.objects import Passageway
+from tests.api._http import get_json, post_json
 
 PREFIX = PassagewayTransitionEvent.NAME_PREFIX
-
-
-def _post(client, url, payload, session_id):
-    return client.post(
-        url,
-        data=json.dumps(payload),
-        content_type="application/json",
-        headers={"Authorization": f"Bearer {session_id}"},
-    )
-
-
-def _get(client, url, session_id):
-    return client.get(url, headers={"Authorization": f"Bearer {session_id}"})
 
 
 def _slime(tile):
@@ -61,7 +49,7 @@ def _plant_passage(player):
 
 
 def _queue_confirmation(client, session_id, passage):
-    response = _post(
+    response = post_json(
         client,
         "/api/world/interact",
         {"target_id": wire_handle(passage), "action": "enter"},
@@ -75,7 +63,7 @@ def _queue_confirmation(client, session_id, passage):
 
 
 def _pending_passage_names(client, session_id):
-    data = json.loads(_get(client, "/api/world/events/pending", session_id).data)
+    data = json.loads(get_json(client, "/api/world/events/pending", session_id).data)
     return [
         e.get("name", "")
         for e in data.get("events") or []
@@ -93,7 +81,7 @@ def test_live_sequence_walk_off_is_refused_so_no_deadlock(
 
     with app.app_context():
         _tile, passage = _plant_passage(player)
-        world = json.loads(_get(client, "/api/world", session_id).data)
+        world = json.loads(get_json(client, "/api/world", session_id).data)
         exits = (world.get("room") or {}).get("exits") or {}
         assert exits, "the test session's start tile has no exits to walk"
         direction = next(iter(exits))
@@ -102,7 +90,7 @@ def test_live_sequence_walk_off_is_refused_so_no_deadlock(
         where_before = (player.location_x, player.location_y)
 
         _queue_confirmation(client, session_id, passage)
-        moved = _post(client, "/api/world/move", {"direction": direction}, session_id)
+        moved = post_json(client, "/api/world/move", {"direction": direction}, session_id)
 
         assert moved.status_code == 400, moved.data
         body = json.loads(moved.data)
@@ -131,7 +119,7 @@ def test_combat_started_over_a_pending_confirmation_accepts_combat_moves(
         _queue_confirmation(client, session_id, passage)
         slime = _slime(tile)
 
-        started = _post(
+        started = post_json(
             client, "/api/combat/start", {"enemy_id": wire_handle(slime)}, session_id
         )
         assert started.status_code == 201, started.data
@@ -140,7 +128,7 @@ def test_combat_started_over_a_pending_confirmation_accepts_combat_moves(
         assert _pending_passage_names(client, session_id) == []
 
         wait = next(m for m in player.known_moves if m.name == "Wait")
-        acted = _post(
+        acted = post_json(
             client,
             "/api/combat/move",
             {"move_type": "move", "move_id": str(player.known_moves.index(wait))},

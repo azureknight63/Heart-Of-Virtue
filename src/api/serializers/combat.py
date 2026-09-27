@@ -564,15 +564,17 @@ class CombatantSerializer:
         name) — so ``SlimeVolley`` arrived as ``"Slime Volley"``, missed the
         table, and the heaviest hits in the game were estimated at 1.0x.
 
-        ``Move`` (src/moves/_base.py) declares ``_DAMAGE_MULTIPLIER = 1.0``,
-        so every move answers this and the default below is only a coercion
+        Every ``Move`` (src/moves/_base.py) answers
+        ``effective_damage_multiplier()`` -- the base class declares
+        ``_DAMAGE_MULTIPLIER = 1.0`` -- so the default below is only a coercion
         guard. ANY move that hits for more or less than its user's raw damage
-        must override it — that is not a ``TelegraphedSurge`` privilege. Most
-        of the declarations in src/moves/_npc.py are on plain ``Move``
-        subclasses (NpcAttack, GorranClub, VenomClaw, SpiderBite, BatBite,
-        SeismicSlam, TwinFangs), so an audit that only looks at the surge
-        family will miss them and leave a new heavy move understating itself
-        at 1.0.
+        must override ``_DAMAGE_MULTIPLIER`` -- or, when the difference is a
+        scale its own ``execute()`` applies, declare ``_EXECUTE_DAMAGE_SCALE``
+        (below) -- and that is not a ``TelegraphedSurge`` privilege. Most of
+        the declarations in src/moves/_npc.py are on plain ``Move`` subclasses
+        (NpcAttack, GorranClub, VenomClaw, SpiderBite, BatBite, SeismicSlam,
+        TwinFangs), so an audit that only looks at the surge family will miss
+        them and leave a new heavy move understating itself at 1.0.
 
         Two ways to declare it, both in src/moves/_npc.py:
           * a move with a fixed factor states it outright (SlimeVolley,
@@ -590,9 +592,26 @@ class CombatantSerializer:
         ``tests/test_npc_moves_coverage.py::TestDeclaredDamageMultiplier``
         discovers the declaring classes by reflection and pins each against
         what ``evaluate()`` really rolls, so it cannot go stale by omission.
+
+        The wire does NOT ship ``_DAMAGE_MULTIPLIER`` raw, though: it ships
+        ``Move.effective_damage_multiplier()``, which also folds in the scale
+        a hand-rolled ``execute()`` applies to the evaluated power
+        (``_EXECUTE_DAMAGE_SCALE``, issue #721). Shipping the raw attribute
+        overstated three moves to the advisor: a spray at 0.4 of its swing and
+        a drain at 0.6 went out as 1.0, and a surge whose 1.8 is scaled by 0.7
+        for ignoring protection (1.26) went out as 1.8. This method only reads
+        the engine's answer; the arithmetic is the move's.
+        ``TestWireMultiplierMatchesExecuteDamage`` in the same test file
+        measures the wire value against the damage ``execute()`` deals.
+
+        A move with no such method -- a legacy placeholder restored from a
+        save (see :meth:`_move_method`) -- reports the neutral 1.0.
         """
         try:
-            return float(getattr(move, "_DAMAGE_MULTIPLIER", 1.0))
+            value = CombatantSerializer._call_move_method(
+                move, "effective_damage_multiplier"
+            )
+            return 1.0 if value is None else float(value)
         except (TypeError, ValueError):
             return 1.0
 

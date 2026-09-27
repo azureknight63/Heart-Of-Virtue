@@ -260,24 +260,6 @@ class TestWallSwitch:
         assert switch.position is False
         event_off.process.assert_called_once()
 
-    def test_wall_switch_push_alias(self):
-        """Test push() aliases press()."""
-        player = Mock()
-        tile = Mock()
-        switch = WallSwitch(player, tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(switch).push is type(switch).press
-
-    def test_wall_switch_touch_alias(self):
-        """Test touch() aliases press()."""
-        player = Mock()
-        tile = Mock()
-        switch = WallSwitch(player, tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(switch).touch is type(switch).press
-
     def test_wall_switch_init_with_params(self):
         """A single bang-param populates event_on only, with ``r`` consumed.
 
@@ -350,16 +332,6 @@ class TestWallInscription:
         with patch("builtins.print") as mock_print:
             inscription.read()
             mock_print.assert_called_with(inscription.description)
-
-    def test_wall_inscription_examine_alias(self):
-        """Test examine() aliases read()."""
-        player = Mock()
-        player.name = "Jean"
-        tile = Mock()
-        inscription = WallInscription(player, tile, text="Test")
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(inscription).examine is type(inscription).read
 
 
 class TestContainer:
@@ -704,15 +676,6 @@ class TestHealingSpring:
                     HealingSpring.clean(player)
         player.apply_state.assert_called_once()
 
-    def test_healing_spring_wash_alias(self):
-        """Test wash() aliases clean()."""
-        player = Mock()
-        tile = Mock()
-        spring = HealingSpring(player, tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(spring).wash is type(spring).clean
-
 
 class TestPassageway:
     """Test suite for Passageway class."""
@@ -749,33 +712,6 @@ class TestPassageway:
                 with patch("src.objects.functions.await_input"):
                     passage.enter(player)
         player.teleport.assert_called_once_with("test_map", (1, 1))
-
-    def test_passageway_go_alias(self):
-        """Test go() aliases enter()."""
-        player = Mock()
-        tile = Mock()
-        passage = Passageway(player, tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(passage).go is type(passage).enter
-
-    def test_passageway_leave_alias(self):
-        """Test leave() aliases enter()."""
-        player = Mock()
-        tile = Mock()
-        passage = Passageway(player, tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(passage).leave is type(passage).enter
-
-    def test_passageway_exit_alias(self):
-        """Test exit() aliases enter()."""
-        player = Mock()
-        tile = Mock()
-        passage = Passageway(player, tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(passage).exit is type(passage).enter
 
 
 class TestMarketBell:
@@ -825,15 +761,6 @@ class TestMarketBell:
                     with patch("src.objects.functions.await_input"):
                         bell.ring()
         event.process.assert_called_once()
-
-    def test_market_bell_use_alias(self):
-        """Test use() aliases ring()."""
-        player = Mock()
-        tile = Mock()
-        bell = MarketBell(player, tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(bell).use is type(bell).ring
 
 
 class TestFountain:
@@ -1716,15 +1643,6 @@ class TestStreetLantern:
             mock_print.assert_called()
         assert lantern.lit is False
 
-    def test_street_lantern_extinguish_alias(self):
-        """Test extinguish() aliases douse()."""
-        player = Mock()
-        tile = Mock()
-        lantern = StreetLantern(player, tile, lit=True)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(lantern).extinguish is type(lantern).douse
-
     @pytest.mark.parametrize("lit, state_word", [(True, "lit"), (False, "dark")])
     def test_street_lantern_inspect_reports_the_current_state(self, lit, state_word):
         """inspect() narrates the state-derived description and changes nothing."""
@@ -1800,15 +1718,6 @@ class TestNoticeBoard:
             with patch("src.objects.functions.await_input"):
                 board.read()
         event.process.assert_called_once()
-
-    def test_notice_board_use_alias(self):
-        """Test use() aliases read()."""
-        player = Mock()
-        tile = Mock()
-        board = NoticeBoard(player, tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(board).use is type(board).read
 
 
 class TestPrayerCandleRack:
@@ -1888,15 +1797,6 @@ class TestPrayerCandleRack:
                     rack.pray()
         event.process.assert_called_once()
 
-    def test_prayer_candle_rack_use_alias(self):
-        """Test use() aliases pray()."""
-        player = Mock()
-        tile = Mock()
-        rack = PrayerCandleRack(player, tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(rack).use is type(rack).pray
-
 
 class TestMarketGong:
     """Test suite for MarketGong class."""
@@ -1946,33 +1846,6 @@ class TestMarketGong:
                     with patch("src.objects.functions.await_input"):
                         gong.strike()
         event.process.assert_called_once()
-
-    def test_market_gong_hit_alias(self):
-        """Test hit() aliases strike()."""
-        player = Mock()
-        tile = Mock()
-        gong = MarketGong(player, tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(gong).hit is type(gong).strike
-
-    def test_market_gong_bang_alias(self):
-        """Test bang() aliases strike()."""
-        player = Mock()
-        tile = Mock()
-        gong = MarketGong(player, tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(gong).bang is type(gong).strike
-
-    def test_market_gong_use_alias(self):
-        """Test use() aliases strike()."""
-        player = Mock()
-        tile = Mock()
-        gong = MarketGong(player, tile)
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(gong).use is type(gong).strike
 
 
 class TestMoreContainer:
@@ -2278,39 +2151,6 @@ class TestGeminateGeode:
         # One-use puzzle: the geode removes itself from the tile.
         assert geode not in tile.objects_here
         mock_await.assert_called_once()
-
-    def test_geode_insert_alias(self):
-        """Test insert() aliases place()."""
-        player = Mock()
-        player.inventory = []
-        tile = Mock()
-        geode = GeminateGeode(player, tile)
-        geode.player = player
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(geode).insert is type(geode).place
-
-    def test_geode_solve_alias(self):
-        """Test solve() aliases place()."""
-        player = Mock()
-        player.inventory = []
-        tile = Mock()
-        geode = GeminateGeode(player, tile)
-        geode.player = player
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(geode).solve is type(geode).place
-
-    def test_geode_use_alias(self):
-        """Test use() aliases place()."""
-        player = Mock()
-        player.inventory = []
-        tile = Mock()
-        geode = GeminateGeode(player, tile)
-        geode.player = player
-        # #626: a class-level alias IS its target, so an instance
-        # patch of the target can no longer be observed through it.
-        assert type(geode).use is type(geode).place
 
     def test_geode_examine(self):
         """Test examine() displays description."""

@@ -40,6 +40,7 @@ class FakeRoom:
 class FakeUniverse:
     def __init__(self, rooms):
         self.map = rooms
+        self.unique_items_spawned = set()
 
 class FakePlayer:
     def __init__(self, name='Jean'):
@@ -326,12 +327,9 @@ def test_apply_value_conditions_container_items(monkeypatch):
 
 def test_update_goods_unique_item_injection(monkeypatch):
     """Force a UniqueItemInjectionCondition and ensure a unique item is injected once.
-    Verifies registration in items.unique_items_spawned and placement in container or inventory.
+    Verifies registration in the merchant's universe and placement in container or inventory.
     """
-    from src.items import unique_item_factories, unique_items_spawned
-    # Ensure clean registry
-    unique_items_spawned.clear()
-    m, room, _ = make_merchant(stock_count=0)
+    m, room, universe = make_merchant(stock_count=0)
     # Provide a merchant container to prefer placement there
     cont = Container(name='RelicCase', merchant=m, items=[])
     room.objects.append(cont)
@@ -347,7 +345,7 @@ def test_update_goods_unique_item_injection(monkeypatch):
     uniques = [it for it in all_items if getattr(it, 'unique', False)]
     assert len(uniques) == 1, f"Expected exactly one unique item injected, found {len(uniques)}"
     injected = uniques[0]
-    assert injected.__class__.__name__ in unique_items_spawned, "Unique item class not registered"
+    assert universe.unique_items_spawned == {injected.__class__.__name__}, "Unique item class not registered"
 
 
 def test_fill_remaining_stock_empty_candidate_early_return(monkeypatch):

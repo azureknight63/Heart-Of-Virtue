@@ -53,6 +53,7 @@ from src.shop_conditions import (  # type: ignore
     UniqueItemInjectionCondition,
     iter_merchant_containers,
     iter_rooms,
+    unique_registry_for,
 )
 
 # Two different reasons to keep a class out of random merchant stock, so two
@@ -254,6 +255,39 @@ class MerchantShopMixin:
 
     # ── High-level restock orchestration ──────────────────────────────────────
 
+    def stock_if_empty(self) -> bool:
+        """Run :meth:`update_goods` if this merchant has no goods yet (Gold aside).
+
+        Used to give every merchant its opening stock when a new world is built
+        (issue #727). A merchant whose map authors its stock keeps that stock
+        rather than having it re-rolled. Returns True when it stocked.
+
+        Safe to call unbound on a duck-typed merchant (GameService does, for
+        the shop-open path): the checks are the mixin's own, and a merchant
+        without ``update_goods`` is left as it is.
+        """
+        MerchantShopMixin.ensure_shop_initialized(self)
+        if MerchantShopMixin.has_goods(self):
+            return False
+        update_goods = getattr(self, "update_goods", None)
+        if not callable(update_goods):
+            return False
+        update_goods()
+        return True
+
+    def ensure_shop_initialized(self):
+        """Run :meth:`initialize_shop` unless it already has.
+
+        ``buy_modifier`` is the marker: ``initialize_shop`` always sets it, and
+        a merchant restored from an older save may predate it.
+        """
+        if not hasattr(self, "buy_modifier"):
+            self.initialize_shop()
+
+    def has_goods(self) -> bool:
+        """True when the merchant holds anything to sell besides its gold."""
+        return any(not isinstance(it, Gold) for it in self.inventory or [])
+
     def update_goods(self):
         """Refresh or update the merchant's inventory.
 
@@ -308,8 +342,9 @@ class MerchantShopMixin:
         """Clear merchant and container inventories; release unique-item registry entries.
 
         Returns the list of Container objects tied to this merchant.
-        Unique items are released back into the global registry before clearing so
-        that they may respawn elsewhere on the next restock cycle.
+        Unique items are released back into this merchant's universe registry
+        (``Universe.unique_items_spawned``) before clearing so that they may
+        respawn elsewhere in that world on the next restock cycle.
         """
         removed_unique: set[str] = set()
         for it in getattr(self, "inventory", []) or []:
@@ -339,8 +374,9 @@ class MerchantShopMixin:
                             room_items.remove(item)
                         except Exception:
                             pass
-        for cls_name in removed_unique:
-            items_module.unique_items_spawned.discard(cls_name)
+        registry = unique_registry_for(self)
+        if registry is not None:
+            registry.difference_update(removed_unique)
         return containers
 
     def _create_always_stock_item(self, item_spec) -> Item | None:

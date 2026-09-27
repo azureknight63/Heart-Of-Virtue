@@ -140,8 +140,8 @@ os.environ["NPC_CHAT_LLM_ENABLED"] = "0"
 # Blanked, not .pop()ed, for the reason above: `load_project_env()` runs again
 # at src/api/rate_limiter.py import time with dotenv's `override=False`, which
 # refills a *deleted* key straight from .env (measured: LOG_LEVEL comes back as
-# DEBUG) and leaves an assigned empty one alone. `_log_level_setting()` in
-# app.py reads blank as unset for exactly this reason.
+# DEBUG) and leaves an assigned empty one alone. `log_level_setting()` in
+# src/api/structured_log.py reads blank as unset for exactly this reason.
 os.environ["LOG_LEVEL"] = ""
 
 # Hermes itself exposes a top-level utils.py; the project map editor uses the

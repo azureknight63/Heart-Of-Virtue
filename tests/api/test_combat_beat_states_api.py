@@ -26,19 +26,7 @@ import json
 
 import pytest
 from src.combatant import wire_handle
-
-
-def _post_json(client, url, payload, session_id):
-    return client.post(
-        url,
-        data=json.dumps(payload),
-        content_type="application/json",
-        headers={"Authorization": f"Bearer {session_id}"},
-    )
-
-
-def _get_json(client, url, session_id):
-    return client.get(url, headers={"Authorization": f"Bearer {session_id}"})
+from tests.api._http import get_json, post_json
 
 
 def _start_combat(client, session_id, player, enemy):
@@ -46,7 +34,7 @@ def _start_combat(client, session_id, player, enemy):
     assert tile is not None
     player.current_room = tile
     tile.npcs_here = [enemy]
-    response = _post_json(
+    response = post_json(
         client, "/api/combat/start", {"enemy_id": wire_handle(enemy)}, session_id
     )
     assert response.status_code == 201
@@ -84,7 +72,7 @@ def test_no_status_poll_of_a_live_fight_publishes_beat_states(
 
         for tick in range(10):
             status = json.loads(
-                _get_json(client, "/api/combat/status", session_id).data
+                get_json(client, "/api/combat/status", session_id).data
             )
             assert status.get("combat_active") is True, status
             assert not status.get("beat_states"), (
@@ -123,7 +111,7 @@ def test_a_real_move_still_publishes_its_per_beat_stream(
             if not getattr(m, "passive", False) and m.name == "Attack"
         )
 
-        response = _post_json(
+        response = post_json(
             client,
             "/api/combat/move",
             {"move_type": "move", "move_id": move.name},

@@ -19,19 +19,7 @@ import pytest
 from src.api.services.game_service import _PLAYER_DEAD_MESSAGE
 from src.combatant import wire_handle
 from src.items import Restorative
-
-
-def _post_json(client, url, payload, session_id):
-    return client.post(
-        url,
-        data=json.dumps(payload),
-        content_type="application/json",
-        headers={"Authorization": f"Bearer {session_id}"},
-    )
-
-
-def _get_json(client, url, session_id):
-    return client.get(url, headers={"Authorization": f"Bearer {session_id}"})
+from tests.api._http import get_json, post_json
 
 
 # NOTE: the ``/api/debug/player/hp`` route (``Adjutant.set_hp``) deliberately
@@ -50,7 +38,7 @@ def test_dead_player_cannot_move(app, client, authenticated_session):
         player.hp = 0
         where_before = (player.location_x, player.location_y)
 
-        response = _post_json(
+        response = post_json(
             client, "/api/world/move", {"direction": "north"}, session_id
         )
 
@@ -75,7 +63,7 @@ def test_dead_player_cannot_heal_with_a_restorative(app, client, authenticated_s
 
         player.hp = 0
 
-        response = _post_json(
+        response = post_json(
             client, "/api/inventory/use", {"item_id": item_id}, session_id
         )
 
@@ -101,7 +89,7 @@ def test_alive_player_move_and_heal_are_unaffected(app, client, authenticated_se
         player.inventory.append(potion)
         item_id = wire_handle(potion)
 
-        response = _post_json(
+        response = post_json(
             client, "/api/inventory/use", {"item_id": item_id}, session_id
         )
 
@@ -112,12 +100,12 @@ def test_alive_player_move_and_heal_are_unaffected(app, client, authenticated_se
 
         # And the move route itself is open to a live player: take the first
         # exit the world reports and check Jean actually went somewhere.
-        world = json.loads(_get_json(client, "/api/world", session_id).data)
+        world = json.loads(get_json(client, "/api/world", session_id).data)
         exits = (world.get("room") or {}).get("exits") or {}
         assert exits, "the test session's start tile has no exits to walk"
         direction = next(iter(exits))
         where_before = (player.location_x, player.location_y)
-        moved = _post_json(client, "/api/world/move", {"direction": direction}, session_id)
+        moved = post_json(client, "/api/world/move", {"direction": direction}, session_id)
         assert moved.status_code == 200, moved.data
         assert (player.location_x, player.location_y) != where_before
 
@@ -130,10 +118,10 @@ def test_new_game_and_saves_list_still_work_while_dead(app, client, authenticate
     with app.app_context():
         player.hp = 0
 
-        saves_response = _get_json(client, "/api/saves", session_id)
+        saves_response = get_json(client, "/api/saves", session_id)
         assert saves_response.status_code == 200, saves_response.data
 
-        new_game_response = _post_json(client, "/api/game/new", {}, session_id)
+        new_game_response = post_json(client, "/api/game/new", {}, session_id)
         assert new_game_response.status_code in (200, 201), new_game_response.data
         new_game_data = json.loads(new_game_response.data)
         assert new_game_data.get("success", True) is not False

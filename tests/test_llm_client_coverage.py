@@ -838,6 +838,177 @@ class TestValidateAndFallbackOpenrouter:
         assert "benched/candidate" not in calls
         assert "live/candidate" in calls
 
+    def test_failure_log_names_each_candidates_reason_and_the_adapter(
+        self, monkeypatch, caplog
+    ):
+        """#729: "all candidates failed" used to say nothing about why, or which
+        adapter. Benches are class-level, so the second adapter to validate
+        "fails every candidate" without sending a request -- ``benched`` is the
+        reason that tells an operator that apart from a dead provider."""
+        client = self._client(monkeypatch)
+        client.model = "primary/model"
+        GenericLLMClient._free_models_cache = [
+            "benched/candidate", "chatty/candidate", "ratelimited/candidate",
+        ]
+        client._mark_model_failed("benched/candidate", duration_minutes=30)
+        rate_limited = MagicMock(status_code=429, headers={}, text="")
+
+        def fake_chat(model_id, *args, **kwargs):
+            if model_id == llm_client._OPENROUTER_AUTO_ROUTER:
+                raise RuntimeError("secret-bearing message must not be logged")
+            if model_id == "chatty/candidate":
+                return "hello there"
+            if model_id == "ratelimited/candidate":
+                # The real transport, so the 429 is classified where it is
+                # observed rather than asserted into the double.
+                with patch.object(
+                    llm_client, "_post_chat_completion", return_value=rate_limited
+                ):
+                    return client._openrouter_attempt(model_id, {}, {}, 5)
+            return None
+
+        with caplog.at_level(logging.ERROR, logger=llm_client.logger.name), \
+                patch.object(client, "_openrouter_chat_single", side_effect=fake_chat):
+            client._validate_and_fallback_openrouter()
+
+        lines = [
+            r.getMessage() for r in caplog.records
+            if "all candidates failed" in r.getMessage()
+        ]
+        assert len(lines) == 1, lines
+        line = lines[0]
+        assert "adapter=GenericLLMClient" in line
+        assert "'primary/model': 'empty'" in line
+        assert "'%s': 'exc:RuntimeError'" % llm_client._OPENROUTER_AUTO_ROUTER in line
+        assert "'benched/candidate': 'benched'" in line
+        assert "'chatty/candidate': 'no_ok_in_reply'" in line
+        assert "'ratelimited/candidate': '429'" in line
+        assert "secret-bearing" not in line
+
+    def test_candidates_skipped_by_the_quota_break_are_named_not_tried(
+        self, monkeypatch, caplog
+    ):
+        """The account-wide 429 ``break`` leaves the rest of the list unprobed;
+        the reasons map must say so rather than silently drop them, or the
+        log reads as if only the first candidate was ever considered."""
+        client = self._client(monkeypatch)
+        client.model = "primary/model"
+        GenericLLMClient._free_models_cache = [
+            "spends/quota", "after/one", "after/two",
+        ]
+        exhausted = []
+
+        def fake_chat(model_id, *args, **kwargs):
+            if model_id == "spends/quota":
+                exhausted.append(True)
+            return None
+
+        def headroom(cls, provider):
+            return not exhausted
+
+        with caplog.at_level(logging.ERROR, logger=llm_client.logger.name), \
+                patch.object(client, "_openrouter_chat_single", side_effect=fake_chat), \
+                patch.object(
+                    GenericLLMClient, "_provider_available",
+                    classmethod(headroom),
+                ):
+            client._validate_and_fallback_openrouter()
+
+        line = next(
+            r.getMessage() for r in caplog.records
+            if "all candidates failed" in r.getMessage()
+        )
+        assert "'spends/quota': 'empty'" in line
+        assert "'after/one': 'not_tried'" in line
+        assert "'after/two': 'not_tried'" in line
+        # Log-only: the latch and routing are untouched by the new token.
+        assert "rate_limited=True" in line
+        assert client._available is False
+        assert client.enabled is True
+
+    def test_benched_candidates_after_the_quota_break_are_named_benched(
+        self, monkeypatch, caplog
+    ):
+        """A candidate past the break that is already benched would have been
+        skipped as ``benched`` anyway; ``not_tried`` would hide that it is
+        penalised. Log-only: its bench is not touched."""
+        client = self._client(monkeypatch)
+        client.model = "primary/model"
+        GenericLLMClient._free_models_cache = [
+            "spends/quota", "after/benched", "after/live",
+        ]
+        client._mark_model_failed("after/benched", duration_minutes=30)
+        bench_before = GenericLLMClient._failed_models["after/benched"]
+        exhausted = []
+
+        def fake_chat(model_id, *args, **kwargs):
+            if model_id == "spends/quota":
+                exhausted.append(True)
+            return None
+
+        def headroom(cls, provider):
+            return not exhausted
+
+        with caplog.at_level(logging.ERROR, logger=llm_client.logger.name), \
+                patch.object(client, "_openrouter_chat_single", side_effect=fake_chat), \
+                patch.object(
+                    GenericLLMClient, "_provider_available",
+                    classmethod(headroom),
+                ):
+            client._validate_and_fallback_openrouter()
+
+        line = next(
+            r.getMessage() for r in caplog.records
+            if "all candidates failed" in r.getMessage()
+        )
+        assert "'after/benched': 'benched'" in line
+        assert "'after/live': 'not_tried'" in line
+        assert GenericLLMClient._failed_models["after/benched"] == bench_before
+        assert "after/live" not in GenericLLMClient._failed_models
+
+
+class TestOpenrouterFailureReasonSlot:
+    """The transports record why an attempt failed, on the calling thread."""
+
+    def _client(self, monkeypatch):
+        return TestValidateAndFallbackOpenrouter()._client(monkeypatch)
+
+    def test_http_status_from_the_raw_transport(self, monkeypatch):
+        client = self._client(monkeypatch)
+        llm_client._clear_openrouter_failure()
+        resp = MagicMock(status_code=503, headers={}, text="")
+        with patch.object(llm_client, "_post_chat_completion", return_value=resp):
+            assert client._openrouter_attempt("m/x", {}, {}, 5) is None
+        assert llm_client._take_openrouter_failure() == "http_503"
+        # Taking clears it, so a stale reason cannot leak into the next attempt.
+        assert llm_client._take_openrouter_failure() is None
+
+    @pytest.mark.parametrize(
+        "status, reason", [(404, "http_404"), (429, "429")],
+    )
+    def test_sdk_refusal_records_its_status(self, monkeypatch, status, reason):
+        client = self._client(monkeypatch)
+        llm_client._clear_openrouter_failure()
+        err = Exception("refused")
+        err.status_code = status
+        sdk = MagicMock()
+        sdk.chat.completions.create.side_effect = err
+        handled, content, _ = client._try_sdk(sdk, "m/x", "s", "u", False, 5)
+        assert (handled, content) == (True, None)
+        assert llm_client._take_openrouter_failure() == reason
+
+    def test_the_slot_is_per_thread(self, monkeypatch):
+        llm_client._clear_openrouter_failure()
+        llm_client._note_openrouter_failure("http_500")
+        seen = []
+        t = threading.Thread(
+            target=lambda: seen.append(llm_client._take_openrouter_failure())
+        )
+        t.start()
+        t.join()
+        assert seen == [None]
+        assert llm_client._take_openrouter_failure() == "http_500"
+
 
 # ---------------------------------------------------------------------------
 # available() / debug_status()

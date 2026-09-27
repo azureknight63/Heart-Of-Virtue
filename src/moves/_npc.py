@@ -1177,6 +1177,9 @@ class MineralSpit(NpcAttack):
 
     web_animation = "projectile"
 
+    # A spray, not a blow: 0.4 of the rolled swing. See Move._EXECUTE_DAMAGE_SCALE.
+    _EXECUTE_DAMAGE_SCALE = 0.4
+
     def __init__(self, npc):
         super().__init__(npc)
         self.name = "Mineral Spit"
@@ -1218,7 +1221,9 @@ class MineralSpit(NpcAttack):
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = max(0, int(power * 0.4) - target_protection(self.target))
+        damage = max(
+            0, int(power * self._EXECUTE_DAMAGE_SCALE) - target_protection(self.target)
+        )
         damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         if hit_chance >= roll:
             if functions.check_parry(self.target):
@@ -1245,6 +1250,10 @@ class SoulDrain(NpcAttack):
     display_name = 'Soul Drain'
 
     web_animation = "drain"
+
+    # 0.6 of the rolled swing; the drain's heal is a third of what lands.
+    # See Move._EXECUTE_DAMAGE_SCALE.
+    _EXECUTE_DAMAGE_SCALE = 0.6
 
     def __init__(self, npc):
         super().__init__(npc)
@@ -1282,7 +1291,9 @@ class SoulDrain(NpcAttack):
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = max(0, int(power * 0.6) - target_protection(self.target))
+        damage = max(
+            0, int(power * self._EXECUTE_DAMAGE_SCALE) - target_protection(self.target)
+        )
         damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         if hit_chance >= roll:
             if functions.check_parry(self.target):
@@ -1386,6 +1397,11 @@ class WailStrike(TelegraphedSurge):
     web_animation = "shockwave"
 
     _DAMAGE_MULTIPLIER = 1.8
+    # Applied in execute() on top of the surge's 1.8 — the trade for ignoring
+    # protection — so the hit centres on 1.8 x 0.7 = 1.26x. _DAMAGE_MULTIPLIER
+    # stays 1.8 because TelegraphedSurge.evaluate() feeds it into power.
+    # See Move._EXECUTE_DAMAGE_SCALE.
+    _EXECUTE_DAMAGE_SCALE = 0.7
     _EXTRA_PREP_BEATS = 3
 
     def __init__(self, npc):
@@ -1424,7 +1440,8 @@ class WailStrike(TelegraphedSurge):
         # reaches standard_execute_attack, so without this line the whole
         # positional damage curve silently skips the move.
         power = apply_facing_damage(self.user, self.target, self.power)
-        damage = max(0, int(power * 0.7))  # ignores protection (sonic)
+        # Ignores protection (sonic).
+        damage = max(0, int(power * self._EXECUTE_DAMAGE_SCALE))
         damage, glance = apply_glancing_blow(damage, hit_chance, roll)
         if hit_chance >= roll:
             if functions.check_parry(self.target):

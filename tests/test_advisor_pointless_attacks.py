@@ -18,11 +18,7 @@ from unittest.mock import patch
 import pytest
 
 from ai.combat_strategist import CombatStrategist
-
-
-class _NoLLM:
-    def available(self):
-        return False
+from tests.llm_doubles import NoLLM as _NoLLM, ScriptedLLM as _ScriptedLLM
 
 
 @pytest.fixture
@@ -225,19 +221,6 @@ class TestTheHarmlessRuleCoversEveryDamagingMove:
         ctx = _ctx([_attack(near_stone, far_slime)], enemies=())
         strategist._ensure_target_ids(suggestions, ctx)
         assert suggestions[0]["target_id"] == "e_slime"
-
-
-class _ScriptedLLM:
-    """An available LLM client that proposes a fixed suggestion list."""
-
-    def __init__(self, suggestions):
-        self._suggestions = suggestions
-
-    def available(self):
-        return True
-
-    def generate_structured(self, _system, _user):
-        return {"suggestions": [dict(s) for s in self._suggestions]}
 
 
 class TestTheLLMPathCannotRecommendAHarmlessAttack:

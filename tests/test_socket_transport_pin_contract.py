@@ -22,27 +22,32 @@ connection, the Procfile runs a single SYNC worker, so the arbiter kills it at
 the 30s default and every in-memory session dies. The premise was read off the
 Procfile and never verified. The real unit (mirrored at
 ``deploy/heart-of-virtue.service``, read from the server) runs
-``--worker-class eventlet -w 1 --timeout 120``: requests are concurrent
-greenlets, a parked connection holds a greenlet rather than the worker, and on
-a non-sync worker ``--timeout`` is a liveness heartbeat, not a per-request
-deadline.
+``--worker-class gthread -w 1 --threads 32 --timeout 120`` (an eventlet worker
+until 2026-09-26, PR #732): requests are served concurrently on OS threads, a
+parked connection holds one of the worker's threads rather than the worker,
+and on a non-sync worker ``--timeout`` is a liveness heartbeat, not a
+per-request deadline.
 
 So the pin is no longer load-bearing for the reason it carried. It STANDS
-(#653, maintainer decision "pin now, migrate later") for three reasons that do
+(#653, maintainer decision "pin now, migrate later") for two reasons that do
 hold on the verified process model:
 
 (a) the reverse proxy's ``Upgrade``/``Connection`` handling is unverified ---
     its config has never been read (``docs/development/deployment.md``);
-(b) ``async_mode="threading"`` (``src/api/app.py``) serving WebSockets under
-    an eventlet worker is an unsupported combination;
-(c) the worker class is due to migrate off eventlet, which gunicorn 26
-    removed --- ``requirements-api.txt`` holds gunicorn below 26 until then.
+(b) capacity: every connected client -- a parked WebSocket or a pending
+    long-poll -- holds one of the gthread worker's 32 threads, so the thread
+    count bounds concurrent socket players, and that has not been measured.
+
+(Two further reasons were retired when the unit moved to gthread on
+2026-09-26: ``async_mode="threading"`` under an eventlet worker was an
+unsupported combination, and the worker had to migrate off eventlet before
+gunicorn 26 removed it.)
 
 These tests hold the pin and its rationale to that. They also hold the repo to
-the unit: the worker class production runs must be a declared dependency,
-because it was installed on the server by hand and pinned nowhere for the
-whole life of this file (and ``tests/test_npc_chat_turn_budget.py`` holds the
-gunicorn range to a release that still ships that worker).
+the unit: if the unit ever names a worker class that needs a package of its
+own (eventlet, gevent), that package must be a declared dependency -- the
+eventlet worker was installed on the server by hand and pinned nowhere for
+most of this file's life.
 """
 
 import re
@@ -102,10 +107,11 @@ def _unit_worker_class():
 def test_the_worker_class_production_runs_is_a_declared_dependency():
     """The premise these tests rest on, and the one that was never checked.
 
-    Production has run an eventlet worker all along while no requirements file
-    named it -- so the repo asserted a sync deployment, the client pinned a
-    transport for a sync deployment, and one venv rebuild would have stopped
-    gunicorn booting at all.
+    Production ran an eventlet worker until 2026-09-26 while no requirements
+    file named it -- so the repo asserted a sync deployment, the client pinned
+    a transport for a sync deployment, and one venv rebuild would have stopped
+    gunicorn booting at all. gthread ships with gunicorn itself, so today the
+    branch below does not run; it re-arms if the unit names an async worker.
     """
     worker_class = _unit_worker_class()
     declared = _declared_requirements()

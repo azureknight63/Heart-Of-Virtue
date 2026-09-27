@@ -99,6 +99,50 @@ def iter_rooms(rooms_source: Any) -> Iterator[Any]:
         yield room
 
 
+def _is_merchant(obj: Any) -> bool:
+    """True when a class named ``Merchant`` is in ``obj``'s MRO.
+
+    Matched by name rather than ``isinstance`` so this module need not import
+    ``src.npc`` (which imports it).
+    """
+    try:
+        return any(
+            getattr(c, "__name__", "") == "Merchant" for c in obj.__class__.mro()
+        )
+    except Exception:
+        return False
+
+
+def iter_merchants(maps: Any) -> Iterator[Any]:
+    """Yield every Merchant NPC standing on a tile in ``maps``.
+
+    ``maps`` is ``Universe.maps``: a list of map dicts keyed by ``(x, y)``
+    (plus a ``"name"`` entry). Entries that are not map dicts are skipped.
+    """
+    for game_map in maps or []:
+        if not isinstance(game_map, dict):
+            continue
+        for room in iter_rooms(game_map):
+            for npc in getattr(room, "npcs_here", None) or []:
+                if _is_merchant(npc):
+                    yield npc
+
+
+def unique_registry_for(merchant: Any) -> Optional[set]:
+    """The unique-item claim set of the universe ``merchant`` stands in.
+
+    None when the merchant is not in a world (no room, or a room with no real
+    universe): uniqueness can then not be enforced, so callers skip unique
+    items rather than record a claim in a registry no other world can see.
+    """
+    try:
+        universe = getattr(getattr(merchant, "current_room", None), "universe", None)
+        registry = getattr(universe, "unique_items_spawned", None)
+    except Exception:  # noqa: BLE001 - a malformed room means "not in a world"
+        return None
+    return registry if isinstance(registry, set) else None
+
+
 def iter_merchant_containers(room: Any, merchant: Any) -> Iterator[Any]:
     """Yield the containers in ``room`` whose stock belongs to ``merchant``.
 
@@ -337,8 +381,15 @@ class UniqueItemInjectionCondition(ShopCondition):
 
     def inject_unique_items(self, merchant: Any) -> list[Item]:  # type: ignore[override]
         try:
-            from src.items import unique_item_factories, unique_items_spawned  # type: ignore
+            from src.items import unique_item_factories  # type: ignore
 
+            unique_items_spawned = unique_registry_for(merchant)
+            if unique_items_spawned is None:
+                logger.debug(
+                    "Unique item injection skipped: merchant %r is not in a universe",
+                    getattr(merchant, "name", merchant),
+                )
+                return []
             # Build list of factories whose item class name has not yet spawned
             available_factories = [
                 f
@@ -349,7 +400,7 @@ class UniqueItemInjectionCondition(ShopCondition):
                 return []  # nothing left to inject
             factory = random.choice(available_factories)
             item = factory()
-            # Mark as spawned globally
+            # Claim it for this merchant's world
             unique_items_spawned.add(factory.__name__)
             # Ensure uniqueness flags
             setattr(item, "unique", True)

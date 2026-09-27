@@ -16,19 +16,7 @@ import json
 import pytest
 from src.api.combat_adapter import NOT_ENOUGH_FATIGUE_REASON
 from src.combatant import wire_handle
-
-
-def _post_json(client, url, payload, session_id):
-    return client.post(
-        url,
-        data=json.dumps(payload),
-        content_type="application/json",
-        headers={"Authorization": f"Bearer {session_id}"},
-    )
-
-
-def _get_json(client, url, session_id):
-    return client.get(url, headers={"Authorization": f"Bearer {session_id}"})
+from tests.api._http import get_json, post_json
 
 
 def _start_combat(client, session_id, player, enemy):
@@ -36,7 +24,7 @@ def _start_combat(client, session_id, player, enemy):
     assert tile is not None
     player.current_room = tile
     tile.npcs_here = [enemy]
-    response = _post_json(
+    response = post_json(
         client, "/api/combat/start", {"enemy_id": wire_handle(enemy)}, session_id
     )
     assert response.status_code == 201
@@ -75,7 +63,7 @@ def test_unaffordable_move_is_refused_with_200_and_a_reason(
         move = _costly_move(player)
         player.fatigue = 0
 
-        response = _post_json(
+        response = post_json(
             client,
             "/api/combat/move",
             {"move_type": "move", "move_id": move.name},
@@ -94,7 +82,7 @@ def test_unaffordable_move_is_refused_with_200_and_a_reason(
         # ...and the same condition is reported on the move list, so the client
         # can grey the move out instead of letting the player discover it by
         # clicking (the advisor/move-list disagreement behind issue #505).
-        status = json.loads(_get_json(client, "/api/combat/status", session_id).data)
+        status = json.loads(get_json(client, "/api/combat/status", session_id).data)
         options = status["battle_state"]["available_options"]
         listed = next(o for o in options if o["name"] == move.name)
         assert listed["available"] is False
@@ -127,7 +115,7 @@ def test_blocking_event_refusal_carries_its_player_facing_message(
             "evt_1": {"event_data": {"needs_input": True, "completed": False}}
         }
 
-        response = _post_json(
+        response = post_json(
             client,
             "/api/combat/move",
             {"move_type": "move", "move_id": "Wait"},

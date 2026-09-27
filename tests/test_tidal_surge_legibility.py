@@ -28,14 +28,10 @@ from tests._combat_fixtures import (
     make_player,
     seeded,
 )
+from tests.llm_doubles import NoLLM as _NoLLM
 
 _RECOIL_STAGE = 2
 _HIT_WORDS = ("slams into", "strikes Jean", "crashes into")
-
-
-class _NoLLM:
-    def available(self):
-        return False
 
 
 @pytest.fixture

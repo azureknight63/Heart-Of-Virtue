@@ -306,7 +306,8 @@ def move_in_progress(combatant):
 def exp_needed_for_level(level, intelligence):
     """Exp required to advance from `level` to the next.
 
-    Single source of the leveling curve — used by Player._level_up_api and
+    Single source of the leveling curve, level 1 included — used by
+    Player.recompute_exp_to_level (construction, level-up and config stats, #710) and
     AllyProgressionMixin.exp_to_level so ally pacing always matches Jean's.
     The per-level requirement is floored at 1 so very high intelligence
     (>= 165) can't zero it and spin exp-gain loops forever.

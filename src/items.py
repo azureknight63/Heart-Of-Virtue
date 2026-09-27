@@ -3369,10 +3369,9 @@ class CrystalTear(Special):
         self.add_resistance = {"spiritual": 0.25}
 
 
-# List of factories (callables returning new instances) used by UniqueItemInjectionCondition
+# List of factories (callables returning new instances) used by UniqueItemInjectionCondition.
+# Which of them a world has already spawned is ``Universe.unique_items_spawned``.
 unique_item_factories = [AncientRelic, DragonHeartGem, CrystalTear]
-# Registry to track which unique item classes have been spawned in the universe
-unique_items_spawned: set[str] = set()
 
 
 class Book(Special):

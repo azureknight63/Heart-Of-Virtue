@@ -663,6 +663,10 @@ export function makeAvailableOption(overrides = {}) {
       description: 'A basic attack.',
       category: 'Offensive',
       deals_damage: true,
+      // Move.beats_until_ready (#700) for Attack's stage timing below, from
+      // rest: 4 prep + 1, 1 execute + 1, 1 recoil + 1. Read only by the
+      // server-side advisor; carried so the fixture matches the wire.
+      beats_until_ready: 9,
       fatigue_cost: ATTACK_CARD_FATIGUE_COST,
       available: true,
       reason: null,
