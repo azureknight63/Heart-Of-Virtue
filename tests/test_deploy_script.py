@@ -1257,6 +1257,17 @@ class TestTheRollbackTarget:
         assert "evil.example" not in output and "git reset --hard" not in output, output
         assert "reflog" in output, output
 
+    def test_a_named_rollback_first_checks_the_target_can_boot_the_unit(self):
+        """#741: the installed unit passes ``-c deploy/gunicorn.conf.py``, so a
+        backend reset to a commit without that file does not boot. The help
+        gives a read-only check for it, and says what to do, before the
+        restart command."""
+        help_text = _pwsh(DOT_SOURCE + f"Write-StuckHelp -State Promoted -RollbackSha '{PREV_SHA}'\n", check=True).stdout
+        app = PRODUCTION_LAYOUT["APP"]
+        check = f"git -C {app} cat-file -e {PREV_SHA}:deploy/gunicorn.conf.py 2>/dev/null || echo PRE_741_UNIT_NEEDED"
+        assert check in help_text, help_text
+        _assert_in_order(help_text, check, "previous unit", _rollback_line(PREV_SHA))
+
     def test_two_different_values_mean_neither_is_trusted(self):
         lines = _stage_lines(live="NONE", prev=PREV_SHA, health="FAIL")
         lines.insert(1, f"HOV_PREV_SHA={OTHER_SHA}")

@@ -1176,6 +1176,12 @@ function Write-StuckHelp {
 
     $backendRollbackLines = @()
     if ($RollbackSha -cmatch $FullShaPattern) {
+        # #741: the unit passes -c deploy/gunicorn.conf.py, and a checkout
+        # without that file cannot boot under it. Read-only, so it goes first.
+        $backendRollbackLines += '    (on the server) first check the target can boot the installed unit:'
+        $backendRollbackLines += "    git -C $AppDir cat-file -e ${RollbackSha}:deploy/gunicorn.conf.py 2>/dev/null || echo PRE_741_UNIT_NEEDED"
+        $backendRollbackLines += '    If it printed PRE_741_UNIT_NEEDED, the target predates #741: install the previous unit'
+        $backendRollbackLines += '    (ubuntu@, without -c deploy/gunicorn.conf.py; docs/development/deployment.md) before the restart below.'
         $backendRollbackLines += '    (on the server) put back the backend that matches the previous frontend:'
         $backendRollbackLines += "    cd $AppDir && git reset --hard $RollbackSha && $BackendInstallCommand && sudo systemctl restart $ServiceName && sleep $RestartSettleSeconds && { $healthPoll; }"
         $backendRollbackLines += '    Go on only if it printed BACKEND_OK.'

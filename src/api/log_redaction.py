@@ -71,8 +71,12 @@ def _scrub(text):
 class _RedactSecretsFilter(logging.Filter):
     """Replace anything credential-shaped with ``[REDACTED]``.
 
-    Installed on **every** handler :func:`configure_logging` owns — console,
-    LOG_FILE and JSONL alike. Filters run per handler, in handler order, so a
+    Installed two ways. On **every** handler
+    :func:`src.api.structured_log.configure_logging` owns — console, LOG_FILE
+    and JSONL alike — and, through :func:`redact_logger`, on the loggers
+    whose libraries attach handlers of their own
+    (:data:`SELF_HANDLING_LOGGERS`, :data:`GUNICORN_LOGGERS`). Handler filters
+    run per handler, in handler order, so a
     filter missing from any one handler emits the unredacted record through
     it before the redacting one ever runs. That is not hypothetical: it is
     issue #698, where a second, unfiltered handler set installed at import
@@ -103,7 +107,7 @@ class _RedactSecretsFilter(logging.Filter):
     something. That reuse cuts both ways: a non-empty ``exc_text`` freezes the
     traceback for *every* handler on root, so writing it unconditionally would
     take ``formatException`` away from handlers that render it differently —
-    caplog's, and :class:`JsonlFormatter`.
+    caplog's, and :class:`src.api.structured_log.JsonlFormatter`.
 
     Mutating the record makes it scrubbed for every handler that formats it
     afterwards as well — the safe direction to be wrong in — which is why the

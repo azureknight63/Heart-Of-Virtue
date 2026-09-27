@@ -81,10 +81,16 @@ because the new unit fails to boot on a checkout that has no
    `-c deploy/gunicorn.conf.py`.
 
 A backend rollback to a commit before #741 must put the previous unit back
-first, for the same reason. The worker's own stderr (the journal) is covered
-without the unit change: werkzeug, engineio and socketio attach stderr handlers
-of their own, and `configure_logging` now redacts those loggers at the logger
-(`src/api/log_redaction.py`, `SELF_HANDLING_LOGGERS`).
+first, for the same reason. The rollback help `deploy.ps1` prints checks for
+this before its restart command (`cat-file -e <sha>:deploy/gunicorn.conf.py`,
+printing `PRE_741_UNIT_NEEDED` when the file is missing).
+
+The handlers werkzeug, engineio and socketio attach to the worker's stderr
+(the journal) are covered without the unit change: `configure_logging` redacts
+those loggers at the logger (`src/api/log_redaction.py`,
+`SELF_HANDLING_LOGGERS`). That is not all of stderr: anything written there
+without going through `logging` -- a raw traceback from
+`threading.excepthook` in a thread that dies, for one -- is not redacted.
 
 Every build the script deploys carries the commit it was built from, in a
 `.hov-commit` file beside its `index.html`. That is how a rollback names the
