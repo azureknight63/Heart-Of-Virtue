@@ -41,8 +41,40 @@ __all__ = [
     "make_adapter",
     "seeded",
     "forced_roll",
+    "wraith_casting",
     "WEAPON_BY_SUBTYPE",
 ]
+
+
+def wraith_casting(move_name="DeathKnell", jean=None, death_resistance=None,
+                   all_status_resistance=None):
+    """A real WailWraith mid-cast of ``move_name`` at a real Jean (issue #720).
+
+    Returns ``(wraith, move, jean)`` with both targets wired, the move as the
+    wraith's ``current_move`` at stage 0; the caller sets ``beats_left``.
+    ``all_status_resistance`` sets every status resistance first, then
+    ``death_resistance`` overrides ``"death"`` -- default Jean resists Death.
+    """
+    import src.moves as moves
+    from unittest.mock import patch
+
+    from src.npc._enemies import WailWraith
+
+    jean = jean if jean is not None else Player()
+    if all_status_resistance is not None:
+        for key in jean.status_resistance:
+            jean.status_resistance[key] = all_status_resistance
+    if death_resistance is not None:
+        jean.status_resistance["death"] = death_resistance
+    with patch("builtins.print"):
+        wraith = WailWraith()
+    wraith.target = jean
+    move = getattr(moves, move_name)(wraith)
+    move.target = jean
+    move.current_stage = 0
+    wraith.current_move = move
+    return wraith, move, jean
+
 
 #: One instantiable weapon per subtype the moves package branches on. Keyed by
 #: the ``subtype`` string the engine actually compares against (``eq_weapon

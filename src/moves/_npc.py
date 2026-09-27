@@ -465,8 +465,7 @@ class SlimeVolley(TelegraphedSurge):
 
     web_animation = "projectile"
 
-    # The state execute() attempts on its target (issue #720).
-    inflicts_status = states.Slimed
+    inflicted_state_cls = states.Slimed
 
     _DAMAGE_MULTIPLIER = 2.2
     _EXTRA_PREP_BEATS = 4
@@ -510,8 +509,7 @@ class TidalSurge(TelegraphedSurge):
 
     web_animation = "shockwave"
 
-    # The state execute() attempts on its target (issue #720).
-    inflicts_status = states.Slimed
+    inflicted_state_cls = states.Slimed
 
     # 1.8x of King Slime's 50 damage, rolled through NpcAttack's 0.8-1.2 band,
     # is 72-108 raw (~52-88 landed through the beta's leather set): still the
@@ -720,8 +718,7 @@ class VenomClaw(Move):  # Poisonous attack
     display_name = 'Venom Claw'
     web_animation = "attack"
 
-    # The state execute() attempts on its target (issue #720).
-    inflicts_status = states.Poisoned
+    inflicted_state_cls = states.Poisoned
 
     # Power band and derived midpoint — see ``Move._DAMAGE_MULTIPLIER``.
     _POWER_ROLL_MIN = 0.6
@@ -875,8 +872,7 @@ class SpiderBite(Move):  # Poisonous attack
     display_name = 'Spider Bite'
     web_animation = "quick_attack"
 
-    # The state execute() attempts on its target (issue #720).
-    inflicts_status = states.Poisoned
+    inflicted_state_cls = states.Poisoned
 
     # Power band and derived midpoint — see ``Move._DAMAGE_MULTIPLIER``.
     _POWER_ROLL_MIN = 0.8
@@ -1189,8 +1185,7 @@ class MineralSpit(NpcAttack):
 
     web_animation = "projectile"
 
-    # The state execute() attempts on its target (issue #720).
-    inflicts_status = states.Petrified
+    inflicted_state_cls = states.Petrified
 
     # A spray, not a blow: 0.4 of the rolled swing. See Move._EXECUTE_DAMAGE_SCALE.
     _EXECUTE_DAMAGE_SCALE = 0.4
@@ -1266,8 +1261,7 @@ class SoulDrain(NpcAttack):
 
     web_animation = "drain"
 
-    # The state execute() attempts on its target (issue #720).
-    inflicts_status = states.Hollowed
+    inflicted_state_cls = states.Hollowed
 
     # 0.6 of the rolled swing; the drain's heal is a third of what lands.
     # See Move._EXECUTE_DAMAGE_SCALE.
@@ -1414,8 +1408,7 @@ class WailStrike(TelegraphedSurge):
 
     web_animation = "shockwave"
 
-    # The state execute() attempts on its target (issue #720).
-    inflicts_status = states.Resonant
+    inflicted_state_cls = states.Resonant
 
     _DAMAGE_MULTIPLIER = 1.8
     # Applied in execute() on top of the surge's 1.8 — the trade for ignoring
@@ -1498,8 +1491,7 @@ class DeathKnell(NpcAttack):
 
     web_animation = "death"
 
-    # The state execute() attempts on its target (issue #720).
-    inflicts_status = states.Death
+    inflicted_state_cls = states.Death
 
     # Offensive, but it deals no damage: it only attempts states.Death, which
     # Jean's default resistance refuses (issue #714, maintainer's call).
@@ -1600,8 +1592,7 @@ class SeismicSlam(Move):
 
     web_animation = "shockwave"
 
-    # The state execute() attempts on its target (issue #720).
-    inflicts_status = states.Staggered
+    inflicted_state_cls = states.Staggered
 
     _RADIUS = 6
     _STAGGER_CHANCE = 0.25
@@ -1823,8 +1814,7 @@ class MarkedQuarry(Move):
 
     web_animation = "debuff"
 
-    # The state execute() attempts on its target (issue #720).
-    inflicts_status = states.Quarried
+    inflicted_state_cls = states.Quarried
 
     def __init__(self, npc):
         description = (

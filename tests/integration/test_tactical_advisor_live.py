@@ -326,6 +326,34 @@ class TestTacticalJudgment:
             f"Got: {[s['move_name'] for s in results]}"
         )
 
+    @staticmethod
+    def _death_knell_ctx():
+        """An unresisted DeathKnell in the Dodge/Parry window (issue #720).
+
+        The move deals no damage, so its damage band estimates to ~0-0; the
+        only thing that makes it dangerous is the lethal status the wire's
+        ``inflicts_status`` carries (``Move.status_threat``).
+        """
+        ctx = _base_ctx(available_moves=[_MOVE_SLASH, _MOVE_DODGE, _MOVE_PARRY, _MOVE_ADVANCE])
+        enemy = ctx["enemies"][0]
+        enemy["name"] = "WailWraith"
+        enemy["move_in_process"] = {
+            "name": "Death Knell",
+            "beats_until_resolve": _defensive_window_beats(),
+            "damage_multiplier": 1.0,
+            "deals_damage": False,
+            "inflicts_status": {"name": "Death", "statustype": "death",
+                                "lethal": True, "resisted": False},
+        }
+        return ctx
+
+    def test_defensive_move_for_an_unresisted_lethal_status(self, strategist):
+        results = _get(strategist, self._death_knell_ctx(), max_suggestions=2)
+        assert any(s["move_name"] in ("Dodge", "Parry") for s in results), (
+            f"Expected Dodge or Parry against an unresisted Death Knell. "
+            f"Got: {[(s['move_name'], s['reasoning']) for s in results]}"
+        )
+
     def test_rest_suggested_when_fatigue_critical(self, strategist):
         """Fatigue < 25% should push Rest to the top."""
         ctx = _base_ctx(available_moves=[_MOVE_SLASH, _MOVE_REST, _MOVE_ADVANCE])

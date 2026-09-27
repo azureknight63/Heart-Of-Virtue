@@ -2767,12 +2767,25 @@ def _statustypes_declared_in_states_module():
         if isinstance(target, ast.Name)
     }
     found = set()
+
+    def _resolve(value):
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            found.add(value.value)
+        elif isinstance(value, ast.Name) and value.id in constants:
+            found.add(constants[value.id])
+
     for node in ast.walk(tree):
         if isinstance(node, ast.keyword) and node.arg == "statustype":
-            if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
-                found.add(node.value.value)
-            elif isinstance(node.value, ast.Name) and node.value.id in constants:
-                found.add(constants[node.value.id])
+            _resolve(node.value)
+        # A class-level ``STATUSTYPE = ...`` that the constructor passes on as
+        # ``statustype=self.STATUSTYPE`` (see ``State.STATUSTYPE``).
+        if isinstance(node, ast.ClassDef):
+            for stmt in node.body:
+                if isinstance(stmt, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == "STATUSTYPE"
+                    for t in stmt.targets
+                ):
+                    _resolve(stmt.value)
         # `State.__init__`'s own signature default, which no keyword node covers.
         if isinstance(node, ast.FunctionDef):
             args = node.args
@@ -3156,10 +3169,10 @@ class TestExecuteDamageIsUnchangedBy721:
 
 
 # ---------------------------------------------------------------------------
-# inflicted_status vs execute() -- issue #720
+# inflicted_state_cls vs execute() -- issue #720
 #
 # DeathKnell deals no HP damage (#714) and only attempts states.Death, so the
-# advisor read it as nothing incoming. ``Move.inflicted_status()`` is the
+# advisor read it as nothing incoming. ``Move.inflicted_state_cls`` is the
 # engine's answer to "which status does this move try to put on its target?",
 # shipped on the wire with whether the target resists it. The declaration is
 # checked against what ``execute()`` actually attempts, never a hand list.
@@ -3167,7 +3180,7 @@ class TestExecuteDamageIsUnchangedBy721:
 
 
 class TestInflictedStatusMatchesExecute:
-    """``Move.inflicted_status()`` must name the state ``execute()`` attempts.
+    """``Move.inflicted_state_cls`` must name the state ``execute()`` attempts.
 
     A lethal move that declared nothing would silently delete the advisor's
     warning for it -- the failure #720 exists to close -- so every NPC-used
@@ -3196,10 +3209,10 @@ class TestInflictedStatusMatchesExecute:
     )
     def test_declaration_matches_execute(self, move_cls):
         landed = _land_execute(move_cls, _NPC_MOVES[move_cls])
-        declared = landed.move.inflicted_status()
+        declared = landed.move.inflicted_state_cls
         expected = {declared} if declared is not None else set()
         assert set(landed.inflicted) == expected, (
-            f"{move_cls.__name__} declares inflicted_status()={declared!r} but "
+            f"{move_cls.__name__} declares inflicted_state_cls={declared!r} but "
             f"execute() attempted {landed.inflicted!r} on its target"
         )
 
@@ -3209,16 +3222,11 @@ class TestStatusThreat:
     lethal, and whether ``target`` resists it (``Combatant.resists_status``)."""
 
     def _knell(self, death_resistance=None):
-        from src.moves import DeathKnell
-        from src.npc._enemies import WailWraith
+        from tests._combat_fixtures import wraith_casting
 
-        jean = _player()
-        if death_resistance is not None:
-            jean.status_resistance["death"] = death_resistance
-        with patch("builtins.print"):
-            wraith = WailWraith()
-        move = DeathKnell(wraith)
-        move.target = jean
+        _, move, jean = wraith_casting(
+            "DeathKnell", jean=_player(), death_resistance=death_resistance
+        )
         return move, jean
 
     def test_only_death_is_lethal(self):
@@ -3271,3 +3279,57 @@ class TestStatusThreat:
             npc = _make_npc()
         threat = VenomClaw(npc).status_threat(_player())
         assert threat["name"] == "Poisoned" and threat["lethal"] is False
+
+    def test_reading_the_threat_does_not_consume_the_global_rng(self):
+        """Serialization runs every beat; Poisoned's constructor rolls its
+        duration, so building one to read its name advanced ``random`` and
+        shifted every later combat roll (K1)."""
+        import random
+
+        from src.moves import VenomClaw
+
+        with patch("builtins.print"):
+            npc = _make_npc()
+        move = VenomClaw(npc)
+        jean = _player()
+        before = random.getstate()
+        move.status_threat(jean)
+        assert random.getstate() == before
+
+    def test_a_degraded_target_does_not_raise(self):
+        """No State is constructed, so a target the state's constructor
+        could not handle (here: a bare object) still yields the threat."""
+        from src.moves import VenomClaw
+
+        with patch("builtins.print"):
+            npc = _make_npc()
+        threat = VenomClaw(npc).status_threat(object())
+        assert threat["name"] == "Poisoned" and threat["resisted"] is None
+
+
+class TestDeclaredStateClassConstants:
+    """``status_threat`` reads ``STATUS_NAME``/``STATUSTYPE`` off the class
+    instead of constructing a throwaway State; they must equal what an
+    instance carries, for every state an NPC-used move declares."""
+
+    def _declared(self):
+        return {cls.inflicted_state_cls for cls in _NPC_MOVES} - {None}
+
+    def test_the_population_is_real(self):
+        import src.states as states
+
+        declared = self._declared()
+        assert states.Death in declared and states.Poisoned in declared
+
+    def test_class_constants_match_an_instance(self):
+        import random
+
+        saved = random.getstate()
+        try:
+            random.seed(720)
+            for state_cls in self._declared():
+                instance = state_cls(_player())
+                assert state_cls.STATUS_NAME == instance.name, state_cls
+                assert state_cls.STATUSTYPE == instance.statustype, state_cls
+        finally:
+            random.setstate(saved)

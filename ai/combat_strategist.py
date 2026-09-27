@@ -677,6 +677,15 @@ def _answers_the_charge(name: Any, state: TacticalState) -> bool:
     return state["in_defensive_window"] and name in _DEFENSIVE_MOVE_NAMES
 
 
+def _deals_no_damage(mip: Optional[Dict[str, Any]]) -> bool:
+    """True only when the engine says this charge takes no HP (issue #714).
+
+    An explicit ``deals_damage: False``; a payload without the key is priced
+    as a blow, so a missing field can never silence a real hit.
+    """
+    return (mip or {}).get("deals_damage") is False
+
+
 def _incoming_beats(mip: Optional[Dict[str, Any]]) -> Optional[int]:
     """Beats until a charging enemy move lands, or None if nothing is coming.
 
@@ -705,7 +714,7 @@ def _incoming_beats(mip: Optional[Dict[str, Any]]) -> Optional[int]:
     """
     if not mip:
         return None
-    if mip.get("deals_damage") is False and _lethal_status_of(mip) is None:
+    if _deals_no_damage(mip) and _lethal_status_of(mip) is None:
         return None
     return _beat_count(mip.get("beats_until_resolve"))
 
@@ -731,6 +740,16 @@ def _lethal_status_of(mip: Optional[Dict[str, Any]]) -> Optional[str]:
     if status.get("resisted") is True:
         return None
     return status.get("name") or _UNNAMED_LETHAL_STATUS
+
+
+def _lethal_status_clause(status: str) -> str:
+    """How every advisor line names an unresisted lethal status (issue #720).
+
+    One phrasing for the prompt's INCOMING alert and roster line, the charge
+    note and the Dodge/Parry and locked-defence reasons -- it replaces the
+    "~0–0 dmg" band a no-damage move estimates to, which says nothing true.
+    """
+    return f"inflicts {status}, unresisted"
 
 
 # ENGINE-OWNED: the routine member of `TELEGRAPH_SEVERITIES` (src/moves/_base.py),
@@ -1554,7 +1573,7 @@ class CombatStrategist:
         charge = _sentence_case(state["incoming_move"] or _UNNAMED_CHARGE)
         # Issue #720: a lethal STATUS is named, never a "~0–0 dmg" band.
         status = state["incoming_lethal_status"]
-        lethal_how = f" ({status}, unresisted)" if status else ""
+        lethal_how = f" ({_lethal_status_clause(status)})" if status else ""
 
         if state["dodge_impaired"] and not est_lethal:
             # Status effect reduces defensive move value when the hit is survivable
@@ -1571,8 +1590,8 @@ class CombatStrategist:
             )
         if est_lethal and status:
             return 97, (
-                f"{charge} inflicts {status}, which Jean does not resist, "
-                f"landing in ~{min_bui} beat(s); {name} is critical."
+                f"{charge} {_lethal_status_clause(status)}, landing in "
+                f"~{min_bui} beat(s); {name} is critical."
             )
         if est_lethal:
             return 97, (
@@ -1600,9 +1619,13 @@ class CombatStrategist:
         beats = state["incoming_beats"]
         if beats is None or not state["incoming_flagged"]:
             return None
-        lethal = " (potentially lethal)" if state["incoming_lethal"] else ""
-        if state["incoming_lethal_status"]:
-            lethal = f" (inflicts {state['incoming_lethal_status']}, unresisted)"
+        status = state["incoming_lethal_status"]
+        if status:
+            lethal = f" ({_lethal_status_clause(status)})"
+        elif state["incoming_lethal"]:
+            lethal = " (potentially lethal)"
+        else:
+            lethal = ""
         charge = state["incoming_move"]
         lead = f"{_sentence_case(charge)}{lethal} lands in {beats} beat(s)"
         if beats > _LAST_DEFENSIBLE_BEAT:
@@ -1672,6 +1695,9 @@ class CombatStrategist:
             score = _LOCKED_DEFENCE_SCORES[(name, state["incoming_lethal"])]
             # Not implied by the lock: the lock note is derived on its own.
             charge = state["incoming_move"] or _UNNAMED_CHARGE
+            status = state["incoming_lethal_status"]
+            if status:
+                charge = f"{charge} ({_lethal_status_clause(status)})"
             beats = state["incoming_beats"]
             if name == "Withdraw":
                 return score, (
@@ -2045,10 +2071,14 @@ class CombatStrategist:
             else " Jean's defenses may reduce impact."
         )
         lethal_note = ", LETHAL" if threat["potentially_lethal"] else ""
+        status = threat["lethal_status"]
+        impact = (
+            _lethal_status_clause(status) if status
+            else f"~{threat['estimated_damage']} dmg"
+        )
         return (
             f"⚠ INCOMING: {enemy.get('name')} lands {mip.get('name')} "
-            f"in ~{bui} beat(s) (~{threat['estimated_damage']} dmg"
-            f"{lethal_note}). "
+            f"in ~{bui} beat(s) ({impact}{lethal_note}). "
             f"{CombatStrategist._charge_timing_note(bui)}.{vuln_note}"
         )
 
@@ -2080,10 +2110,15 @@ class CombatStrategist:
             lethal_tag = (
                 " ⚠ POTENTIALLY LETHAL" if threat["potentially_lethal"] else ""
             )
+            status = threat["lethal_status"]
+            impact = (
+                _lethal_status_clause(status) if status
+                else f"~{threat['estimated_damage']} estimated dmg"
+            )
             mip_str = (
                 f", Charging: {mip.get('name')} "
                 f"({bui} beat{'s' if bui != 1 else ''} until impact, "
-                f"~{threat['estimated_damage']} estimated dmg{lethal_tag})"
+                f"{impact}{lethal_tag})"
             )
 
         # Enemy status effects — use enemy perspective notes
@@ -2334,7 +2369,7 @@ class CombatStrategist:
             multiplier = float(mip.get("damage_multiplier", 1.0))
         except (TypeError, ValueError):
             multiplier = 1.0
-        if mip.get("deals_damage") is False:
+        if _deals_no_damage(mip):
             multiplier = 0.0
         enemy_damage = (enemy.get("stats") or {}).get("damage", 0) or enemy.get(
             "damage", 0

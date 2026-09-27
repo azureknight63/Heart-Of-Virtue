@@ -81,6 +81,15 @@ class State:  # master class for all states
     # an incoming lethal threat (issue #720); other statuses stay unpriced.
     lethal = False
 
+    # Class-level name/statustype, for a state a move declares it inflicts
+    # (``Move.inflicted_state_cls``):``Move.status_threat`` reads them here
+    # rather than constructing a throwaway instance, whose constructor may
+    # roll ``random`` (Poisoned, Slimed, ...). Such a state passes these to
+    # ``super().__init__`` so the two cannot drift; tests/
+    # test_npc_moves_coverage.py::TestDeclaredStateClassConstants checks it.
+    STATUS_NAME = None
+    STATUSTYPE = None
+
     def __init__(
         self,
         name,
@@ -461,17 +470,20 @@ class Poisoned(State):
     # durations.
     _COMPOUND_TICK_MULT = 1.25
 
+    STATUS_NAME = "Poisoned"
+    STATUSTYPE = "poison"
+
     def __init__(self, target):
         duration = random.randint(50, 150)
         steps = random.randint(20, 80)
         super().__init__(
-            name="Poisoned",
+            name=self.STATUS_NAME,
             target=target,
             beats_max=duration,
             steps_max=steps,
             compounding=True,
             world=True,
-            statustype="poison",
+            statustype=self.STATUSTYPE,
             persistent=True,
             description="Deals escalating HP damage every few beats. Worsens if reapplied.",
             tactical_mechanics=f"escalating HP DoT every {self._EXECUTE_ON} beats",
@@ -732,18 +744,21 @@ class Slimed(State):
     _COMPOUND_PROTECTION_PENALTY_PCT = 0.05
     _EXECUTE_ON = 6
 
+    STATUS_NAME = "Slimed"
+    STATUSTYPE = "slimed"
+
     def __init__(self, target):
         duration = random.randint(30, 80)
         steps = random.randint(10, 40)
         super().__init__(
-            name="Slimed",
+            name=self.STATUS_NAME,
             target=target,
             beats_max=duration,
             steps_max=steps,
             compounding=True,
             combat=True,
             world=True,
-            statustype="slimed",
+            statustype=self.STATUSTYPE,
             persistent=True,
             description=(
                 f"Finesse -{_pct(self._FINESSE_PENALTY_PCT)}, "
@@ -826,16 +841,19 @@ class Resonant(State):
     _FINESSE_PENALTY_PCT = 0.25
     _EXECUTE_ON = 5
 
+    STATUS_NAME = "Resonant"
+    STATUSTYPE = "stun"
+
     def __init__(self, target):
         duration = random.randint(12, 22)
         super().__init__(
-            name="Resonant",
+            name=self.STATUS_NAME,
             target=target,
             beats_max=duration,
             compounding=False,
             combat=True,
             world=False,
-            statustype="stun",
+            statustype=self.STATUSTYPE,
             persistent=False,
             description=(
                 f"Finesse -{_pct(self._FINESSE_PENALTY_PCT)}. Deals periodic "
@@ -891,15 +909,18 @@ class Death(State):
 
     lethal = True
 
+    STATUS_NAME = "Death"
+    STATUSTYPE = "death"
+
     def __init__(self, target):
         super().__init__(
-            name="Death",
+            name=self.STATUS_NAME,
             target=target,
             beats_max=1,
             compounding=False,
             combat=True,
             world=False,
-            statustype="death",
+            statustype=self.STATUSTYPE,
             persistent=False,
             description="A final stillness.",
         )
@@ -932,18 +953,21 @@ class Petrified(State):
     _EXECUTE_ON = 6
     _FATIGUE_DRAIN_PCT = 0.05
 
+    STATUS_NAME = "Petrified"
+    STATUSTYPE = "stone"
+
     def __init__(self, target):
         duration = random.randint(20, 45)
         steps = random.randint(15, 30)
         super().__init__(
-            name="Petrified",
+            name=self.STATUS_NAME,
             target=target,
             beats_max=duration,
             steps_max=steps,
             compounding=True,
             combat=True,
             world=True,
-            statustype="stone",
+            statustype=self.STATUSTYPE,
             persistent=False,
             description=(
                 f"Finesse -{_pct(self._FINESSE_PENALTY_PCT)}, "
@@ -1052,18 +1076,21 @@ class Hollowed(State):
     _ENDURANCE_PENALTY_POINTS = 2
     _EXECUTE_ON = 8
 
+    STATUS_NAME = "Hollowed"
+    STATUSTYPE = APATHY_STATUSTYPE
+
     def __init__(self, target):
         duration = random.randint(40, 80)
         steps = random.randint(30, 60)
         super().__init__(
-            name="Hollowed",
+            name=self.STATUS_NAME,
             target=target,
             beats_max=duration,
             steps_max=steps,
             compounding=False,
             combat=True,
             world=True,
-            statustype=APATHY_STATUSTYPE,
+            statustype=self.STATUSTYPE,
             persistent=True,
             description=(
                 f"Faith -{self._FAITH_PENALTY_POINTS}, "
@@ -1315,15 +1342,18 @@ class Staggered(State):
     #: only while it was one value.
     _PREP_PENALTY_BEATS = 5
 
+    STATUS_NAME = "Staggered"
+    STATUSTYPE = "stun"
+
     def __init__(self, target, beats_max=STAGGERED_DEFAULT_BEATS):
         super().__init__(
-            name="Staggered",
+            name=self.STATUS_NAME,
             target=target,
             beats_max=beats_max,
             compounding=False,
             combat=True,
             world=False,
-            statustype="stun",
+            statustype=self.STATUSTYPE,
             persistent=False,
             description=(
                 "Reeling from a heavy blow — the next move takes "
@@ -1427,15 +1457,18 @@ class Quarried(State):
     _PROTECTION_PENALTY_PCT = 0.25
     _DURATION_BEATS = 15
 
+    STATUS_NAME = "Quarried"
+    STATUSTYPE = "generic"
+
     def __init__(self, target):
         super().__init__(
-            name="Quarried",
+            name=self.STATUS_NAME,
             target=target,
             beats_max=self._DURATION_BEATS,
             compounding=False,
             combat=True,
             world=False,
-            statustype="generic",
+            statustype=self.STATUSTYPE,
             persistent=False,
             description=(
                 "Weak points exposed — protection reduced by "

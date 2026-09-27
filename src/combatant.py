@@ -519,12 +519,12 @@ class Combatant:
     def resists_status(self, status_type):
         """True when a status of ``status_type`` can never land on this combatant.
 
-        ``functions.inflict`` rolls ``chance * (1 - resistance)``, so only a
-        full resistance of 1.0 makes the attempt impossible; anything less is
-        a chance, not a resist. (``force``/``min_chance`` callers bypass this,
-        which is theirs to declare.)
+        Delegates to :func:`functions.status_immune`, the same rule
+        ``functions.inflict``'s fast-fail uses. (``force``/``min_chance``
+        callers bypass it, which is theirs to declare.)
         """
-        return self.get_status_resistance(status_type) >= 1.0
+        import src.functions as functions
+        return functions.status_immune(self, status_type)
 
     def clamp_hp(self):
         """Clamp ``hp`` into [0, maxhp], coercing non-finite hp/maxhp to 0.
