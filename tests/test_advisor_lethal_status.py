@@ -210,6 +210,25 @@ class TestTheStatusIsNamedNotABand:
             assert clause in s["reasoning"], s
 
 
+class TestImpairedDefence:
+    """F3 #4: an impaired Dodge against an unresisted Death still names the
+    status, in the same "<charge> <impact>, landing in" phrasing as the
+    unimpaired reason."""
+
+    def test_the_impaired_reason_names_the_status(self, strategist):
+        enemy = _enemy_mid_cast("DeathKnell", death_resistance=0.0)
+        ctx = _ctx(enemy)
+        ctx["player"]["status_effects"] = [{"name": "Slimed"}]
+        state = strategist._derive_tactical_state(ctx)
+        assert state["dodge_impaired"] and state["incoming_lethal"]
+        score, reason = CombatStrategist._score_defensive_move("Dodge", state)
+        assert score == 88, reason
+        assert (
+            f"Death Knell {_lethal_status_clause('Death')}, landing in"
+            in reason
+        ), reason
+
+
 class TestFatigueLockedDefence:
     """K13: Jean below 10% fatigue with Dodge/Parry priced out -- the
     locked-defence advice must still say the charge kills by status."""
