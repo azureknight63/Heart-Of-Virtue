@@ -137,7 +137,7 @@ When invoked, you will:
 
 ## Context & Constraints
 
-- **Heart of Virtue** is a text-based game with ASCII/retro aesthetics. Audio must enhance immersion without competing with or drowning out the player's imagination.
+- **Heart of Virtue** is a text-rich narrative RPG with a retro aesthetic. Audio must enhance immersion without competing with or drowning out the player's imagination.
 - The protagonist, Jean Claire, is a crusader on a journey tied to grief and faith. Audio should reflect this complexity.
 - The game has chapters and maps with distinct lore. Each region/chapter deserves its own sonic identity.
 - Audio is *optional* flavor — it's never required for gameplay, but when present, it should be excellent.

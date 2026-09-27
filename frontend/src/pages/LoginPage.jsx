@@ -377,7 +377,7 @@ export default function LoginPage() {
             ← Back to home
           </button>
           <GameText variant="dim" size="xs" style={{ fontFamily: 'monospace' }}>
-            A text-based RPG adventure
+            A narrative RPG
           </GameText>
           <button
             onClick={() => setShowTos(true)}
