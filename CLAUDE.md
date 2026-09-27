@@ -1,6 +1,6 @@
 # Heart of Virtue — CLAUDE.md
 
-Text-based adventure RPG (retro terminal aesthetic) following the crusader Jean Claire. Played **entirely via the web app**: a Flask REST/Socket.IO API wraps the Python game engine and a React SPA renders it. The terminal play mode is gone (history in `docs/development/engine-history.md`).
+Browser-based narrative RPG with turn-based combat, following the crusader Jean Claire. Played **entirely via the web app**: a Flask REST/Socket.IO API wraps the Python game engine and a React SPA renders it. The terminal play mode is gone (history in `docs/development/engine-history.md`).
 
 **The Python engine is the source of truth.** `src/api/` adapts engine state to JSON; it never reimplements game logic. Engine output flows through the narration sink (`src/narration.py`) as structured `{text, color, type}` messages — nothing scrapes stdout.
 

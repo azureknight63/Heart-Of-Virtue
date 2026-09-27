@@ -28,7 +28,7 @@ command1 && command2 || command3
 ```
 
 ## Project Overview
-A text-based RPG following Jean Claire through a tile-based world with turn-based combat, inventory management, and NPC interactions (some of which may involve LLM-based behavior). Built with Python 3.13, heavy use of `neotermcolor` for colored terminal output, and `asciimatics` for visual effects.
+A browser-based narrative RPG following Jean Claire through a tile-based world with turn-based combat, inventory management, and NPC interactions (some of which may involve LLM-based behavior). Built with Python 3.13, heavy use of `neotermcolor` for colored terminal output, and `asciimatics` for visual effects.
 
 ## Architecture & Core Systems
 

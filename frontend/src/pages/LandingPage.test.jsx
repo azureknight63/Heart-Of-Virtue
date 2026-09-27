@@ -90,7 +90,7 @@ describe('LandingPage', () => {
     expect(screen.getByText('Devet')).toBeInTheDocument()
     expect(screen.getByText('Liss')).toBeInTheDocument()
     expect(screen.getByTestId('world-map')).toBeInTheDocument()
-    expect(screen.getByText(/A text adventure by Alexander Egbert/)).toBeInTheDocument()
+    expect(screen.getByText(/A narrative RPG by Alexander Egbert/)).toBeInTheDocument()
   })
 
   it('navigates to /login when the hero CTA is clicked', () => {
