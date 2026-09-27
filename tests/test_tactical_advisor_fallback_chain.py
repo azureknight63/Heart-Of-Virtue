@@ -314,6 +314,32 @@ class TestAnUnrecognisedProviderFailsClosed:
         assert not any("no response from provider=olama" in m for m in messages)
 
 
+class TestTheSharedTransportsNameTheirCaller:
+    """The mixin's transports used to log "NpcChatLLMAdapter" whoever called
+    them, so an advisor outage read as a chat outage in the logs."""
+
+    @pytest.mark.parametrize("make, name", [
+        (lambda: _adapter(), "CombatLLMAdapter"),
+        (lambda: NpcChatLLMAdapter(), "NpcChatLLMAdapter"),
+    ])
+    def test_the_transport_logs_carry_the_callers_class(
+        self, monkeypatch, keys, caplog, make, name
+    ):
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "ollama")
+        adapter = make()
+        adapter._openrouter_api_key = ""
+
+        with caplog.at_level("INFO", logger=llm.logger.name):
+            adapter._call_ollama("sys", "user", 10, 0.1)  # refused by the fixture
+            adapter._call_openrouter("sys", "user", 10, 0.1)
+
+        messages = [r.getMessage() for r in caplog.records]
+        assert any(m.startswith("%s Ollama error:" % name) for m in messages), messages
+        assert (
+            "%s._call_openrouter aborted: requests missing or api key missing." % name
+        ) in messages
+
+
 class TestEachHopDialsItsOwnModel:
     """``*_LLM_MODEL`` names the PRIMARY's model. An OpenRouter fallback hop
     behind a groq or ollama primary used to send that slug to OpenRouter --

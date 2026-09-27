@@ -4101,7 +4101,9 @@ class ProviderChainMixin:
         # nothing ever read it, so a JSON-incapable local model was re-dialled
         # every single turn.
         if self._is_model_failed(served_id):
-            logger.debug("NpcChatLLMAdapter._call_ollama skipped: %s is benched.", served_id)
+            logger.debug(
+                "%s._call_ollama skipped: %s is benched.", type(self).__name__, served_id
+            )
             return None
         r = None
         try:
@@ -4139,7 +4141,7 @@ class ProviderChainMixin:
             return content
         except Exception as e:
             GenericLLMClient._record_provider_usage("ollama", r, "error")
-            logger.warning("NpcChatLLMAdapter Ollama error: %s", e)
+            logger.warning("%s Ollama error: %s", type(self).__name__, e)
             return None
 
     def _call_openrouter(
@@ -4156,12 +4158,18 @@ class ProviderChainMixin:
         and tolerate the response shapes OpenRouter actually sends.
         """
         if requests is None or not self._openrouter_api_key:
-            logger.warning("NpcChatLLMAdapter._call_openrouter aborted: requests missing or api key missing.")
+            logger.warning(
+                "%s._call_openrouter aborted: requests missing or api key missing.",
+                type(self).__name__,
+            )
             return None
 
         primary = self._get_openrouter_model()
         if not primary:
-            logger.warning("NpcChatLLMAdapter._call_openrouter aborted: no primary model available.")
+            logger.warning(
+                "%s._call_openrouter aborted: no primary model available.",
+                type(self).__name__,
+            )
             return None
 
         # OpenRouter maintains the auto-router slug as the stable escape hatch
@@ -4169,7 +4177,10 @@ class ProviderChainMixin:
         # _openrouter_candidates puts it in second place for exactly that.
         models_to_try = self._openrouter_candidates(primary)
 
-        logger.info("NpcChatLLMAdapter._call_openrouter start primary=%s candidates=%s", primary, models_to_try[1:4])
+        logger.info(
+            "%s._call_openrouter start primary=%s candidates=%s",
+            type(self).__name__, primary, models_to_try[1:4],
+        )
 
         headers = {
             "Authorization": f"Bearer {self._openrouter_api_key}",
@@ -4198,8 +4209,8 @@ class ProviderChainMixin:
                 json_mode=True,
             )
             logger.info(
-                "NpcChatLLMAdapter._call_openrouter attempting model_id=%s attempt=%s/%s",
-                model_id, attempt_no, max_attempts,
+                "%s._call_openrouter attempting model_id=%s attempt=%s/%s",
+                type(self).__name__, model_id, attempt_no, max_attempts,
             )
             # Clipped to the turn (bounded_by): a model that times out on a
             # clipped call ran out of the TURN's time, and benching it would
@@ -4215,8 +4226,8 @@ class ProviderChainMixin:
         content = self._rotate_openrouter(models_to_try, max_attempts, attempt)
         if content is None:
             logger.error(
-                "NpcChatLLMAdapter._call_openrouter exhausted all models. primary=%s",
-                primary,
+                "%s._call_openrouter exhausted all models. primary=%s",
+                type(self).__name__, primary,
             )
         return content
 
