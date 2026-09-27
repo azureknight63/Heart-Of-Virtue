@@ -497,6 +497,15 @@ class CombatantSerializer:
                 # so a legacy save placeholder, which carries none of Move's
                 # API, keeps today's warning rather than silently losing it.
                 "deals_damage": deals_damage_of(move),
+                # Move.status_threat (issue #720): the status the move tries
+                # to inflict on its own target, whether it is lethal, and
+                # whether that target resists it -- all the engine's answers.
+                # The advisor prices an unresisted lethal one (DeathKnell) as
+                # incoming though deals_damage is False. None when the move
+                # inflicts nothing or is a degraded placeholder.
+                "inflicts_status": CombatantSerializer._call_move_method(
+                    move, "status_threat", getattr(move, "target", None)
+                ),
                 # TELEGRAPH_SEVERITIES — declared on Move (src/moves/_base.py)
                 # and read off it here so the badge, enemies list and beat
                 # timeline (telegraphSeverity in combatMoveStatus.js) share

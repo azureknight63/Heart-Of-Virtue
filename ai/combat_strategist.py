@@ -397,6 +397,10 @@ class TacticalState(TypedDict):
     # Pre-rendered "low–high" band, not a number: it is prompt/reasoning text.
     estimated_damage: str
     incoming_lethal: bool
+    # Issue #720: the unresisted lethal status the charge inflicts ("Death"),
+    # or None. It is what makes a no-damage charge lethal; see
+    # `_lethal_status_of`.
+    incoming_lethal_status: Optional[str]
     # Issue #686: the charge's display name, and whether it is worth naming in
     # EVERY reason (a heavy/deadly telegraph, or a potentially lethal hit). A
     # routine wind-up is not: it would clutter every line, every beat.
@@ -434,6 +438,8 @@ class IncomingThreat(TypedDict):
     estimated_damage: str
     midpoint: int
     potentially_lethal: bool
+    # Issue #720: see `_lethal_status_of`.
+    lethal_status: Optional[str]
 
 
 class WorstThreat(TypedDict):
@@ -448,6 +454,7 @@ class WorstThreat(TypedDict):
     beats_until_resolve: Optional[int]
     estimated_damage: str
     potentially_lethal: bool
+    lethal_status: Optional[str]
     # The charging move's display name and whether it is a heavy/deadly
     # telegraph (issue #686); None/False when nothing is incoming.
     move_name: Optional[str]
@@ -692,10 +699,38 @@ def _incoming_beats(mip: Optional[Dict[str, Any]]) -> Optional[int]:
     lethal) lands in 2 beat(s)". Only an explicit False skips; a payload
     without the key keeps the old behaviour, so a missing field can never
     silence a real blow.
+
+    Except when it inflicts an unresisted lethal status (issue #720,
+    `_lethal_status_of`): DeathKnell deals no damage but kills outright.
     """
-    if not mip or mip.get("deals_damage") is False:
+    if not mip:
+        return None
+    if mip.get("deals_damage") is False and _lethal_status_of(mip) is None:
         return None
     return _beat_count(mip.get("beats_until_resolve"))
+
+
+#: What a reason calls a lethal status the payload does not name.
+_UNNAMED_LETHAL_STATUS = "a lethal status"
+
+
+def _lethal_status_of(mip: Optional[Dict[str, Any]]) -> Optional[str]:
+    """The name of the lethal status a charge inflicts on Jean, or None.
+
+    Issue #720, maintainer's call: price LETHAL statuses only. Reads the
+    wire's ``inflicts_status`` (``Move.status_threat`` in src/moves/_base.py:
+    the engine decides lethality, ``State.lethal``, and resistance,
+    ``Combatant.resists_status``). Only an explicit ``resisted: True`` clears
+    it; an unknown answer (None) still warns, because an unwarned one-shot is
+    the worse failure. Poison, fatigue drain and every other non-lethal status
+    return None and stay unpriced.
+    """
+    status = (mip or {}).get("inflicts_status")
+    if not isinstance(status, dict) or status.get("lethal") is not True:
+        return None
+    if status.get("resisted") is True:
+        return None
+    return status.get("name") or _UNNAMED_LETHAL_STATUS
 
 
 # ENGINE-OWNED: the routine member of `TELEGRAPH_SEVERITIES` (src/moves/_base.py),
@@ -1349,6 +1384,7 @@ class CombatStrategist:
             "in_defensive_window": in_window,
             "estimated_damage": threat["estimated_damage"],
             "incoming_lethal": threat["potentially_lethal"],
+            "incoming_lethal_status": threat["lethal_status"],
             "incoming_move": threat["move_name"],
             "incoming_flagged": incoming_beats is not None
             and (threat["telegraphed"] or threat["potentially_lethal"]),
@@ -1427,6 +1463,9 @@ class CombatStrategist:
         # `_charge_note` does outside the window -- the name `_charge_name`
         # already resolved into the state, never a second naming path.
         charge = _sentence_case(state["incoming_move"] or _UNNAMED_CHARGE)
+        # Issue #720: a lethal STATUS is named, never a "~0–0 dmg" band.
+        status = state["incoming_lethal_status"]
+        lethal_how = f" ({status}, unresisted)" if status else ""
 
         if state["dodge_impaired"] and not est_lethal:
             # Status effect reduces defensive move value when the hit is survivable
@@ -1437,9 +1476,14 @@ class CombatStrategist:
         if state["dodge_impaired"] and est_lethal:
             # Even impaired, better than a one-shot
             return 88, (
-                f"{charge} is potentially lethal in ~{min_bui} beat(s); "
-                f"{name} reliability is reduced by status effect but still "
+                f"{charge} is potentially lethal{lethal_how} in ~{min_bui} "
+                f"beat(s); {name} reliability is reduced by status effect but still "
                 "preferable to dying."
+            )
+        if est_lethal and status:
+            return 97, (
+                f"{charge} inflicts {status}, which Jean does not resist, "
+                f"landing in ~{min_bui} beat(s); {name} is critical."
             )
         if est_lethal:
             return 97, (
@@ -1468,6 +1512,8 @@ class CombatStrategist:
         if beats is None or not state["incoming_flagged"]:
             return None
         lethal = " (potentially lethal)" if state["incoming_lethal"] else ""
+        if state["incoming_lethal_status"]:
+            lethal = f" (inflicts {state['incoming_lethal_status']}, unresisted)"
         charge = state["incoming_move"]
         lead = f"{_sentence_case(charge)}{lethal} lands in {beats} beat(s)"
         if beats > _LAST_DEFENSIBLE_BEAT:
@@ -2189,11 +2235,18 @@ class CombatStrategist:
 
         Protection is not available for the enemy's view of the player, so the
         estimate is conservative (raw power before mitigation).
+
+        An unresisted lethal status (issue #720, `_lethal_status_of`) is
+        potentially lethal whatever the damage; a move the engine says deals
+        no damage (``deals_damage`` False -- DeathKnell) is estimated at 0.
         """
+        lethal_status = _lethal_status_of(mip)
         try:
             multiplier = float(mip.get("damage_multiplier", 1.0))
         except (TypeError, ValueError):
             multiplier = 1.0
+        if mip.get("deals_damage") is False:
+            multiplier = 0.0
         enemy_damage = (enemy.get("stats") or {}).get("damage", 0) or enemy.get(
             "damage", 0
         )
@@ -2205,7 +2258,11 @@ class CombatStrategist:
         return {
             "estimated_damage": f"{low}–{high}",
             "midpoint": midpoint,
-            "potentially_lethal": midpoint >= player_hp * _LETHAL_HP_FRACTION,
+            "potentially_lethal": (
+                lethal_status is not None
+                or midpoint >= player_hp * _LETHAL_HP_FRACTION
+            ),
+            "lethal_status": lethal_status,
         }
 
     def _worst_incoming_threat(
@@ -2222,6 +2279,7 @@ class CombatStrategist:
             "beats_until_resolve": None,
             "estimated_damage": "0–0",
             "potentially_lethal": False,
+            "lethal_status": None,
             "move_name": None,
             "telegraphed": False,
         }
@@ -2243,6 +2301,7 @@ class CombatStrategist:
                     "beats_until_resolve": bui,
                     "estimated_damage": threat["estimated_damage"],
                     "potentially_lethal": threat["potentially_lethal"],
+                    "lethal_status": threat["lethal_status"],
                     "move_name": _charge_name(mip),
                     "telegraphed": _is_telegraphed(mip),
                 }

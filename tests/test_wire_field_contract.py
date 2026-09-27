@@ -1093,6 +1093,13 @@ ACTIVE_MOVE_CONTRACT = {
     # every move as a hit -- a silent regression, so the value is asserted
     # below as well.
     "deals_damage": Read("ai/combat_strategist.py", 'get("deals_damage")'),
+    # NOT a frontend read. Issue #720: Move.status_threat -- the status the
+    # move attempts on its target, whether it is lethal, and whether that
+    # target resists it. _lethal_status_of prices an unresisted lethal status
+    # (DeathKnell's Death) as an incoming threat although deals_damage is
+    # False. Absent, DeathKnell silently reads as nothing incoming, so the
+    # value is asserted below too.
+    "inflicts_status": Read("ai/combat_strategist.py", 'get("inflicts_status")'),
     # Issue #586. telegraphSeverity() marks a heavy/deadly wind-up with a
     # glyph on the countdown badge, the enemies list and the beat timeline —
     # the non-colour cue that tells a Tidal Surge apart from a routine
@@ -1543,6 +1550,42 @@ class TestCombatantWireContract:
         volley = _serialize_mid_cast(SlimeVolley, Slime)["current_move"]
         assert rest["deals_damage"] is False, rest
         assert volley["deals_damage"] is True, volley
+
+    def test_inflicts_status_carries_the_moves_own_threat(self):
+        """Presence is not enough: None is the degraded-move default.
+
+        DeathKnell deals no damage (#714), so this field is the only thing
+        that tells the advisor it can kill (#720). ``resisted`` must be asked
+        of the move's own TARGET, not assumed: default Jean resists Death, a
+        Jean stripped of that resistance does not.
+        """
+        from src.moves import DeathKnell, NpcAttack
+        from src.npc._enemies import WailWraith
+
+        def knell_at(jean):
+            enemy = WailWraith()
+            enemy.target = jean
+            move = DeathKnell(enemy)
+            move.target = jean
+            move.current_stage = 0
+            move.beats_left = 2
+            enemy.current_move = move
+            return CombatantSerializer.serialize_combatant(enemy, reference=jean)[
+                "current_move"
+            ]["inflicts_status"]
+
+        resisting = knell_at(Player())
+        assert resisting == {
+            "name": "Death",
+            "statustype": "death",
+            "lethal": True,
+            "resisted": True,
+        }
+        mortal = Player()
+        mortal.status_resistance["death"] = 0.0
+        assert knell_at(mortal)["resisted"] is False
+        plain = _serialize_mid_cast(NpcAttack, Slime)["current_move"]
+        assert plain["inflicts_status"] is None
 
     def test_telegraph_severity_carries_the_moves_own_declaration(self):
         """Presence is not enough here either: "normal" is a valid severity

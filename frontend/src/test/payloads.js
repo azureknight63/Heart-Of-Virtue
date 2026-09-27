@@ -242,6 +242,8 @@ export function makeActiveMove(overrides = {}) {
       falloff: null,
       damage_multiplier: 1.0,
       deals_damage: true,
+      // Move.status_threat (#720); read only by the server-side advisor.
+      inflicts_status: null,
       telegraph_severity: 'normal',
     },
     overrides
