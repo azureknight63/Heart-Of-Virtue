@@ -14,6 +14,8 @@ import sys
 import random
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -344,6 +346,74 @@ class TestInflict:
         functions.inflict(state, tgt, chance=1.0)
         # effective_chance = 1.0 * (1-0.0) = 1.0 → no roll needed
         assert len(roll_count) == 0
+
+
+class TestStatusImmune:
+    """``functions.status_immune``: the one immunity rule, shared by
+    ``Combatant.resists_status`` (the advisor's wire flag) and ``inflict``'s
+    fast-fail, so the advisor can never call a status resisted that
+    ``inflict`` would still land."""
+
+    @pytest.mark.parametrize(
+        "resistance, immune",
+        [(1.0, True), (0.99, False), (0.0, False), (1.5, True),
+         (float("nan"), False), ("junk", False)],
+    )
+    def test_full_clamped_resistance_is_immunity(self, resistance, immune):
+        tgt = _make_target_with_states(poison=resistance)
+        assert functions.status_immune(tgt, "poison") is immune
+
+    def test_a_missing_key_is_not_immunity(self):
+        tgt = _make_target_with_states()
+        assert functions.status_immune(tgt, "death") is False
+
+    def test_a_target_without_resistances_is_not_immune(self):
+        assert functions.status_immune(object(), "poison") is False
+
+    def test_combatant_resists_status_is_the_same_rule(self):
+        from src.player import Player
+
+        jean = Player()
+        for value in (0.0, 0.5, 1.0):
+            jean.status_resistance["death"] = value
+            assert jean.resists_status("death") is functions.status_immune(
+                jean, "death"
+            )
+
+
+class TestInflictOutcomeUnchangedByTheImmunityPredicate:
+    """Characterization: for every real resistance (0..1, or a missing key)
+    ``inflict`` must return and roll exactly as the pre-predicate formula
+    ``max(min_chance, chance * (1 - resistance)) <= 0`` did."""
+
+    @staticmethod
+    def _reference(resistance, chance, min_chance, roll):
+        effective = max(min_chance, chance * (1 - resistance))
+        if effective <= 0:
+            return False, 0
+        if effective < 1.0:
+            return roll <= effective, 1
+        return True, 0
+
+    @pytest.mark.parametrize("resistance", [0.0, 0.25, 0.5, 0.99, 1.0, None])
+    @pytest.mark.parametrize("chance", [0.0, 0.3, 1.0])
+    @pytest.mark.parametrize("min_chance", [0.0, 0.1])
+    @pytest.mark.parametrize("roll", [0.0, 0.2, 0.95])
+    def test_matches_the_formula(self, monkeypatch, resistance, chance,
+                                 min_chance, roll):
+        tgt = MagicMock()
+        tgt.states = []
+        tgt.status_resistance = {} if resistance is None else {"stun": resistance}
+        rolls = []
+        monkeypatch.setattr(random, "random", lambda: rolls.append(1) or roll)
+        state = states.Parrying(MagicMock())
+        state.statustype = "stun"
+        result = functions.inflict(state, tgt, chance=chance, min_chance=min_chance)
+        expected, expected_rolls = self._reference(
+            0.0 if resistance is None else resistance, chance, min_chance, roll
+        )
+        assert (result is not False) is expected
+        assert len(rolls) == expected_rolls
 
 
 # ---------------------------------------------------------------------------
