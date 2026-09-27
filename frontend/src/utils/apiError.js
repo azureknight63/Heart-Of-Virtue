@@ -245,10 +245,15 @@ const GATEWAY_UNAVAILABLE_STATUSES = new Set([502, 503, 504])
  *
  * #731: the same was true of a 5xx. 502/503/504 are the gateway saying the
  * app is down or restarting (a deploy, a worker recycle); any other 5xx is
- * the app itself failing the save. So 403 and 5xx get their own copy, and
- * every other failure keeps the network-flavored copy — a dropped
- * connection or timeout (no `response` at all), but also any other 4xx
- * (400/401/409/413), even though the server did answer those.
+ * the app itself failing the save. So 403 and 5xx get their own copy.
+ *
+ * #738: any other 4xx was still blamed on the connection, though the server
+ * answered it. A 401 is an expired session: its copy says to sign in again,
+ * which is where the player lands anyway — the axios 401 interceptor
+ * (api/client.js) calls redirectToLogin() before this toast is shown, and
+ * autosave goes through that client. Every other 4xx is the server refusing
+ * the save. Only a failure with no `response` at all (dropped connection,
+ * timeout) keeps the network-flavored copy.
  *
  * None of the copy promises the lost save will be retried: there is no retry
  * queue. useAutosave resets its tick counter whether or not the write landed,
@@ -267,9 +272,15 @@ export function autosaveErrorMessage(err) {
     if (GATEWAY_UNAVAILABLE_STATUSES.has(status)) {
         return 'The server is busy or restarting. Your game continues and will try to save again as you play.'
     }
+    if (status === 401) {
+        return 'Your session expired; sign in again to keep saving.'
+    }
     if (status >= 500) {
         return "The server couldn't save your progress. Your game continues. "
             + 'If this keeps happening, please send it through Feedback.'
+    }
+    if (status >= 400) {
+        return 'The server refused the save.'
     }
     return 'Failed to save your progress. Check your connection.'
 }
