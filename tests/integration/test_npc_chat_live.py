@@ -26,7 +26,7 @@ it goes green.
 What these validate
 ───────────────────
 - generate_turn returns the full schema with every field in range
-- jean_options are three distinctly-toned, correctly-sized replies
+- jean_options are three correctly-sized replies, each toned from JEAN_TONES
 - the opening line honours its extra constraints (zero deltas, no greeting)
 - loquacity_delta is negative for an ordinary exchange (conversation costs)
 - an offensive line is actually scored as offensive and costs reputation
@@ -41,6 +41,8 @@ import os
 import time
 
 import pytest
+
+from ai.llm_client import JEAN_TONES
 
 # ---------------------------------------------------------------------------
 # Skip entire module if NPC chat LLM is not configured
@@ -65,7 +67,6 @@ pytestmark = [
     ),
 ]
 
-TONES = ["direct", "guarded", "open"]
 QUALITIES = {"positive", "neutral", "negative", "offensive"}
 
 
@@ -219,10 +220,16 @@ class TestJeanOptions:
         assert len(opts) == 3, "Expected 3 options in %s, got %d" % (scenario, len(opts))
 
     @pytest.mark.parametrize("scenario", ["opening", "normal", "offensive"])
-    def test_tones_are_the_three_expected(self, scenario, request):
+    def test_every_tone_is_a_jean_tone(self, scenario, request):
+        """Each tone is one of Jean's portrait emotions (#705).
+
+        No distinct-tones requirement: since #591 two options may share a tone
+        -- ``kind`` tells them apart on the button.
+        """
         opts = request.getfixturevalue(scenario)["jean_options"]
-        assert sorted(o.get("tone") for o in opts) == sorted(TONES), \
-            "Tones drifted in %s: %s" % (scenario, [o.get("tone") for o in opts])
+        tones = [o.get("tone") for o in opts]
+        assert all(t in JEAN_TONES for t in tones), \
+            "Tone outside JEAN_TONES in %s: %s" % (scenario, tones)
 
     @pytest.mark.parametrize("scenario", ["opening", "normal", "offensive"])
     def test_option_lengths_are_reasonable(self, scenario, request):

@@ -49,7 +49,8 @@ const npcChat = {
    * Send a response from Jean to an NPC
    * @param {string} npcKey - Session key returned from /open
    * @param {string} jeanText - Jean's dialogue text
-   * @param {string} jeanTone - Jean's portrait emotion for the line (the tone of the option picked)
+   * @param {string} [jeanTone] - Jean's portrait emotion for the line (the tone of the option
+   *   picked). Omitted, the field is not sent; the server accepts it for shape only (#705).
    * @param {object} [options]
    * @param {string} [options.turnId] - Idempotency key for this turn (#636): one per
    *   option click, reused by that click's Retry, so a turn the server already
@@ -60,13 +61,13 @@ const npcChat = {
    * @returns {Promise} Response with { npc_response, jean_options, loquacity_current,
    *   loquacity_max, conversation_ended, reputation, reputation_delta, relationship }
    */
-  respond: (npcKey, jeanText, jeanTone = 'direct', { turnId, timeoutMs } = {}) =>
+  respond: (npcKey, jeanText, jeanTone, { turnId, timeoutMs } = {}) =>
     apiClient.post(
       `${BASE}/respond`,
       {
         npc_key: npcKey,
         jean_text: jeanText,
-        jean_tone: jeanTone,
+        ...(jeanTone ? { jean_tone: jeanTone } : {}),
         ...(turnId ? { turn_id: turnId } : {}),
       },
       // Truthy, not `!= null`: axios reads `timeout: 0` as no deadline at all.
