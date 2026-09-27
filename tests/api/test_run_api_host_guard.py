@@ -93,7 +93,7 @@ class TestTheOptInWorks:
 
     @pytest.mark.parametrize("value", ["0", "false", "no", "off", ""])
     def test_an_off_value_is_not_an_opt_in(self, value, monkeypatch):
-        """Shares ``_env_flag`` with the rest of the config surface, so the
+        """Shares ``env_flag`` with the rest of the config surface, so the
         spellings that mean "off" everywhere else — including an
         exported-but-blank variable — mean "off" here too."""
         monkeypatch.setenv("HOST", _ROUTABLE)

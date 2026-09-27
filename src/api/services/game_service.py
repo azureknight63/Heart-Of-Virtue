@@ -54,6 +54,10 @@ from src.api.utils.inventory import get_inventory_list
 
 _log = logging.getLogger(__name__)
 
+#: Story-gate values that mean "not set" to the analytics progress diff: a
+#: cleared gate or one that never fired. (``False == 0``, so 0 covers it.)
+_UNSET_GATE_VALUES = (None, "", "0", 0)
+
 #: Manual saves one player may keep. Autosaves are not counted against it.
 #: Named because the number was written twice -- once in the check and once
 #: in the message the player reads -- so they could disagree.
@@ -925,6 +929,25 @@ class GameService:
     def _story(player):
         """The story-gate dict ``player`` carries (``src.events.story_gates``)."""
         return story_gates(player)
+
+    def analytics_markers(self, player) -> Optional[Dict[str, Any]]:
+        """Where ``player`` is, for the analytics progress diff; None if unreadable.
+
+        ``flags`` are the story gates that are set: a gate holding one of
+        ``_UNSET_GATE_VALUES`` has been cleared or never fired, and counting it
+        would report progress nobody made. Never raises, because it runs after
+        every request.
+        """
+        try:
+            story = self._story(player) or {}
+            flags = {key for key, value in story.items() if value not in _UNSET_GATE_VALUES}
+            # A Player carries the same ``.map`` dict a MapTile does.
+            return {"map": map_name_for_tile(player), "flags": flags}
+        except Exception:
+            # None, not an empty set: a baseline taken from "no flags" would
+            # make the next good read report every flag the player already had.
+            _log.debug("analytics_markers failed", exc_info=True)
+            return None
 
     @staticmethod
     def _game_tick(player):
@@ -4301,11 +4324,15 @@ class GameService:
                 def event_callback(p):
                     return self.trigger_combat_events(p, session_data=session_data)
 
+                replaced = getattr(player, "_combat_adapter", None)
                 player._combat_adapter = ApiCombatAdapter(
                     player,
                     session_id=session_id,
                     on_event_callback=event_callback,
                 )
+                # The fight began on the adapter being replaced; keep its
+                # analytics identity or its end is recorded as "unknown".
+                player._combat_adapter.inherit_fight_identity(replaced)
                 # This unconditionally replaces the adapter _initialize_combat just
                 # built above (streamer and all) with a bare one — re-wire the beat
                 # streamer (issue #436) here too, or this deferred/resumed combat
@@ -5113,6 +5140,9 @@ class GameService:
             _room_title = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", _raw)
         else:
             _room_title = "Unknown"
+        # The tile, since a room title can repeat across a map.
+        _location_x = getattr(player, "location_x", None)
+        _location_y = getattr(player, "location_y", None)
 
         # 2. Hybrid Autosave Logic: UPSERT for the single autosave
         if is_autosave:
@@ -5126,7 +5156,8 @@ class GameService:
                 sql = """
                 UPDATE saves
                 SET data = ?, timestamp = CURRENT_TIMESTAMP,
-                    level = ?, map_name = ?, room_title = ?, playtime = ?
+                    level = ?, map_name = ?, room_title = ?, playtime = ?,
+                    location_x = ?, location_y = ?
                 WHERE id = ?
                 """
                 params = [
@@ -5135,13 +5166,16 @@ class GameService:
                     _map_name,
                     _room_title,
                     getattr(player, "time_elapsed", 0),
+                    _location_x,
+                    _location_y,
                     save_id,
                 ]
             else:
                 # Create first autosave
                 sql = """
-                INSERT INTO saves (id, user_id, name, data, is_autosave, level, map_name, room_title, playtime)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO saves (id, user_id, name, data, is_autosave, level, map_name, room_title, playtime,
+                                   location_x, location_y)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 params = [
                     save_id,
@@ -5153,12 +5187,15 @@ class GameService:
                     _map_name,
                     _room_title,
                     getattr(player, "time_elapsed", 0),
+                    _location_x,
+                    _location_y,
                 ]
         else:
             # Manual save
             sql = """
-            INSERT INTO saves (id, user_id, name, data, is_autosave, level, map_name, room_title, playtime)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO saves (id, user_id, name, data, is_autosave, level, map_name, room_title, playtime,
+                               location_x, location_y)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = [
                 save_id,
@@ -5170,6 +5207,8 @@ class GameService:
                 _map_name,
                 _room_title,
                 getattr(player, "time_elapsed", 0),
+                _location_x,
+                _location_y,
             ]
 
         await db.execute(sql, params)
@@ -5493,6 +5532,9 @@ class GameService:
                     "fled": False,
                     "error": FLEE_TOO_CLOSE_MESSAGE,
                 }
+
+        if adapter is not None:
+            adapter.record_flee()
 
         # Clear enemy combat state so they don't immediately re-engage on next interaction
         for enemy in list(getattr(player, "combat_list", [])):
@@ -5976,13 +6018,16 @@ class GameService:
         # match -- in particular not the pending "" an /open in flight parks.
         active_key = player.__dict__.get("_active_chat_npc_key")
         names_a_chat = isinstance(npc_key, str) and bool(npc_key)
-        if not stale and (active_key is None or (names_a_chat and active_key == npc_key)):
+        closed = not stale and (active_key is None or (names_a_chat and active_key == npc_key))
+        if closed:
             self._clear_active_chat(player)
 
         entry = _chat_history_entry(player, npc_key)
         count = entry.get("conversation_count", 0) if entry else 0
 
-        return {"success": True, "data": {"conversation_count": count}}
+        # ``closed`` tells the route whether this /end ended the live
+        # conversation or was a late one for an earlier, already-replaced open.
+        return {"success": True, "closed": closed, "data": {"conversation_count": count}}
 
     def npc_chat_history(
         self, player: "player_module.Player", npc_key: str

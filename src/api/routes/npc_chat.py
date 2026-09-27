@@ -9,9 +9,11 @@ Provides REST API endpoints for:
 """
 
 import re
+import time
 
 from flask import Blueprint, request, jsonify
 from src.api.middleware.auth import get_session_and_player, require_game_service
+from src.api.services import analytics
 from src.api.rate_limiter import (
     RateLimiter,
     client_ip,
@@ -249,6 +251,10 @@ def npc_chat_open():
         return gs_error
 
     result = game_service.npc_chat_open(player, npc_id)
+    if result.get("success") and result.get("npc_key"):
+        analytics.recorder.chat_opened(session, result["npc_key"])
+        if result.get("conversation_ended"):
+            analytics.recorder.chat_ended(session, result["npc_key"])
 
     # Save session
     session_manager.save_session(session.session_id)
@@ -323,10 +329,18 @@ def npc_chat_respond():
     # The identity tier is charged by the service, under the turn lock, for
     # every request but a replay or a ``pending`` answer, which cost no
     # provider call (#636, round-2 scrub S1).
+    # Request latency: the provider call plus the turn lock and replay lookup.
+    started = time.monotonic()
     result = game_service.npc_chat_respond(
         player, npc_key, jean_text, jean_tone, turn_id=turn_id,
         charge=lambda: _identity_over_limit(session),
     )
+    # A replay answers from the turn already counted; it cost no provider call.
+    if result.get("success") and not result.get("replayed"):
+        latency_ms = int((time.monotonic() - started) * 1000)
+        analytics.recorder.chat_turn(session, npc_key, latency_ms=latency_ms)
+        if result.get("conversation_ended"):
+            analytics.recorder.chat_ended(session, npc_key)
 
     # Save session
     session_manager.save_session(session.session_id)
@@ -372,6 +386,11 @@ def npc_chat_end():
         return gs_error
 
     result = game_service.npc_chat_end(player, npc_key, open_token=open_token)
+    # Only an /end that closed the live conversation: a late one from a panel
+    # already replaced by a re-open of the same NPC must not end the new one.
+    # (Also a no-op when the NPC already ended it on the last /respond.)
+    if result.get("closed"):
+        analytics.recorder.chat_ended(session, npc_key)
 
     # Save session
     session_manager.save_session(session.session_id)

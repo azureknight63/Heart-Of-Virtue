@@ -78,6 +78,8 @@ GAME_SERVICE_PUBLIC_API = {
     # Added by the 2026-09-24 triage architecture pass: the currency route's
     # gold read moved off the player and onto GameService (#689).
     "get_gold_amount",
+    # Player analytics: where the player is, for the progress diff.
+    "analytics_markers",
     "allocate_level_up_points", "apply_tile_modifications",
     "capture_tile_object_baseline", "collect_combat_loot", "delete_save",
     "drop_item", "equip_item", "execute_move", "flee_combat",

@@ -109,6 +109,17 @@ class TestBuildDigest:
         assert any("Saturation" in n for n in names)
         assert not any("Reliability" in n for n in names)
 
+    def test_a_failed_section_logs_only_the_error_type(self, monkeypatch, caplog):
+        def leaky(_snapshot):
+            raise ConnectionError("libsql://db.example?authToken=SECRET")
+
+        monkeypatch.setitem(digest._FORMATTERS, "saturation", ("Saturation", leaky))
+        monkeypatch.setenv("HOV_ANALYTICS_SECTIONS", "saturation")
+        with caplog.at_level("WARNING", logger="ai.provider_digest"):
+            digest.build_digest(self._snapshot())
+        logged = "\n".join(r.getMessage() for r in caplog.records)
+        assert "ConnectionError" in logged and "SECRET" not in logged
+
     def test_unknown_section_names_are_ignored(self, monkeypatch):
         monkeypatch.setenv("HOV_ANALYTICS_SECTIONS", "saturation,nonsense")
         assert digest.build_digest(self._snapshot())["fields"]
@@ -663,3 +674,61 @@ class TestAlertBannerMatchesConfig:
         monkeypatch.setenv("HOV_ANALYTICS_ALERT_INTERVAL_HOURS", "3")
         embed = digest.build_digest(GenericLLMClient.usage_snapshot(), alert=True)
         assert "3.0h" in embed["description"]
+
+
+class TestPlayersSection:
+    """The player-analytics field, fed by ``analytics_report``."""
+
+    def _fake_fetch(self, monkeypatch, report=None, error=None):
+        from src.api.services import analytics_report
+
+        seen = {}
+
+        def fetch(days):
+            seen["days"] = days
+            if error:
+                raise error
+            return report
+
+        monkeypatch.setattr(analytics_report, "fetch_report", fetch)
+        return seen
+
+    @pytest.fixture(autouse=True)
+    def configured(self, monkeypatch):
+        monkeypatch.setenv("TURSO_DATABASE_URL", "libsql://example.invalid")
+        monkeypatch.setenv("HOV_ANALYTICS_SECTIONS", "players")
+
+    def test_players_field_summarises_the_report(self, monkeypatch):
+        report = {
+            "players": {
+                "total_accounts": 12,
+                "new_accounts": {"1d": 1, "7d": 4, "30d": 12},
+                "started_playing": 9,
+                "active": {"dau": 2, "wau": 6, "mau": 9},
+            }
+        }
+        self._fake_fetch(monkeypatch, report=report)
+        [field] = digest.build_digest(GenericLLMClient.snapshot_and_reset())["fields"]
+        assert "Players" in field["name"]
+        assert "**12** accounts" in field["value"]
+
+    @pytest.mark.parametrize("hours, days", [("168", 7), ("1", 1), ("720", 30)])
+    def test_window_follows_the_digest_cadence(self, monkeypatch, hours, days):
+        seen = self._fake_fetch(monkeypatch, report={})
+        monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", hours)
+        digest.fetch_players_section({})
+        assert seen["days"] == days
+
+    def test_unconfigured_analytics_says_so(self, monkeypatch):
+        from src.api.db import DatabaseNotConfigured
+
+        self._fake_fetch(monkeypatch, error=DatabaseNotConfigured("TURSO_DATABASE_URL is not set"))
+        assert digest.fetch_players_section({}) == "Analytics not configured."
+
+    def test_database_failure_does_not_lose_the_digest(self, monkeypatch):
+        monkeypatch.setenv("HOV_ANALYTICS_SECTIONS", "")
+        self._fake_fetch(monkeypatch, error=ValueError("boom"))
+        embed = digest.build_digest(GenericLLMClient.snapshot_and_reset())
+        players = [f for f in embed["fields"] if "Players" in f["name"]]
+        assert players and players[0]["value"] == "unavailable"
+        assert len(embed["fields"]) == len(digest.SECTIONS)

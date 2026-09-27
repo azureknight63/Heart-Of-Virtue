@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage'
 import MainMenuPage from './pages/MainMenuPage'
 import GamePage from './pages/GamePage'
 import LandingPage from './pages/LandingPage'
+import AdminAnalyticsPage from './pages/AdminAnalyticsPage'
 import LoadingScreen from './components/LoadingScreen'
 import { AudioProvider } from './context/AudioContext'
 import { PreferencesProvider } from './context/PreferencesContext'
@@ -54,6 +55,9 @@ function App() {
                 "?" keyboard shortcut, which has no business being live on the
                 landing or login pages. */}
             <Route path="/game" element={isAuthenticated ? <GlossaryProvider><GamePage /></GlossaryProvider> : <Navigate to="/" />} />
+            {/* Admin-only in effect: the API answers 404 to non-admins and the
+                page renders "Nothing here" (see useAdminAnalytics). */}
+            <Route path="/admin" element={isAuthenticated ? <AdminAnalyticsPage /> : <Navigate to="/" />} />
             <Route path="*" element={<Navigate to={isAuthenticated ? '/game' : '/'} />} />
           </Routes>
         </BrowserRouter>

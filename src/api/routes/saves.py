@@ -6,6 +6,7 @@ from flask import Blueprint, request, jsonify
 from src.api.services.auth_service import SaveLimitReached
 from src.api.services.game_service import SaveRefusedWhileDead
 from src.api.middleware.auth import get_session_and_player, require_game_service
+from src.api.services import analytics
 from src.api.services.validators import validate_string_field
 
 saves_bp = Blueprint("saves", __name__)
@@ -203,6 +204,11 @@ async def create_save():
                 200,
             )
 
+        # Manual saves only: the client autosaves every few transitions, and
+        # that cadence says nothing about the player.
+        if not is_autosave:
+            analytics.record(analytics.Event.GAME_SAVE)
+
         from datetime import datetime
 
         return (
@@ -273,6 +279,8 @@ async def load_save(save_id):
         # Update session with loaded player
         session_manager.set_player(session.session_id, loaded_player)
         session_manager.save_session(session.session_id)
+        analytics.record(analytics.Event.GAME_LOAD)
+        analytics.rebaseline(session, loaded_player, game_service)
 
         return (
             jsonify(
@@ -372,6 +380,8 @@ def new_game():
         success = session_manager.start_new_game(session.session_id)
 
         if success:
+            analytics.record(analytics.Event.GAME_NEW)
+            analytics.rebaseline(session, session_manager.get_player(session.session_id))
             return (
                 jsonify(
                     {

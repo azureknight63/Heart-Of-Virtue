@@ -324,6 +324,12 @@ class TestEveryNameTheCodeReadsIsDeclared:
 #: environment is the point of it, and each entry has to say so. Anything not
 #: named here that reaches a ``.env`` loader must sweep.
 TOOLS_ALLOWED_LIVE_CREDENTIALS = {
+    "analytics.py": (
+        "The operator's analytics report: it reads the real analytics and "
+        "users tables, so blanked credentials would report an empty game. "
+        "It runs only SELECTs, and its tests replace the report module rather "
+        "than reaching a database."
+    ),
     "run_api.py": (
         "This one IS the server. It runs the real app against the real "
         "configuration -- that is its entire job, and blanking the "

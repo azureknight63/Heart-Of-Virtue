@@ -21,6 +21,31 @@ load_project_env()
 logger = logging.getLogger(__name__)
 
 
+class DatabaseNotConfigured(ValueError):
+    """``TURSO_DATABASE_URL`` is unset.
+
+    A ``ValueError`` so existing ``except ValueError`` handlers still catch it;
+    its own type so a caller can show this message, which carries no secret,
+    without also showing a driver error that might echo the URL.
+    """
+
+
+DATABASE_URL_ENV = "TURSO_DATABASE_URL"
+AUTH_TOKEN_ENV = "TURSO_AUTH_TOKEN"
+
+
+def create_client_from_env():
+    """A new libsql client for the configured database. Raises DatabaseNotConfigured.
+
+    Binds to the event loop it is created on: the shared ``db`` builds it on
+    its own loop, and ``analytics.run_with_private_client`` on a short-lived one.
+    """
+    url = os.getenv(DATABASE_URL_ENV)
+    if not url:
+        raise DatabaseNotConfigured("%s is not set" % DATABASE_URL_ENV)
+    return libsql_client.create_client(url, auth_token=os.getenv(AUTH_TOKEN_ENV))
+
+
 class Database:
     """The process's one Turso client, running on ONE event loop of its own.
 
@@ -70,8 +95,8 @@ class Database:
     def get_client(self):
         """The shared client, built on first use.
 
-        Raises ValueError("TURSO_DATABASE_URL is not set") when unconfigured:
-        routes/saves.py and services/auth_service.py catch exactly that.
+        Raises DatabaseNotConfigured (a ValueError) when unconfigured:
+        routes/saves.py and services/auth_service.py catch ValueError.
         """
         return self._client_and_loop()[0]
 
@@ -79,14 +104,13 @@ class Database:
         with self._client_lock:
             loop = self._db_loop()
             if self._client is None:
-                url = os.getenv("TURSO_DATABASE_URL")
-                auth_token = os.getenv("TURSO_AUTH_TOKEN")
-                if not url:
-                    raise ValueError("TURSO_DATABASE_URL is not set")
+                if not os.getenv(DATABASE_URL_ENV):
+                    # Checked here, not only in build(): fail before touching the loop.
+                    raise DatabaseNotConfigured("%s is not set" % DATABASE_URL_ENV)
 
                 async def build():
                     # Built on the database loop, so its session binds there.
-                    return libsql_client.create_client(url, auth_token=auth_token)
+                    return create_client_from_env()
 
                 self._client = asyncio.run_coroutine_threadsafe(build(), loop).result(
                     timeout=self._BUILD_TIMEOUT_SECONDS

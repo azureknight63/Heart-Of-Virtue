@@ -11,6 +11,7 @@ from typing import Literal, get_args
 import requests
 from flask import Blueprint, request, jsonify
 from src.api.middleware.auth import get_session_and_player
+from src.api.services import analytics
 from src.api.rate_limiter import (
     RateLimiter,
     client_ip,
@@ -636,6 +637,7 @@ def submit_feedback():
         if err:
             return jsonify({"success": False, "error": err}), 503
 
+        analytics.record(analytics.Event.FEEDBACK, type=feedback_type)
         return jsonify({"success": True, "issue_url": issue_url}), 201
 
     except Exception:

@@ -4,6 +4,7 @@ import logging
 
 from flask import Blueprint, current_app, jsonify, make_response, request
 from src.api.middleware.auth import resolve_session
+from src.api.services import analytics
 from src.api.session_cookie import (
     clear_session_cookie,
     session_id_from_cookie,
@@ -195,16 +196,18 @@ def _is_config_leak(msg: str) -> bool:
     return any(marker in msg for marker in _CONFIG_LEAK_MARKERS)
 
 
-def _establish_session_for_user(session_manager, username, user):
+def _establish_session_for_user(session_manager, username, user, event=analytics.Event.LOGIN):
     """Create a session for ``username`` and link it to the DB user record.
 
     Shared by register and login so the session-creation + linkage contract
-    (db_user_id, timezone default) lives in exactly one place.
+    (db_user_id, timezone default) lives in exactly one place. ``event`` is
+    the analytics event the sign-in counts as (``Event.LOGIN``/``Event.REGISTER``).
     """
     session_id, player_id = session_manager.create_session(username)
     session = session_manager.get_session(session_id)
     session.db_user_id = user["id"]
     session.data["timezone"] = user.get("timezone", "America/New_York")
+    analytics.on_sign_in(session, session_manager, event)
     return session_id, player_id
 
 
@@ -391,7 +394,7 @@ async def register():
 
         # Create session and link it to the DB user record.
         session_id, player_id = _establish_session_for_user(
-            session_manager, username, user
+            session_manager, username, user, event=analytics.Event.REGISTER
         )
 
         # The session id also travels in an HttpOnly cookie (issue #493) — that
