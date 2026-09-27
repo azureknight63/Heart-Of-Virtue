@@ -255,6 +255,17 @@ class TestOneImplementation:
             assert name not in CombatLLMAdapter.__dict__ or name == "available", name
             assert getattr(NpcChatLLMAdapter, name) is getattr(ProviderChainMixin, name), impl
 
+    def test_a_subclass_without_round_timeout_fails_loudly(self):
+        from ai.llm_client import ProviderChainMixin
+
+        class Bare(ProviderChainMixin, GenericLLMClient):
+            pass
+
+        with pytest.raises(NotImplementedError, match="Bare must define _round_timeout"):
+            Bare.__new__(Bare)._round_timeout()
+        assert CombatLLMAdapter._round_timeout() == CombatLLMAdapter._FALLBACK_CALL_TIMEOUT_SECONDS
+        assert NpcChatLLMAdapter._round_timeout() > 0
+
 
 def _recording_post(calls):
     def post(url, payload, headers, timeout, on_discarded=None):

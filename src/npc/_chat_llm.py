@@ -745,7 +745,7 @@ _MIN_TRUNCATION_KEEP_RATIO = 0.5
 # A stage is opened only while a full round timeout still fits in the remaining
 # budget (see :func:`_no_stage_budget`), and inside a stage every provider call
 # is clipped to what the turn has left and the chain stops once it is spent
-# (``NpcChatLLMAdapter.bounded_by``), so the turn ends at its deadline plus at
+# (``ProviderChainMixin.bounded_by``), so the turn ends at its deadline plus at
 # most one clipped call. Once the budget is
 # spent the turn drops to the deterministic fallbacks that already exist
 # (_get_fallback_npc_line, _chat_guard.hedge_npc_text, and the rewrite-mode QC

@@ -192,8 +192,8 @@ def _provider_credential(name: str) -> str:
     """The env value ``name`` needs before it can be dialled at all, or ``""``.
 
     "Does this provider have a usable credential" was asked in three places
-    and answered three times: ``NpcChatLLMAdapter._provider_credentialed``,
-    the registry loop in ``NpcChatLLMAdapter._provider_chain`` that decides
+    and answered three times: ``ProviderChainMixin._provider_credentialed``,
+    the registry loop in ``ProviderChainMixin._provider_chain`` that decides
     who joins the fallback chain, and ``_call_openai_compatible``, which needs
     the value itself rather than a yes/no. Three spellings of one rule is
     three chances for the chain to contain a provider the transport will
@@ -215,7 +215,7 @@ def _provider_credential(name: str) -> str:
     the env with an empty default while ``__init__`` read it with a localhost
     one, so ``_provider_chain`` omitted the local fallback from every chain on
     a box where ``_call_ollama`` would have been served -- and
-    ``NpcChatLLMAdapter.available``'s docstring said the opposite of this
+    ``ProviderChainMixin.available``'s docstring said the opposite of this
     function's in as many words.
     """
     if name == "ollama":
@@ -233,7 +233,7 @@ def _provider_credential(name: str) -> str:
 # process-wide, so remote credentials belonging to other features are normally
 # sitting in the environment, and reading "unset" as a configured provider
 # would let them arm a remote fallback chain nobody asked for. See
-# ``GenericLLMClient.provider`` and ``NpcChatLLMAdapter._provider_chain``.
+# ``GenericLLMClient.provider`` and ``ProviderChainMixin._provider_chain``.
 DEFAULT_PROVIDER = "ollama"
 PROVIDER_DISABLED = "none"
 
@@ -954,7 +954,7 @@ def _post_chat_completion(
     if not drop:
         return resp
     # Inside an NPC chat turn the retry is held to what the turn has left, like
-    # every other call (NpcChatLLMAdapter.bounded_by): ``timeout`` was worked
+    # every other call (ProviderChainMixin.bounded_by): ``timeout`` was worked
     # out before the first POST, and reusing it let the retry end a whole
     # clipped timeout past the deadline. Returned unmetered here -- the caller
     # meters the response it gets back.
@@ -1028,7 +1028,7 @@ class GenericLLMClient:
 
     Naming a provider is also what opts a feature in to the remote fallback
     chain; leaving it unset gets the local default and nothing else. See
-    ``provider`` and ``NpcChatLLMAdapter._provider_chain``.
+    ``provider`` and ``ProviderChainMixin._provider_chain``.
 
     Subclasses configure themselves by declaring ``_ENABLED_ENV_VARS`` /
     ``_PROVIDER_ENV_VARS`` / ``_MODEL_ENV_VARS``, not by reassigning
@@ -2054,7 +2054,7 @@ class GenericLLMClient:
         rate-limit headers, so saturation stays None — but the traffic itself has
         to appear in the usage picture or an Ollama-only deployment (Mynx and the
         combat strategist both land here) reports "no calls this window" while
-        answering every turn. ``NpcChatLLMAdapter._call_ollama`` has recorded its
+        answering every turn. ``ProviderChainMixin._call_ollama`` has recorded its
         calls since it was written; this one was the last transport that did not.
         """
         if requests is None:
@@ -3529,7 +3529,11 @@ class ProviderChainMixin:
       attribute would hide the variable from them.
     * ``_FEATURE_LABEL`` -- names the feature in the "disabled" reason.
     * ``_round_timeout()`` -- the nominal per-call timeout the transports clip
-      to the thread's deadline (``_call_timeout``).
+      to the thread's deadline (``_call_timeout``). The stub here raises.
+
+    It also assumes ``_ENABLED_ENV_VARS[0]`` is the feature's OWN gate: the
+    "disabled" reason names that variable, so a subclass listing an inherited
+    fallback gate first would tell the operator to set the wrong one.
 
     The consent rule is inherited unchanged: only the FIRST entry in
     ``_PROVIDER_ENV_VARS`` arms the chain (see ``GenericLLMClient.
@@ -3539,6 +3543,12 @@ class ProviderChainMixin:
 
     _FALLBACK_ENV_VARS: Tuple[str, ...] = ()
     _FEATURE_LABEL: str = "LLM adapter"
+
+    def _round_timeout(self) -> float:
+        """Nominal per-call timeout (seconds); every subclass declares its own."""
+        raise NotImplementedError(
+            "%s must define _round_timeout (ProviderChainMixin contract)" % type(self).__name__
+        )
 
     def available(self) -> bool:
         """Availability for a class that can dispatch to the whole chain.
@@ -4029,8 +4039,8 @@ class ProviderChainMixin:
 
         It used to RE-RAISE an HTTP error after recording it, alone among the
         three chain methods (``_call_ollama`` and ``_openrouter_attempt`` both
-        return None), which made ``_call_llm``'s broad ``except`` load-bearing
-        for this one method's contract rather than a genuine safety net. All
+        return None), which made the chain walk's broad ``except``
+        (``_walk_provider_chain``) load-bearing for this one method's contract rather than a genuine safety net. All
         three now agree: a provider that cannot answer yields None and the
         chain moves on.
         """
@@ -4057,7 +4067,7 @@ class ProviderChainMixin:
             logger.debug("Provider %s skipped: model %s is benched.", provider, model)
             return None
 
-        # Every caller of this method parses the reply as JSON.
+        # Every chain caller parses this reply as JSON.
         payload = self._chat_payload(
             model=model,
             system=system_prompt,
@@ -4087,7 +4097,7 @@ class ProviderChainMixin:
             # without ever reaching _record_provider_usage: a groq or cerebras
             # outage was invisible in the digest, and the "yields None, the
             # chain moves on" contract in the docstring above was not met --
-            # _call_llm's broad except was silently load-bearing again.
+            # the walk's broad except was silently load-bearing again.
             GenericLLMClient._record_provider_usage(provider, None, "error")
             logger.warning(
                 "Provider %s transport failure for model=%s (%s: %s).",
@@ -4170,10 +4180,11 @@ class ProviderChainMixin:
                 user=user,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                # Both of _call_llm's callers parse this reply as JSON
-                # (_parse_or_penalize, extract_json_list), so ask the host to
-                # enforce it -- exactly as _call_openrouter does one method
-                # down. Prose here is not a bad turn, it is a bench.
+                # Every chain caller parses this reply as JSON (chat's
+                # _parse_or_penalize / extract_json_list, the advisor's
+                # _structured_via_chain), so ask the host to enforce it --
+                # exactly as _call_openrouter does one method down. Prose here
+                # is not a bad turn, it is a bench.
                 json_mode=True,
             )
             r = requests.post(
@@ -4204,15 +4215,18 @@ class ProviderChainMixin:
     def _call_openrouter(
         self, system: str, user: str, max_tokens: int, temperature: float
     ) -> Optional[str]:
-        """Call OpenRouter, retrying with current free models when needed.
+        """One chain hop to OpenRouter, rotating through current free models.
 
-        NPC chat used to make one request against the configured model and then
-        call ``.strip()`` on ``message.content`` unconditionally. OpenRouter can
-        return a 404 for a retired ``:free`` slug, or return ``content: null``
-        for a thinking-only response; either case made every chat round fall
-        through with a noisy error and no LLM dialogue. Keep this feature's
-        per-round settings, but share the generic client's model-failure cache
-        and tolerate the response shapes OpenRouter actually sends.
+        The chain's OpenRouter transport, for whichever feature is walking it.
+        OpenRouter can 404 a retired ``:free`` slug or return ``content: null``
+        for a thinking-only response, so this rotates candidates
+        (``_rotate_openrouter``), shares the generic client's model-failure
+        cache, and tolerates the response shapes OpenRouter actually sends --
+        while each call keeps the caller's own ``max_tokens``/``temperature``
+        and a timeout clipped to its deadline (``_call_timeout``). History: NPC
+        chat, where this began, once made a single request and called
+        ``.strip()`` on ``message.content`` unconditionally, so either failure
+        cost every round its LLM dialogue.
         """
         if requests is None or not self._openrouter_api_key:
             logger.warning(
@@ -4251,7 +4265,7 @@ class ProviderChainMixin:
         def attempt(model_id: str, attempt_no: int) -> Optional[str]:
             if self._turn_budget_spent():
                 return None  # the turn is out of time; see bounded_by
-            # Every caller of this method parses the reply as JSON, so json_mode
+            # Every chain caller parses this reply as JSON, so json_mode
             # asks the API to enforce that rather than trusting the prompt to.
             # Always the OpenRouter dialect: this method can run as a chain
             # fallback while self.provider is groq/cerebras/ollama, whose
