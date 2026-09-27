@@ -35,6 +35,15 @@ def tile_exists(map_to_check, x, y):
     return map_to_check.get((x, y))
 
 
+def is_dev_only_map(game_map):
+    """True when a map (loaded dict or raw JSON) is flagged
+    ``metadata.dev_only: true`` -- a test/dev map no player can reach."""
+    if not isinstance(game_map, dict):
+        return False
+    metadata = game_map.get("metadata")
+    return isinstance(metadata, dict) and metadata.get("dev_only") is True
+
+
 class Universe:  # "globals" for the game state can be stored here, as well as all the maps
     def __init__(self, player=None):
         self.player = player
@@ -130,9 +139,14 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         which left merchant-bound containers (Jambo's back-room crate) empty on
         a fresh game. A stocking failure never breaks the build: one merchant
         failing is skipped, and a map that cannot be walked stops stocking.
+
+        Dev-only maps (``is_dev_only_map``) are skipped (#737): each stocking
+        rolls for one of the world's few uniques, and nobody visits those
+        merchants. They still stock on first shop open.
         """
         try:
-            for merchant in iter_merchants(self.maps):
+            live_maps = [m for m in self.maps if not is_dev_only_map(m)]
+            for merchant in iter_merchants(live_maps):
                 try:
                     merchant.stock_if_empty()
                 except Exception:
