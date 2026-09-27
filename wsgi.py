@@ -26,7 +26,7 @@ under any other value. See the two guards at the bottom of the file.
 
 Usage (as production runs it — see deploy/heart-of-virtue.service, which the
 Procfile mirrors):
-    FLASK_ENV=production gunicorn --worker-class gthread -w 1 --threads 32         --bind "0.0.0.0:${PORT:-5000}" --timeout 120 wsgi:app
+    FLASK_ENV=production gunicorn -c deploy/gunicorn.conf.py --worker-class gthread -w 1 --threads 32         --bind "0.0.0.0:${PORT:-5000}" --timeout 120 wsgi:app
 
 Development and testing configs go through the dev entry point instead, which
 binds 127.0.0.1 by default:

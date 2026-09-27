@@ -31,7 +31,10 @@ This module is the **only** installer of root-logger handlers (issue #698).
 ``create_app()``; both sets survived each other's idempotence checks, so every
 line printed twice and only one copy was redacted. ``create_app()`` now sets
 namespace levels only. Every handler installed here carries
-:class:`_RedactSecretsFilter`.
+:class:`_RedactSecretsFilter`, and so -- on the logger itself -- does every
+library logger that installs handlers of its own (werkzeug, engineio,
+socketio; issue #741). The filter and that enumeration live in
+:mod:`src.api.log_redaction`.
 """
 
 import json
@@ -48,6 +51,13 @@ from pathlib import Path
 
 from flask import g, request
 
+from src.api.log_redaction import (  # noqa: F401 -- _SECRET_RE re-exported
+    SELF_HANDLING_LOGGERS,
+    _RedactSecretsFilter,
+    _SECRET_RE,
+    _scrub,
+    redact_logger,
+)
 from src.api.middleware.auth import session_token
 from src.api.utils.log_cleanup import LogCleanupManager
 from src.env_bootstrap import PROJECT_ROOT
@@ -90,134 +100,6 @@ _LOG_LEVELS = {
     "INFO": logging.INFO,
     "DEBUG": logging.DEBUG,
 }
-
-# Blunt scrub for credential-shaped substrings on their way into any handler
-# this module installs. Nothing in the tree is known to log a secret in a
-# message (checked deliberately: the LLM client logs bool(api_key), never the
-# value) — but provider-SDK tracebacks are not written by this tree, and this
-# repo has shipped a live GITHUB_TOKEN in ``.env``, so the scrub covers the
-# credential families actually present here rather than only the OpenAI shape:
-#   sk-…            OpenAI / OpenRouter / Anthropic-style API keys
-#   gsk_…           Groq
-#   ghp_/gho_/…     GitHub OAuth + classic PATs
-#   github_pat_…    GitHub fine-grained PATs
-#   discord webhook the provider digest's Discord sink URL (the path IS the
-#                   credential)
-#   eyJ….….         JWTs, which is how the Turso/libSQL auth token is shaped
-#   Bearer …        anything already framed as a bearer credential
-_SECRET_RE = re.compile(
-    r"""
-      sk-[A-Za-z0-9_\-]{8,}
-    | gsk_[A-Za-z0-9_\-]{8,}
-    | gh[pousr]_[A-Za-z0-9_\-]{8,}
-    | github_pat_[A-Za-z0-9_\-]{8,}
-    | https://(?:\w+\.)*discord(?:app)?\.com/api/webhooks/\S+
-    | eyJ[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]*
-    | Bearer\s+[A-Za-z0-9._\-]{8,}
-    """,
-    re.VERBOSE,
-)
-
-# Used to render ``record.exc_info`` for scrubbing before any handler formats
-# it. A bare Formatter's ``formatException`` is exactly what the real handlers
-# would call, so the text this filter rewrites is the text they will emit.
-_EXC_FORMATTER = logging.Formatter()
-
-# Stamped on a LogRecord once _RedactSecretsFilter has scrubbed it.
-_REDACTED_MARKER = "_hov_redacted"
-
-# What every credential-shaped substring is replaced with.
-_REDACTION = "[REDACTED]"
-
-
-def _scrub(text):
-    """``text`` with every ``_SECRET_RE`` match replaced by ``_REDACTION``."""
-    return _SECRET_RE.sub(_REDACTION, text)
-
-
-class _RedactSecretsFilter(logging.Filter):
-    """Replace anything credential-shaped with ``[REDACTED]``.
-
-    Installed on **every** handler :func:`configure_logging` owns — console,
-    LOG_FILE and JSONL alike. Filters run per handler, in handler order, so a
-    filter missing from any one handler emits the unredacted record through
-    it before the redacting one ever runs. That is not hypothetical: it is
-    issue #698, where a second, unfiltered handler set installed at import
-    time printed every line raw ahead of the redacted copy.
-
-    Three payloads are scrubbed, because they travel by different routes:
-
-    * ``record.msg`` (with ``record.args`` dropped, as they have already been
-      merged in by ``getMessage()``).
-    * ``record.msg`` and ``record.args`` *separately*, as text, when the args
-      do not fit the format string: ``getMessage()`` raises, and
-      ``Handler.handleError`` then prints the raw msg and args to stderr.
-    * ``record.exc_text`` — the formatted traceback. This is the one that
-      matters most. Every ``logger.exception`` / ``exc_info=True`` call under
-      ``src/`` and ``ai/`` feeds it — dozens of sites across the tree, so no
-      list of them written here would stay true — and the largest single
-      contributor is not any route module but
-      ``src/api/handlers/error_handler.py``, the app-wide 500 handler that
-      every unhandled exception passes through. Any of them can surface a
-      provider-SDK traceback whose frame locals or request repr carry the API
-      key, and that text is rendered by ``Formatter.format`` *after* every
-      filter has run. Rendering it here and caching the redacted result in
-      ``exc_text`` (which ``Formatter.format`` reuses verbatim when set) is
-      what puts it inside the scrub. ``stack_info`` gets the same treatment
-      for the same reason.
-
-    The ``exc_text`` cache is written only when the scrub actually changed
-    something. That reuse cuts both ways: a non-empty ``exc_text`` freezes the
-    traceback for *every* handler on root, so writing it unconditionally would
-    take ``formatException`` away from handlers that render it differently —
-    caplog's, and :class:`JsonlFormatter`.
-
-    Mutating the record makes it scrubbed for every handler that formats it
-    afterwards as well — the safe direction to be wrong in — which is why the
-    record is stamped (``_REDACTED_MARKER``) after its first pass and later
-    handlers' filters skip it.
-    """
-
-    def filter(self, record):
-        # One record passes this filter once per handler; after the first pass
-        # it is already scrubbed. Stamped only once the scrub has finished.
-        if getattr(record, _REDACTED_MARKER, False):
-            return True
-        try:
-            message = record.getMessage()
-        except Exception:
-            # Bad %-format args. ``Handler.handleError`` prints the raw msg and
-            # args to stderr for exactly this record, so scrub both as text.
-            record.msg = _scrub(str(record.msg))
-            args = record.args if isinstance(record.args, tuple) else (record.args,)
-            record.args = tuple(_scrub(repr(a)) for a in args)
-            message = None
-        if message is not None and _SECRET_RE.search(message):
-            record.msg = _scrub(message)
-            record.args = ()
-        self._redact_traceback(record)
-        setattr(record, _REDACTED_MARKER, True)
-        return True
-
-    @staticmethod
-    def _redact_traceback(record):
-        """Scrub (and, if needed, materialise) the record's traceback text."""
-        text = getattr(record, "exc_text", None)
-        if not text and record.exc_info:
-            try:
-                text = _EXC_FORMATTER.formatException(record.exc_info)
-            except Exception:  # pragma: no cover - defensive
-                text = None
-        if text:
-            redacted = _scrub(text)
-            if redacted != text:
-                record.exc_text = redacted
-
-        # ``stack_info`` is appended verbatim by every formatter rather than
-        # cached, so an unconditional write costs nothing and hides nothing.
-        stack = getattr(record, "stack_info", None)
-        if stack:
-            record.stack_info = _scrub(stack)
 
 
 def _resolve_log_file_setting(log_file, log_dir=None):
@@ -481,9 +363,17 @@ def configure_logging(env=None, logger=None, log_dir=None):
 
     ``log_dir`` overrides the directory LOG_FILE is confined to (tests only).
     A LOG_FILE outside it is refused with a warning, never a crash.
+
+    Also redacts, at the logger, every library logger that attaches a handler
+    of its own (``SELF_HANDLING_LOGGERS``, issue #741) -- those handlers are
+    not ``logger``'s, so the per-handler filter below never reaches them.
+    Done whatever ``logger`` is: the libraries' loggers are process-global.
     """
     env = os.environ if env is None else env
     logger = logging.getLogger() if logger is None else logger
+
+    for name in SELF_HANDLING_LOGGERS:
+        redact_logger(name)
 
     level = resolve_log_level(log_level_setting(env))
 
