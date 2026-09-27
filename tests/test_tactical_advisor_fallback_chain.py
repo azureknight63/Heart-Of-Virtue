@@ -644,3 +644,30 @@ class TestTheOllamaHopDialsAnOllamaModel:
 
         assert posted == ["llama3.1:8b", "llama3.1:8b"]
         assert len(probes) == 1
+
+
+class TestTheOllamaHopLookupIsHeldToTheBudget:
+    """The hop's ``/api/tags`` lookup ran with a flat 1.5s timeout while every
+    other hop call is fitted to the deadline, and a failed lookup is not
+    cached -- so on a box with no Ollama, each walk that reached the local hop
+    could overrun the NPC turn / the advisor's chain budget by up to 1.5s."""
+
+    def test_the_lookup_timeout_fits_what_the_deadline_has_left(self, monkeypatch, keys):
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        monkeypatch.setenv("COMBAT_LLM_PROVIDER", "groq")
+        adapter = _adapter()
+        seen = []
+
+        def get(url, timeout=None, **kwargs):
+            seen.append(timeout)
+            raise ConnectionError("no ollama here")
+
+        monkeypatch.setattr(llm.requests, "get", get)
+        left = 0.4
+        with adapter.bounded_by(time.monotonic() + left):
+            adapter._ollama_hop_model()
+
+        assert seen, "the hop never asked the host for its tags"
+        timeout = seen[0]
+        total = sum(timeout) if isinstance(timeout, tuple) else timeout
+        assert total <= left + 0.05, timeout

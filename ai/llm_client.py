@@ -1281,7 +1281,12 @@ class GenericLLMClient:
         if requests is None:
             return None
         try:
-            r = requests.get(self.base_url + "/api/tags", timeout=1.5)
+            # Fitted to the turn like every other chain call: inside a walk
+            # the hop's lookup must not outrun the budget (outside one this
+            # is the nominal 1.5s the primary's __init__ discovery uses).
+            r = requests.get(
+                self.base_url + "/api/tags", timeout=_fit_to_turn(1.5)
+            )
             if r.status_code != 200:
                 return None
             models = [m.get("name") for m in r.json().get("models", [])]
