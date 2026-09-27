@@ -13,7 +13,7 @@ import pytest
 
 from src.secure_pickle import serialize_for_save
 from src.shop_conditions import UniqueItemInjectionCondition, iter_merchants
-from src.universe import Universe
+from src.universe import Universe, is_dev_only_map
 from tests._real_map_helpers import map_named
 from tests._world_fixtures import fresh_built_world, merchant_on_map
 
@@ -25,8 +25,10 @@ def test_jambos_counter_is_stocked_on_a_fresh_game(tent):
 
 
 def test_every_merchant_in_the_world_has_goods_after_build():
+    """Every merchant a player can reach; dev-only maps are skipped (#737)."""
     player = fresh_built_world()
-    merchants = list(iter_merchants(player.universe.maps))
+    live_maps = [m for m in player.universe.maps if not is_dev_only_map(m)]
+    merchants = list(iter_merchants(live_maps))
     assert merchants, "no merchants found -- iter_merchants is not walking the maps"
     unstocked = [m.name for m in merchants if not m.has_goods()]
     assert unstocked == []

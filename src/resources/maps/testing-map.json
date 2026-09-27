@@ -1,4 +1,7 @@
 {
+    "metadata": {
+        "dev_only": true
+    },
     "(2, 2)": {
         "id": "tile_2_2",
         "title": "tile_2_2",
