@@ -2767,12 +2767,25 @@ def _statustypes_declared_in_states_module():
         if isinstance(target, ast.Name)
     }
     found = set()
+
+    def _resolve(value):
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            found.add(value.value)
+        elif isinstance(value, ast.Name) and value.id in constants:
+            found.add(constants[value.id])
+
     for node in ast.walk(tree):
         if isinstance(node, ast.keyword) and node.arg == "statustype":
-            if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
-                found.add(node.value.value)
-            elif isinstance(node.value, ast.Name) and node.value.id in constants:
-                found.add(constants[node.value.id])
+            _resolve(node.value)
+        # A class-level ``STATUSTYPE = ...`` that the constructor passes on as
+        # ``statustype=self.STATUSTYPE`` (see ``State.STATUSTYPE``).
+        if isinstance(node, ast.ClassDef):
+            for stmt in node.body:
+                if isinstance(stmt, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == "STATUSTYPE"
+                    for t in stmt.targets
+                ):
+                    _resolve(stmt.value)
         # `State.__init__`'s own signature default, which no keyword node covers.
         if isinstance(node, ast.FunctionDef):
             args = node.args
@@ -3271,3 +3284,57 @@ class TestStatusThreat:
             npc = _make_npc()
         threat = VenomClaw(npc).status_threat(_player())
         assert threat["name"] == "Poisoned" and threat["lethal"] is False
+
+    def test_reading_the_threat_does_not_consume_the_global_rng(self):
+        """Serialization runs every beat; Poisoned's constructor rolls its
+        duration, so building one to read its name advanced ``random`` and
+        shifted every later combat roll (K1)."""
+        import random
+
+        from src.moves import VenomClaw
+
+        with patch("builtins.print"):
+            npc = _make_npc()
+        move = VenomClaw(npc)
+        jean = _player()
+        before = random.getstate()
+        move.status_threat(jean)
+        assert random.getstate() == before
+
+    def test_a_degraded_target_does_not_raise(self):
+        """No State is constructed, so a target the state's constructor
+        could not handle (here: a bare object) still yields the threat."""
+        from src.moves import VenomClaw
+
+        with patch("builtins.print"):
+            npc = _make_npc()
+        threat = VenomClaw(npc).status_threat(object())
+        assert threat["name"] == "Poisoned" and threat["resisted"] is None
+
+
+class TestDeclaredStateClassConstants:
+    """``status_threat`` reads ``STATUS_NAME``/``STATUSTYPE`` off the class
+    instead of constructing a throwaway State; they must equal what an
+    instance carries, for every state an NPC-used move declares."""
+
+    def _declared(self):
+        return {cls.inflicts_status for cls in _NPC_MOVES} - {None}
+
+    def test_the_population_is_real(self):
+        import src.states as states
+
+        declared = self._declared()
+        assert states.Death in declared and states.Poisoned in declared
+
+    def test_class_constants_match_an_instance(self):
+        import random
+
+        saved = random.getstate()
+        try:
+            random.seed(720)
+            for state_cls in self._declared():
+                instance = state_cls(_player())
+                assert state_cls.STATUS_NAME == instance.name, state_cls
+                assert state_cls.STATUSTYPE == instance.statustype, state_cls
+        finally:
+            random.setstate(saved)

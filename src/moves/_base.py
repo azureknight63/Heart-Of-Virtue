@@ -1661,15 +1661,15 @@ class Move:  # master class for all moves
         state_cls = self.inflicted_status()
         if state_cls is None:
             return None
-        # Built only to read its name and statustype: a State's constructor
-        # just records fields, and every declared state takes the target alone.
-        probe = state_cls(target)
+        # Read off the class, never an instance: several declared states roll
+        # ``random`` in their constructors, and this runs on every serialize.
+        statustype = state_cls.STATUSTYPE
         resists = getattr(target, "resists_status", None)
         return {
-            "name": probe.name,
-            "statustype": probe.statustype,
+            "name": state_cls.STATUS_NAME,
+            "statustype": statustype,
             "lethal": bool(state_cls.lethal),
-            "resisted": resists(probe.statustype) if callable(resists) else None,
+            "resisted": resists(statustype) if callable(resists) else None,
         }
 
     def beats_until_resolve(self):
